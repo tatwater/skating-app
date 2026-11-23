@@ -105,7 +105,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `posts` | the narrative, the photo set, the ordering, and one or more Reports; what the newsfeed and the profile show; requires a Report by construction — A10, D186 |
 | `reports` | the center of the app: author, body (+ bay memberships), skate window (+ its precision), how it was seen, ice types and surface tags as located chips, thickness readings with method (measured / estimated / poke), snow as facets, quality and suitability, conditions, put-in pin (+ the tapped access point), notes; always public — D4, D13, D21–D25, D190–D195 |
 | `reportSubAreas` | one row per (report, bay) — the indexable copy of `reports.subAreaIds` — D175 |
-| `photos` | EXIF-stripped on upload, geotag only on opt-in, `placeOnMap` gates pinning — D42 |
+| `photos` | EXIF-stripped on upload, geotag only on opt-in, `placeOnMap` gates pinning — D42; a moderation axis (`moderationStatus`, absent = visible until the backfill) and a removed photo's 30-day purge (`purgeAt`, `purgedAt`) — D222 (B01-5e) |
 | `comments` | threaded, arbitrary depth in data, capped in UI — D21, D25 |
 | `reportRatings` | helpful thumbs on reports and hazards → reputation — D17, D50 |
 | `waterBodyFavorites` | place-based curation, the D13 stand-in for a follow graph; bays favoritable since A09 — Phase 04 |
@@ -168,6 +168,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `auditSnapshots` | what an audited action replaced when it is too big for its row (a polygon, a weather grid, a merge's moved rows), read only by its undo — D226 |
 | `contentRevisions` | what a Post or Report said before each author edit, for a moderator's comparison; the card shows only *Edited*; cleared with the words by the departed-user sweep — A10-3 |
 | `supportTickets` | the in-app support inbox, emailed to the operator — D37 |
+| `supportMessages` | a staffer's note or email reply on a ticket: a note soft-removed by its undo, a reply sent only if it still settles at the end of its window (the address resolved at send, never stored) — staff-only, PII — D284 (B01-5f) |
 | `inboxItems` | the Inbox's row: one per question a person filed — a flag target in a lane, a body's access reports, an ask and its siblings, a drawn body, a ticket — with its lane, tab, rank, the oldest member's filing time and, once decided, who decided what (the colleague lock, D283); written only by `lib/inboxItems.ts` at the writes that file, withdraw or decide a member, with a drift repair — B01 §12.8 (B01-5) |
 | `inboxItemMembers` | the source rows an Inbox item holds (a flag, a request, a drawn body, a ticket), who filed each (D289) and which decision closed it, so an undo reopens exactly what one decision closed — B01-5 |
 | `inboxCounts` | the Inbox's stored counts — each lane's and tab's open items and the decided total — moved by the item writer with each row, so a count is the tally of the rows; the Overview's Inbox card reads them — B01-5 |

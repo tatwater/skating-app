@@ -454,6 +454,35 @@ const ticket = (
   },
 });
 
+/** The bug ticket's staff note and reply (B01-5f): what a staffer checked, and what they told ada. */
+const T_BUG_NOTE =
+  'Reproduced on a Pixel 8: the satellite tiles stop loading after a layer switch.';
+const T_BUG_REPLY =
+  'Thanks for the report. We could reproduce the blank map after switching layers and are working on a fix.';
+
+/** A staff note or reply on an earlier step's ticket, filed by the operator through its write. */
+const message = (
+  key: string,
+  ticketStep: string,
+  kind: 'note' | 'reply',
+  body: string,
+): StepDef => ({
+  key,
+  label: kind === 'note' ? 'a staff note on a ticket' : 'an email reply on a ticket, never sent',
+  as: 'operator',
+  fn: kind === 'note' ? 'support:addNote' : 'support:reply',
+  args: (r) => ({ ticketId: r.out(ticketStep), body }),
+  find: async (ctx, r) => {
+    const rows = await ctx.db
+      .query('supportMessages')
+      .withIndex('by_ticket_created', (q) =>
+        q.eq('ticketId', r.out(ticketStep) as Id<'supportTickets'>),
+      )
+      .take(20);
+    return rows.find((m) => m.kind === kind && m.body === body)?._id ?? null;
+  },
+});
+
 const rate = (key: string, as: SeedPersonKey, reportStep: string): StepDef => ({
   key,
   label: `an unhelpful thumb on ${reportStep}`,
@@ -1436,6 +1465,11 @@ export function seedSteps(): StepDef[] {
       }),
       find: (ctx, r) => actionOn(ctx, 'user', r.person('cleo'), 'set_posting_permission'),
     },
+    // Support's thread (B01-5f): a staff note and an email reply on the bug ticket. The reply is
+    // stored `failed` (`seed`) by `support.reply` itself and never scheduled — a fake person is never
+    // mailed — so board 2.8's *Not sent* state is on dev.
+    message('t-bug-note', 't-bug', 'note', T_BUG_NOTE),
+    message('t-bug-reply', 't-bug', 'reply', T_BUG_REPLY),
   ];
 
   // Discipline last, each after everything its person files (a suspended or banned person can't).
@@ -1750,8 +1784,10 @@ function mergeProofSteps(): StepDef[] {
       key: 'mp-bounty',
       label: 'a bounty on the merge-proof drawing',
       as: 'elin',
-      fn: 'bounties:createChecked',
-      args: (r) => ({ waterBodyId: cove(r), weatherReopenedReports: [] }),
+      // The public action a person posts a bounty through (a call as a person reaches only public
+      // functions). On the fresh drawing there's no report to weigh, so it fetches no weather.
+      fn: 'bounties:create',
+      args: (r) => ({ waterBodyId: cove(r) }),
       find: (ctx, r) =>
         findOn(
           ctx,
@@ -1771,10 +1807,12 @@ function mergeProofSteps(): StepDef[] {
       label: 'a report on the merge-proof drawing',
       as: 'ada',
       fn: 'reports:create',
-      after: ['mp-bounty'],
+      // In the cove's own bay, so the proof carries a bay join for the merge to move and put back.
+      after: ['mp-bounty', 'mp-bay-cove'],
       args: (r) => ({
         waterBodyId: cove(r),
         idempotencyKey: seedKey('mp-report'),
+        point: offset(proofCenter(r), 0, -150),
         skateEndTime: r.now - 6 * HOUR,
         conditions: { airTempC: -9, windSpeedKph: 5 },
         surfaceTags: ['smooth'],
@@ -2492,6 +2530,18 @@ async function dropFlag(s: Sweep, f: Doc<'contentFlags'>): Promise<void> {
   if (f.targetType === 'waterbody') await touchBody(s, f.targetId as Id<'waterBodies'>);
 }
 
+/** A ticket: out of its Inbox item, then every note and reply on it, then its audit rows (B01-5f). */
+async function dropTicket(s: Sweep, t: Doc<'supportTickets'>): Promise<void> {
+  await leave(s, ticketSource(t._id));
+  await s.drain('supportMessages', 'supportMessage', () =>
+    s.ctx.db
+      .query('supportMessages')
+      .withIndex('by_ticket_created', (q) => q.eq('ticketId', t._id))
+      .first(),
+  );
+  await dropAuditsOf(s, 'supportTicket', t._id);
+}
+
 async function dropRequest(s: Sweep, r: Doc<'waterBodyRequests'>): Promise<void> {
   await leave(s, requestSource(r._id));
   await dropAuditsOf(s, 'waterBodyRequest', r._id);
@@ -2737,7 +2787,7 @@ async function sweepPeople(s: Sweep, people: Doc<'profiles'>[]): Promise<void> {
           .query('supportTickets')
           .withIndex('by_clerk_user_created', (q) => q.eq('clerkUserId', p.clerkUserId))
           .first(),
-      (t) => leave(s, ticketSource(t._id)),
+      (t) => dropTicket(s, t),
     );
     await s.drain('reportRatings', 'small', () =>
       db

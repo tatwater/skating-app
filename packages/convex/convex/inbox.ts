@@ -531,18 +531,56 @@ export type TicketView = {
   resolvedBy: PersonRefView | null;
 };
 
-/** A note or reply on a ticket (PR 6's `supportMessages`; empty until then). */
+/**
+ * A staffer's note or email reply on a ticket (B01-5f, `supportMessages`) — staff-only and PII, served
+ * only behind `inbox.support.read`. Never the address a reply went to.
+ */
 export type SupportMessageView = {
-  messageId: string;
+  messageId: Id<'supportMessages'>;
+  /** A `note` is staff-only (the dashed box); a `reply` went, or is going, to the person by email. */
   kind: 'note' | 'reply';
   author: PersonRefView | null;
-  body: string;
+  /** `null` once a note is removed (its undo puts it back). */
+  body: string | null;
   createdAt: number;
+  removedAt: number | null;
+  /**
+   * A note: `null` when this viewer may remove it now (`support.removeNote`), else that write's
+   * sentence. A reply: always a sentence (a reply is canceled, never removed).
+   */
+  remove: string | null;
   reply: {
+    /**
+     * `settling` while its window runs (*Sending in 60 s · Undo*) and while its send is under way;
+     * `sent`; `canceled` (undone inside the window); `failed` (*Not sent*, with `failedWhy`).
+     */
     status: 'settling' | 'sent' | 'canceled' | 'failed';
     sendAfter: number;
     sentAt: number | null;
+    /**
+     * Why it wasn't sent, as a class, never the provider's message or an address: no support sender
+     * configured, a seeded ticket (never mailed), no address on file, the provider refused (or no
+     * send ever ran) — or `outcomeUnknown`: its send started and stopped before saying how it went,
+     * so it **may or may not have been sent** (worded as that, never as sent or as not sent).
+     */
+    failedWhy: 'unconfigured' | 'seed' | 'noAddress' | 'sendFailed' | 'outcomeUnknown' | null;
+    /**
+     * Whether this viewer may cancel it now (`support.cancelReply`): `null`, or the sentence that
+     * write refuses with — the undo's own rule, so *Undo* is drawn only where it lands (D217). Asked
+     * at read time; a client hides *Undo* once `sendAfter` passes, when the write refuses it.
+     */
+    cancel: string | null;
   } | null;
+};
+
+/** A flag about the ticket's person, on 2.8's *Related* (each opens its Inbox item, `flag:<id>`). */
+export type TicketRelatedFlagView = {
+  flagId: Id<'contentFlags'>;
+  reason: Doc<'contentFlags'>['reason'];
+  targetType: Doc<'contentFlags'>['targetType'];
+  status: 'open' | 'actioned';
+  createdAt: number;
+  resolvedAt: number | null;
 };
 
 // ── An item (`inbox.item`) ─────────────────────────────────────────────────────────────────────
@@ -687,8 +725,32 @@ export type InboxItemView = ItemBase &
     | {
         kind: 'ticket';
         ticket: TicketView;
+        /**
+         * The thread after the ticket's own body: the newest messages (at most `THREAD_MESSAGES`,
+         * `lib/supportThread`), oldest first, newest last.
+         */
         messages: SupportMessageView[];
+        /** How many messages are served; with `messagesCut`, a floor ("100+"). */
+        messageCount: number;
+        /** Older messages were cut: the thread starts part-way (a cut line above the first). */
+        messagesCut: boolean;
+        /**
+         * The address a reply goes out from (`SUPPORT_FROM_EMAIL`, the configured sender — nothing
+         * else from the environment), or `null` when it is unset and no reply will be sent.
+         */
+        replyFrom: string | null;
+        /** Why a reply written now would not be sent, before it is written; `null` when it would. */
+        replyBlocked: 'unconfigured' | 'seed' | null;
+        /**
+         * The person's tickets, as the Inbox files them (their ticket members, open and resolved),
+         * each status counted to a bound (`capped`: the figures are floors); `null` for a ticket filed
+         * before they had a profile.
+         */
+        personTickets: { total: number; resolved: number; capped: boolean } | null;
+        /** The person who filed it; `null` for a ticket filed before they had a profile. */
         person: AuthorBlockView | null;
+        /** Flags about that person, newest first: the open ones, then those actioned. */
+        related: { flags: TicketRelatedFlagView[]; capped: boolean };
       }
   );
 

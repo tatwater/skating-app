@@ -426,6 +426,53 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'body.places',
   },
+
+  // ── Support (B01-5f, D284) ─────────────────────────────────────────────────────────────────────
+  // Notes and replies are staff's words to staff or to the person who filed; none takes anything away
+  // from skaters, so no undo asks a reason. A note's removal and its return undo each other; a reply
+  // cancels only while it settles (its handler refuses after: "Sent replies can't be unsent"); a
+  // resolve and a reopen undo each other.
+  support_note: {
+    undo: inverse('remove_support_note'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  // Its undo puts the note back, writing `support_note` again for the same note.
+  remove_support_note: {
+    undo: inverse('support_note'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  support_reply: {
+    undo: inverse('cancel_support_reply'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  // A canceled reply was never sent; sending it now would be a new reply, written as one.
+  cancel_support_reply: {
+    undo: { kind: 'none', why: 'A canceled reply isn’t sent again; write a new one.' },
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  resolve_ticket: {
+    undo: inverse('reopen_ticket'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+  reopen_ticket: {
+    undo: inverse('resolve_ticket'),
+    takesAway: never,
+    capability: 'inbox.support',
+  },
+
+  // ── Photos (B01-5e) ────────────────────────────────────────────────────────────────────────────
+  // The purge is permanent (§11's *Permanent* row): the bytes are gone, and the removal's dialog says
+  // so before it runs. Final, not a placeholder; S5b may refine the words.
+  purge_photo: {
+    undo: { kind: 'none', why: "The photo's file was deleted 30 days after its removal." },
+    takesAway: always,
+    capability: 'content.moderate',
+  },
 };
 
 /** The verbs whose undo is still owed by a later workstream — the register the build closes. */

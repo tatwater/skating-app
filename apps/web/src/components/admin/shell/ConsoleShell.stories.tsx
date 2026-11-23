@@ -52,8 +52,7 @@ function Console({ admin = true, className = 'h-[56.25rem] w-[90rem]', ...props 
   const legacy = admin
     ? LEGACY_PAGES
     : LEGACY_PAGES.filter(
-        (p) =>
-          !['/admin/seasons', '/admin/support', '/admin/tuning', '/admin/imports'].includes(p.to),
+        (p) => !['/admin/seasons', '/admin/tuning', '/admin/imports'].includes(p.to),
       );
   return (
     <ConsoleShell

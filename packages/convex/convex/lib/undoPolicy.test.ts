@@ -1,7 +1,15 @@
 import { CAPABILITIES } from '@skating/core';
 import { describe, expect, test } from 'vitest';
+import type { ModerationAction } from './audit';
 import { MODERATION_ACTIONS } from './enums';
 import { UNDO_POLICY, undoCapability, undoOwed, WORKSTREAM_MODE } from './undoPolicy';
+
+/**
+ * The undo rows the B01-5e/5f T0 commit stubbed so the policy compiles (marked `PLACEHOLDER`). The
+ * slice's server builder writes each real rule and removes it here; the list is empty before the
+ * slice's PR opens.
+ */
+const T0_INBOX_PLACEHOLDERS: readonly ModerationAction[] = [];
 
 describe('the undo registry (D226)', () => {
   test('covers every audited verb, and nothing else', () => {
@@ -109,6 +117,24 @@ describe('the undo registry (D226)', () => {
       why: 'To put them back together, merge them again.',
     });
     expect(UNDO_POLICY.unmerge_waterbody.capability).toBe('corpus.duplicates');
-    expect(undoOwed().every((o) => o.workstream !== '§2 Inbox')).toBe(true);
+    expect(
+      undoOwed().every(
+        (o) => o.workstream !== '§2 Inbox' || T0_INBOX_PLACEHOLDERS.includes(o.action),
+      ),
+    ).toBe(true);
+  });
+
+  test('the T0 placeholders (B01-5f) are still marked as such, and only those', () => {
+    // Each builder replaces its own rows and drops them from `T0_INBOX_PLACEHOLDERS`; the list is
+    // empty before the slice's PR opens.
+    for (const action of T0_INBOX_PLACEHOLDERS) {
+      const undo = UNDO_POLICY[action].undo;
+      expect(undo.kind === 'later' && undo.plan.startsWith('PLACEHOLDER'), action).toBe(true);
+    }
+    for (const [action, rule] of Object.entries(UNDO_POLICY)) {
+      if (rule.undo.kind === 'later' && rule.undo.plan.startsWith('PLACEHOLDER')) {
+        expect(T0_INBOX_PLACEHOLDERS as readonly string[], action).toContain(action);
+      }
+    }
   });
 });

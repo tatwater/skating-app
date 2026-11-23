@@ -50,6 +50,11 @@ export type Decision<A extends string> = {
    * more to say (a merge's unmerge — see the shell's `Receipt.action`).
    */
   receipt: { title: string; description?: string; action?: string };
+  /**
+   * The receipt from what the write answered, when that decides it (a reply the server stored as
+   * not sent says so, never "on its way"); read only once the write landed, in place of `receipt`.
+   */
+  receiptOf?: () => { title: string; description?: string; action?: string };
 };
 
 /** The receipt's Undo, from the write's own answer alone: no answer, no Undo, nothing looked up. */
@@ -91,14 +96,13 @@ export function useDecisionRunner<A extends string>({
           description: notSavedWhat(decision.what, why),
         }));
         if (!sent.landed) return false;
+        const words = decision.receiptOf?.() ?? decision.receipt;
         const receipt: Receipt = {
-          title: decision.receipt.title,
-          ...(decision.receipt.description !== undefined
-            ? { description: decision.receipt.description }
-            : {}),
+          title: words.title,
+          ...(words.description !== undefined ? { description: words.description } : {}),
           target: sent.value.target,
           subject,
-          ...(decision.receipt.action !== undefined ? { action: decision.receipt.action } : {}),
+          ...(words.action !== undefined ? { action: words.action } : {}),
           ...undoOf(sent.value),
         };
         void announce(receipt, () => shown.current === mine).catch(() => {});

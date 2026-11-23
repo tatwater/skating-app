@@ -93,6 +93,15 @@ export interface UndoHandler {
    * never waits on a wave or reads "check elsewhere".
    */
   refusalCost?: (scope: UndoScope, row: Doc<'moderationActions'>) => WaveCost | null;
+  /**
+   * `false` for a row about **one part of a shared target** (B01-5f: a note or a reply on a support
+   * ticket, every row of which names the ticket): a later row on the target doesn't overtake it — a
+   * colleague's note must not take away the cancel of a reply still settling — and its `refusal`
+   * reads that part as it stands instead (the note removed already, the reply no longer settling),
+   * which is the "still current" check for it. Absent: the founder's simple rule, a later row on the
+   * target means no undo.
+   */
+  overtakenByTarget?: false;
   run: (call: UndoCall) => Promise<void>;
 }
 

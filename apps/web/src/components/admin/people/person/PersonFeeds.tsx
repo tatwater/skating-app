@@ -47,7 +47,8 @@ export type PersonTarget =
   /** An open flag's item in the Inbox: the Inbox resolves a source ref to the item that holds it. */
   | { kind: 'inboxFlag'; flagId: string }
   | { kind: 'flags' }
-  | { kind: 'support' }
+  /** An appeal's (a ticket's) item in the Inbox, by its source ref (B01-5f). */
+  | { kind: 'inboxTicket'; ticketId: string }
   | { kind: 'people' };
 
 /** The console's routes for each target, when no router is handed in. */
@@ -57,8 +58,8 @@ export function personHref(to: PersonTarget): string {
       return `/admin/inbox?item=${encodeURIComponent(`flag:${to.flagId}`)}`;
     case 'flags':
       return '/admin/flags';
-    case 'support':
-      return '/admin/support';
+    case 'inboxTicket':
+      return `/admin/inbox?item=${encodeURIComponent(`ticket:${to.ticketId}`)}`;
     case 'people':
       return '/admin/people';
   }
@@ -195,8 +196,7 @@ export function OpenAbout({
                 when={<Tag>Inbox</Tag>}
                 who={ageInWords(f.createdAt, now)}
                 action={
-                  // The flag's item in the Inbox; an appeal (a ticket) keeps the old Support page
-                  // until the Inbox's ticket handler lands.
+                  // The flag's item in the Inbox.
                   <GoLink to={{ kind: 'inboxFlag', flagId: f.flagId }} linkTo={linkTo}>
                     Handle
                   </GoLink>
@@ -220,7 +220,8 @@ export function OpenAbout({
               when={<Tag>Support</Tag>}
               who={ageInWords(a.createdAt, now)}
               action={
-                <GoLink to={{ kind: 'support' }} linkTo={linkTo}>
+                // The appeal's own item in the Inbox (its ticket handler, B01-5f).
+                <GoLink to={{ kind: 'inboxTicket', ticketId: a.ticketId }} linkTo={linkTo}>
                   Handle
                 </GoLink>
               }

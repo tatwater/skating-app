@@ -40,6 +40,7 @@ import { clerkEmailForSubject } from './lib/clerkEmail';
 import { retainOrphanedBundle } from './lib/exportBundles';
 import { escapeHtml, sendEmail } from './lib/resend';
 import { deleteStoredBlob } from './lib/storageBlobs';
+import { exportTicketsOf } from './lib/supportThread';
 
 /**
  * How long a built bundle stays downloadable — single-sourced in `@skating/core` because both clients
@@ -250,6 +251,9 @@ export const collect = internalQuery({
       .query('waterBodyRequests')
       .withIndex('by_requester_created', (q) => q.eq('requesterId', userId))
       .take(ROW_CAP);
+    // What they wrote to support, and the replies that reached them by email (B01-5f): theirs. Never a
+    // staff note, a reply that didn't go, or who on staff wrote one (`lib/supportThread`).
+    const support = await exportTicketsOf(ctx, profile.clerkUserId);
 
     const {
       // Not exported: the Clerk subject is an internal identifier for a system the user already has
@@ -296,6 +300,14 @@ export const collect = internalQuery({
             }
           : {}),
       })),
+      supportTickets: support.tickets,
+      // The no-silent-caps rule: a person with more tickets or replies than one bundle reads is told.
+      ...(support.capped
+        ? {
+            supportTicketsCapped:
+              'Your newest support tickets are here; older ones, or some replies, did not fit this bundle.',
+          }
+        : {}),
       // Secrets stripped — see the note above.
       activityConnections: connections.map((c) => ({
         provider: c.provider,

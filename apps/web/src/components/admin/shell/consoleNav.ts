@@ -27,7 +27,6 @@ export const OLD_SHELL_TREES = [
   '/admin/recurrence',
   '/admin/ice-calibration',
   '/admin/seasons',
-  '/admin/support',
   '/admin/tuning',
   '/admin/imports',
 ] as const;
@@ -145,7 +144,6 @@ export const LEGACY_PAGES: readonly LegacyPage[] = [
   { label: 'Hazard identity', to: '/admin/recurrence', capability: 'corpus.read' },
   { label: 'Ice calibration', to: '/admin/ice-calibration', capability: 'instruments.calibration' },
   { label: 'Seasons', to: '/admin/seasons', capability: 'season.read' },
-  { label: 'Support', to: '/admin/support', capability: 'inbox.support.read' },
   { label: 'Tuning', to: '/admin/tuning', capability: 'instruments.tuning' },
   { label: 'Imports', to: '/admin/imports', capability: 'machinery.read' },
 ];

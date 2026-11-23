@@ -16,12 +16,17 @@
 import { requestNameKeyFor } from '@skating/core';
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { fileMember, flagSource, requestSource, ticketSource } from './lib/inboxItems';
 import { ALONGSIDE_UNCHECKED } from './lib/inboxRules';
 import schema from './schema';
+
+// A test that stubs the sender's variables (placeholders) never leaves them for the next.
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -71,6 +76,11 @@ const HEAVY_OUTLINE = {
 
 /** A note at its cap, in four-byte characters (the writer counts characters). */
 const maxText = (chars: number) => '\u{1F9CA}'.repeat(chars);
+/**
+ * Text exactly at a length cap (`.length` counts UTF-16 units) and as heavy as one can be: a
+ * three-byte character per unit (an emoji is two units of two bytes each).
+ */
+const capText = (units: number) => '\u6c34'.repeat(units);
 
 type Outcome = { kind: 'completed' } | { kind: 'capped' } | { kind: 'refused'; why: string };
 
@@ -657,6 +667,83 @@ describe('heavy rows: flags with their longest notes, tickets with their longest
         w.admin.as.mutation(api.support.resolve, { ticketId: tickets[0] as Id<'supportTickets'> }),
     });
     expect(Object.values(reads).every((k) => k !== 'refused')).toBe(true);
+  });
+
+  test('a ticket with a thread at its longest (B01-5f): the item answers; note, reply, resolve and reopen, each undone, complete', async () => {
+    const w = await heavyWorld();
+    await markReady(w.t);
+    const filer = w.people[0] as Id<'profiles'>;
+    const ticketId = await w.t.run(async (ctx) => {
+      const id = await ctx.db.insert('supportTickets', {
+        userId: filer,
+        category: 'account',
+        body: maxText(5_000),
+        status: 'open',
+        createdAt: NOW - 10_000,
+      });
+      await fileMember(ctx, ticketSource(id));
+      // 240 messages at the reply cap (3 bytes a character, the heaviest a length cap allows), by every staffer and person in the world as authors.
+      const authors = [w.admin.id, w.mod.id, ...w.people];
+      for (let i = 0; i < 240; i++) {
+        await ctx.db.insert('supportMessages', {
+          ticketId: id,
+          kind: i % 3 ? 'note' : 'reply',
+          authorId: authors[i % authors.length] as Id<'profiles'>,
+          body: capText(5_000),
+          createdAt: NOW - 9_000 + i,
+          ...(i % 3 ? {} : { status: 'sent' as const, sendAfter: NOW, sentAt: NOW }),
+        });
+      }
+      return id;
+    });
+    // The filer's open flags at their longest notes, for *Related* and the person's block.
+    await heavyFlags(
+      w.t,
+      w.people.slice(1),
+      { targetType: 'user', targetId: filer },
+      'spam',
+      filer,
+    );
+    const reads = await matrix({
+      item: () => w.admin.as.query(api.inbox.item, { ref: `ticket:${ticketId}` }),
+      list: () => w.admin.as.query(api.inbox.listPage, { lane: 'support', pageSize: 100 }),
+      map: () => w.admin.as.query(api.inbox.itemMap, { ref: `ticket:${ticketId}` }),
+    });
+    expect(reads).toEqual({ item: 'completed', list: 'completed', map: 'completed' });
+    const undo = (actionId: Id<'moderationActions'>) =>
+      w.admin.as.mutation(api.undo.run, { actionId });
+    // A deployment that can send (placeholders, never a real key): the reply settles, so its cancel
+    // is the undo under test — on one that can't, it is stored failed and has none.
+    vi.stubEnv('RESEND_API_KEY', 're_test_placeholder');
+    vi.stubEnv('SUPPORT_FROM_EMAIL', 'support@example.test');
+    const steps = await matrix({
+      note: async () =>
+        undo(
+          (await w.admin.as.mutation(api.support.addNote, { ticketId, body: capText(2_000) }))
+            .actionId,
+        ),
+      reply: async () =>
+        undo(
+          (await w.admin.as.mutation(api.support.reply, { ticketId, body: capText(5_000) }))
+            .actionId,
+        ),
+      resolve: async () =>
+        undo((await w.admin.as.mutation(api.support.resolve, { ticketId })).actionId),
+      reopen: async () => {
+        await w.admin.as.mutation(api.support.resolve, { ticketId });
+        await undo((await w.admin.as.mutation(api.support.reopen, { ticketId })).actionId);
+      },
+    });
+    expect(steps).toEqual({
+      note: 'completed',
+      reply: 'completed',
+      resolve: 'completed',
+      reopen: 'completed',
+    });
+    const after = await w.admin.as.query(api.inbox.item, { ref: `ticket:${ticketId}` });
+    if (after.item?.kind !== 'ticket') throw new Error('not a ticket');
+    expect(after.item.messagesCut).toBe(true);
+    expect(after.item.messages.at(-1)?.reply?.status).toBe('canceled');
   });
 });
 

@@ -25,13 +25,14 @@ const TARGET_TYPES = [
   'waterBodyRequest',
   'bodyLandmark',
   'corpusPlaceName',
+  'supportTicket',
 ] as const satisfies readonly ActionRow['targetType'][];
 const allListed: Exclude<ActionRow['targetType'], (typeof TARGET_TYPES)[number]> extends never
   ? true
   : false = true;
 
 /** The lanes the Inbox decides now (B01-5c): their old pages retire with it. */
-const INBOX_DECIDES = new Set(['requests', 'placesAsked', 'drawnBodies']);
+const INBOX_DECIDES = new Set(['requests', 'placesAsked', 'drawnBodies', 'support']);
 
 const PEOPLE_LISTS = ['staff', 'new', 'suspended', 'banned', 'leaving'] as const;
 
@@ -81,7 +82,7 @@ describe('Home’s links, until the new modes land', () => {
 
   it('sends the lanes to the pages that work them', () => {
     expect(consolePathFor({ kind: 'inbox', lane: 'safety' })).toBe('/admin/flags');
-    expect(consolePathFor({ kind: 'inbox', lane: 'support' })).toBe('/admin/support');
+    expect(consolePathFor({ kind: 'inbox', lane: 'support' })).toBe('/admin/inbox?lane=support');
     expect(consolePathFor({ kind: 'inbox', lane: 'placesAsked' })).toBe(
       '/admin/inbox?lane=placesAsked',
     );
@@ -114,7 +115,8 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('bodies');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
-      else if (type === 'waterBodyRequest') expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
+      else if (type === 'waterBodyRequest' || type === 'supportTicket')
+        expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );

@@ -4216,6 +4216,54 @@ export default defineSchema({
     .index('by_created_at', ['createdAt'])
     .index('by_status_resolved_at', ['status', 'resolvedAt']),
 
+  /**
+   * **A staffer's note or email reply on a support ticket** (B01-5f, D284). Staff-only and PII: no
+   * read outside `inbox.support.read` returns one. A note is soft-removed (`removedAt`, its undo); a
+   * reply is written `settling` with `sendAfter` one settle window on, and the scheduled send re-reads
+   * the row and sends only while it still settles — so canceling inside the window is the undo, and
+   * a sent reply can't be unsent. A reply that can't go (a seeded person; no sender or provider key
+   * on the deployment) is written `failed` at once with nothing scheduled, as the plan rules; one
+   * whose send died is settled by its watch (`support.watchReply`). The address is never stored: it is resolved at send from the
+   * person's profile, else from the ticket's Clerk subject (a ticket filed before provisioning).
+   */
+  supportMessages: defineTable({
+    ticketId: v.id('supportTickets'),
+    kind: literals(['note', 'reply'] as const),
+    authorId: v.id('profiles'),
+    body: v.string(), // capped at its writer: core's `MAX_SUPPORT_NOTE_LENGTH` / `MAX_SUPPORT_REPLY_LENGTH`
+    createdAt: v.number(),
+    removedAt: v.optional(v.number()),
+    // A reply's send, absent on a note.
+    sendAfter: v.optional(v.number()),
+    status: v.optional(literals(['settling', 'sent', 'canceled', 'failed'] as const)),
+    sentAt: v.optional(v.number()),
+    /**
+     * Why a reply wasn't sent, as a class, never the provider's message or an address:
+     * `unconfigured` (no `SUPPORT_FROM_EMAIL`), `seed` (a seeded ticket — the seed never sends),
+     * `noAddress` (no profile email and no Clerk address), `sendFailed` (the provider refused, or
+     * no send ever ran), `outcomeUnknown` (B01-5f review: its send claimed it and then stopped
+     * before saying how it went — it may or may not have been sent; never resent by itself).
+     */
+    failedWhy: v.optional(
+      literals(['unconfigured', 'seed', 'noAddress', 'sendFailed', 'outcomeUnknown'] as const),
+    ),
+    /**
+     * The audit row its write made (`support_note` / `support_reply`), stamped by that write in the
+     * same transaction, right after the row: a reply's cancel undoes it by id. Optional only because
+     * the row names the message, so the message is inserted first.
+     */
+    actionId: v.optional(v.id('moderationActions')),
+    /**
+     * The client's own key for the write that made it (B01-5f review): a second `addNote` / `reply`
+     * with the same key on the same ticket answers the first instead of writing again — a Send pressed
+     * twice across a slow connection. 8–64 of `[A-Za-z0-9_-]`; absent on a write that sent none.
+     */
+    clientKey: v.optional(v.string()),
+  })
+    .index('by_ticket_created', ['ticketId', 'createdAt'])
+    // `eq` on both fields only — a concrete key never matches the rows that lack one (not sparse).
+    .index('by_ticket_client_key', ['ticketId', 'clientKey']),
+
   bounties: defineTable({
     requesterId: v.id('profiles'),
     waterBodyId: v.id('waterBodies'),
@@ -4321,8 +4369,21 @@ export default defineSchema({
      * migration and no index.
      */
     seasonExpiryCandidate: v.optional(v.boolean()),
+    /**
+     * **The photo's moderation axis** (B01-5e, D222), widened optional: absent reads as `visible`
+     * until the backfill stamps every row, then it narrows to required. A photo that isn't visible is
+     * served to no skater-facing read; staff with `content.read` still see it.
+     */
+    moderationStatus: v.optional(literals(MODERATION_STATUSES)),
+    moderatedAt: v.optional(v.number()),
+    /** A removed photo's bytes go 30 days on (D222): when the purge is due, and when it ran. */
+    purgeAt: v.optional(v.number()),
+    purgedAt: v.optional(v.number()),
   })
     .index('by_uploader', ['uploaderId'])
+    // The purge's due rows. `purgeAt` is optional and the index not sparse — `undefined` sorts first,
+    // so a due range needs a lower bound (`gt('purgeAt', 0)`), never a bare `lte()`.
+    .index('by_purge_at', ['purgeAt'])
     // A Report's photos through their back-link, so erasing the Report unlinks them a page at a time
     // (D248). `eq()` only: the field is optional and the index not sparse.
     .index('by_report', ['reportId'])
@@ -5592,5 +5653,12 @@ export default defineSchema({
     done: v.boolean(),
     startedAt: v.number(),
     updatedAt: v.number(),
+    // The drift repair's full sweep (`inboxItems:repairAll`) totals what it did so far:
+    // items examined, things fixed, drift found by kind, items whose repair failed (Machinery has
+    // each failure in `jobFailures`). Absent on the backfill's and the clear's rows.
+    examined: v.optional(v.number()),
+    fixed: v.optional(v.number()),
+    changed: v.optional(v.record(v.string(), v.number())),
+    failures: v.optional(v.number()),
   }).index('by_job', ['job']),
 });

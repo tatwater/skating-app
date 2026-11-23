@@ -15,7 +15,6 @@ import {
   runLogName,
   type SeedCall,
   type SeedState,
-  serverSentence,
   tally,
 } from './seed';
 
@@ -337,19 +336,8 @@ describe('the small pieces', () => {
     expect(errorLine(new Error(''))).toBe('unknown error');
   });
 
-  test('the server’s sentence, never the echoed command', () => {
-    const stderr = [
-      'Command failed: pnpm --filter @skating/convex exec convex run contentFlags:flag {…}',
-      'Error: [CONVEX M(contentFlags:flag)] [Request ID: 1] Server Error',
-      'Uncaught ConvexError: You have already asked — it is with the moderators.',
-      '    at handler (../convex/contentFlags.ts:120:11)',
-    ].join('\n');
-    expect(serverSentence(stderr)).toBe('You have already asked — it is with the moderators.');
-    expect(serverSentence('Uncaught Error: Not authenticated')).toBe('Not authenticated');
-    expect(serverSentence('Command failed: pnpm …\n✖ Could not reach the deployment\n')).toBe(
-      '✖ Could not reach the deployment',
-    );
-    expect(serverSentence('Command failed: pnpm …')).toBe('convex run failed with no message');
+  test('an error from anything thrown is bounded to a sentence', () => {
+    expect(errorLine(new Error('y'.repeat(500)))).toHaveLength(300);
   });
 
   test('tally prints what moved, or nothing', () => {

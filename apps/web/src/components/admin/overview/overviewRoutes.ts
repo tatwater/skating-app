@@ -32,8 +32,9 @@ export function consolePathFor(to: OverviewTarget): string | null {
         case 'placesAsked':
         case 'drawnBodies':
           return inboxPath({ lane: to.lane });
+        // Support tickets are answered in the Inbox (B01-5f): the old page redirects there.
         case 'support':
-          return '/admin/support';
+          return inboxPath({ lane: 'support' });
         default:
           // Safety, access reports and content flags are all flags.
           return '/admin/flags';
@@ -91,6 +92,9 @@ function auditPath(type: string, id: string): string | null {
     case 'waterBodyRequest':
       // The ask's own item in the Inbox (`inbox.item` resolves a `request:` ref).
       return inboxPath({ item: `request:${id}` });
+    case 'supportTicket':
+      // The ticket's own item in the Inbox (`inbox.item` resolves a `ticket:` ref).
+      return inboxPath({ item: `ticket:${id}` });
     case 'corpusPlaceName':
       return '/admin/water/place-names';
     case 'waterBodySubArea':

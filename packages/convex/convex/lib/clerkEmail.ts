@@ -53,34 +53,53 @@ export function primaryEmailOf(body: ClerkUserEmails): string | null {
 }
 
 /**
- * The primary email for a Clerk subject, or `null`.
+ * **A Clerk address lookup, three ways** (B01-5f, Greptile on #175): `found`; `none` — Clerk answered
+ * and the person has no address (a 404, or no primary or verified address), or there is no person to
+ * look up (a seed subject, an empty one); `error` — no answer to trust (no `CLERK_SECRET_KEY`, any
+ * other non-2xx, a thrown fetch, an unreadable body), so the person may well have one. A caller that
+ * records "no address" where a person reads it asks this, never the `null` of
+ * {@link clerkEmailForSubject}, which can't tell the two apart.
+ */
+export type ClerkEmailLookup =
+  | { kind: 'found'; email: string }
+  | { kind: 'none' }
+  | { kind: 'error' };
+
+export async function clerkEmailLookup(subject: string): Promise<ClerkEmailLookup> {
+  // A fake person from the dev seed has no Clerk account, and no address to find (D287).
+  if (isSeedProfile(subject) || !subject) return { kind: 'none' };
+  const key = process.env.CLERK_SECRET_KEY;
+  if (!key) {
+    console.warn('CLERK_SECRET_KEY not set — cannot look up an email address');
+    return { kind: 'error' };
+  }
+  try {
+    const res = await fetch(`${CLERK_API_BASE}/users/${subject}`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (res.status === 404) return { kind: 'none' };
+    if (!res.ok) {
+      console.warn(`Clerk user lookup failed: ${res.status} ${res.statusText}`);
+      return { kind: 'error' };
+    }
+    const body = (await res.json()) as ClerkUserEmails;
+    // The primary pointer, falling back to the first verified — the same pick the webhook makes.
+    const email = primaryEmailOf(body);
+    return email ? { kind: 'found', email } : { kind: 'none' };
+  } catch (err) {
+    console.warn('Clerk user lookup threw', err);
+    return { kind: 'error' };
+  }
+}
+
+/**
+ * The primary email for a Clerk subject, or `null` — {@link clerkEmailLookup}'s `found`, the answer
+ * every other caller has always read, unchanged.
  *
  * Never throws: every caller is a scheduled action whose work has already committed, and a mail
  * lookup failing must not roll anything back or abort a fan-out partway.
  */
 export async function clerkEmailForSubject(subject: string): Promise<string | null> {
-  // A fake person from the dev seed has no Clerk account, and no address to find (D287).
-  if (isSeedProfile(subject)) return null;
-  const key = process.env.CLERK_SECRET_KEY;
-  if (!key) {
-    console.warn('CLERK_SECRET_KEY not set — cannot look up an email address');
-    return null;
-  }
-  if (!subject) return null;
-
-  try {
-    const res = await fetch(`${CLERK_API_BASE}/users/${subject}`, {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (!res.ok) {
-      console.warn(`Clerk user lookup failed: ${res.status} ${res.statusText}`);
-      return null;
-    }
-    const body = (await res.json()) as ClerkUserEmails;
-    // The primary pointer, falling back to the first — the same pick the webhook makes.
-    return primaryEmailOf(body);
-  } catch (err) {
-    console.warn('Clerk user lookup threw', err);
-    return null;
-  }
+  const lookup = await clerkEmailLookup(subject);
+  return lookup.kind === 'found' ? lookup.email : null;
 }

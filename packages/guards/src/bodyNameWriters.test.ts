@@ -68,6 +68,9 @@ const OTHER_TABLES: Record<string, string> = {
   'putIns.ts:promotePutInImpl': 'a launch',
   'putIns.ts:demotePutInImpl': 'a launch',
   'reports.ts:update': 'a Report’s point',
+  // A support note's `removedAt` (B01-5f): a staff note on a ticket, nothing a body's list holds.
+  'lib/supportWrites.ts:removeNoteImpl': 'a support note removed (`supportMessages`)',
+  'lib/supportWrites.ts:restoreNoteImpl': 'a support note put back (`supportMessages`)',
   'waterBodies.ts:mergeBodyInto': 'a body’s own aliases',
   'waterBodies.ts:setWaterBodyNameImpl': 'a body’s own name',
 };

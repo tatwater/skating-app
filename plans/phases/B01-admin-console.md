@@ -922,6 +922,29 @@ Made on the design's engineering forks; the founder may overturn any of them.
 22. **D291: an inverse may restore from a recorded before-image** (2026-11-22, fork 5 (A)), through
     the forward paths' side effects. The unmerge takes the survivor's merged lists apart by
     difference.
+23. **B01-5e: an uploader's delete of a flagged or decided photo withdraws it** (2026-11-22, the
+    photos pack's fork 1). It hides the photo at once and starts the 30-day clock, instead of deleting
+    it: a verdict outlives the content, and an author can't drop evidence by deleting (D248). An
+    unflagged, unmoderated photo deletes as today.
+24. **B01-5f: with `SUPPORT_FROM_EMAIL` unset, a reply reads `failed`** (2026-11-22, the support
+    pack's fork 1), the skip logged, and it never falls back to the general address. Resend is
+    already set on dev, so once the founder sets the variable a reply really sends; the seed must
+    never cause one to.
+25. **B01-5f: the seed carries one reply**, stored `failed`, never sent, to a "Test-" person's ticket
+    (2026-11-22, the support pack's fork 2).
+26. **B01-5e and B01-5f build in parallel and ship as two sequential PRs, support first** (2026-11-22).
+    Photos follows its rotation proof and rebases onto support's merge. The letters stay as named
+    even though f ships before e.
+27. **Into B01-5e's scope, from the pack's design-versus-code read** (2026-11-22), each a requirement:
+    - the Inbox serves photo URLs only to a viewer with `content.read`, enforced on the server;
+    - the own-content rule (D269) knows a photo's `uploaderId`;
+    - `photos.remove` follows ruling 23;
+    - `listPhotos` matches URLs to rows by id, not position;
+    - every one of the seven photo deleters respects flags and verdicts, with a guard test that fails
+      when a new photo deleter appears without that check.
+28. **The rotation proof runs on dev after #173's rollout** (2026-11-22), by the deploy executor from
+    the photos pack's plan. The photos builders start at once on everything that doesn't depend on
+    its outcome; the rotation action is the last piece, built or dropped per the proof.
 
 ### The founder's calls of 2026-11-21
 
@@ -10815,6 +10838,777 @@ timed out in 10000ms". CI's runner took 952 s for the convex suite, where this m
 - **The constrained run** on the second head: the workspace `pnpm test`, cold, at two workers
   (`--concurrency=2`, vitest `--maxWorkers=2`). 18/18 tasks and 17,846 tests passed. The convex
   suite took 203 s, and its slowest test 9 s (the heavy undo; limit 300 s).
+
+#### #173 merged (2026-11-22)
+
+- **The merge.** #173 is squash-merged to main as `56a93ecd`. Its tree equals the PR's last head,
+  `71343e97f`, and the local `phase-b01-inbox-4` is deleted.
+- **The dev rollout and the dev proof are running** (the deploy executor). The steps are the
+  roadmap's B01-5d line, in order:
+  1. `convex dev --once`;
+  2. the drift repair;
+  3. the seed cleared and re-applied;
+  4. the merge, census, unmerge, census proof.
+
+  The numbers follow when it reports.
+- **The phase branch moved onto main.** It carried #173's round-one fixes as commits of its own, up
+  to `71343e97f`, so the three commits after it were rebased from there onto `origin/main`:
+  - the two brief packs;
+  - the rulings;
+  - T0.
+
+  `git diff origin/main phase-b01-inbox` shows only those files. Round one's markers are on main:
+  - the overlapping-unmerge refusal in `unmergeRefusalOf`;
+  - `flaggedOnSurvivor` in the merge preview;
+  - `test.setup.ts`'s `afterEach` drain racing the test's own timeout.
+
+  The four builders' branches stay cut from the old T0 (`df3732958`) and are carried over by content
+  at integration.
+- **CI's time.** #173's last run took 25.8 min; #172's took 38.4 and #171's 27.2. Install, codegen,
+  lint and type-check together are about 1.5 min. The rest:
+
+  | Run | `pnpm test` (turbo) | of it: web (unit + stories) | convex | core | Web unit re-run ×3 (time zones) |
+  | --- | --- | --- | --- | --- | --- |
+  | #173 last (`45075028025`) | 11.2 min | 639 s | 531 s | 71 s | 13.0 min (3 × 255 s) |
+  | #172 last (`45010753400`) | 16.3 min | 936 s | 715 s | 106 s | 20.1 min (3 × 398 s) |
+  | #171 last (`44988590052`) | 11.4 min | 645 s | 466 s | 72 s | 14.0 min (3 × 277 s) |
+
+  The time-zone step's comment says it "costs under a minute". It now costs more than the whole
+  test step: it runs all 444 unit files three times, and jsdom's environment setup is 27% of each
+  run. Every push to main pays the full run again on a tree its PR already tested (25–32 min each).
+  The ways to bring it down go to the founder.
+
+#### Briefs (B01-5e) — photos (2026-11-22)
+
+The design's PR 5 (*Photos: the moderation axis*, D222), read against the code on `phase-b01-inbox`
+at `71343e97f`. It covers:
+- board 2.7;
+- the founder's call that a takedown moves the bytes (§7, fork 5);
+- the 30-day purge;
+- `/admin/flags` retired with it.
+
+##### What the design says, and what the code now has
+
+| Design | The code | What the brief does |
+| --- | --- | --- |
+| `photos` gains `moderationStatus?`, `moderatedAt?`, `purgeAt?`, `purgedAt?` | `photos` has none of them (`schema.ts:4275-4331`). Its only status-like field is `erasedAt`; it also has `orphanCandidate` and `seasonExpiryCandidate`. Indexes: `by_uploader`, `by_report`, `by_created_at` | Widen at T0 (four optional fields, `by_purge_at`); the backfill and narrowing follow the merge (seams) |
+| The Inbox reads photos staff-only (`content.read`) | `lib/inboxViews.ts:620-636` already serves the full and thumbnail URLs for a flag on a photo under **`inbox.read` alone**. `canReadContent` is never asked, though `inbox.ts:283` says "staff-only (`content.read`)". Today moderators hold both, so nothing leaks; the rule is unwritten. `siblings` is always `[]` | **A reader the inventory missed.** Ask `content.read` in the read itself: one rule for read and write. Serve *On the same report* from `by_report`, bounded |
+| `setModerationStatus` gains `photo` | `moderation.ts:600-624` takes `report \| post \| comment \| hazard`. Adding `photo` touches several places — see the list after this table | All of it is S5's. The guard tests (`writersDecideFirst`, `verdictWriters`) need no new writer file |
+| D269: no staffer decides their own content | `lib/ownContent.ts:30-34` `authorOf` and `lib/contentVerdicts.ts:48-50` `subjectOf` read only `authorId` / `createdByUserId`. For a photo, `authorOf` is `null`, so **`ownContentRefusal` passes silently**: a moderator could take down their own photo | Both learn `uploaderId`. A test: a moderator's own photo is refused at the read's `can` and at the write |
+| An author can't drop evidence by editing | True for the edit path: `syncReportPhotoLinks` (`lib/photoAccess.ts:47-63`) clears `reportId` on a dropped photo. But **`photos.remove` (`photos.ts:91-100`) lets the uploader hard-delete any photo of theirs**, moderated or flagged, with no check. It is called from `usePhotoDrafts.ts:87`, `HazardFlow.tsx:110` and the phone's `HazardCapture.tsx:84` | **A writer the inventory missed** (fork 1) |
+| `resolvePhotoUrls` skips a non-visible photo | It exists (`lib/photoAccess.ts:82-105`), ungated by design. **`accessPoints.listPhotos` pairs results to rows by position** (`accessPoints.ts:731`: `rows[i]?._id`), already off on a missing row. Once the resolver skips, *detach* would hit the wrong row | The resolver returns each URL with its photo id, and `listPhotos` joins by id; a test with a hidden photo between two visible ones |
+| The sweeps never delete a moderated or flagged photo | **No sweep reads a flag, a verdict or a status** — see the list after this table | One predicate, `photoHeld` (moderated, under an open flag, or under a standing verdict), asked by every deleter |
+| Erasure: a held photo keeps its row | `erasure.ts:890-916` settles with no verdict or flag check; the erasure clock's holds are per report or Post (`lib/eraseClock.ts:184-193`), so a flag on a photo holds nothing. `ERASABLE` has no `photos` entry | `photoHeld` in the settlement; a photo verdict is a hold |
+| Data export | `dataExport.collect` takes the uploader's photos (`by_uploader`, `take(5000)`, `erasedAt` filtered out) with **the raw `storageId`** (`dataExport.ts:306-314`). `buildExport` reads each full image (`ctx.storage.get`, `:450`) within a 25 MB budget | Keep the uploader's own hidden photo (it is theirs); a purged one is a line without bytes. Whether a raw `storageId` belongs in an export is a separate register row, not this PR |
+| The phone's cache | The phone caches `FeedCardData` JSON, including `photoThumbUrls` strings: no bytes, an LRU of 200 (`apps/mobile/src/lib/reportCacheModel.ts`). `flushService.ts` caches no photos | As designed: a rotated address dies in the cache, and the card shows a missing image |
+| `FLAG_TARGET_READERS.photo` gains `moderationStatus` | `moderation.ts:1459-1462` returns `{author: uploaderId, summary}`. `lib/flagSubject.ts:37-38` and `lib/openFlags.ts:70-73` return ids, not a summary | Only `FLAG_TARGET_READERS` changes. `targetLabel` (`inboxViews.ts:420-459`) already reads `doc.moderationStatus` generically |
+| The design's other inventory rows | `thumbUrlsFor` (`lib/feedCards.ts:402-415`); `reports.recommended` and `photoCount` (`reports.ts:493,520`); `analyticsRollup`, `metrics`, `seasonReach` (counts only); the web and phone readers (all exist as listed) | As designed. Counting visible photos in `recommended` reads each photo row per candidate: bound it, or count from a stored figure (see *definitions of done*) |
+| Not in the inventory | `lib/inboxViews.ts:366` (the report subject's `photoCount: photoIds.length`); `lib/reportWrite.ts:666` (`photo_evidence` points when `photoIds.length > 0`); `lib/revisions.ts:41,61` and core's `contentRevision.ts:60,116` (revisions keep `photoIds`) | The Inbox count reads visible photos for a non-staff viewer; points and revisions are unchanged (a moderated photo is still evidence) |
+
+**What adding `photo` to `setModerationStatus` touches:**
+- the args literal;
+- `MODERATION_TABLE` (`:106-111`);
+- `setContentStatus`' return type;
+- `recordFactsOf` and `ContentDoc` (`lib/recordRules.ts:281-330`): a photo has `erasedAt`, not `authorDeletedAt`;
+- `authorOf` and `subjectOf`;
+- `RECORD_TARGETS` (`inboxViews.ts:462`);
+- `VERDICT_TARGETS` (`contentRecord.ts:110`) and `ERASABLE`;
+- `contentVerdicts.targetType` (`schema.ts:3994`).
+
+`MODERATION_TARGET_TYPES` already has `photo` (`lib/enums.ts:446`), and `recordCapability` already maps it to `content.moderate`.
+
+**The deleters that must ask `photoHeld`:**
+- `examinePhoto` in the orphan sweep (`storageHygiene.ts:364-389`, daily, budgeted, leased);
+- `expireDepartedPhotos` (season expiry, pages of 25);
+- `photoReconcile`'s sweep phase (`:420-448`);
+- **missed by the inventory:**
+  - `accountDeletion.erasePhotos` (`:857-913`);
+  - `lib/contentPurge.sweepPhotos` (`:461-490`);
+  - `erasure.eraseReport` and the hazard settlement (`erasure.ts:1361-1387`, `:1531`);
+  - `accessPoints.detachPhoto` (`:661-690`), which makes a photo orphan-eligible.
+
+`deletePhotoAndBlobs` (`lib/photoOrphans.ts:178-195`) deletes the blobs and the row together, keeping the row only if a blob survives. There is no "blob half" yet: the purge needs one (delete the blobs, keep the row as a tombstone).
+
+**What the Inbox draws for a photo flag today.** `Flag/register.tsx` registers every flag key but `flag:photo`, so `PlaceholderHandler` draws it:
+- the head;
+- "A flag on a photo is decided on the Flags page for now." with a *Flags* link to `/admin/flags` (`elsewhere.ts:51-54`);
+- a facts list;
+- no image and no actions.
+
+The served URLs go unused.
+
+**`/admin/flags`** (`routes/admin.flags.tsx`; its `TAKEDOWNABLE` excludes photos, so a photo flag is only resolvable there). Links the *Legacy retirement* row names:
+- `overviewRoutes.ts:39,86`;
+- `PersonFeeds.tsx:59`;
+- `contentFlags.ts:161`'s mail.
+
+Links the row misses:
+- `AdminLayout.tsx:76`;
+- `admin.dashboard.tsx:67`;
+- `consoleNav.ts:139` (`LEGACY_PAGES`);
+- `inspector/elsewhere.ts:53` (and its `ELSEWHERE_PHOTO` words);
+- `contradictions.ts:184`'s mail.
+
+All of them are in W7's retirement list.
+
+##### The byte rotation: a dev proof before any builder starts
+
+It decides whether `photos.rotateBlobs` is built. Run by the deploy executor, never on prod, with no credential printed.
+
+**Is a local backend a stand-in?** For the API semantics, yes:
+- whether an action can `ctx.storage.get` a blob and `ctx.storage.store` a copy;
+- whether `getUrl` of a deleted id answers `null`;
+- whether the old URL's origin answers 404.
+
+For the address's life at the edge, **no**: only dev's cloud storage shows whether a CDN keeps serving the old object, and for how long. Run the local half first; it is cheap, and a failure there settles it without dev.
+
+**The plan** (on a throwaway branch `b01-5e-rotation-proof`, cut from `main`; never merged):
+1. **Add `convex/zzRotationProof.ts`:**
+   - an internal action `rotate({ photoId })`. It reads the row (via an internal query), then `ctx.storage.get` on `storageId` and `thumbStorageId`, then `ctx.storage.store` for each blob. Through an internal mutation it swaps the ids on the row, but only if the row still holds the old ones, then deletes the old blobs (`deleteStoredBlob`). It returns `{ oldUrl, newUrl, oldThumbUrl, newThumbUrl }`, each from `ctx.storage.getUrl`, read before and after.
+   - an internal mutation `seed({})`. It inserts a "Test-Rotation" profile (the seed-person shape: a `Test-` name, `seed:` Clerk subject), uploads a 64 KB generated PNG through `ctx.storage.store` (from an action), and inserts a `photos` row for it.
+2. **Locally first:** on a throwaway anonymous backend, `convex dev --once`, `convex run zzRotationProof:seed`, then `convex run zzRotationProof:rotate`. Then `curl -s -o /dev/null -w '%{http_code}'` on the old and new URLs (expect 404 and 200). Record the four codes.
+3. **Dev:**
+   - Deploy the branch to dev (`convex deploy` with the dev deployment, as dev deploys run).
+   - `seed`, then fetch the photo's URL once (expect 200, so a CDN caches it), then `rotate`.
+   - Fetch the old URL at 0 s, 10 s, 60 s, 5 min, 30 min and 2 h, recording each status code and any `cache-control`, `age` and `etag` headers. Fetch the new URL once (expect 200).
+4. **Clean up:** delete the seeded row, profile and both blob pairs (an internal mutation in the same file). Then **redeploy `main` to dev** (`convex dev --once` from main), which removes `zzRotationProof`. Confirm `convex function-spec` no longer lists it. Delete the branch.
+5. **Report** the table of codes and headers, and the longest time the old URL answered 200.
+
+**What gets built under each outcome:**
+
+| Outcome | What gets built | The removal dialog's words |
+| --- | --- | --- |
+| **Old URL answers 404 within a minute, new URL 200** | The design as written: `photos.rotateBlobs` (an action), scheduled by a hide or removal; the swap only if the row is still moderated and still holds the old ids; old blobs deleted; failures parked by `lib/attempts` and retried; the photo hidden from every read meanwhile. A restore serves the new copy and doesn't rotate back | Say the photo is off its address at once |
+| **404, but only after a CDN lag of up to N minutes** | The same build, plus the dialog says so | "Anyone who already opened it may see it for a few more minutes" (N from the proof) |
+| **The old URL keeps answering after its blob is deleted, or the action can't carry the bytes** | The founder's option (a), recorded as a finding: no `rotateBlobs`. The old address serves until the removal's 30-day purge, and a hide offers *Remove* for an urgent case. **Saves** the rotation action, its parking, its tests and its real-backend proof (about 400 lines) | "Anyone who already has its link can still open it until it is deleted" |
+
+##### Territories
+
+- **S5a (server, the axis):**
+  - the schema widening;
+  - `setModerationStatus` and `setContentStatus` for `photo`;
+  - `recordRules`, `ownContent`, `contentVerdicts` and `contentRecord` learning `uploaderId`;
+  - `lib/photoAccess` (`photoVisible`, `photoHeld`, the id-joined resolver);
+  - every reader in the table and the missed ones;
+  - `photos.remove` (fork 1);
+  - the Inbox's photo subject (`content.read`, *On the same report*);
+  - `FLAG_TARGET_READERS.photo`.
+- **S5b (server, the bytes):**
+  - the purge job (daily, bounded, leased, `lib/attempts` parking, `purge_photo` as a system row with no actor and no undo);
+  - the blob-half delete;
+  - `photos.rotateBlobs`, if the proof passes;
+  - every deleter asking `photoHeld`;
+  - erasure's hold;
+  - the backfill (`visible`), paged and bounded.
+- **W7 (web):**
+  - `handlers/Flag/PhotoSubject.tsx` and `PhotoStage` (board 2.7: the photo pixelated until revealed, *On the same report* thumbnails, the flag, the author), registered for `flag:photo`;
+  - the bar (*Hide* H, *Remove* R, with the dialog's words from the proof; *Dismiss*; *Restore* for a photo already down);
+  - the record sheet's photo item (`record/RecordItem.tsx`, thumbnail pixelated);
+  - the `/admin/flags` retirement: the redirect, `OLD_SHELL_TREES`, `lib/theme.ts`, every link above, `ELSEWHERE_PHOTO` gone;
+  - the sheet draft's placeholder for a moderated photo's id (`usePhotoDrafts.ts`, invented words).
+- **Readers that change nothing:** the skater web and phone readers render what the reads serve. Their only change is the sheet's placeholder and, on the phone, nothing (a missing image).
+
+##### The seams (an executor commit at T0)
+
+- **Schema (widen only):** `photos` gains `moderationStatus?`, `moderatedAt?`, `purgeAt?`, `purgedAt?` and the `by_purge_at` index. `contentVerdicts.targetType` gains `photo`.
+- **The rollout:**
+  - widen (T0, in this PR);
+  - deploy (after merge);
+  - backfill `visible` (after merge; the job lands in this PR);
+  - narrow `moderationStatus` to required (a later commit, after the backfill reads 0 rows lacking it on dev — the precondition #172's pref narrowing used).
+- **`lib/enums.ts`:** `purge_photo` in `MODERATION_ACTIONS`; the undo policy's photo rows.
+- **Types:**
+  - `PhotoSubjectView` gains `moderationStatus`, `canReveal` and `siblings: { photoId, thumbUrl }[]`;
+  - `RECORD_TARGETS` and `VERDICT_TARGETS` gain `photo`.
+- **The handler registry's `flag:photo` key.**
+
+##### Canonical snippets
+
+```ts
+// lib/photoAccess.ts — the one visibility rule, and the one hold rule every deleter asks.
+export const photoVisible = (p: Pick<Doc<'photos'>, 'moderationStatus'>) =>
+  (p.moderationStatus ?? 'visible') === 'visible';
+export async function photoHeld(ctx: QueryCtx, p: Doc<'photos'>): Promise<boolean>; // moderated,
+// under an open flag (by_target_status point reads per open status), or under a standing verdict
+
+// The resolver returns ids with URLs; callers join by id, never by position.
+export async function resolvePhotoUrls(ctx, ids, opts?: { staff?: boolean }):
+  Promise<{ photoId: Id<'photos'>; url: string | null; thumbUrl: string | null; down?: true }[]>;
+```
+
+##### Definitions of done
+
+The last three PRs' lessons are written in as requirements:
+- **One rule for read and write:**
+  - the Inbox's `can` and `setModerationStatus` ask the same `recordRules`, including D269 on `uploaderId`;
+  - the photo subject's URLs and `photos.getUrls` ask the same `content.read`;
+  - a rule-versus-write cell per verb.
+- **Reads and previews cost no more than the writes:**
+  - *On the same report* reads `by_report`, bounded by the report's own `photoIds` cap;
+  - `recommended` counts visible photos without reading every photo row per candidate (bounded, or from a stored count);
+  - each read is measured against its budget.
+- **Busy-row fixtures:**
+  - a report with the most photos its form allows, most of them moderated;
+  - an uploader with thousands of photos (the sweeps, the export, the purge's batch);
+  - a survivor-style "busy neighbor" for every read that scans.
+- **Every limit proven on a real local backend at the edge of its own refusal** (CLAUDE.md):
+  - the purge job's batch, at its largest page;
+  - a report with many photos, through every read;
+  - the rotation action's failure and retry (a stored blob deleted mid-rotation; a failed `store`);
+  - the backfill's page.
+- **Every randomized test over many distinct seeds:** a property's seed must vary between runs, or the run must state its seed list. `unmerge.property`'s pinned seeds hid a stale property behind 20x runs.
+- **Story reads inside one retry,** with "late or never" answered for every wait, on an event and never the clock (a reveal's animation, the dialog's fade).
+- **A staff-only field never drawn for a viewer the server wouldn't serve:** the full image, the reveal, the moderated state.
+- **D3:** nothing here says anything about the ice.
+- **Tests:** every new verb's round trip (hide/remove → restore, the purge permanent); its overtaken case; its capability refusal; mutation checks on `photoHeld`, the id join and the rotation's "still holds the old ids" guard.
+
+##### Forks
+
+1. **The uploader's delete of a held photo.** Today `photos.remove` hard-deletes any photo of the uploader's, so it can remove evidence under an open flag or a standing verdict.
+   - *Recommendation:* when the photo is held (`photoHeld`), `photos.remove` becomes a withdrawal as D248 rules for posts — hidden from every read at once, the bytes on the 30-day clock, the verdict surviving. An unheld photo's delete stays immediate.
+   - *If the founder says nothing,* that is built.
+2. **The removal dialog's words** are the rotation proof's outcome (the table above), not a separate fork.
+
+##### Size, honestly
+
+The design said ~3,000 lines over ~55 files. With the missed readers and deleters, the id-joined resolver, the own-content fix, the busy fixtures and the real-backend proofs: **~4,000 lines over ~60 files**, about 55% of the lines tests and stories (~2,400 server, ~1,600 web). About 400 lines fewer if the rotation proof fails and option (a) ships.
+
+##### The builder split
+
+- **S5a and S5b in parallel** after the rotation proof reports. S5b's `rotateBlobs` waits on the proof; its purge, deleters and backfill don't.
+- **W7 at T0** on the seam's view types.
+- The rotation proof runs first, on the deploy executor (an hour, then two hours of fetches).
+
+##### How the forks were ruled (2026-11-22)
+
+The governor's rulings 23, 26, 27 and 28 (§7); the founder is told of them and may overturn any.
+- **Fork 1, ruled as recommended:** an uploader's delete of a photo that is flagged or under a
+  decision withdraws it — hidden at once, the 30-day clock started, the verdict kept. An unflagged,
+  unmoderated photo deletes as today.
+- **The five findings are requirements of this PR:**
+  - the Inbox's photo URLs only to `content.read`, on the server;
+  - D269 on `uploaderId`;
+  - `photos.remove` as fork 1 rules;
+  - `listPhotos` joined by id;
+  - all seven deleters asking `photoHeld`, with a guard test in `packages/guards` that fails when a
+    file deletes a photo row or blob (`deletePhotoAndBlobs`, `ctx.db.delete` on a `photos` id,
+    `deleteStoredBlob` on a photo's storage id) without going through `photoHeld`. The test lists
+    the known deleters, so a new one fails until it is added with its check.
+- **Order:** this PR ships second, after B01-5f merges, rebased onto it. The rotation proof runs on
+  dev after #173's rollout. S5a, W7 and S5b's purge, deleters and backfill start at once;
+  `rotateBlobs` comes last, built or dropped per the proof.
+- **What T0 landed for this slice:**
+  - the four photo fields and `by_purge_at`, widened only;
+  - `purge_photo` in `MODERATION_ACTIONS`, with its final undo rule (`none`);
+  - placeholder History words for `purge_photo` in the two web label maps.
+
+  **`contentVerdicts.targetType` gaining `photo` did not land at T0.** Widening it ripples through
+  six files S5a owns (`contentRecord.ts`, `lib/recordReads.ts`, `lib/withdrawals.ts`,
+  `lib/contentVerdicts.ts`, `moderation.ts`, `recordModel.test.ts`), each needing a decision S5a
+  makes: the photo's table, its rank, its words. It is S5a's first commit. The schema line is apart
+  from every line S6 touches.
+
+#### Briefs (B01-5f) — support (2026-11-22)
+
+The design's PR 6 (*Support: notes, replies, audit*, D284), read against the code at `71343e97f`. It
+covers:
+- board 2.8;
+- `/admin/support` retired with it;
+- the seed's tickets.
+
+##### What the design says, and what the code now has
+
+| Design | The code | What the brief does |
+| --- | --- | --- |
+| `supportMessages`: notes and replies | No table. `SupportMessageView` exists as an empty placeholder (`inbox.ts:534-547`); the ticket view serves `messages: []` (`lib/inboxViews.ts:1491`) | New table, index `by_ticket_created`, bounded reads |
+| `supportTickets` | `schema.ts:4188-4217`: `userId?`, `clerkUserId?` (always stamped), `category` (`bug \| account \| safety \| other`), `body`, `status` (`open \| in_progress \| resolved`), `assignedToUserId?`, `context?`, `resolvedByUserId?`, `createdAt`, `resolvedAt?`; five indexes | Unchanged. `in_progress` and the assignee read as open and are never drawn |
+| `support.resolve` audited; `reopen` | `support.ts:210-231`: resolve asks `assertInboxVerb` and calls `decideItem`, with **no audit row** ("PR 6 audits the resolve"). No `reopen`, `addNote`, `reply` or `sendReply`. `reopenItem` exists (`lib/inboxItems.ts:1162`) | `resolve_ticket` and `reopen_ticket` audited; the verbs below |
+| `support.assign` is never written | `support.assign` (`support.ts:195-207`) still writes the assignee and `in_progress`. Only the old page calls it | Unreachable once `/admin/support` redirects; deleted with the old components at B01's close (§12.7) |
+| The sender: `lib/resend.sendEmail` with `SUPPORT_FROM_EMAIL`, "unset on dev as every Resend variable is" | **Stale.** `05-accounts-and-credentials.md` marks `RESEND_API_KEY`, `RESEND_FROM_EMAIL` and `OPERATOR_ALERT_EMAIL` ✅ on dev (since 2026-09-11). `sendEmail` (`lib/resend.ts:47-59`) takes **no `from`**: it always sends from `RESEND_FROM_EMAIL`. Missing config makes it `console.warn` "email skipped" and return `false`; it never throws | `sendEmail` gains `from?`. `support.sendReply` reads `SUPPORT_FROM_EMAIL` itself, and **when it is unset the reply reads `failed`, with the skip logged — never a send from the general address.** The register gets the row (the next section) |
+| The address resolved at send | `profiles.email` exists (`schema.ts:272`). `clerkEmailForSubject(subject)` (`lib/clerkEmail.ts:61`) returns `null` for seed subjects and when `CLERK_SECRET_KEY` is missing, and never throws | As designed: `profiles.email`, else `clerkEmailForSubject(ticket.clerkUserId)`, so a ticket filed before provisioning is answered; `null` makes the reply `failed` |
+| A reply cancelable inside a window | The notification queue doesn't cancel: it re-checks at send (`SETTLE_MS = 60 s`, `lib/notificationQueue.ts:80`; a cron flush; `settleTrigger`). `profiles.ts:778-811` holds a true cancel (a stored `scheduler.runAt` id, cancelled while `pending`) | The design's re-check: a reply row `settling` with `sendAfter = now + SETTLE_MS`, a scheduled `sendReply` that re-reads the row and sends only while it is still `settling`. `cancel_support_reply` sets `canceled` |
+| Who reads and answers | `inbox.support.read` and `inbox.support` are **admin-only** (`capabilities.ts:97-104`). `inbox.item` gates `ticket:` refs and the support lane on `inbox.support.read` (`inbox.ts:1224-1230`, `1549-1551`). `can` for a ticket: `reply`, `note`, `resolve`, or `reopen` once decided (`lib/inboxRules.ts:318-319,365`) | As designed |
+| What the Inbox draws for a ticket | No `ticket` handler is registered. `PlaceholderHandler` draws the head, "Support tickets are answered on the Support page for now." with a *Support* link (`elsewhere.ts:56-59`), the category and the body, and no actions | W8's `handlers/Ticket/` replaces it |
+| The seed's tickets ("all but tickets" in PR 1) | **The seed already files four tickets** through the real `support:create` as fake people: `t-bug`, `t-safety`, `t-other`, and `t-appeal` (finn, `account`, after his suspension) (`inboxSeed.ts:435-455`, `1129-1143`, `1456-1462`). The operator alert skips seed people (`support.ts:177`); nothing in the seed sends mail | The seed adds a note and a reply on `t-bug`. The reply must never reach Resend (definitions of done) |
+| A suspended person's appeal | There is no appeal category: an appeal is an `account` ticket. `support.create` gates on identity, refusing only `deleting`/`deleted` accounts (`support.ts:141-150`), so a suspended or banned person can file one. People's *Appeals open* lane reads waiting account tickets (`lib/peopleFigures.ts:192-240`) | A reply to a suspended person sends (they can read email); a test |
+| A capped body (`textCaps`) | `packages/core/src/textCaps.ts` has **no support cap**. The ticket cap is `support.ts:24`'s `MAX_BODY_LENGTH = 5000`. Neither client form sets `maxLength` | `SUPPORT_BODY_MAX` and `SUPPORT_MESSAGE_MAX` into core's `textCaps`; both forms and the reply dock take them (`consoleTextCaps.test.ts` holds the dock) |
+| Undo rows and verbs | No ticket verbs in `MODERATION_ACTIONS`; no `supportTicket` in `MODERATION_TARGET_TYPES`; nothing in `undoPolicy.ts` | The six verbs of the undo table: `support_note` / `remove_support_note`, `support_reply` / `cancel_support_reply` (`none` once sent: "Sent replies can't be unsent"), `resolve_ticket` / `reopen_ticket`; and the `supportTicket` target |
+
+**`/admin/support`** is `routes/admin.support.tsx`. Its links:
+- `consoleNav.ts:30` (`OLD_SHELL_TREES`) and `:148`;
+- `AdminLayout.tsx:63,97`;
+- `lib/theme.ts:95`;
+- `inspector/elsewhere.ts:58`;
+- `PersonFeeds.tsx:61`;
+- `overviewRoutes.ts:36`;
+- `support.ts:185`'s operator mail.
+
+The *Legacy retirement* row names only the operator mail and People's *Handle*; W8 fixes them all.
+
+##### The sender
+
+- **The variable:** `SUPPORT_FROM_EMAIL`, an address at `skating.teaganatwater.com` (the founder's call 8, D284). It is a new row in `05-accounts-and-credentials.md` §2a, which `credentialsRegister.test.ts` enforces: every `process.env.NAME` the code reads must appear there as a code span.
+- **What the founder sets, and where:**
+  - `SUPPORT_FROM_EMAIL` on the Convex **dev** deployment, by the founder through the dashboard. It is never printed, and never in a transcript or an env file read aloud.
+  - The address's domain is verified in Resend, already the case for the general from-address's domain. Whether the subdomain is verified is the founder's to check.
+- **When it is unset:** the reply reads `failed`, with "support reply skipped (SUPPORT_FROM_EMAIL not configured)" logged, never `sent`, and never sent from `RESEND_FROM_EMAIL`. The thread shows the failed reply with *Not sent* and the reason class, never the address.
+- **Every reply's footer:** "Replies to this email aren't read. Write back from the app: Settings → Help." The sending domain has no inbound mail on purpose.
+
+##### Territories
+
+- **S6 (server):**
+  - `supportMessages`;
+  - `support.addNote`, `support.reply`, `support.sendReply` (an internal action re-reading the row), `support.cancelReply` through the undo engine, and `support.resolve` and `support.reopen` audited;
+  - the six verbs and their undo handlers;
+  - `sendEmail`'s `from?`;
+  - the ticket view's `messages` (bounded, newest last; staff-only);
+  - `textCaps`;
+  - the register row;
+  - the seed's note and reply.
+- **W8 (web):**
+  - `handlers/Ticket/`: `ThreadMessage`, `ReplyDock` with *Reply by email* / *Note* and ⌘⏎, the user block, *Related*, and the side bar's full-width *Resolve* (R);
+  - the reply's states (*Sending in 60 s · Undo*, *Sent*, *Not sent*, *Canceled*);
+  - the `/admin/support` retirement and every link above.
+
+##### The seams (an executor commit at T0)
+
+- **Schema:** `supportMessages` (new table, no rollout needed).
+- **`lib/enums.ts`:** the six verbs; `supportTicket` in `MODERATION_TARGET_TYPES`; the undo policy rows.
+- **Types:** `SupportMessageView` filled in (`kind`, `author`, `body`, `createdAt`, `removedAt`, and for a reply `status`, `sendAfter`, `sentAt`).
+- **The handler registry's `ticket` key.**
+- **`textCaps`.**
+
+##### Canonical snippets
+
+```ts
+// support.sendReply (internal action): re-read, send only while settling, record the outcome.
+const msg = await ctx.runQuery(internal.support.replyToSend, { messageId });
+if (msg === null || msg.status !== 'settling') return; // canceled, or already sent
+const from = process.env.SUPPORT_FROM_EMAIL;
+if (!from) return await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'unconfigured' });
+if (msg.seed) return await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'seed' });
+const to = msg.email ?? (await clerkEmailForSubject(msg.clerkUserId));
+if (!to) return await ctx.runMutation(internal.support.replyFailed, { messageId, why: 'noAddress' });
+const ok = await sendEmail({ to, from, subject, html, text, context: 'support reply' });
+await ctx.runMutation(ok ? internal.support.replySent : internal.support.replyFailed, { messageId, ... });
+```
+
+##### Definitions of done
+
+They carry the same lessons as B01-5e, plus:
+- **A note or reply is PII and staff-only.** Every read that could return one is listed and gated on `inbox.support.read`:
+  - `inbox.item`;
+  - the ticket's History;
+  - the audit feed's row text (the reason is the default; the body is never in an audit row);
+  - People's ticket feed;
+  - the data export (the person's own tickets, never staff notes; whether a reply's text is theirs is a register row);
+  - account deletion (notes and replies on a departing person's tickets are erased with the ticket body's redaction).
+
+  Tests deny each to a moderator.
+- **A ticket filed before provisioning** (no `userId`) is answered through `clerkUserId`.
+- **A suspended person's appeal** is answered, with a test.
+- **The undo rows' round trips** (act, undo, state equal):
+  - a reply canceled inside the window never reaches Resend;
+  - a sent reply's undo is refused with "Sent replies can't be unsent";
+  - a resolve's undo reopens the ticket and its item.
+- **The seed must never send mail:**
+  - `sendReply` refuses a seed ticket (`isSeedProfile` on the ticket's person) before any address is resolved, and the seeded reply reads `failed` (`seed`);
+  - a test drives the seed's reply through `sendReply` with Resend stubbed, and asserts no call.
+- **The dev proof (after merge):** the founder sets `SUPPORT_FROM_EMAIL` on dev, and one reply is sent to a real staff account's ticket — never a seed person's, never printed.
+- **Reads cost no more than the writes:** a ticket's thread is bounded (the newest N messages, a cut line past them), with a busy-ticket fixture (hundreds of notes) through `inbox.item`.
+
+##### Forks
+
+1. **A reply from a still-unset variable.** If `SUPPORT_FROM_EMAIL` is unset, should replies fall back to `RESEND_FROM_EMAIL` (configured on dev) or read `failed`?
+   - *Recommendation:* `failed`, as the design rules. A support reply from the general address would invite replies to an address nobody reads, and the footer would be wrong.
+   - *If the founder says nothing,* `failed`.
+2. **The seed's reply.** Should the seed include a reply at all?
+   - *Recommendation:* yes, one, which settles to `failed` (`seed`), so 2.8's *Not sent* state is on dev.
+   - *If the founder says nothing,* that.
+
+##### Size, honestly
+
+The design said ~2,500 lines over ~35 files. With the six verbs' round trips, the sender, the PII sweep and the busy fixture: **~3,000 lines over ~45 files** (~1,700 server, ~1,300 web), about half of them tests.
+
+##### The builder split
+
+- **S6 and W8 at T0**, W8 on the seam's view types.
+- No dev proof gates the build; the send's dev proof follows the merge and the founder's variable.
+
+##### How the forks were ruled (2026-11-22)
+
+The governor's rulings 24, 25 and 26 (§7); the founder is told of them and may overturn any.
+- **Fork 1, ruled as recommended:** with `SUPPORT_FROM_EMAIL` unset, a reply reads `failed`
+  (`unconfigured`), the skip logged. It never falls back to `RESEND_FROM_EMAIL`. Resend is set on
+  dev, so once the founder sets the variable a reply really sends.
+- **Fork 2, ruled:** the seed carries one reply, stored `failed` (`seed`), never sent, on a "Test-"
+  person's ticket. The send refuses a seed ticket before it resolves any address, and a test drives
+  the seeded reply through `sendReply` with Resend stubbed and asserts no call.
+- **Order:** this PR ships first.
+- **What T0 landed for this slice:**
+  - `supportMessages`, as designed, plus `failedWhy` (`unconfigured`, `seed`, `noAddress`,
+    `sendFailed`): a class, never the provider's message or an address;
+  - the six verbs in `MODERATION_ACTIONS`, and `supportTicket` in `MODERATION_TARGET_TYPES`;
+  - `MAX_SUPPORT_NOTE_LENGTH` (2,000) and `MAX_SUPPORT_REPLY_LENGTH` (5,000) in core's `textCaps`;
+  - the register row for `SUPPORT_FROM_EMAIL` (⬜ owed), and the `06-data-model.md` row;
+  - a `supportTicket` audit row in the feed opens the ticket's Inbox item.
+
+  **Placeholders, each marked `PLACEHOLDER (B01-5f)`:**
+  - the six verbs' `UNDO_POLICY` rows are `later('§2 Inbox', …)`. `T0_INBOX_PLACEHOLDERS` in
+    `undoPolicy.test.ts` lists them and exempts them from "nothing in §2 is owed". S6 writes each real
+    rule and empties the list before the PR opens.
+  - The History words in `actionLabels.ts` and `overviewData.ts` are marked `T0 PLACEHOLDERS`, for
+    W8 to settle.
+
+  `sendEmail`'s `from?` is S6's, not T0's: photos sends no mail.
+
+#### B01-5e and B01-5f: in parallel, or one after the other
+
+**Ruled (governor's ruling 26):** they are **built in parallel and shipped as two sequential PRs**, support first.
+- **Their territories are disjoint by file:**
+  - photos: `photos.ts`, `lib/photoAccess`, the sweeps, erasure, `moderation.ts`, `recordRules`, `ownContent`, `contentRecord`, `handlers/Flag/PhotoSubject`;
+  - support: `support.ts`, the new table, `lib/resend`, `handlers/Ticket`, the credentials register.
+- **Every shared seam takes appends, not edits of the same lines:**
+  - `schema.ts` (each its table or fields);
+  - `lib/enums.ts` (each its verbs; `supportTicket`);
+  - `undoPolicy`;
+  - `lib/inboxRules.ts` (the photo flag's verbs; the ticket's are already there);
+  - `lib/inboxViews.ts` (the photo subject versus the ticket view, different functions);
+  - the handler registry (`flag:photo` versus `ticket`);
+  - `inspector/elsewhere.ts` (each removes its own line);
+  - `consoleNav.ts` and `lib/theme.ts` (each drops its own tree);
+  - the seed (support only).
+- **How:** one executor commit at T0 lands both slices' seams together. The builders then work on disjoint files, and the integration resolves only those appends.
+- **Support first:** it has no dev proof gating its build, no schema rollout across merges, and is the smaller review. Photos goes second, because its build waits on the rotation proof's outcome and its schema needs the widen → deploy → backfill → narrow sequence after merge. The photos PR rebases onto support's merge, touching only the shared appends.
+
+#### B01-5f: the builders integrated (2026-11-22)
+
+Integrated onto `phase-b01-inbox` in this order:
+1. the seed fix (`b01-5f-seedfix`, cut from `origin/main`);
+2. S6 (`b01-5f-s6`, from T0);
+3. W8 (`b01-5f-w8`, from T0).
+
+The cherry-picks had no textual conflicts. Six seams follow them, then the web review and the two CI
+savings. Support is the first PR of the pair; the photos commits come after it.
+
+##### What each built
+
+- **The seed fix:**
+  - the merge-proof bounty now goes through the public `bounties:create`. Dev's apply had failed that
+    step: an internal function can't be called as a person from the CLI. A plan test now holds that
+    every step run as a person names a public function;
+  - the run log keeps the server's sentence;
+  - `convexRun` tees its output live while it captures it;
+  - `inboxItems:repairAll`: a self-paging sweep that records itself in `inboxJobRuns` (`examined`,
+    `fixed`, `changed`, `failures`; a schema widening);
+  - the census compares derived facts by meaning.
+- **S6 (server):**
+  - `supportMessages` writes: `support.addNote`, `.reply`, `.removeNote`, `.cancelReply`, `.resolve`,
+    `.reopen`. Each goes through the Inbox's one rule and is audited with the verb's default reason,
+    never the text. Each answers its item, its row and its undo offer;
+  - `support.sendReply`: claims the row at `sendAfter`, then:
+    - with `SUPPORT_FROM_EMAIL` unset, the reply reads `failed` (`unconfigured`), logged, and never
+      goes from the general sender;
+    - on a seed ticket, `failed` (`seed`) before any address is looked up;
+    - otherwise it sends to the profile's email, else the ticket's Clerk subject, with the footer;
+  - `sendEmail` gains `from?`;
+  - the six undo rows, so T0's placeholder list is empty;
+  - the `ticket` item read;
+  - the export and erasure (below);
+  - the seed's note and its `failed` reply on `t-bug`;
+  - `lib/supportWrites` (the impls an undo runs, which avoids an import cycle);
+  - the tables: rule versus write (198 cells), offer versus run (272 cells), heavy rows (a ticket with
+    240 messages at the cap), and a settle property.
+- **W8 (web):**
+  - `handlers/Ticket/`: board 2.8's thread, dock and side;
+  - the stories, including a whole-page render beside the board;
+  - History's words for the six verbs. A reply's line says it was *written*, never that it reached
+    anyone;
+  - `/admin/support` redirecting to the Support lane, with every link opening the Inbox.
+
+##### The seams
+
+1. **W8 onto S6's real read and `api.support.*`.**
+   - The handler's item is the published `ticket` variant, with no local extension.
+   - *Remove* on a note and *Cancel* on a settling reply are drawn only where the server's `remove` /
+     `cancel` is `null`. They call `support.removeNote` / `support.cancelReply` by the message's own
+     id, no longer the undo engine by audit row.
+   - A colleague's settling reply shows *Cancel* (the founder's call: anyone pitches in).
+   - The dock reads `replyFrom` and `replyBlocked`. A blocked reply's receipt says "Reply saved, not
+     sent", never "on its way".
+   - The *Tickets* row is `personTickets`. Board 2.8 draws it in the User block, not the head, so it
+     is there, as floors when capped.
+   - *Related* lists `related.flags`, each opening its own Inbox item (`flag:<id>`), with a "More
+     flags on them" row when the list is capped.
+   - The cut line reads `messagesCut` against `messageCount`, as a floor.
+2. **The guards' inventories.** Each new writer was read first:
+   - `adminWriters` gains `useTicketWrites`, which goes through `useDecisionRunner`.
+   - `bodyNameWriters` gains `removeNoteImpl` and `restoreNoteImpl`: they write a note's `removedAt`,
+     nothing a body's name list holds.
+   - `inboxWriters`: `support.ts#resolve` becomes `resolveTicketImpl` (status, then `decideItem`) and
+     `reopenTicketImpl` (status, then `fileMember`, reopening the one member in place).
+   - The account's ticket erase moved to `lib/supportThread#eraseTicketsOf`. It still leaves each
+     item through `leaveMember`.
+   - `consoleTextCaps` gains the Inbox root. `ReplyDock` is a pass-through whose caps ride in its
+     modes' `max:`. The filter menu's search is a read.
+3. **The retirement's shared files** lose `/admin/support` together:
+   - `OLD_SHELL_TREES` and the theme script's copy;
+   - `LEGACY_PAGES`;
+   - `consoleNav.test`;
+   - the ConsoleShell story;
+   - ConsoleLayout's Legacy count (13 → 12).
+4. **`ThreadMessage` (with `ThreadEvent`) and `ReplyDock` are in the kit** (`kit/thread-message`,
+   `kit/reply-dock`), each with a four-up story. `InspectorFrame` gains `fill`, the board's own word,
+   which replaces W8's negative-margin workaround.
+5. **`supportMessages.actionId` was taken.** It is a pure widening, stamped only by `addNote` and
+   `reply` in the same transaction. `cancelReply` reads the row by id. The bounded look-up and
+   `THREAD_CANCELS` (unread) are gone.
+6. **The check order already matches the house order.** `lib/inboxRules.whoRefusal` asks:
+   1. the capability;
+   2. a decided item;
+   3. the viewer's own filing;
+   4. the verb's own state (rule 5).
+
+   The ticket writes and `supportUndoRefusal` ask in that order. B01-5d moved own filing ahead of the
+   *ask's state* (rule 5), not ahead of a decided item, so tickets need no change.
+
+##### Who can read a ticket's words (staff-only, PII)
+
+| Words | Who reads them | Where |
+| --- | --- | --- |
+| The ticket's text | Admins (`inbox.support.read`). The filer, in their own data export | `inbox.item` (every ref), the Support lane's rows. Never a moderator's list, People's record, the audit feed or the overview |
+| A staff note | Admins (`inbox.support.read`) only | `inbox.item`. Never the export, an audit row (default reason and id only), People or the feed |
+| A reply | Admins (`inbox.support.read`). The person, by email once `sent`, and in their export (sent replies only, with no staff author) | `inbox.item`. Never an audit row, People or the feed |
+| The address a reply went to | Nobody: resolved at send, never stored | — |
+| `replyFrom` (the support sender) | Admins (`inbox.support.read`), on the ticket item | The dock's foot |
+
+A test holds each "never" for a moderator: every item ref, the audit feed, All open and Decided, and
+People's record.
+
+**Export:**
+- the person's newest 200 tickets, with their words, category, status, times and context;
+- on each, the replies **sent** to them;
+- never a note, an unsent reply, or who on staff wrote one;
+- bounded by its own byte budget and 400 messages read, with `capped` saying so.
+
+**Erasure** (account finalization, bucket 1):
+- each ticket goes with every message on it, its messages first, so a busy ticket takes several
+  passes and never orphans a note;
+- each leaves its Inbox item;
+- a settling reply goes with its row, and its send finds nothing;
+- the audit rows stay, holding only default reasons and message ids.
+
+##### Board 2.8 versus the build, and the invented words, for the founder's look
+
+- **The User block's *Tickets* row** is built from `personTickets` ("2 · 1 resolved"; floors past
+  50).
+- ***Related***:
+  - The board draws two hand-picked rows: *Unsafe flag → Safety*, and *The hidden report → Reports*.
+  - The build lists the person's flags, open first, each linking to its own Inbox item. The words are
+    invented: "‹Reason› flag", "‹report› · 4 days ago", "Actioned 11 Oct", and "More flags on them ·
+    The rest are in the Inbox" when capped.
+  - A *Reports →* row isn't drawn: Reports isn't built.
+- **The reply's foot:**
+  - The board says "Sent from support@gli.app. The reply lands on this ticket."
+  - The build says "Sent from ‹the configured address›. Their answer by email isn't read." (the
+    footer call).
+  - Unset, it says "No sending address is set up, so a reply won't be sent: it will read Not sent."
+  - On a test person's ticket: "A test person's ticket: a reply is saved here and never emailed."
+- **A reply's states (invented):**
+  - "Sending in 42 s" with *Cancel*;
+  - "Sending now";
+  - "Sent · 13 Oct 12:06";
+  - "Canceled · never sent";
+  - "Not sent · ‹why›", for:
+    - no sending address is set up;
+    - a test person's ticket: test people are never emailed;
+    - there is no email address for them;
+    - the email service didn't take it.
+- **A note's *Remove*** (invented, not on the board), and "A note was removed" as a line across the
+  thread.
+- **Invented names:** "A former skater", "A former staffer", and "Someone signed in, before their
+  profile was made".
+- **The cut line:** "Showing the newest 100 of 100+ messages".
+- **Receipts:**
+  - "Reply on its way · It sends in about a minute";
+  - "Reply saved, not sent · It won't be emailed: …";
+  - "Note added · Seen only by staff";
+  - "Note removed";
+  - "Reply canceled · It was never sent";
+  - "Resolved · It leaves the queue";
+  - "Reopened · It is back in the queue".
+- **History:**
+  - "Added a staff note to a support ticket";
+  - "Removed a staff note from…";
+  - "Wrote an email reply on…";
+  - "Canceled an email reply on… before it was sent";
+  - "Resolved…" and "Reopened…".
+
+##### The server asks, and how each ended
+
+| W8 asked | S6 answered |
+| --- | --- |
+| A note's removal from the thread (W8 drew none) | `support.removeNote`, a forward removal whose undo puts the note back; `remove: null` or the sentence |
+| Whether this viewer may cancel a reply | `reply.cancel: null` or the sentence, by the undo's own rule. Anyone with `inbox.support` may cancel a colleague's |
+| The thread's count and cut | `messageCount` and `messagesCut` (the newest 100) |
+| The sender for the dock | `replyFrom` (`SUPPORT_FROM_EMAIL` or `null`) and `replyBlocked` (`unconfigured`, `seed`) |
+| The person's ticket counts | `personTickets` from the person's ticket members, each status counted to 50 |
+| Related's rows | `related: { flags, capped }` |
+| A reply's failure class | `failedWhy` |
+
+##### The web review by class, and what is listed
+
+- **Fixed:** every "never" in the ticket's stories and the two kit stories now sits in the same retry
+  as a presence that proves the render landed. *Gone*'s absence check had run before its presence.
+  *Settling* clicks the button its retry found.
+- **Held on reading:**
+  - levers from the server's answer only;
+  - refusals as toasts in the server's words (a `can` sentence said in the body, as every handler
+    does);
+  - ids from the item;
+  - no optional prop without a caller;
+  - links through the inspector's router;
+  - capped values as floors;
+  - no staff-only text for a viewer the server wouldn't serve;
+  - nobody departed named;
+  - no plan tokens on screen;
+  - nothing about ice;
+  - a reply never drawn as sent unless the server says `sent`.
+- **Listed, not fixed:**
+  - **The export's `capped` over-reports.** Once the export's 400-message read is spent, every later
+    ticket reads `capped`, even one with no messages: a floor said where none was needed, never a cut
+    left unsaid. S6's to tighten (ask one message past zero room).
+  - **`SupportQueue.tsx` (the old page) stays on disk, unrouted,** until B01's close deletes the old
+    components.
+
+##### #173 on dev
+
+- **The drift repair** re-derived 0 of 35 items.
+- **The dev proof:**
+  - the merge took 637 ms in total, 115 ms of it in user code;
+  - the unmerge took two pages and was done in 1.5 s;
+  - the census came back equal except the survivor's summary: `null` before, computed over nothing
+    after. That was ruled a pass, and the census now compares such facts by meaning (the seed fix).
+- **The seed step that failed:** the merge-proof bounty, created through an internal function, which
+  a person can't call from the CLI. It now goes through the public `bounties:create`, and a plan test
+  holds every person's step to a public function.
+- **The photo storage proof:** a deleted blob's address answered 404 at once. So `photos.rotateBlobs`
+  is built, and the removal dialog says the photo is off its address at once: the first row of the
+  pack's outcome table, with no CDN lag to word.
+
+#### B01-5f: the two reviews (R12, R13) and their fixes (2026-11-22)
+
+Two independent reviews read support at `10a0daf60`: server and CI (R12), and the web (R13). **Neither
+found a blocker.** Each fix below is its own commit, with the test that fails without it.
+
+**The server (R12), S6's fixes (`b01-5f-s6-2`), and their web follow-through:**
+- **A reply whose send claimed it and then died no longer stays `settling` for good.**
+  - Each reply that will go gets a watch, `support.watchReply`. If unclaimed, the send runs again
+    (still one email, by the claim), then reads `sendFailed` after three tries.
+  - If claimed with no answer past an action's lifetime, it reads the new class `outcomeUnknown` and
+    is never resent. A late answer from the same claim wins.
+  - The thread draws "Sending stopped · it may or may not have been sent", never as sent and never as
+    not sent; the export carries `delivery: 'unknown'`.
+  - The cancel refuses by state: started sending; sent; may or may not have been sent.
+- **A reply the server knows it can't send is stored `failed` at once, with nothing scheduled.**
+  `supportSendability()` asks for both the sender and the provider key, and answers the read, the
+  write and the send.
+  - The receipt is read from the write's answer: "Reply saved, not sent · It won't be emailed: …".
+  - `unconfigured`'s words now cover a missing key; `sendFailed`'s cover a send that never ran.
+- **`clientKey` on `reply` and `addNote`:** 8–64 of `[A-Za-z0-9_-]`. A repeat writes nothing and
+  answers the first. The schema adds `supportMessages.clientKey` and `by_ticket_client_key`.
+
+**The web (R13):**
+1. **A reply could be sent twice.**
+   - The cause: the send's state lived in the remounting handler, while the draft lived in a store
+     that outlasted it. Rob → Kate → Rob with a reply out offered Send again, and the first's clear
+     wiped words typed since.
+   - The fix: the send's state is in the per-ticket draft store. The dock is busy for that ticket
+     wherever it is drawn, and landing clears only the words that went. Each press sends a fresh
+     `clientKey`, reused when the same press is retried.
+   - The test is the reviewer's probe: hold the reply open, pass through loading both ways, one call.
+2. **Ticket drafts survived sign-out.** `lib/accountScoped` now forgets them on sign-out and on a
+   change of signed-in person, never on a page load.
+3. **Nothing tested the reply's receipt or the focus handoff.** Two wiring tests now go through the
+   real `useTicketWrites` and `TicketHandler`; each was mutation-checked.
+4. **A new settling reply first drew against a stale clock** ("342 s" for a frame). The clock now
+   takes the time in the render that turns it on, and a MutationObserver test watches every text.
+5. **The receipt promised delivery.** It now reads "Reply saved · It sends in about a minute unless it
+   is canceled".
+6. **`SupportQueue.tsx`** stays on disk until B01's close. It is already outside the web's coverage
+   include (only the console's mode folders are covered), so nothing changed.
+
+**CI (R12):**
+
+7. **The nightly backstop could be canceled** by a push to main that then skipped. The concurrency
+   group is now keyed by event and ref, and only a push or a pull request cancels its own superseded
+   run. `packages/guards/src/ciWorkflow.test.ts` evaluates both expressions per event.
+8. **The new include globs dropped `*.spec.*` files and tests outside `src/`,** and the extensionless
+   import drew a Vite warning.
+   - The two projects now split Vitest's default between them.
+   - The DOM list is data (`src/test/domTests.json`, read with `fs`).
+   - The guard holds every test file on disk in exactly one unit project.
+
+**The reviewers' clean areas:** the reviewers' notes on what they found sound were not relayed to the
+integration, so they are not restated here beyond "no blockers".
+
+**What they could not review:**
+- real GitHub Actions behavior: the skip on a push to main and the nightly's own group, which run
+  only on GitHub;
+- a live Resend send.
+
+The send path is proven on the convex-test harness (the claim, the watch, the late answer, the
+blocked reply), not on a real backend or with live mail.
+
+#### Greptile on #175, round 1 (2026-11-22)
+
+Greptile's first review of #175 (head `31ee1856`) scored 4/5, with one finding. S6 fixed it
+(`b01-5f-s6-3`).
+
+**The finding: "Delivered replies can look unsent."** `support.sendReply` recorded every `false` from
+`sendEmail` as `sendFailed`. But `sendEmail` also returned `false` when the HTTP request threw, and
+the provider may already have accepted the mail.
+
+**Its class: an uncertain result recorded as a certain one.**
+
+**The fix.** `lib/resend.sendEmailOutcome` answers three ways:
+
+| Answer | When | Recorded as |
+| --- | --- | --- |
+| **accepted** | a 2xx | `sent` |
+| **rejected**: definitely not sent | 400, 401, 403, 404, 405, 422; a 429 still refused after three retries; or it never left (no key, sender or address) | `sendFailed` (`unconfigured` for a missing key) |
+| **unknown**: may have gone | a thrown fetch, a 20 s timeout, any 5xx, a 409 | `outcomeUnknown`, never resent; the claim's stamp is kept, so a later answer from the same claim still lands |
+
+`sendEmail` keeps its boolean (true only for accepted) over the same code, so its other callers are
+unchanged.
+
+**S6's sweep of the send path:**
+
+| Case | What happens |
+| --- | --- |
+| The Clerk address lookup errors (no key, a non-2xx other than 404, a throw) | The claim is released and the watch tries again, within `REPLY_SEND_ATTEMPTS`, then `sendFailed`. Nothing is sent |
+| Clerk answers 404 | `noAddress` |
+| The send's outcome write is lost | The watch finds the claim with no outcome: `outcomeUnknown` |
+| A cancel races the send | Both write the one row, so only one lands |
+
+**The idempotency key.** Every reply is sent under the provider's `Idempotency-Key`,
+`support-reply/<messageId>`, which the provider honors for 24 hours.
+- **It protects** against a repeat of the same reply's send (the watch's re-send after a released
+  claim, or a retry inside the send) becoming a second email.
+- **It does not protect** against a staffer re-sending by hand: that is a new message with its own
+  key, and so a second email by design.
+
+**Tests:** 18 tests, 12 mutations caught. On a real local backend, a thrown fetch and a timeout both
+read `outcomeUnknown`.
+
+**The web.**
+- `sendFailed`'s words still fit ("the email service didn't take it, or its send never ran"): a lost
+  response no longer lands there.
+- `outcomeUnknown` now also covers a provider error or a timeout, so its words became "Sending
+  didn't finish · it may or may not have been sent". Never worded as sent, never as not sent.
+
+**Register:** the notification email, the data-export mail and operator broadcasts can also record a
+lost response as "not sent". None of them retries, so no duplicate can result. Not changed here.
 
 ### What B01 still owes (the register, 2026-11-17)
 

@@ -1,13 +1,15 @@
-import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import process from 'node:process';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { recordFromCommandLine } from './cli';
+import { runTeed } from './tee';
 
-vi.mock('node:child_process', () => ({ execFileSync: vi.fn() }));
+vi.mock('./tee', () => ({ runTeed: vi.fn() }));
 vi.mock('node:fs', { spy: true });
 
-const execute = vi.mocked(execFileSync);
+const execute = vi.mocked(runTeed);
+/** `convex run` exiting cleanly with `stdout`. */
+const ran = (stdout: string) => ({ status: 0, stdout, stderr: '' });
 const receipt = { kind: 'r2_mirror', label: 'fixture receipt' };
 
 function calls() {
@@ -23,7 +25,7 @@ beforeEach(() => {
   vi.stubEnv('CONVEX_DEPLOYMENT', 'dev:receipt-fixture');
   vi.spyOn(process.stderr, 'write').mockReturnValue(true);
   vi.mocked(readFileSync).mockClear();
-  execute.mockReset().mockReturnValueOnce('"fixture-row"\n').mockReturnValue('');
+  execute.mockReset().mockReturnValueOnce(ran('"fixture-row"\n')).mockReturnValue(ran(''));
 });
 
 afterEach(() => {

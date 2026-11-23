@@ -66,7 +66,10 @@ const SOURCE_WRITERS: Record<string, string> = {
     'an unmerge moves a flag or an ask back to the loser, and re-keys its item',
   'unmerge.ts#restorePartners': 'an unmerge puts a duplicate partner’s flag back, and re-keys it',
   'support.ts#create': 'a ticket filed',
-  'support.ts#resolve': 'a ticket resolved',
+  // B01-5f: the resolve and its undo's reopen, each a status write then the one writer
+  // (`decideItem` on the resolve; `fileMember` reopening the ticket's member in place).
+  'lib/supportWrites.ts#resolveTicketImpl': 'a ticket resolved (the write, or a reopen undone)',
+  'lib/supportWrites.ts#reopenTicketImpl': 'a ticket reopened (the write, or a resolve undone)',
 };
 
 /**
@@ -90,7 +93,10 @@ const NOT_SOURCES: Record<string, string> = {
 /** Functions that delete rows and name a source table: each calls the writer… */
 const DELETE_WRITERS: Record<string, string> = {
   'erasure.ts#ERASERS': 'a withdrawn flag or ask erased, 30 days on',
-  'accountDeletion.ts#erasePrivate': 'an account’s tickets erased at finalization',
+  // B01-5f: moved from `accountDeletion.erasePrivate` with the tickets' messages; each deleted ticket
+  // still leaves its item through `leaveMember`, as before.
+  'lib/supportThread.ts#eraseTicketsOf':
+    'an account’s tickets (and their messages) erased at finalization',
   'waterBodies.ts#mergeBodyInto':
     'a merge deletes favorites; its asks and drawing move through the writer',
 };

@@ -242,6 +242,21 @@ async function write(w: W, verb: InboxVerb, s: Setup): Promise<void> {
     case 'resolve':
       await as.mutation(api.support.resolve, { ticketId: s.ticketId as Id<'supportTickets'> });
       return;
+    case 'reopen':
+      await as.mutation(api.support.reopen, { ticketId: s.ticketId as Id<'supportTickets'> });
+      return;
+    case 'note':
+      await as.mutation(api.support.addNote, {
+        ticketId: s.ticketId as Id<'supportTickets'>,
+        body: 'Checked',
+      });
+      return;
+    case 'reply':
+      await as.mutation(api.support.reply, {
+        ticketId: s.ticketId as Id<'supportTickets'>,
+        body: 'Thanks',
+      });
+      return;
     default:
       throw new Error(`no write for ${verb} yet`);
   }
@@ -1083,12 +1098,14 @@ const ticket = async (_w: W, by: As) => {
   const ticketId = await by.mutation(api.support.create, { category: 'bug', body: 'Broken' });
   return { ref: `ticket:${ticketId}`, ticketId };
 };
+/** Every verb a ticket has (B01-5f): each answered in each state, drawn or not. */
+const TICKET_VERBS: InboxVerb[] = ['reply', 'note', 'resolve', 'reopen'];
 const ticketCells: Cell[] = [
-  { kind: 'ticket', state: 'open', verbs: ['resolve'], setup: (w) => ticket(w, w.author.as) },
+  { kind: 'ticket', state: 'open', verbs: TICKET_VERBS, setup: (w) => ticket(w, w.author.as) },
   {
     kind: 'ticket',
     state: 'already decided',
-    verbs: ['resolve'],
+    verbs: TICKET_VERBS,
     setup: async (w) => {
       const s = await ticket(w, w.author.as);
       await w.t.run((ctx) => ctx.db.patch(w.other.id, { role: 'admin' }));
@@ -1099,8 +1116,25 @@ const ticketCells: Cell[] = [
   {
     kind: 'ticket',
     state: 'the viewer’s own filing',
-    verbs: ['resolve'],
+    verbs: TICKET_VERBS,
     setup: (w) => ticket(w, w.viewer.as),
+  },
+  {
+    kind: 'ticket',
+    state: 'the viewer’s own filing, decided',
+    verbs: TICKET_VERBS,
+    setup: async (w) => {
+      const s = await ticket(w, w.viewer.as);
+      await w.t.run((ctx) => ctx.db.patch(w.other.id, { role: 'admin' }));
+      await w.other.as.mutation(api.support.resolve, { ticketId: s.ticketId });
+      return s;
+    },
+  },
+  {
+    kind: 'ticket',
+    state: 'filed before its filer had a profile',
+    verbs: TICKET_VERBS,
+    setup: (w) => ticket(w, w.t.withIdentity({ subject: 'user_unprovisioned' })),
   },
 ];
 
@@ -1218,8 +1252,10 @@ describe('the rule and the write', () => {
     // its drawing that is decided, or the viewer's own (its code must not ride an earlier refusal).
     // The order pass added *Look up again*'s own and decided cells, the viewer's own admit's approve
     // and decline, and the viewer's own landmark ask's approve and decline; R10-A a drawing whose
-    // survivor is mid-unmerge.
-    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(181);
+    // survivor is mid-unmerge. B01-5f gave a ticket all four of its verbs in each state (open,
+    // decided, the viewer's own, the viewer's own decided, and filed before a profile existed): 3
+    // cells became 20.
+    expect(ALL_CELLS.reduce((n, c) => n + c.verbs.length, 0)).toBe(198);
   });
 
   test.each(Object.keys(GROUPS))('agree in every %s cell', async (group) => {

@@ -29,6 +29,7 @@ const TARGET: Record<AuditTarget, string> = {
   waterBodyRequest: 'a request',
   bodyLandmark: 'a landmark',
   corpusPlaceName: 'a place name',
+  supportTicket: 'a support ticket',
 };
 
 /** `{t}` is the target's words; a verb with no `{t}` names its subject itself. */
@@ -92,6 +93,16 @@ const VERB: Record<AuditAction, string> = {
   reopen_request: 'Reopened a request',
   return_to_review: 'Put a drawn body back in review',
   unretract_access_alert: 'Put back an access alert',
+  // Support (B01-5f, D284). A reply's row is written when it is sent off to settle, so it says it
+  // was written, never that it reached anyone: it may yet be canceled or fail to send.
+  support_note: 'Added a staff note to {t}',
+  remove_support_note: 'Removed a staff note from {t}',
+  support_reply: 'Wrote an email reply on {t}',
+  cancel_support_reply: 'Canceled an email reply on {t} before it was sent',
+  resolve_ticket: 'Resolved {t}',
+  reopen_ticket: 'Reopened {t}',
+  // T0 PLACEHOLDER (B01-5e): words for the copy pass; the photos slice's web builder settles it.
+  purge_photo: 'Deleted the file of {t}',
   // The skater's own button, quoted: "open" alone would read as the alert reopened, when their word
   // closed it and released the pin.
   author_resolve_access_alert: 'The reporter said “It’s open” on a pinned access alert',

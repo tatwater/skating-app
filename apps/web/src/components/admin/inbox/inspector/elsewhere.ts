@@ -1,10 +1,5 @@
 import type { InboxItemView } from '../list/inboxTypes';
-import {
-  ELSEWHERE_FLAGS,
-  ELSEWHERE_PHOTO,
-  ELSEWHERE_SUPPORT,
-  ELSEWHERE_TICKET,
-} from '../words/inboxWords';
+import { ELSEWHERE_FLAGS, ELSEWHERE_PHOTO } from '../words/inboxWords';
 import type { HandlerKey } from './handlerRegistry';
 
 /**
@@ -13,8 +8,7 @@ import type { HandlerKey } from './handlerRegistry';
  * lands the last handler it serves, so until then a kind the Inbox can't decide points at its page
  * rather than leaving the operator at a dead end.
  *
- * The old pages take no search params (neither `/admin/flags` nor `/admin/support` validates one),
- * so the links can't open
+ * The old pages take no search params (`/admin/flags` validates none), so the links can't open
  * the item there or carry a way back: each is a plain link, same tab (the console's own pages), and
  * the browser's back returns here.
  */
@@ -52,11 +46,6 @@ export const ELSEWHERE: Partial<
     line: ELSEWHERE_PHOTO,
     links: [{ to: '/admin/flags', label: ELSEWHERE_FLAGS }],
   }),
-  // Support is read only by those who answer it (D37): the link is drawn only for them.
-  ticket: (_item, canReadSupport) =>
-    canReadSupport
-      ? { line: ELSEWHERE_TICKET, links: [{ to: '/admin/support', label: ELSEWHERE_SUPPORT }] }
-      : null,
 };
 
 /** Where `item` (under `key`) is decided for now, or `null` when it has no page to point at. */

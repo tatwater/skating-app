@@ -141,6 +141,15 @@ export async function repairInboxItem(
   item: Doc<'inboxItems'>,
   now: number,
 ): Promise<number> {
+  return (await repairInboxItemKinds(ctx, item, now)).fixed;
+}
+
+/** {@link repairInboxItem}, with what drifted by kind — the full sweep's run row counts them. */
+export async function repairInboxItemKinds(
+  ctx: MutationCtx,
+  item: Doc<'inboxItems'>,
+  now: number,
+): Promise<{ fixed: number; kinds: InboxDriftKind[] }> {
   const { drifted, kinds, facetFrom } = await examine(ctx, item);
   const stale = drifted.filter((d) => d.kind === 'member_stale').map((d) => d.member);
   const fixing = drifted.filter((d) => d.kind !== 'member_stale').slice(0, REPAIR_FIXES_PER_VISIT);
@@ -152,5 +161,8 @@ export async function repairInboxItem(
     return gone;
   });
   if ((await ctx.db.get(item._id)) !== null) await refreshInboxItem(ctx, item._id, now);
-  return left + fixing.length + (kinds.has('fields') ? 1 : 0) + (facetFrom !== null ? 1 : 0);
+  return {
+    fixed: left + fixing.length + (kinds.has('fields') ? 1 : 0) + (facetFrom !== null ? 1 : 0),
+    kinds: [...kinds],
+  };
 }

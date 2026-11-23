@@ -6,12 +6,12 @@ import { must } from '@/components/kit/storyKit';
 import { KeysProvider } from '@/lib/keys';
 
 import { storyLink } from '../inboxBoard';
-import { NOW, PHOTO_ITEM, TICKET_ITEM } from '../list/inboxFixtures';
+import { NOW, PHOTO_ITEM } from '../list/inboxFixtures';
 import type { InboxItemView } from '../list/inboxTypes';
 import { InboxInspector } from './InboxInspector';
 
 /**
- * The placeholder for each kind the Inbox can't decide yet — a photo flag, a support ticket: its
+ * The placeholder for each kind the Inbox can't decide yet — a photo flag: its
  * facts, read only, and one line saying where that kind is decided for now, with a link there (same
  * tab; the old pages take no params, so a plain link).
  */
@@ -70,12 +70,6 @@ async function expectElsewhere(root: HTMLElement, line: RegExp, targets: string[
 export const PhotoFlag: Story = {
   play: ({ canvasElement }) =>
     expectElsewhere(canvasElement, /decided on the Flags page for now/, ['/admin/flags']),
-};
-
-export const Ticket: Story = {
-  args: { item: TICKET_ITEM },
-  play: ({ canvasElement }) =>
-    expectElsewhere(canvasElement, /answered on the Support page for now/, ['/admin/support']),
 };
 
 export const PhotoFlagLight: Story = { globals: { surface: 'admin', mode: 'light' } };

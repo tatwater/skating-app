@@ -18,7 +18,12 @@ const WEB = resolve(__dirname, '../../../apps/web/src');
 const CORE = resolve(__dirname, '../../core/src');
 
 /** The console's trees the rule holds over. People's pages are their owner's (see below). */
-const ROOTS = ['components/admin/body', 'components/admin/bodies', 'components/admin/shell'];
+const ROOTS = [
+  'components/admin/body',
+  'components/admin/bodies',
+  'components/admin/shell',
+  'components/admin/inbox',
+];
 
 /** The text fields: the kit's, and a bare element. */
 const FIELDS = ['Input', 'ChipInput', 'AlertDialogReason', 'Textarea', 'textarea', 'input'];
@@ -26,7 +31,16 @@ const FIELDS = ['Input', 'ChipInput', 'AlertDialogReason', 'Textarea', 'textarea
 /** Components that take the cap as a prop and give it to their field; each use is held instead. */
 const PASS_THROUGH: Record<string, string> = {
   ReasonAsk: 'components/admin/body/tabs/access/ReasonAsk.tsx',
+  // The ticket's reply and note field (B01-5f): each mode hands it its cap (`max`).
+  ReplyDock: 'components/kit/reply-dock.tsx',
 };
+
+/**
+ * Pass-throughs whose caps ride in another prop than `maxLength` — `ReplyDock`'s modes, each with
+ * its own `max:` — held at each use by every such `max:` in the using file being a shared cap
+ * imported from core (and at least one there).
+ */
+const CAPS_IN: Record<string, RegExp> = { ReplyDock: /\bmax:\s*(\w+)/g };
 
 /**
  * Fields no capped write receives, each with why. Keyed `file :: label` (the field's
@@ -41,6 +55,8 @@ const NO_CAPPED_WRITE: Record<string, string> = {
     'a search for the body to merge into: a read, and the server never refuses its length',
   'components/admin/bodies/ListTools.tsx :: Find a body':
     'a search: the server cuts a long one to its length, never refuses it',
+  'components/admin/inbox/list/LaneFacets.tsx :: #1':
+    'the filter menu’s search for a body or a person: a read, never refused for its length',
 };
 
 function files(path: string): string[] {
@@ -114,6 +130,16 @@ function fields(): Field[] {
       if (/\btype="(checkbox|radio|file|range|hidden)"/.test(tag)) continue;
       n++;
       const label = /aria-label="([^"]*)"/.exec(tag)?.[1] ?? `#${n}`;
+      const inProp = CAPS_IN[name];
+      if (inProp !== undefined) {
+        // Every cap the file hands this component's modes, each a field of its own to check.
+        const handed = [...text.matchAll(inProp)].map((c) => c[1] as string);
+        if (handed.length === 0)
+          out.push({ where: `${f} :: ${label}`, tag: name, label, cap: null });
+        for (const cap of handed)
+          out.push({ where: `${f} :: ${label} (${cap})`, tag: name, label, cap });
+        continue;
+      }
       const cap = /\bmaxLength=\{(\w+)\}/.exec(tag)?.[1] ?? null;
       out.push({ where: `${f} :: ${label}`, tag: name, label, cap });
     }

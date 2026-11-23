@@ -44,13 +44,11 @@ describe('the Legacy menu and the old shell agree', () => {
     }
   });
 
-  it('draws the old sidebar’s admin-only line: support, tuning, imports and seasons are admin', () => {
+  it('draws the old sidebar’s admin-only line: tuning, imports and seasons are admin', () => {
     const adminOnly = LEGACY_PAGES.filter((p) => CAPABILITIES[p.capability].role === 'admin').map(
       (p) => p.to,
     );
-    expect(adminOnly.sort()).toEqual(
-      ['/admin/imports', '/admin/seasons', '/admin/support', '/admin/tuning'].sort(),
-    );
+    expect(adminOnly.sort()).toEqual(['/admin/imports', '/admin/seasons', '/admin/tuning'].sort());
   });
 });
 

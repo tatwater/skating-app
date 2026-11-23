@@ -34,6 +34,12 @@ export const MAX_MODERATOR_ALIAS_CHARS = 120;
  */
 export const MAX_REQUEST_NOTE_LENGTH = 280;
 
+/** A staffer's note on a support ticket (B01-5f) — staff-only, a few paragraphs at most. */
+export const MAX_SUPPORT_NOTE_LENGTH = 2_000;
+
+/** A staffer's email reply on a support ticket (B01-5f) — the ticket body's own cap. */
+export const MAX_SUPPORT_REPLY_LENGTH = 5_000;
+
 /** A launch's name — a label on a map pin, not a description. */
 export const MAX_PUT_IN_NAME_LENGTH = 60;
 

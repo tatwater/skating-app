@@ -14,7 +14,7 @@
  * re-declares the run row's, because a script compiles without the Convex package's generated types.
  */
 
-import type { RunAs } from '@skating/run-log';
+import { logSafe, type RunAs } from '@skating/run-log';
 
 /** What every seeded write is made through (D256): "Teagan via seed-inbox". */
 export const SEED_VIA = 'seed-inbox';
@@ -118,31 +118,14 @@ export function planSeed(call: Call): { people: EnsurePeople; state: SeedState }
   return { people, state };
 }
 
-/**
- * The server's own sentence from what `convex run` wrote to stderr: the `Uncaught ConvexError: …`
- * (or `Uncaught Error: …`) line's text, else the last line that isn't the echoed command — never the
- * `Command failed: pnpm …` line, which says nothing about why.
- */
-export function serverSentence(stderr: string): string {
-  const lines = stderr.split('\n').map((l) => l.trim());
-  for (const line of lines) {
-    const m = line.match(/Uncaught (?:ConvexError|Error): (.*)$/);
-    if (m?.[1]) return m[1].trim();
-  }
-  const useful = lines.filter(
-    (l) => l !== '' && !l.startsWith('Command failed:') && !l.startsWith('at '),
-  );
-  return useful.at(-1) ?? 'convex run failed with no message';
-}
-
-/** The first line of an error, which the CLI's runner makes the server's own sentence. */
+/** The first line of an error, which the CLI's runner makes the server's own sentence; bounded. */
 export function errorLine(err: unknown): string {
   const text = err instanceof Error ? err.message : String(err);
-  return (
+  return logSafe(
     text
       .split('\n')
       .find((line) => line.trim() !== '')
-      ?.trim() ?? 'unknown error'
+      ?.trim() ?? 'unknown error',
   );
 }
 

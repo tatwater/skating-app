@@ -6,6 +6,7 @@
 
 import { useAuth } from '@clerk/tanstack-react-start';
 import { useCallback, useEffect } from 'react';
+import { bindAccountOwner, forgetAccountScoped } from './accountScoped';
 import { bindSheetOwner, forgetSheet, getSheet, getSheetAttempt } from './sheetStore';
 import { answerUnsavedAsks, holdsUnsentWork } from './unsavedElsewhere';
 
@@ -18,20 +19,25 @@ export function useSheetOwnerBinding(): void {
   const { isLoaded, isSignedIn, userId } = useAuth();
   useEffect(() => {
     if (!isLoaded) return;
-    bindSheetOwner(isSignedIn ? (userId ?? null) : null);
+    const owner = isSignedIn ? (userId ?? null) : null;
+    bindSheetOwner(owner);
+    // The in-memory stores a person owns (a ticket's unsent reply) go with a change of person.
+    bindAccountOwner(owner);
   }, [isLoaded, isSignedIn, userId]);
   // Another tab signing out asks whether this one holds unsent work; it answers, nothing more.
   useEffect(() => answerUnsavedAsks(() => holdsUnsentWork(getSheet(), getSheetAttempt())), []);
 }
 
 /**
- * Clerk's sign-out, with the sheet forgotten first: an author signing out is leaving this browser,
- * and what they were writing leaves with them. Every *Sign out* button goes through this.
+ * Clerk's sign-out, with the sheet — and every in-memory store the person owns (`accountScoped`: a
+ * ticket's unsent reply) — forgotten first: someone signing out is leaving this browser, and what they
+ * were writing leaves with them. Every *Sign out* button goes through this.
  */
 export function useSignOut(): () => Promise<void> {
   const { signOut } = useAuth();
   return useCallback(async () => {
     forgetSheet();
+    forgetAccountScoped();
     await signOut();
   }, [signOut]);
 }

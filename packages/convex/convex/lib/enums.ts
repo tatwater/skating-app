@@ -438,6 +438,17 @@ export const MODERATION_ACTIONS = [
   'reopen_request',
   'return_to_review',
   'unretract_access_alert',
+  // B01-5f, support (D284): a staffer's note on a ticket and its removal, an email reply and its
+  // cancel inside the settle window, and a ticket resolved or reopened.
+  'support_note',
+  'remove_support_note',
+  'support_reply',
+  'cancel_support_reply',
+  'resolve_ticket',
+  'reopen_ticket',
+  // B01-5e, photos (D222): a removed photo's bytes deleted 30 days on, by the sweep with no actor.
+  // Permanent; a photo's hide and removal reuse `hide` / `remove` / `restore` on the `photo` target.
+  'purge_photo',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -462,6 +473,7 @@ export const MODERATION_TARGET_TYPES = [
   'waterBodyRequest',
   'bodyLandmark', // D202: a named point on a lake — an island, a point, a bridge
   'corpusPlaceName', // D202: a name the corpus uses that no landmark took — placed or dismissed
+  'supportTicket', // B01-5f (D284): a ticket's notes, replies, resolve and reopen
 ] as const;
 
 /** In-app support inbox (D37). */

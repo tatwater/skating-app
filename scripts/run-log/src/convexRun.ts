@@ -7,15 +7,18 @@
 
 import type { RunAs } from './runAs';
 
-import { execFileSync } from 'node:child_process';
 import { parseConvexOutput } from './parseOutput';
 import { identityArgs } from './runAs';
+import { serverSentence } from './serverSentence';
+import { runTeed } from './tee';
 
 /**
  * Call a Convex function and parse its return value.
  *
  * `convex run` pretty-prints the return value on stdout as JSON and sends the function's own logs
- * to stderr, which we inherit so a loader's operator still sees them live.
+ * to stderr, which is shown **live**, as it arrives, and kept (`runTeed`), so a failed call throws
+ * **the server's own sentence** (`serverSentence`) — never pnpm's `Command failed …` line, which a
+ * run log would otherwise record as why it failed.
  *
  * **`options.runAs` runs the call as a signed-in person, through this script.** Deployment
  * credentials carry no *user* identity, so a public mutation behind `requireContributorRole` —
@@ -36,19 +39,17 @@ export function convexRun<T>(
   options: { runAs?: RunAs } = {},
 ): T {
   const identity = identityArgs(options.runAs);
-  const stdout = execFileSync(
-    'pnpm',
-    [
-      '--filter',
-      '@skating/convex',
-      'exec',
-      'convex',
-      'run',
-      functionName,
-      JSON.stringify(args),
-      ...identity,
-    ],
-    { encoding: 'utf8', stdio: ['ignore', 'pipe', 'inherit'], maxBuffer: 64 * 1024 * 1024 },
-  );
-  return parseConvexOutput<T>(stdout);
+  const res = runTeed('pnpm', [
+    '--filter',
+    '@skating/convex',
+    'exec',
+    'convex',
+    'run',
+    functionName,
+    JSON.stringify(args),
+    ...identity,
+  ]);
+  if (res.error) throw res.error;
+  if (res.status !== 0) throw new Error(serverSentence(res.stderr));
+  return parseConvexOutput<T>(res.stdout);
 }

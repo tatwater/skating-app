@@ -21,7 +21,7 @@ import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, type QueryCtx } from './_generated/server';
 import { type InboxSource, syncInboxSource } from './lib/inboxItems';
-import { repairInboxItem } from './lib/inboxRepair';
+import { repairInboxItem, repairInboxItemKinds } from './lib/inboxRepair';
 import { ReadBudget, ROW_MAX, type RowKind, TX_BUDGET, traced } from './lib/readBudget';
 import {
   affords,
@@ -235,6 +235,16 @@ export const repairOne = internalMutation({
     }),
 });
 
+/** One item repaired in the full sweep, as its own transaction: what it fixed, and the kinds of drift. */
+export const repairSweepOne = internalMutation({
+  args: { itemId: v.id('inboxItems') },
+  handler: (ctx, { itemId }) =>
+    asItem(itemId, async () => {
+      const item = await ctx.db.get(itemId);
+      return item ? repairInboxItemKinds(ctx, item, Date.now()) : { fixed: 0, kinds: [] };
+    }),
+});
+
 export { inboxPending } from './lib/inboxItems';
 
 const passArgs = {
@@ -336,6 +346,141 @@ export const repair = internalMutation({
   args: passArgs,
   handler: (ctx, args) => traced('inboxItems:repair', args, () => repairPass(ctx, args)),
 });
+
+/**
+ * **The drift repair's full sweep**: every item, once, in creation order, a page a pass, each pass
+ * scheduling the next until the end — its progress and totals in the `'repair'` row of
+ * `inboxJobRuns` (examined, fixed, drift by kind, failures, `done`). A call while a sweep runs reports
+ * it and starts no second chain; `restart` begins a new one. After a merge that needs it:
+ * `convex run inboxItems:repairAll '{}'`, then read the row until `done`. (The cron's walk,
+ * `inboxItems:repair`, is unchanged.)
+ */
+export const repairAll = internalMutation({
+  args: {
+    ...passArgs,
+    restart: v.optional(v.boolean()),
+    /** A chained pass: the sweep it belongs to (its run row's `phase`); a stale chain stops. */
+    sweep: v.optional(v.string()),
+  },
+  handler: (ctx, args) => traced('inboxItems:repairAll', args, () => repairSweepPass(ctx, args)),
+});
+
+/** What one pass of the full sweep answers: the run as it stands, and what this pass did. */
+type SweepAnswer = {
+  examined: number;
+  fixed: number;
+  failures: number;
+  changed: Record<string, number>;
+  done: boolean;
+  /** This pass's own count (0 for a call that only reported a running sweep). */
+  visited: number;
+  /** A sweep was already running: reported, not advanced. */
+  running?: true;
+};
+
+async function repairSweepPass(
+  ctx: MutationCtx,
+  args: { restart?: boolean; sweep?: string; pageCap?: number; budgetBytes?: number },
+): Promise<SweepAnswer> {
+  const now = Date.now();
+  const rowOf = () =>
+    ctx.db
+      .query('inboxJobRuns')
+      .withIndex('by_job', (q) => q.eq('job', 'repair'))
+      .first();
+  let run = await rowOf();
+  const answer = (r: Doc<'inboxJobRuns'> | null, visited: number): SweepAnswer => ({
+    examined: r?.examined ?? 0,
+    fixed: r?.fixed ?? 0,
+    failures: r?.failures ?? 0,
+    changed: r?.changed ?? {},
+    done: r?.done ?? true,
+    visited,
+  });
+  if (args.sweep !== undefined) {
+    // A chained pass runs only for the sweep that stands: a restart since leaves its old chain to stop.
+    if (run === null || run.done || run.phase !== args.sweep) return answer(run, 0);
+  } else if (run !== null && !run.done && args.restart !== true) {
+    return { ...answer(run, 0), running: true };
+  } else {
+    // Each sweep its own generation (`sweep 1`, `sweep 2`, …): the token its chain carries.
+    const generation = Number(run?.phase.match(/^sweep (\d+)$/)?.[1] ?? 0) + 1;
+    const fresh = {
+      job: 'repair' as const,
+      phase: `sweep ${generation}`,
+      cursor: null,
+      done: false,
+      startedAt: now,
+      updatedAt: now,
+      examined: 0,
+      fixed: 0,
+      changed: {},
+      failures: 0,
+    };
+    if (run === null) await ctx.db.insert('inboxJobRuns', fresh);
+    else await ctx.db.replace(run._id, fresh);
+    run = await rowOf();
+  }
+  if (run === null) throw new Error('inboxItems:repair: the run row did not save');
+  // Items after the last one examined, by creation time — an order the repair's own writes never
+  // move (it re-stamps `refreshedAt`, so a walk by that index would meet an item twice). One range,
+  // charged at its worst; a page one past the cap says whether the end is reached.
+  const after = run.cursor === null ? null : Number(run.cursor);
+  const budget = new ReadBudget(args.budgetBytes ?? TX_BUDGET);
+  const n = rowsFor(budget, 'small', args.pageCap ?? REPAIR_PAGE);
+  const page = await budget.take('small', n + 1, (k) =>
+    ctx.db
+      .query('inboxItems')
+      .withIndex('by_creation_time', (q) => (after === null ? q : q.gt('_creationTime', after)))
+      .take(k),
+  );
+  let cursor = after;
+  let visited = 0;
+  let fixed = 0;
+  let failures = 0;
+  const changed: Record<string, number> = { ...(run.changed ?? {}) };
+  for (const item of page.slice(0, n)) {
+    // Started only while the transaction can still pay an item's whole limits; the rest wait for
+    // the next pass. The first item of a pass always can (a fresh transaction), so a pass always
+    // advances — and an item whose repair throws is recorded and passed, never retried here.
+    if (visited > 0 && !(await affords(ctx, REPAIR_ITEM))) break;
+    visited++;
+    cursor = item._creationTime;
+    const result = await runIsolated<{ fixed: number; kinds: string[] }>(
+      ctx,
+      internal.inboxItems.repairSweepOne,
+      { itemId: item._id },
+      REPAIR_LIMITS,
+    );
+    if (result.ok) {
+      fixed += result.value.fixed;
+      for (const k of result.value.kinds) changed[k] = (changed[k] ?? 0) + 1;
+      await clearFailure(ctx, 'inboxRepair', item._id);
+    } else {
+      failures++;
+      await recordFailure(ctx, 'inboxRepair', item._id, result.errorClass, now);
+    }
+  }
+  const done = visited === Math.min(page.length, n) && page.length <= n;
+  await ctx.db.patch(run._id, {
+    cursor: cursor === null ? null : String(cursor),
+    done,
+    updatedAt: now,
+    examined: (run.examined ?? 0) + visited,
+    fixed: (run.fixed ?? 0) + fixed,
+    failures: (run.failures ?? 0) + failures,
+    changed,
+  });
+  if (!done) {
+    await ctx.scheduler.runAfter(0, internal.inboxItems.repairAll, {
+      sweep: run.phase,
+      ...(args.pageCap !== undefined ? { pageCap: args.pageCap } : {}),
+      ...(args.budgetBytes !== undefined ? { budgetBytes: args.budgetBytes } : {}),
+    });
+  }
+  if (fixed > 0) console.info(`inboxItems:repair: the sweep fixed ${fixed} drifted item(s)`);
+  return answer(await rowOf(), visited);
+}
 
 async function repairPass(
   ctx: MutationCtx,

@@ -13,7 +13,14 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import type { SeedCall, SeedState } from './inboxSeed';
-import { INBOX_LEAVE_COST, loopPath, offset, PREFS_OFF, prefsDrifted } from './inboxSeed';
+import {
+  INBOX_LEAVE_COST,
+  loopPath,
+  offset,
+  PREFS_OFF,
+  prefsDrifted,
+  seedSteps,
+} from './inboxSeed';
 import { mergeLoadOf, THRESHOLDS } from './lib/mergeLoad';
 import { DEV_DEPLOYMENT, SEED_CAST, SEED_DEV_ONLY } from './lib/seedPeople';
 import schema from './schema';
@@ -477,12 +484,53 @@ async function runSeed(t: T) {
   throw new Error('the seed did not settle in 20 waves');
 }
 
+/** A registered Convex function as its module exports it: its kind and visibility. */
+type Registered = {
+  isQuery?: boolean;
+  isMutation?: boolean;
+  isAction?: boolean;
+  isPublic?: boolean;
+  isInternal?: boolean;
+};
+
+/** The function a step names (`module:export`), from the deployment's own modules. */
+async function registered(fn: string): Promise<Registered | undefined> {
+  const [path, name] = fn.split(':') as [string, string];
+  const load = modules[`./${path}.ts`];
+  if (!load) return undefined;
+  const mod = (await load()) as Record<string, unknown>;
+  return mod[name] as Registered | undefined;
+}
+
+/**
+ * Why a step can't be made the way the script makes it, or `null`: a step made as a person goes out
+ * through `convex run --identity`, which reaches **public** functions only — an internal one is "Could
+ * not find function" on the deployment, though it resolves in-process (the `mp-bounty` step on #173).
+ */
+function unreachable(as: SeedCall['as'], fn: string, f: Registered | undefined) {
+  if (f === undefined) return `${fn} is not a function the deployment has`;
+  if (!(f.isQuery || f.isMutation || f.isAction)) return `${fn} is not a query, mutation or action`;
+  if (as !== 'bare' && (f.isInternal === true || f.isPublic !== true)) {
+    return `${fn} is internal, so a call as a person can't reach it`;
+  }
+  return null;
+}
+
+/**
+ * File one step as the script does: as its person (or bare), through the function's own kind — and
+ * only if the script could reach it, so a step the deployment would refuse fails here too. Its args
+ * meet the function's validator: convex-test checks them, as the deployment does.
+ */
 async function fileStep(t: T, call: SeedCall) {
-  const ref = makeFunctionReference<'mutation'>(call.fn);
-  if (call.as === 'bare') return t.mutation(ref, call.args);
-  const subject = call.as === 'operator' ? OPERATOR : call.clerkUserId;
-  if (!subject) throw new Error(`no subject for ${call.key}`);
-  return t.withIdentity({ subject, via: 'seed-inbox' }).mutation(ref, call.args);
+  const f = await registered(call.fn);
+  const why = unreachable(call.as, call.fn, f);
+  if (why !== null) throw new Error(why);
+  const subject = call.as === 'bare' ? null : call.as === 'operator' ? OPERATOR : call.clerkUserId;
+  if (subject === undefined) throw new Error(`no subject for ${call.key}`);
+  const as = subject === null ? t : t.withIdentity({ subject, via: 'seed-inbox' });
+  if (f?.isAction) return as.action(makeFunctionReference<'action'>(call.fn), call.args);
+  if (f?.isQuery) return as.query(makeFunctionReference<'query'>(call.fn), call.args);
+  return as.mutation(makeFunctionReference<'mutation'>(call.fn), call.args);
 }
 
 beforeEach(() => {
@@ -550,11 +598,50 @@ const lanesOf = async (t: T) => {
   };
 };
 
+describe('every step of the plan, as the script makes it', () => {
+  test('a step made as a person names a public function — never an internal one', async () => {
+    // Statically, over the whole plan — not only the steps a run here reaches: the script makes a
+    // person's step through `convex run --identity`, which finds public functions only.
+    const steps = seedSteps();
+    // 121 at B01-5d, and B01-5f's note and reply on t-bug (`support:addNote`, `support:reply`).
+    expect(steps).toHaveLength(123);
+    const refused: string[] = [];
+    for (const step of steps) {
+      const why = unreachable(step.as, step.fn, await registered(step.fn));
+      if (why !== null) refused.push(`${step.key}: ${why}`);
+    }
+    expect(refused).toEqual([]);
+    expect(steps.filter((s) => s.as !== 'bare').length).toBeGreaterThan(100);
+  });
+
+  test('the check refuses an internal function as a person, and a name the deployment lacks', async () => {
+    expect(
+      unreachable('elin', 'bounties:createChecked', await registered('bounties:createChecked')),
+    ).toBe("bounties:createChecked is internal, so a call as a person can't reach it");
+    expect(
+      unreachable('bare', 'bounties:createChecked', await registered('bounties:createChecked')),
+    ).toBeNull();
+    expect(unreachable('operator', 'bounties:nope', await registered('bounties:nope'))).toBe(
+      'bounties:nope is not a function the deployment has',
+    );
+    expect(unreachable('operator', 'nowhere:x', await registered('nowhere:x'))).toBe(
+      'nowhere:x is not a function the deployment has',
+    );
+    expect(
+      unreachable('operator', 'inboxSeed:seedKey', await registered('inboxSeed:seedKey')),
+    ).toBe('inboxSeed:seedKey is not a query, mutation or action');
+  });
+});
+
 describe('the seed, end to end', () => {
   test('files every step through the real mutations; the lanes hold the plan; a second run files nothing; the clear puts every table back', async () => {
     const t = harness();
     const urls: string[] = [];
     vi.stubEnv('CLERK_SECRET_KEY', 'sk_test');
+    // Mail configured (placeholders only), so a seed path that reached the sender would show up as a
+    // Resend call below (B01-5f: the seed must be incapable of sending mail).
+    vi.stubEnv('RESEND_API_KEY', 're_test_placeholder');
+    vi.stubEnv('SUPPORT_FROM_EMAIL', 'Gli Support <support@example.test>');
     vi.stubGlobal(
       'fetch',
       vi.fn(async (input: string | URL | Request) => {
@@ -629,6 +716,7 @@ describe('the seed, end to end', () => {
     expect(run.last.waiting).toEqual([]);
     expect(run.last.unavailable).toEqual([]);
     expect(run.last.ready).toEqual([]);
+    expect(run.last.done).toHaveLength(seedSteps().length);
 
     // The merge-proof pair (B01-5d) adds four open items — its drawing, an access report on each of
     // its two sides, its bay ask — and its two seed lakes' approvals to the decided.
@@ -666,6 +754,29 @@ describe('the seed, end to end', () => {
       };
     });
     expect(pair.cove?.reviewStatus).toBe('pending');
+    // Both the bounty and the report it waits on are filed (dev's first run carried neither), and
+    // the report sits in the cove's bay, joined to it.
+    expect(run.calls.map((c) => c.key)).toEqual(expect.arrayContaining(['mp-bounty', 'mp-report']));
+    const proofRows = await t.run(async (ctx) => {
+      const cove = pair.cove?._id as Id<'waterBodies'>;
+      const report = await ctx.db
+        .query('reports')
+        .withIndex('by_water_body_skate_end_time', (q) => q.eq('waterBodyId', cove))
+        .unique();
+      const bounty = await ctx.db
+        .query('bounties')
+        .withIndex('by_water_body_status', (q) => q.eq('waterBodyId', cove))
+        .unique();
+      const joins = report
+        ? await ctx.db
+            .query('reportSubAreas')
+            .withIndex('by_report', (q) => q.eq('reportId', report._id))
+            .collect()
+        : [];
+      const bays = await Promise.all(joins.map((j) => ctx.db.get(j.subAreaId)));
+      return { report: report !== null, bounty: bounty !== null, bays: bays.map((b) => b?.name) };
+    });
+    expect(proofRows).toEqual({ report: true, bounty: true, bays: ['Proof Inlet'] });
     expect([...(pair.cove?.duplicateCandidateIds ?? [])].sort()).toEqual(
       [pair.pond, pair.west].sort(),
     );
@@ -822,6 +933,36 @@ describe('the seed, end to end', () => {
       ]),
     );
     expect(urls.filter((u) => u.includes('clerk.com'))).toEqual([]);
+    // Support's thread on the bug ticket (B01-5f): the note, and the reply stored failed (seed) with
+    // no send scheduled — and driven through the send anyway, still no mail and no address lookup.
+    const thread = await t.run(async (ctx) => {
+      const ada = (await ctx.db.query('profiles').collect()).find((p) =>
+        p.displayName.startsWith('Ada'),
+      );
+      const ticket = (await ctx.db.query('supportTickets').collect()).find(
+        (tk) => tk.userId === ada?._id && tk.category === 'bug',
+      );
+      return (await ctx.db.query('supportMessages').collect()).filter(
+        (m) => m.ticketId === ticket?._id,
+      );
+    });
+    expect(thread.map((m) => [m.kind, m.status ?? null, m.failedWhy ?? null])).toEqual([
+      ['note', null, null],
+      ['reply', 'failed', 'seed'],
+    ]);
+    const sends = await t.run(async (ctx) =>
+      (await ctx.db.system.query('_scheduled_functions').collect()).filter((j) =>
+        /^support(\.js)?:sendReply$/.test(j.name),
+      ),
+    );
+    expect(sends).toEqual([]);
+    const reply = thread[1] as Doc<'supportMessages'>;
+    const beforeSend = urls.length;
+    await t.action(internal.support.sendReply, { messageId: reply._id });
+    await t.run((ctx) => ctx.db.patch(reply._id, { status: 'settling', failedWhy: undefined }));
+    await t.action(internal.support.sendReply, { messageId: reply._id });
+    expect(urls.slice(beforeSend)).toEqual([]);
+    expect((await t.run((ctx) => ctx.db.get(reply._id)))?.failedWhy).toBe('seed');
 
     // A second run files nothing new: every step's seed key finds its row.
     const beforeAgain = urls.length;
@@ -1497,7 +1638,11 @@ describe('ensurePeople', () => {
     const t = harness();
     await t.mutation(internal.inboxSeed.ensurePeople, { apply: true });
     const s = (await t.query(internal.inboxSeed.state, {})) as SeedState;
-    expect(s.waiting).toEqual([]);
+    // Only what waits on a step that is ready here: the bug ticket's note and reply (B01-5f).
+    expect(s.waiting.map((w) => [w.key, w.on])).toEqual([
+      ['t-bug-note', 't-bug'],
+      ['t-bug-reply', 't-bug'],
+    ]);
     expect(s.ready.map((c) => c.key)).toEqual(['f-person', 't-bug', 't-safety', 't-other']);
     expect(s.unavailable.length).toBeGreaterThan(40);
     expect(s.bodies.every((b) => b.name === null)).toBe(true);
