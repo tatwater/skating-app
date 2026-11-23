@@ -1,19 +1,25 @@
 /**
  * **A photo's stored files under any lifecycle, with faults** (B01-5e, `lib/photoFiles`' invariants).
- * Random sequences of uploads, legacy rows sharing files, flags, hides, removals, restores, the
- * uploader's delete, an author's edit dropping photos, deletes by the background deleters, purges,
- * rotation attempts **killed at any step**, the scheduled rotation's action cancelled (a runtime kill
- * before it begins), deletes that fail and later succeed, the clock moving minutes to days, the files
- * sweep — and after every step, against the real storage and tables:
+ * Random sequences of uploads, legacy rows sharing files **in every slot combination** (a row's image
+ * as another's image or thumbnail, a thumbnail as either, one file in both of a row's slots, chains of
+ * three and more), flags, hides, removals, restores, the uploader's delete, an author's edit dropping
+ * photos, deletes by the background deleters, purges, rotation attempts **killed at any step**, the
+ * scheduled rotation's action cancelled (a runtime kill before it begins), deletes that fail and later
+ * succeed, **a row created naming a file already owed a deletion** (between its dooming and its
+ * retry), **a skater's fresh upload of the same bytes** inside an attempt's window, uploads claiming
+ * any stored id, `removeBlob` on any stored id, the clock moving minutes to days, the files sweep —
+ * and after every step, against the real storage and tables:
  *
- * - every stored file is named by a photo row's slot, or by exactly one ledger row, or was stored by
- *   an unreconciled attempt inside its own window with a source file's hash (invariants 1, 3);
- * - a live row's files exist (not purged, not marked missing) — nothing named, nothing held, is lost
- *   (invariant 2); no recorded copy is a row's slot;
+ * - **every id any row names, in either slot, exists** — unless the row is a purged tombstone (whose
+ *   slots are cleared) or marked missing; nothing named, nothing held, is lost (invariant 2);
+ * - every stored file is named by a row's slot, or by exactly one ledger row, or was stored — and
+ *   tagged — by an unreconciled attempt inside its own window, or is a skater's unattached upload,
+ *   which no machinery but `removeBlob` touches (invariants 1, 3); no recorded copy is a row's slot;
+ * - a rotation that swaps a file other rows still name records them as the photo's twins;
  * - no public read's answer carries any stored file's id (invariant 6).
  *
  * And at the end, faults cleared and the clock run on: no ledger row, no open attempt, and storage
- * holds exactly the files live rows name (invariants 4, 5). A fresh seed every run (system randomness;
+ * holds exactly the files rows name and the skaters' unattached uploads (invariants 4, 5). A fresh seed every run (system randomness;
  * the test fakes `Date`); fast-check prints a failing seed and path to pin.
  */
 import { convexTest } from 'convex-test';
@@ -21,7 +27,8 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { ACTION_LIFETIME_MS } from './lib/photoFiles';
+import { TOMBSTONE_FILE } from './lib/photoAccess';
+import { ACTION_LIFETIME_MS, copyContentType, isCopyOf, SAME_BYTES_MAX } from './lib/photoFiles';
 import { deletePhotoAndBlobs } from './lib/photoOrphans';
 import { keepAndWithdrawHeld } from './lib/photoWithdraw';
 import schema from './schema';
@@ -67,9 +74,20 @@ const NOTIF_PREFS = {
 const KILL_POINTS = ['begin', 'store1', 'record1', 'store2', 'record2', 'swap'] as const;
 type Kill = (typeof KILL_POINTS)[number] | 'none';
 
+type Slot = 'image' | 'thumb';
+
 type Op =
   | { k: 'upload' }
-  | { k: 'legacyShare'; i: number }
+  /** A legacy row: its image is `i`'s `a` slot; its thumbnail `j`'s `b` slot, a fresh file, or the same. */
+  | { k: 'legacyShare'; i: number; a: Slot; j: number; b: Slot | 'fresh' | 'same' }
+  /** A row created naming a doomed file (in `slot`), between its dooming and its retry. */
+  | { k: 'adoptDoomed'; i: number; slot: Slot }
+  /** A skater's fresh upload of `i`'s image bytes, not yet attached. */
+  | { k: 'sameBytes'; i: number }
+  /** An upload claiming the `i`th stored id as its image. */
+  | { k: 'claim'; i: number }
+  /** `removeBlob` on the `i`th stored id. */
+  | { k: 'removeBlob'; i: number }
   | { k: 'flag'; i: number }
   | { k: 'set'; i: number; status: 'hidden' | 'removed' | 'visible' }
   | { k: 'authorDelete'; i: number }
@@ -77,7 +95,7 @@ type Op =
   | { k: 'deleter'; i: number }
   | { k: 'attempt'; i: number; kill: Kill }
   | { k: 'cancelRotations' }
-  | { k: 'failDeletes'; i: number }
+  | { k: 'failDeletes'; i: number; slot?: Slot | 'both' }
   | { k: 'letGo' }
   | { k: 'advance'; minutes: number }
   | { k: 'purge' }
@@ -86,7 +104,30 @@ type Op =
 const idx = fc.nat({ max: 7 });
 const opArb: fc.Arbitrary<Op> = fc.oneof(
   { weight: 3, arbitrary: fc.constant({ k: 'upload' as const }) },
-  { weight: 1, arbitrary: fc.record({ k: fc.constant('legacyShare' as const), i: idx }) },
+  {
+    weight: 2,
+    arbitrary: fc.record({
+      k: fc.constant('legacyShare' as const),
+      i: idx,
+      a: fc.constantFrom<Slot>('image', 'thumb'),
+      j: idx,
+      b: fc.constantFrom<Slot | 'fresh' | 'same'>('image', 'thumb', 'fresh', 'same'),
+    }),
+  },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      k: fc.constant('adoptDoomed' as const),
+      i: idx,
+      slot: fc.constantFrom<Slot>('image', 'thumb'),
+    }),
+  },
+  { weight: 1, arbitrary: fc.record({ k: fc.constant('sameBytes' as const), i: idx }) },
+  { weight: 1, arbitrary: fc.record({ k: fc.constant('claim' as const), i: fc.nat({ max: 63 }) }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({ k: fc.constant('removeBlob' as const), i: fc.nat({ max: 63 }) }),
+  },
   { weight: 1, arbitrary: fc.record({ k: fc.constant('flag' as const), i: idx }) },
   {
     weight: 3,
@@ -108,7 +149,14 @@ const opArb: fc.Arbitrary<Op> = fc.oneof(
     }),
   },
   { weight: 1, arbitrary: fc.constant({ k: 'cancelRotations' as const }) },
-  { weight: 1, arbitrary: fc.record({ k: fc.constant('failDeletes' as const), i: idx }) },
+  {
+    weight: 1,
+    arbitrary: fc.record({
+      k: fc.constant('failDeletes' as const),
+      i: idx,
+      slot: fc.constantFrom<Slot | 'both'>('image', 'thumb', 'both'),
+    }),
+  },
   { weight: 1, arbitrary: fc.constant({ k: 'letGo' as const }) },
   {
     weight: 3,
@@ -195,7 +243,32 @@ async function run(ops: Op[]) {
     });
   });
   const photos: Id<'photos'>[] = [];
+  /** Skaters' unattached uploads: no machinery may delete one (only `removeBlob`, by its id). */
+  const uploads = new Set<string>();
   let n = 0;
+  const fresh = (kind: string, type = 'image/jpeg') =>
+    t.run(
+      async (ctx) => (await ctx.storage.store(new Blob([`${kind}-${++n}`], { type }))) as string,
+    );
+  const slotOf = (row: Doc<'photos'>, s: Slot) =>
+    s === 'image' ? row.storageId : row.thumbStorageId;
+  const live = (row: Doc<'photos'> | null): row is Doc<'photos'> =>
+    row !== null && row.purgedAt === undefined && row.bytesMissingAt === undefined;
+  const storedIds = () =>
+    t.run(async (ctx) =>
+      (await ctx.db.system.query('_storage').collect()).map((f) => f._id as string).sort(),
+    );
+  const insertLegacy = (storageId: string, thumbStorageId: string) =>
+    t.run((ctx) =>
+      ctx.db.insert('photos', {
+        storageId,
+        thumbStorageId,
+        uploaderId,
+        placeOnMap: false,
+        createdAt: T0,
+        moderationStatus: 'visible',
+      }),
+    );
   const pick = (i: number) => (photos.length === 0 ? null : (photos[i % photos.length] ?? null));
   const safely = async (f: () => Promise<unknown>) => {
     try {
@@ -226,25 +299,82 @@ async function run(ops: Op[]) {
     } else {
       const p = 'i' in op ? pick(op.i) : null;
       switch (op.k) {
-        case 'legacyShare':
-          if (p) {
-            const row = await t.run((ctx) => ctx.db.get(p));
-            if (row && row.purgedAt === undefined) {
-              photos.push(
-                await t.run((ctx) =>
-                  ctx.db.insert('photos', {
-                    storageId: row.storageId,
-                    thumbStorageId: row.thumbStorageId,
-                    uploaderId,
-                    placeOnMap: false,
-                    createdAt: T0,
-                    moderationStatus: 'visible',
-                  }),
-                ),
-              );
-            }
+        case 'legacyShare': {
+          // Rows from before storage ids were keys: any slot may name any live row's file.
+          const q = pick(op.j);
+          const row = p ? await t.run((ctx) => ctx.db.get(p)) : null;
+          const other = q ? await t.run((ctx) => ctx.db.get(q)) : null;
+          if (live(row) && (op.b === 'fresh' || op.b === 'same' || live(other))) {
+            const image = slotOf(row, op.a);
+            const thumb =
+              op.b === 'fresh'
+                ? await fresh('thumb')
+                : op.b === 'same'
+                  ? image
+                  : slotOf(other as Doc<'photos'>, op.b);
+            photos.push(await insertLegacy(image, thumb));
           }
           break;
+        }
+        case 'adoptDoomed': {
+          // A row naming a file the ledger owes a deletion — imported, restored, or legacy.
+          const doomed = await t.run(async (ctx) =>
+            (await ctx.db.query('photoFiles').collect()).filter((r) => r.state === 'doomed'),
+          );
+          const row = doomed[op.i % Math.max(1, doomed.length)];
+          if (row) {
+            const other = await fresh('thumb');
+            photos.push(
+              await (op.slot === 'image'
+                ? insertLegacy(row.storageId, other)
+                : insertLegacy(other, row.storageId)),
+            );
+          }
+          break;
+        }
+        case 'sameBytes': {
+          const row = p ? await t.run((ctx) => ctx.db.get(p)) : null;
+          if (live(row)) {
+            const id = await t.run(async (ctx) => {
+              const bytes = await ctx.storage.get(row.storageId as Id<'_storage'>);
+              return bytes
+                ? ((await ctx.storage.store(bytes.slice(0, bytes.size, 'image/jpeg'))) as string)
+                : null;
+            });
+            if (id) uploads.add(id);
+          }
+          break;
+        }
+        case 'claim': {
+          const ids = await storedIds();
+          const id = ids[op.i % Math.max(1, ids.length)];
+          if (id) {
+            const thumb = await fresh('thumb');
+            uploads.add(thumb);
+            await safely(async () => {
+              const photoId = await as('uploader').mutation(api.photos.create, {
+                storageId: id as Id<'_storage'>,
+                thumbStorageId: thumb as Id<'_storage'>,
+                placeOnMap: false,
+              });
+              photos.push(photoId);
+              uploads.delete(id);
+              uploads.delete(thumb);
+            });
+          }
+          break;
+        }
+        case 'removeBlob': {
+          const ids = await storedIds();
+          const id = ids[op.i % Math.max(1, ids.length)];
+          if (id) {
+            await safely(() =>
+              as('uploader').mutation(api.photos.removeBlob, { storageId: id as Id<'_storage'> }),
+            );
+            if (!(await storedIds()).includes(id)) uploads.delete(id);
+          }
+          break;
+        }
         case 'flag':
           if (p)
             await safely(() =>
@@ -305,7 +435,9 @@ async function run(ops: Op[]) {
         case 'failDeletes':
           if (p) {
             const row = await t.run((ctx) => ctx.db.get(p));
-            if (row) failing.ids.add(row.storageId);
+            if (row && op.slot !== 'thumb') failing.ids.add(row.storageId);
+            if (row && (op.slot === 'thumb' || op.slot === 'both'))
+              failing.ids.add(row.thumbStorageId);
           }
           break;
         case 'letGo':
@@ -322,7 +454,7 @@ async function run(ops: Op[]) {
           break;
       }
     }
-    await checkInvariants(t, reportId, photos);
+    await checkInvariants(t, reportId, photos, uploads);
   }
 
   // Faults cleared and the clock run on: everything owed is done.
@@ -332,7 +464,7 @@ async function run(ops: Op[]) {
     await t.mutation(internal.photoPurge.sweepPhotoFiles, { now: Date.now() });
     await t.finishInProgressScheduledFunctions();
   }
-  await checkInvariants(t, reportId, photos);
+  await checkInvariants(t, reportId, photos, uploads);
   const end = await t.run(async (ctx) => {
     const rows = await ctx.db.query('photos').collect();
     const live = new Set(
@@ -340,7 +472,7 @@ async function run(ops: Op[]) {
         .filter((r) => r.purgedAt === undefined && r.bytesMissingAt === undefined)
         .flatMap((r) => [r.storageId, r.thumbStorageId]),
     );
-    const named = new Set(rows.flatMap((r) => [r.storageId, r.thumbStorageId]));
+    const named = new Set([...uploads, ...rows.flatMap((r) => [r.storageId, r.thumbStorageId])]);
     const stored = (await ctx.db.system.query('_storage').collect()).map((f) => f._id as string);
     return {
       ledger: (await ctx.db.query('photoFiles').collect()).length,
@@ -366,7 +498,12 @@ async function attempt(t: T, p: Id<'photos'>, kill: Kill) {
   for (const [storeKill, recordKill, src] of steps) {
     const copy = await t.run(async (ctx) => {
       const bytes = await ctx.storage.get(src as Id<'_storage'>);
-      return bytes ? ((await ctx.storage.store(bytes)) as string) : null;
+      // As `rotateBlobs` stores it: tagged with its attempt.
+      return bytes
+        ? ((await ctx.storage.store(
+            bytes.slice(0, bytes.size, copyContentType(bytes.type, begun.attemptId)),
+          )) as string)
+        : null;
     });
     if (copy === null) return;
     if (kill === storeKill) return;
@@ -374,16 +511,39 @@ async function attempt(t: T, p: Id<'photos'>, kill: Kill) {
     if (kill === recordKill) return;
     next.push(copy);
   }
-  await t.mutation(internal.photos.swapRotated, {
+  // Rows other than `p` naming either old file — its twins, which keep that file.
+  const twins = await t.run(async (ctx) =>
+    (await ctx.db.query('photos').collect())
+      .filter(
+        (r) =>
+          r._id !== p &&
+          [r.storageId, r.thumbStorageId].some(
+            (id) => id === begun.storageId || id === begun.thumbStorageId,
+          ),
+      )
+      .map((r) => r._id),
+  );
+  const outcome = await t.mutation(internal.photos.swapRotated, {
     attemptId: begun.attemptId,
     old: { storageId: begun.storageId, thumbStorageId: begun.thumbStorageId },
     next: { storageId: next[0] as string, thumbStorageId: next[1] as string },
   });
+  if (outcome === 'rotated' && twins.length <= SAME_BYTES_MAX) {
+    const row = await t.run((ctx) => ctx.db.get(p));
+    expect(row?.sameBytesAs ?? [], 'a swap left twins unrecorded').toEqual(
+      expect.arrayContaining(twins),
+    );
+  }
   if (kill === 'swap') return;
   await t.mutation(internal.photos.endRotation, { attemptId: begun.attemptId });
 }
 
-async function checkInvariants(t: T, reportId: Id<'reports'>, photos: Id<'photos'>[]) {
+async function checkInvariants(
+  t: T,
+  reportId: Id<'reports'>,
+  photos: Id<'photos'>[],
+  uploads: Set<string>,
+) {
   const state = await t.run(async (ctx) => {
     const rows = await ctx.db.query('photos').collect();
     const ledger = await ctx.db.query('photoFiles').collect();
@@ -401,13 +561,14 @@ async function checkInvariants(t: T, reportId: Id<'reports'>, photos: Id<'photos
     const findable = state.attempts.some(
       (a) =>
         a.status !== 'reconciled' &&
+        isCopyOf(f.contentType, a._id) &&
         a.sha256.includes(f.sha256) &&
         f._creationTime > a.scanFrom &&
         f._creationTime <= a.startedAt + ACTION_LIFETIME_MS,
     );
     // Invariants 1, 3: named, or one ledger row, or findable by an unreconciled attempt.
     expect(
-      named.has(id) || ledgered === 1 || findable,
+      named.has(id) || ledgered === 1 || findable || uploads.has(id),
       `stored file ${id} is named by nothing`,
     ).toBe(true);
     expect(ledgered, `stored file ${id} has more than one ledger row`).toBeLessThanOrEqual(1);
@@ -416,12 +577,21 @@ async function checkInvariants(t: T, reportId: Id<'reports'>, photos: Id<'photos
     if (r.state === 'copy')
       expect(named.has(r.storageId), 'a recorded copy is a row slot').toBe(false);
   }
-  // Invariant 2: a live row's files exist.
+  // Invariant 2: every id any row names, in either slot, exists — a tombstone names nothing.
   for (const r of state.rows) {
-    if (r.purgedAt !== undefined || r.bytesMissingAt !== undefined) continue;
-    expect(ids.has(r.storageId), `live photo ${r._id} lost its image`).toBe(true);
-    expect(ids.has(r.thumbStorageId), `live photo ${r._id} lost its thumbnail`).toBe(true);
+    if (r.purgedAt !== undefined) {
+      expect([r.storageId, r.thumbStorageId], `tombstone ${r._id} names a file`).toEqual([
+        TOMBSTONE_FILE,
+        TOMBSTONE_FILE,
+      ]);
+      continue;
+    }
+    if (r.bytesMissingAt !== undefined) continue;
+    expect(ids.has(r.storageId), `photo ${r._id} lost its image`).toBe(true);
+    expect(ids.has(r.thumbStorageId), `photo ${r._id} lost its thumbnail`).toBe(true);
   }
+  // A skater's unattached upload is no machinery's to delete.
+  for (const id of uploads) expect(ids.has(id), `upload ${id} was deleted`).toBe(true);
   // Invariant 6: no public read carries a stored file's id.
   const answers = [
     await t.withIdentity({ subject: 'skater' }).query(api.photos.getUrls, { reportId }),
