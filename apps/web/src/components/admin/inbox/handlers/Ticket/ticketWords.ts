@@ -126,8 +126,12 @@ export const TICKET_WORDS = {
   theReply: 'The reply',
   theNote: 'The note',
   theDecision: 'The decision',
-  replyQueued: 'Reply on its way',
-  replyQueuedDetail: 'It sends in about a minute',
+  /**
+   * A reply written to settle: saved, and sent in about a minute unless canceled — never a promise
+   * that it goes (it may yet be canceled, or fail), as History's words say it was written.
+   */
+  replyQueued: 'Reply saved',
+  replyQueuedDetail: 'It sends in about a minute unless it is canceled',
   noteAdded: 'Note added',
   noteAddedDetail: 'Seen only by staff',
   resolved: 'Resolved',

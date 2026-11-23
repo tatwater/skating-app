@@ -9,11 +9,13 @@ import { replyReceipt } from './useTicketWrites';
  * says neither sent nor not sent, and a repeat press answers the reply as it now stands.
  */
 describe('a reply’s receipt, from its answer', () => {
-  it('a settling reply: the queued words', () => {
-    expect(replyReceipt({ status: 'settling', failedWhy: null })).toEqual({
-      title: W.replyQueued,
-      description: W.replyQueuedDetail,
+  it('a settling reply: saved, sending in a minute unless canceled — never a promise it goes', () => {
+    const r = replyReceipt({ status: 'settling', failedWhy: null });
+    expect(r).toEqual({
+      title: 'Reply saved',
+      description: 'It sends in about a minute unless it is canceled',
     });
+    expect(`${r.title} ${r.description}`).not.toMatch(/on its way|will be sent|sent\b(?! in)/i);
   });
 
   it('a reply the server won’t send: saved, not sent, and why', () => {
