@@ -4,7 +4,7 @@ import { inflateSync } from 'node:zlib';
 import { describe, expect, test } from 'vitest';
 import { seedPng } from './png';
 import type { Call } from './seed';
-import { FULL_PX, postFile, THUMB_PX, uploader, uploadRefusal } from './upload';
+import { FULL_PX, postFile, THUMB_PX, UPLOAD_HOST_CASES, uploader, uploadRefusal } from './upload';
 
 describe('seedPng', () => {
   test('a valid PNG of the size asked, one color drawn from its seed', () => {
@@ -25,6 +25,12 @@ describe('seedPng', () => {
 });
 
 describe('uploadRefusal', () => {
+  test('the server’s rule for dev, on its own table: https, the exact host, no port', () => {
+    for (const [url, own] of UPLOAD_HOST_CASES('happy-cat-123')) {
+      expect([url, uploadRefusal(url, 'happy-cat-123') === null]).toEqual([url, own]);
+    }
+  });
+
   test('only the dev deployment’s own host', () => {
     expect(
       uploadRefusal(

@@ -16,19 +16,45 @@ import type { Call, SeedCall, Upload } from './seed';
 export const FULL_PX = 64;
 export const THUMB_PX = 16;
 
-/** What an upload address may point at: the dev deployment's own host, or `null` when it may not. */
+/**
+ * What an upload address may point at: the dev deployment's own origin, by the server's own rule for
+ * "this is dev" (`packages/convex/convex/lib/deployment.ts` `isDevDeployment`): `https:`, exactly
+ * `<name>.convex.cloud`, no port — never a look-alike host, a host in a path, plain `http:` or another
+ * port. `null` when it may; otherwise why not (no address in the words). The two are held to one table
+ * of addresses (`UPLOAD_HOST_CASES`).
+ */
 export function uploadRefusal(url: string, deploymentName: string | null): string | null {
   if (deploymentName === null) return 'Photos are uploaded to a dev deployment only.';
-  let host: string;
+  let parsed: URL;
   try {
-    host = new URL(url).hostname;
+    parsed = new URL(url);
   } catch {
     return 'The upload address could not be read; nothing was sent.';
   }
-  return host === `${deploymentName}.convex.cloud`
-    ? null
-    : 'The upload address is not this deployment’s; nothing was sent.';
+  const own =
+    parsed.protocol === 'https:' &&
+    parsed.hostname === `${deploymentName}.convex.cloud` &&
+    parsed.port === '';
+  return own ? null : 'The upload address is not this deployment’s; nothing was sent.';
 }
+
+/**
+ * The addresses both rules are held to, with whether each is the deployment's own — the server's own
+ * cases (`deployment.test.ts`) with an upload path: each must read the same here as `isDevDeployment`
+ * reads the address's origin there.
+ */
+export const UPLOAD_HOST_CASES = (name: string): readonly [string, boolean][] => [
+  [`https://${name}.convex.cloud/api/storage/upload?token=t`, true],
+  [`https://${name}.convex.cloud:443/api/storage/upload`, true],
+  [`https://x${name}.convex.cloud/api/storage/upload`, false],
+  [`https://${name}.convex.cloud.evil.example/api/storage/upload`, false],
+  [`http://${name}.convex.cloud/api/storage/upload`, false],
+  [`https://${name}.convex.cloud:8443/api/storage/upload`, false],
+  [`https://evil.example/${name}.convex.cloud/api/storage/upload`, false],
+  ['http://127.0.0.1:3210/api/storage/upload', false],
+  ['', false],
+  ['not a url', false],
+];
 
 /** The POST itself, run by `node -e`: its stdin is `{ url, type, body }` (body in base64). */
 export const POST = `
