@@ -3,11 +3,13 @@ import {
   KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_SHA256,
   LOCATE_GIVE_UP_MS,
+  ONBOARDING_COPY,
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
   TERMS,
   TERMS_OPEN_RETRY_GAP_MS,
   TERMS_SHA256,
+  TERMS_WAITING_LINE_MS,
 } from '@skating/core';
 import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -852,6 +854,38 @@ describe('a failing end', () => {
     await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
     await waitFor(() => expect(screen.getByRole('checkbox')).not.toHaveAttribute('aria-disabled'));
     expect(m.toast).not.toHaveBeenCalled();
+  });
+
+  it('an end waiting on an unanswered opening says so quietly after a few seconds, until it counts', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      fakes.queries.set('profiles:current', LIVE);
+      const opening = heldOpening();
+      mutation('consent:openTerms').mockImplementationOnce(opening.next);
+      render(<TermsPage />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(mutation('consent:openTerms')).toHaveBeenCalledOnce();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TERMS_WAITING_LINE_MS - 1);
+      });
+      expect(screen.queryByText(ONBOARDING_COPY.terms.stillConnecting)).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(screen.getByRole('status')).toHaveTextContent(ONBOARDING_COPY.terms.stillConnecting);
+      // Back online: the opening answers, the end is stamped, and the line goes.
+      await act(async () => {
+        opening.answer(null);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce();
+      expect(screen.queryByText(ONBOARDING_COPY.terms.stillConnecting)).toBeNull();
+      expect(screen.getByRole('checkbox')).not.toHaveAttribute('aria-disabled');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('a first opening that fails while the end waits on it is said once, and starts again from the top', async () => {

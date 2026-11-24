@@ -11,6 +11,7 @@ import {
   receiptLine,
   TERMS,
   TERMS_SHA256,
+  TERMS_WAITING_LINE_MS,
   termsAcceptanceContext,
   termsOpenRetryDue,
 } from '@skating/core';
@@ -107,6 +108,15 @@ export function TermsFlow({
 
   const [read, setRead] = useState(false);
   const [reaching, setReaching] = useState(false);
+  // A reached end still waiting on the server after a while (its opening unanswered, or its stamp
+  // out — offline, say): a quiet line says why the box is still locked, as on the phone.
+  const [waiting, setWaiting] = useState(false);
+  useEffect(() => {
+    setWaiting(false);
+    if (!reaching) return;
+    const timer = setTimeout(() => setWaiting(true), TERMS_WAITING_LINE_MS);
+    return () => clearTimeout(timer);
+  }, [reaching]);
   // A failed stamp disarms the end until the marker has left the screen and come back (the phone's
   // rule): a persistent error is one toast, not a storm of retries while the end sits in view.
   const [disarmed, setDisarmed] = useState(false);
@@ -358,6 +368,7 @@ export function TermsFlow({
     <TermsStep
       step={step}
       read={read}
+      waiting={waiting && reaching}
       armed={!read && !reaching && !held && !disarmed}
       disarmed={disarmed}
       onEndGone={() => setDisarmed(false)}

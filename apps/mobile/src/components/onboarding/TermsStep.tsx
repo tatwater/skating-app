@@ -14,6 +14,7 @@ import {
   stripBold,
   TERMS,
   TERMS_SHA256,
+  TERMS_WAITING_LINE_MS,
   termsSectionHeading,
   termsVersionLabel,
 } from '@skating/core';
@@ -210,6 +211,16 @@ function Reader({
 
   const unlocked = state.end === 'recorded';
   const canRecord = unlocked && checked && !busy;
+  // A reached end still waiting on the server after a while (its opening unanswered, or its stamp
+  // out — offline, say): a quiet line says why the box is still locked, as on the web.
+  const recording = state.end === 'recording';
+  const [waiting, setWaiting] = useState(false);
+  useEffect(() => {
+    setWaiting(false);
+    if (!recording) return;
+    const timer = setTimeout(() => setWaiting(true), TERMS_WAITING_LINE_MS);
+    return () => clearTimeout(timer);
+  }, [recording]);
 
   async function onRecord() {
     if (!canRecord) return;
@@ -307,6 +318,11 @@ function Reader({
               {agree.after}
             </Paragraph>
           </XStack>
+          {waiting && recording ? (
+            <Text color="foregroundMuted" fontSize={13} accessibilityLiveRegion="polite">
+              {ONBOARDING_COPY.terms.stillConnecting}
+            </Text>
+          ) : null}
           <PrimaryButton disabled={!canRecord} onPress={() => void onRecord()}>
             {ONBOARDING_COPY.terms.submit}
           </PrimaryButton>

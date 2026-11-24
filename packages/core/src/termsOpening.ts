@@ -16,6 +16,13 @@
 export const TERMS_OPEN_RETRY_GAP_MS = 5_000;
 
 /**
+ * How long a reached end may wait on the server — its opening not yet answered, or its stamp still
+ * out (the device offline) — before a quiet line under the agreement says why the box is still
+ * locked (`ONBOARDING_COPY.terms.stillConnecting`), on both apps.
+ */
+export const TERMS_WAITING_LINE_MS = 3_000;
+
+/**
  * Whether a failed opening may be tried again at `now`, its last try having started at `lastTryAt`
  * (`null`: never tried). A clock set back past the last try is due at once: waiting for it to pass
  * the last try again would stop the retries for as long as the step back.

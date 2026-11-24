@@ -1519,7 +1519,10 @@ reading's first opening (a slow connection; a text that fits the screen, which t
 a restarted reading's never does, a known limit, §9.17), a
 success stamps the end then and a failure is said once — `terms_not_opened`'s words, or the server's own for a can't-act
 refusal — and the reading starts again; on a retried one (an earlier opening of this reading failed, so most of the text
-was read with no reading on the server), whatever it answers, the end says why once and the reading starts again. A
+was read with no reading on the server), whatever it answers, the end says why once and the reading starts again. An
+end that has waited on the server for `TERMS_WAITING_LINE_MS` (three seconds; its opening unanswered or its stamp out,
+offline say) gets a quiet line by the agreement, *Still connecting. The checkbox unlocks once you're back online.* (a
+draft for the copy pass), on both apps. A
 reading the server doesn't have at the end — no opening ever succeeded, said then in `terms_not_opened`'s words (or the
 server's for a can't-act refusal), or `terms_not_opened` itself — is opened anew from the top of whichever
 reader is open (the web's full-screen reader scrolls to its top too), and its end counts only once the marker has left the

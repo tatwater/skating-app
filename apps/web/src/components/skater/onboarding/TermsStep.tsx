@@ -68,6 +68,7 @@ export function AgreeLine({
 export function TermsStep({
   step,
   read,
+  waiting = false,
   armed,
   disarmed = false,
   onEndGone,
@@ -84,6 +85,8 @@ export function TermsStep({
   /** "2 of 5" for an account new this session, else `null`. */
   step: number | null;
   read: boolean;
+  /** A reached end has waited a while on the server: a quiet line says the box unlocks once online. */
+  waiting?: boolean;
   armed: boolean;
   /** A failed stamp: the end counts again only once the marker has left the screen (`onEndGone`). */
   disarmed?: boolean;
@@ -127,6 +130,11 @@ export function TermsStep({
       actions={
         <>
           <AgreeLine locked={!read} checked={checked} onCheckedChange={setChecked} />
+          {waiting && !read && (
+            <p role="status" data-slot="terms-waiting" className="m-0 text-[0.8125rem] text-fg3">
+              {copy.stillConnecting}
+            </p>
+          )}
           <Button
             variant="primary"
             disabled={!ready}

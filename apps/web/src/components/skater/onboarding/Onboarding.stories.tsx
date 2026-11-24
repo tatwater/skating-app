@@ -241,10 +241,13 @@ function Terms({
   phone: onPhone = false,
   read: initiallyRead = false,
   checked = false,
+  waiting = false,
 }: {
   phone?: boolean;
   read?: boolean;
   checked?: boolean;
+  /** The end was reached and is still waiting on the server (offline): it is never recorded. */
+  waiting?: boolean;
 }) {
   const [read, setRead] = useState(initiallyRead);
   return (
@@ -253,7 +256,8 @@ function Terms({
         className={FILL}
         step={2}
         read={read}
-        armed={!read}
+        waiting={waiting}
+        armed={!read && !waiting}
         busy={false}
         email={EMAIL}
         initialChecked={checked}
@@ -289,6 +293,21 @@ export const TermsLocked: Story = {
 };
 
 export const TermsLockedLight: Story = { ...TermsLocked, ...desk('light') };
+
+/** An end reached offline: after a few seconds, a quiet line says why the box is still locked. */
+export const TermsWaiting: Story = {
+  ...desk(),
+  render: () => <Terms waiting />,
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getByRole('status')).toHaveTextContent(
+      ONBOARDING_COPY.terms.stillConnecting,
+    );
+    await expect(c.getByRole('checkbox')).toHaveAttribute('aria-disabled', 'true');
+  },
+};
+
+export const TermsWaitingPhone: Story = { ...TermsWaiting, ...phone, render: () => <Terms phone waiting /> };
 
 /**
  * 10.3 → 10.4 — read to the end: the end marker scrolled into the window unlocks the box, the meta

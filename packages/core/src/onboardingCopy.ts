@@ -68,6 +68,11 @@ export const ONBOARDING_COPY = {
       after: '.',
     },
     submit: 'Record acceptance',
+    /**
+     * Draft, for the founder's copy pass: a quiet line by the agreement once a reached end has
+     * waited on the server for `TERMS_WAITING_LINE_MS` (the device offline, say).
+     */
+    stillConnecting: 'Still connecting. The checkbox unlocks once you’re back online.',
   },
   receipt: {
     kicker: 'Terms of use',
