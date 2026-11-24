@@ -1,6 +1,6 @@
 # Privacy notice (interim — friends alpha)
 
-**Last updated: 2026-11-22**
+**Last updated: 2026-11-24**
 
 > **Status: interim.** This is a plain-language privacy notice for the small,
 > friends-only alpha of this app. It is written to be honest and cover the alpha
@@ -17,17 +17,24 @@ The app is operated by its founder. Questions or requests: **desk@teaganatwater.
 
 ## Age requirement
 You must be **at least 18 years old** to use the app. We collect your **date of birth**
-at signup to enforce that minimum; it is treated as **sensitive personal information** (used
-only for age/eligibility, and scrubbed when you delete your account). The app is not directed
-at anyone under 18, and an account cannot be created for one.
+at signup to enforce that minimum; it is treated as **sensitive personal information**: used
+only for age and eligibility and in the [record of what you agreed to](#the-record-of-what-you-agreed-to),
+and removed from your profile when your account's deletion is final. The app is not directed at
+anyone under 18, and an account cannot be created for one.
 
 ## What we collect
 
 - **Account info** — handled by our auth provider (Clerk): your email and any social
   login you choose, display name, and username.
 - **Date of birth** — collected at signup to verify you meet the 18+ minimum. Treated as
-  sensitive data: used only for age/eligibility and removed when you delete your account. We
-  do not display it or share it.
+  sensitive data: used only for age and eligibility, and kept in the record of your acceptance
+  (below); it is removed from your profile when your account's deletion is final. We do not
+  display it or share it.
+- **The record of what you agreed to** — when you accept the Terms of Use, and each time you
+  answer Know Before You Go, we keep a record of it, including your name, email, date of birth,
+  the IP address your sign-in was using, and the kind of device you used. See
+  [the record of what you agreed to](#the-record-of-what-you-agreed-to) for what it holds and how
+  long it is kept.
 - **Your home location** — a single coordinate you set, used **only** to compute your
   drive-time filter. It is **private**: it is never shown to other users and is not part
   of any report. You may optionally show a **town label** (not an address) on your
@@ -114,6 +121,41 @@ at anyone under 18, and an account cannot be created for one.
   where it is used it will mask inputs and location data.
   The mobile app sends no product analytics at all.
 
+## The record of what you agreed to
+When you accept the Terms of Use, we keep a record of it, and we keep another each time you answer
+Know Before You Go (the seven questions at signup and at the start of each season). The records exist
+so that, if a question ever comes up about an accident on the ice, there is an honest account of what
+was read and agreed to, and when.
+
+Each record holds:
+- your **full name, email, and date of birth**, as they stood on your account at that moment;
+- **which version** of the terms you accepted (and which version of this notice was current), or
+  which version of the questions you answered, and **when**. For the terms, it also holds when you
+  opened them and when you reached their end, and in which reader;
+- for the questions, which season was current. It records only that you finished them: **a wrong
+  answer is never stored**, by us or by anyone we work with;
+- the **IP address** your sign-in was using. The app doesn't see your device's address itself: right
+  afterward, our server asks our sign-in provider, Clerk, for the address on its record of
+  your session, and stores it with a note of how your session was matched. If Clerk can't say, the
+  record notes that instead;
+- the **kind of device and browser** you used, as your device reports it, and labeled as
+  reported by your device rather than checked by us.
+
+How the records are kept:
+- **Never public.** They aren't shown on any screen of the app, and there is no staff screen for
+  them; one is looked up only if it is needed.
+- **Sealed.** Once written, a record isn't changed, except to add the IP address, to note whether
+  the emailed copy of the terms was sent, and to unlink it from your account when your deletion is
+  final.
+- **Kept while your account exists, and for six years after your deletion is final**, then deleted
+  automatically. Six years matches the longest time limit for bringing an injury claim in the areas
+  the app covers. When your deletion is final, each record is unlinked from your account, so it
+  can't connect you back to the reports you leave behind; the name, email, and date of birth inside
+  it stay until the record itself is deleted.
+- **Included in your data export**, without your email or our internal ids.
+
+When you accept the terms, we also email you a copy of the version you accepted.
+
 ## How we use it
 - To show peer ice reports on a map and feed, filtered to your drive-time range.
 - To let you share reports, comments, and hazards with the community.
@@ -122,6 +164,8 @@ at anyone under 18, and an account cannot be created for one.
   water bodies you follow; every email carries a one-click unsubscribe.
 - To keep the app working (crash/error diagnostics) and safe (moderation of flagged
   content).
+- To keep the record of what you agreed to, as described above, and to email you a copy of the
+  terms you accept.
 
 We do **not** sell your data, and we do **not** use it to train AI models. We do not
 predict or assert ice safety — reports are peers' observations only.
@@ -145,18 +189,19 @@ profile your individual reports are still public and show your name — a privat
 
 ## Sharing with third parties (processors)
 We use these services to run the app; they process data on our behalf:
-Convex (database & file storage), Clerk (authentication), Cloudflare (map tiles and the
+Convex (database & file storage), Clerk (authentication, and the IP address in the record of
+your acceptance), Cloudflare (map tiles and the
 satellite-imagery archive), OpenRouteService (drive-time and walking routes), Geoapify (address
 suggestions when you type a home address), Open-Meteo and
 the US National Weather Service (weather), Sentry (crash/error), PostHog (website product
-analytics), Resend (email notifications
-and operator email), Expo and Apple/Google (app distribution & push), Google Photos — only when you pick from
+analytics), Resend (email notifications, the copy
+of the terms you accept, and operator email), Expo and Apple/Google (app distribution & push), Google Photos — only when you pick from
 it — and — only if you connect it — Strava. Data you push to a fitness provider is also governed by that
 provider's own terms and privacy policy.
 
 ## Retention, deletion, and export
-- You can **export your data** (a JSON bundle of your own content plus your uploaded
-  photos) and **delete your account** at any time.
+- You can **export your data** (a JSON bundle of your own content, the records of what you
+  agreed to, and your uploaded photos) and **delete your account** at any time.
 - When you ask to delete your account, your name, photo, bio, town, home location and email
   are **erased immediately** and your profile disappears from the app. Every bounty you posted
   — open ones included — is **removed** at the same time, since it is a standing request nobody
@@ -164,6 +209,10 @@ provider's own terms and privacy policy.
   for **30 days** so you can change your mind about the account itself; after that the deletion
   is final: your date of birth, connected-account tokens, notifications, favorites and
   unpublished recordings are erased and your login is removed.
+- **The record of what you agreed to is kept apart, and longer.** It keeps the name, email, and date
+  of birth your account had at each acceptance, unlinked from your account, for **six years after your
+  deletion is final**, and is then deleted automatically. Canceling a deletion leaves your old
+  records as they were, and accepting the terms again adds new ones.
 - Your past reports, comments, hazard reports and published skate paths are **kept, detached
   from your identity**, so the community's historical ice record is preserved. They show as
   "Deleted skater". This is **pseudonymization, not full anonymization**: each of those
@@ -190,7 +239,9 @@ app. We follow reasonable measures to protect data, but no system is perfectly s
 
 ## Changes
 This interim notice will be replaced by a full policy before any broader launch. Material
-changes will be communicated in-app.
+changes will be communicated in-app. A change to this notice alone doesn't ask you to accept
+anything again; each record of your acceptance notes which version of this notice was current.
+A change to the Terms of Use does ask you to read and accept them again.
 
 ## Contact
 Questions, data export, or deletion requests: **desk@teaganatwater.com**.
