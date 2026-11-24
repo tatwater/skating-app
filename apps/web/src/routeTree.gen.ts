@@ -13,12 +13,14 @@ import { Route as SkaterRouteImport } from './routes/_skater'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as FeedRouteImport } from './routes/feed'
+import { Route as KnowBeforeYouGoRouteImport } from './routes/know-before-you-go'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as PostRouteImport } from './routes/post'
-import { Route as ReackRouteImport } from './routes/reack'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as SignUpRouteImport } from './routes/sign-up'
+import { Route as TermsRouteImport } from './routes/terms'
+import { Route as WelcomeRouteImport } from './routes/welcome'
 import { Route as SkaterIndexRouteImport } from './routes/_skater.index'
 import { Route as SkaterLatestRouteImport } from './routes/_skater.latest'
 import { Route as SkaterSettingsRouteImport } from './routes/_skater.settings'
@@ -73,6 +75,11 @@ const FeedRoute = FeedRouteImport.update({
   path: '/feed',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KnowBeforeYouGoRoute = KnowBeforeYouGoRouteImport.update({
+  id: '/know-before-you-go',
+  path: '/know-before-you-go',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const NotificationsRoute = NotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
@@ -88,11 +95,6 @@ const PostRoute = PostRouteImport.update({
   path: '/post',
   getParentRoute: () => rootRouteImport,
 } as any)
-const ReackRoute = ReackRouteImport.update({
-  id: '/reack',
-  path: '/reack',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SignInRoute = SignInRouteImport.update({
   id: '/sign-in',
   path: '/sign-in',
@@ -101,6 +103,16 @@ const SignInRoute = SignInRouteImport.update({
 const SignUpRoute = SignUpRouteImport.update({
   id: '/sign-up',
   path: '/sign-up',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const WelcomeRoute = WelcomeRouteImport.update({
+  id: '/welcome',
+  path: '/welcome',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkaterIndexRoute = SkaterIndexRouteImport.update({
@@ -279,12 +291,14 @@ export interface FileRoutesByFullPath {
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
   '/feed': typeof FeedRoute
+  '/know-before-you-go': typeof KnowBeforeYouGoRoute
   '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/post': typeof PostRoute
-  '/reack': typeof ReackRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/terms': typeof TermsRoute
+  '/welcome': typeof WelcomeRoute
   '/latest': typeof SkaterLatestRoute
   '/settings': typeof SkaterSettingsRouteWithChildren
   '/admin/corpus': typeof AdminCorpusRoute
@@ -322,12 +336,14 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/about': typeof AboutRoute
   '/feed': typeof FeedRoute
+  '/know-before-you-go': typeof KnowBeforeYouGoRoute
   '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/post': typeof PostRoute
-  '/reack': typeof ReackRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/terms': typeof TermsRoute
+  '/welcome': typeof WelcomeRoute
   '/latest': typeof SkaterLatestRoute
   '/admin/corpus': typeof AdminCorpusRoute
   '/admin/dashboard': typeof AdminDashboardRoute
@@ -368,12 +384,14 @@ export interface FileRoutesById {
   '/about': typeof AboutRoute
   '/admin': typeof AdminRouteWithChildren
   '/feed': typeof FeedRoute
+  '/know-before-you-go': typeof KnowBeforeYouGoRoute
   '/notifications': typeof NotificationsRoute
   '/onboarding': typeof OnboardingRoute
   '/post': typeof PostRoute
-  '/reack': typeof ReackRoute
   '/sign-in': typeof SignInRoute
   '/sign-up': typeof SignUpRoute
+  '/terms': typeof TermsRoute
+  '/welcome': typeof WelcomeRoute
   '/_skater/latest': typeof SkaterLatestRoute
   '/_skater/settings': typeof SkaterSettingsRouteWithChildren
   '/admin/corpus': typeof AdminCorpusRoute
@@ -416,12 +434,14 @@ export interface FileRouteTypes {
     | '/about'
     | '/admin'
     | '/feed'
+    | '/know-before-you-go'
     | '/notifications'
     | '/onboarding'
     | '/post'
-    | '/reack'
     | '/sign-in'
     | '/sign-up'
+    | '/terms'
+    | '/welcome'
     | '/latest'
     | '/settings'
     | '/admin/corpus'
@@ -459,12 +479,14 @@ export interface FileRouteTypes {
   to:
     | '/about'
     | '/feed'
+    | '/know-before-you-go'
     | '/notifications'
     | '/onboarding'
     | '/post'
-    | '/reack'
     | '/sign-in'
     | '/sign-up'
+    | '/terms'
+    | '/welcome'
     | '/latest'
     | '/admin/corpus'
     | '/admin/dashboard'
@@ -504,12 +526,14 @@ export interface FileRouteTypes {
     | '/about'
     | '/admin'
     | '/feed'
+    | '/know-before-you-go'
     | '/notifications'
     | '/onboarding'
     | '/post'
-    | '/reack'
     | '/sign-in'
     | '/sign-up'
+    | '/terms'
+    | '/welcome'
     | '/_skater/latest'
     | '/_skater/settings'
     | '/admin/corpus'
@@ -551,12 +575,14 @@ export interface RootRouteChildren {
   AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRouteWithChildren
   FeedRoute: typeof FeedRoute
+  KnowBeforeYouGoRoute: typeof KnowBeforeYouGoRoute
   NotificationsRoute: typeof NotificationsRoute
   OnboardingRoute: typeof OnboardingRoute
   PostRoute: typeof PostRoute
-  ReackRoute: typeof ReackRoute
   SignInRoute: typeof SignInRoute
   SignUpRoute: typeof SignUpRoute
+  TermsRoute: typeof TermsRoute
+  WelcomeRoute: typeof WelcomeRoute
   GooglePhotosCallbackRoute: typeof GooglePhotosCallbackRoute
 }
 
@@ -590,6 +616,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FeedRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/know-before-you-go': {
+      id: '/know-before-you-go'
+      path: '/know-before-you-go'
+      fullPath: '/know-before-you-go'
+      preLoaderRoute: typeof KnowBeforeYouGoRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/notifications': {
       id: '/notifications'
       path: '/notifications'
@@ -611,13 +644,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PostRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/reack': {
-      id: '/reack'
-      path: '/reack'
-      fullPath: '/reack'
-      preLoaderRoute: typeof ReackRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/sign-in': {
       id: '/sign-in'
       path: '/sign-in'
@@ -630,6 +656,20 @@ declare module '@tanstack/react-router' {
       path: '/sign-up'
       fullPath: '/sign-up'
       preLoaderRoute: typeof SignUpRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/welcome': {
+      id: '/welcome'
+      path: '/welcome'
+      fullPath: '/welcome'
+      preLoaderRoute: typeof WelcomeRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/_skater/': {
@@ -981,12 +1021,14 @@ const rootRouteChildren: RootRouteChildren = {
   AboutRoute: AboutRoute,
   AdminRoute: AdminRouteWithChildren,
   FeedRoute: FeedRoute,
+  KnowBeforeYouGoRoute: KnowBeforeYouGoRoute,
   NotificationsRoute: NotificationsRoute,
   OnboardingRoute: OnboardingRoute,
   PostRoute: PostRoute,
-  ReackRoute: ReackRoute,
   SignInRoute: SignInRoute,
   SignUpRoute: SignUpRoute,
+  TermsRoute: TermsRoute,
+  WelcomeRoute: WelcomeRoute,
   GooglePhotosCallbackRoute: GooglePhotosCallbackRoute,
 }
 export const routeTree = rootRouteImport

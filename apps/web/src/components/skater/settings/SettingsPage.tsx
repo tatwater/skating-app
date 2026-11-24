@@ -17,6 +17,7 @@ import { Skeleton } from '../../kit/skeleton';
 import { AccountSection, type StravaState } from './AccountSection';
 import { type BlockedPerson, BlockedSection } from './BlockedSection';
 import { ChangeEmailView } from './ChangeEmail';
+import { currentPosition } from './currentPosition';
 import { DataSection, type ExportRow } from './DataSection';
 import { type AddressSuggestion, type SuggestFn, useAddressSuggestions } from './geocoder';
 import { HomeSection, type HomeView, type LocateState } from './HomeSection';
@@ -189,21 +190,6 @@ function YourProfile({ profile }: { profile: Profile }) {
       }
     />
   );
-}
-
-/** The browser's position, once. Rejects when there's no geolocation or it's refused. */
-export function currentPosition(): Promise<{ lat: number; lng: number }> {
-  return new Promise((resolve, reject) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      reject(new Error('unavailable'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      reject,
-      { maximumAge: 60_000, timeout: 20_000 },
-    );
-  });
 }
 
 function Home({

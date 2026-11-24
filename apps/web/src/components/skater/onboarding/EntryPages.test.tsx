@@ -1,0 +1,483 @@
+import {
+  KNOW_BEFORE_YOU_GO,
+  KNOW_BEFORE_YOU_GO_SHA256,
+  PRIVACY_NOTICE_SHA256,
+  PRIVACY_NOTICE_VERSION,
+  TERMS,
+  TERMS_SHA256,
+} from '@skating/core';
+import { act, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { ConvexError } from 'convex/values';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import { convexReact, fakes, resetFakes } from '../testMocks';
+
+const m = vi.hoisted(() => ({
+  /** The address provider: on, with nothing to suggest unless a test says otherwise. */
+  suggest: async () => ({ status: 'ok', suggestions: [], attribution: 'Powered by Geoapify' }),
+  toast: vi.fn(),
+  signOut: vi.fn(async () => undefined),
+  capture: vi.fn(),
+}));
+vi.mock('convex/react', () => ({ ...convexReact, useAction: () => m.suggest }));
+vi.mock('../../kit/toast', async (original) => ({
+  ...(await original<typeof import('../../kit/toast')>()),
+  toast: m.toast,
+}));
+vi.mock('@clerk/tanstack-react-start', () => ({
+  useAuth: () => ({ sessionId: 'sess_1' }),
+  useUser: () => ({ user: { primaryEmailAddress: { emailAddress: 'kate.donovan@gmail.com' } } }),
+}));
+vi.mock('@/lib/sheetOwner', () => ({ useSignOut: () => m.signOut }));
+vi.mock('@/lib/analytics', () => ({ useAnalytics: () => ({ capture: m.capture }) }));
+vi.mock('../settings/useProfilePhoto', () => ({
+  useProfilePhoto: () => ({
+    imageUrl: undefined,
+    busy: null,
+    error: null,
+    offline: false,
+    onChange: async () => {},
+    onRemove: async () => true,
+  }),
+}));
+
+import {
+  carryAccount,
+  forgetEntry,
+  holdForReceipt,
+  recordReceipt,
+  useEntryStore,
+} from '@/lib/entryHold';
+
+import {
+  KnowBeforeYouGoPage,
+  OnboardingPage,
+  profilePatch,
+  TermsPage,
+  WelcomePage,
+} from './EntryPages';
+
+/** Every end marker is on screen the moment it is watched: the reading's end, at once. */
+class SeenAtOnce {
+  private live = true;
+  constructor(private readonly callback: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    queueMicrotask(() => {
+      if (!this.live) return;
+      this.callback(
+        [{ target, isIntersecting: true, intersectionRatio: 1 } as IntersectionObserverEntry],
+        this as unknown as IntersectionObserver,
+      );
+    });
+  }
+  disconnect() {
+    this.live = false;
+  }
+  unobserve() {}
+  takeRecords() {
+    return [];
+  }
+}
+
+beforeAll(() => {
+  // Base UI waits on an element's animations before it unmounts; jsdom has none to wait on.
+  if (!('getAnimations' in Element.prototype)) {
+    Object.defineProperty(Element.prototype, 'getAnimations', { value: () => [] });
+  }
+  Element.prototype.animate ??= (() => ({
+    cancel: () => {},
+    finished: Promise.resolve(),
+  })) as never;
+  Element.prototype.scrollTo ??= () => {};
+});
+
+/** The fake behind `useMutation` for a function name: the one the component gets. */
+const mutation = (name: string) => {
+  let fn = fakes.mutations.get(name);
+  if (!fn) {
+    fn = vi.fn().mockResolvedValue(null);
+    fakes.mutations.set(name, fn);
+  }
+  return fn;
+};
+
+const ACCOUNT = {
+  displayName: 'Kate Donovan',
+  username: 'kdonovan',
+  dateOfBirth: Date.UTC(1988, 10, 2),
+};
+const FIELDS = {
+  displayName: 'Kate Donovan',
+  username: 'kdonovan',
+  month: 11,
+  day: '2',
+  year: '1988',
+};
+const LIVE = {
+  _id: 'p1',
+  displayName: 'Kate Donovan',
+  termsVersion: TERMS.version,
+  knowBeforeYouGoAt: Date.UTC(2026, 10, 16),
+};
+
+beforeEach(() => {
+  resetFakes();
+  forgetEntry();
+  m.toast.mockClear();
+  m.capture.mockClear();
+  m.signOut.mockClear();
+  vi.stubGlobal('IntersectionObserver', SeenAtOnce);
+  fakes.queries.set('consent:watchAnchor', null);
+});
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  forgetEntry();
+});
+
+/** Reads to the end (the stub sees it at once), ticks the box, and records. */
+async function readAndRecord(user: ReturnType<typeof userEvent.setup>) {
+  await waitFor(() => expect(screen.getByRole('checkbox')).not.toHaveAttribute('aria-disabled'));
+  await user.click(screen.getByRole('checkbox'));
+  await user.click(screen.getByRole('button', { name: 'Record acceptance' }));
+}
+
+describe('/onboarding', () => {
+  it('falls back to the Account step when the Terms step has no fields carried', async () => {
+    fakes.queries.set('profiles:current', null);
+    const onStep = vi.fn();
+    render(<OnboardingPage step="terms" onStep={onStep} />);
+    expect(screen.getByRole('heading', { name: 'Create your account' })).toBeInTheDocument();
+    await waitFor(() => expect(onStep).toHaveBeenCalledWith('account', { replace: true }));
+  });
+
+  it('carries the Account step’s values to the Terms step, writing nothing', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', null);
+    fakes.queries.set('profiles:usernameAvailable', { username: 'kdonovan', available: true });
+    const onStep = vi.fn();
+    carryAccount(FIELDS, ACCOUNT);
+    useEntryStore.setState({ account: null });
+    render(<OnboardingPage step="account" onStep={onStep} />);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(onStep).toHaveBeenCalledWith('terms');
+    expect(useEntryStore.getState().account).toEqual(ACCOUNT);
+    expect(fakes.mutations.size).toBe(0);
+  });
+
+  it('opens the reading, reaches its end, and records the acceptance with the account', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', null);
+    carryAccount(FIELDS, ACCOUNT);
+    render(<OnboardingPage step="terms" onStep={vi.fn()} />);
+    expect(screen.getByText('2 of 5')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(mutation('consent:openTerms')).toHaveBeenCalledWith({
+        termsVersion: TERMS.version,
+        termsHash: TERMS_SHA256,
+        surface: 'web',
+      }),
+    );
+    await readAndRecord(user);
+    expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledWith({
+      termsVersion: TERMS.version,
+      termsHash: TERMS_SHA256,
+      via: 'inline',
+    });
+    expect(m.capture).toHaveBeenCalledWith('terms_read_to_end', { via: 'inline' });
+    await waitFor(() =>
+      expect(mutation('consent:acceptTerms')).toHaveBeenCalledWith({
+        termsVersion: TERMS.version,
+        termsHash: TERMS_SHA256,
+        privacyVersion: PRIVACY_NOTICE_VERSION,
+        privacyHash: PRIVACY_NOTICE_SHA256,
+        surface: 'web',
+        userAgent: navigator.userAgent,
+        clientSessionId: 'sess_1',
+        account: ACCOUNT,
+      }),
+    );
+    // The receipt, under the hold; the new profile counts once.
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: 'Acceptance recorded' })).toBeInTheDocument(),
+    );
+    expect(useEntryStore.getState()).toMatchObject({
+      hold: 'receipt',
+      recorded: true,
+      account: null,
+    });
+    expect(m.capture).toHaveBeenCalledWith('terms_accepted', { context: 'first_run' });
+    expect(m.capture).toHaveBeenCalledWith('onboarding_completed');
+  });
+
+  it('sends a taken handle back to the Account step, marked, with a toast', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', null);
+    carryAccount(FIELDS, ACCOUNT);
+    mutation('consent:acceptTerms').mockRejectedValueOnce(
+      new ConvexError({ code: 'username_taken', message: 'Someone just took that username.' }),
+    );
+    const onStep = vi.fn();
+    render(<OnboardingPage step="terms" onStep={onStep} />);
+    await readAndRecord(user);
+    await waitFor(() => expect(onStep).toHaveBeenCalledWith('account'));
+    expect(m.toast).toHaveBeenCalledWith({
+      title: 'Someone just took that username.',
+      tone: 'bad',
+    });
+    expect(useEntryStore.getState()).toMatchObject({ hold: null, taken: 'kdonovan' });
+  });
+});
+
+describe('/terms', () => {
+  it('records an existing account’s acceptance without an account, and counts its context', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, termsVersion: undefined });
+    render(<TermsPage />);
+    expect(screen.queryByText('2 of 5')).toBeNull();
+    await readAndRecord(user);
+    await waitFor(() => expect(mutation('consent:acceptTerms')).toHaveBeenCalled());
+    expect(mutation('consent:acceptTerms').mock.calls[0]?.[0]).not.toHaveProperty('account');
+    await waitFor(() =>
+      expect(m.capture).toHaveBeenCalledWith('terms_accepted', { context: 'returning' }),
+    );
+    expect(m.capture).not.toHaveBeenCalledWith('onboarding_completed');
+  });
+
+  it('re-arms the end when the server says it wasn’t read, and lets the hold go', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:acceptTerms').mockRejectedValueOnce(
+      new ConvexError({ code: 'terms_not_read', message: '' }),
+    );
+    render(<TermsPage />);
+    await readAndRecord(user);
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({
+        title: 'Please read the terms to the end before you accept them.',
+        tone: 'bad',
+      }),
+    );
+    expect(useEntryStore.getState().hold).toBeNull();
+    // Re-armed: the stub sees the end again, and the server is asked again.
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledTimes(2));
+  });
+
+  it('says a plain-string refusal with core’s fallback, never the raw string', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:acceptTerms').mockRejectedValueOnce(new ConvexError('Not authenticated'));
+    render(<TermsPage />);
+    await readAndRecord(user);
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({
+        title: 'Something went wrong. Please try again.',
+        tone: 'bad',
+      }),
+    );
+  });
+
+  it('draws the receipt with Continue when no questions are due, and lets go on it', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', LIVE);
+    fakes.queries.set('consent:latestTermsReceipt', { email: null, copy: 'not_sent' });
+    holdForReceipt();
+    recordReceipt();
+    render(<TermsPage />);
+    expect(screen.getByText(/We couldn’t email you a copy/)).toBeInTheDocument();
+    expect(screen.queryByText('Next: Know Before You Go')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    expect(useEntryStore.getState().hold).toBeNull();
+  });
+
+  it('says nothing about the copy while it is pending with no address yet', () => {
+    fakes.queries.set('profiles:current', { ...LIVE, knowBeforeYouGoAt: undefined });
+    fakes.queries.set('consent:latestTermsReceipt', { email: null, copy: 'pending' });
+    holdForReceipt();
+    recordReceipt();
+    render(<TermsPage />);
+    expect(screen.queryByText(/email you a copy/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Start the questions' })).toBeInTheDocument();
+  });
+});
+
+describe('/know-before-you-go', () => {
+  async function answerAll(user: ReturnType<typeof userEvent.setup>) {
+    for (const question of KNOW_BEFORE_YOU_GO.questions) {
+      await user.click(screen.getByRole('button', { name: question.right }));
+      await user.click(
+        screen.getByRole('button', {
+          name: question === KNOW_BEFORE_YOU_GO.questions.at(-1) ? 'Finish' : 'Next question',
+        }),
+      );
+    }
+  }
+
+  it('asks a first time straight away, then writes the completion from all seven', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', {
+      ...LIVE,
+      knowBeforeYouGoAt: undefined,
+      welcomeStep: 'home',
+    });
+    render(<KnowBeforeYouGoPage />);
+    expect(screen.getByText('3 of 5')).toBeInTheDocument();
+    await answerAll(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(mutation('consent:completeKnowBeforeYouGo')).toHaveBeenCalledWith({
+        version: KNOW_BEFORE_YOU_GO.version,
+        hash: KNOW_BEFORE_YOU_GO_SHA256,
+        surface: 'web',
+        userAgent: navigator.userAgent,
+        clientSessionId: 'sess_1',
+      }),
+    );
+    expect(m.capture).toHaveBeenCalledWith('know_before_you_go_completed', { flavor: 'first_run' });
+  });
+
+  it('opens a season’s asking on its card; Not now signs out and counts it', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, knowBeforeYouGoAt: Date.UTC(2025, 10, 16) });
+    fakes.queries.set('consent:watchAnchor', {
+      season: 'winter-2026-27',
+      label: 'Winter 2026–27',
+      openedAt: Date.UTC(2026, 10, 20),
+    });
+    render(<KnowBeforeYouGoPage />);
+    expect(screen.getByText('Winter 2026–27')).toBeInTheDocument();
+    expect(screen.queryByText('3 of 5')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Not now — sign out' }));
+    expect(m.capture).toHaveBeenCalledWith('season_check_signed_out');
+    expect(m.signOut).toHaveBeenCalledOnce();
+  });
+
+  it('starts again from the first question when the words changed under it', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, knowBeforeYouGoAt: undefined });
+    mutation('consent:completeKnowBeforeYouGo').mockRejectedValueOnce(
+      new ConvexError({ code: 'questions_changed', message: 'The questions were just updated.' }),
+    );
+    render(<KnowBeforeYouGoPage />);
+    await answerAll(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(
+        screen.getByText(KNOW_BEFORE_YOU_GO.questions[0]?.prompt ?? 'missing'),
+      ).toBeInTheDocument(),
+    );
+    expect(m.toast).toHaveBeenCalledWith({
+      title: 'The questions were just updated.',
+      tone: 'bad',
+    });
+  });
+
+  it('draws nothing while the profile or the watch is loading', () => {
+    fakes.queries.set('consent:watchAnchor', undefined);
+    fakes.queries.set('profiles:current', LIVE);
+    const { container } = render(<KnowBeforeYouGoPage />);
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('/welcome', () => {
+  it('follows the profile’s own step, whatever the URL asked', async () => {
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
+    const onStep = vi.fn();
+    render(<WelcomePage step="profile" onStep={onStep} />);
+    expect(screen.getByRole('heading', { name: 'Where are you based?' })).toBeInTheDocument();
+    await waitFor(() => expect(onStep).toHaveBeenCalledWith('home', { replace: true }));
+  });
+
+  it('skips Home by advancing alone, and counts it', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(mutation('consent:advanceWelcome')).toHaveBeenCalledWith({ from: 'home' });
+    expect(mutation('profiles:setHome')).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(m.capture).toHaveBeenCalledWith('welcome_step_finished', {
+        step: 'home',
+        outcome: 'skipped',
+      }),
+    );
+  });
+
+  it('saves the profile’s changes, then advances, on Open the map', async () => {
+    const user = userEvent.setup();
+    useEntryStore.setState({ homeTown: 'Hanover, NH' });
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'profile' });
+    render(<WelcomePage step="profile" onStep={vi.fn()} />);
+    expect(screen.getByDisplayValue('Hanover, NH')).toBeInTheDocument();
+    await user.type(screen.getByRole('textbox', { name: 'Bio' }), 'Lunchtime skater');
+    await user.click(screen.getByRole('button', { name: 'Open the map' }));
+    await waitFor(() =>
+      expect(mutation('profiles:updateProfile')).toHaveBeenCalledWith({
+        bio: 'Lunchtime skater',
+        homeTownLabel: 'Hanover, NH',
+      }),
+    );
+    expect(mutation('consent:advanceWelcome')).toHaveBeenCalledWith({ from: 'profile' });
+    await waitFor(() =>
+      expect(m.capture).toHaveBeenCalledWith('welcome_step_finished', {
+        step: 'profile',
+        outcome: 'saved',
+      }),
+    );
+  });
+
+  it('says a home the server didn’t take as a toast, and stays', async () => {
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
+    mutation('profiles:setHome').mockRejectedValueOnce(new Error('offline'));
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      geolocation: {
+        getCurrentPosition: (ok: (p: unknown) => void) =>
+          ok({ coords: { latitude: 43.7, longitude: -72.29 } }),
+      },
+    });
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await act(async () => {
+      screen.getByRole('button', { name: 'Use my current location' }).click();
+    });
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({
+        title: 'Your home wasn’t saved. Try again in a moment.',
+        tone: 'bad',
+      }),
+    );
+    expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
+  });
+
+  it('draws nothing until the profile has loaded', () => {
+    fakes.queries.set('profiles:current', undefined);
+    const { container } = render(<WelcomePage step="home" onStep={vi.fn()} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('profilePatch', () => {
+  const saved = { bio: '', town: '' };
+  const draft = { bio: '', town: 'Hanover, NH', isPublic: true, showTown: true };
+
+  it('saves the town only while Show my town is on', () => {
+    expect(profilePatch(draft, saved)).toEqual({ homeTownLabel: 'Hanover, NH' });
+    expect(profilePatch({ ...draft, showTown: false }, saved)).toEqual({});
+  });
+
+  it('writes visibility only when Public profile is switched off', () => {
+    expect(profilePatch({ ...draft, showTown: false, isPublic: false }, saved)).toEqual({
+      profileVisibility: 'private',
+    });
+  });
+
+  it('sends nothing that didn’t change, and trims what did', () => {
+    expect(profilePatch({ ...draft, bio: ' Hi ' }, { bio: 'Hi', town: 'Hanover, NH' })).toEqual({});
+    expect(profilePatch({ ...draft, bio: ' Hello ' }, { bio: 'Hi', town: '' })).toEqual({
+      bio: 'Hello',
+      homeTownLabel: 'Hanover, NH',
+    });
+  });
+});

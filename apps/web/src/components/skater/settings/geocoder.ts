@@ -19,6 +19,11 @@ export interface AddressSuggestion {
   label: string;
   lat: number;
   lng: number;
+  /**
+   * The suggestion's town as a profile shows it ("Hanover, NH"), when the provider named one: the
+   * onboarding's Profile step offers it as the Town. Settings' field doesn't read it.
+   */
+  town?: string;
 }
 
 /** `geocode.suggest`'s answer, as the client reads it. */

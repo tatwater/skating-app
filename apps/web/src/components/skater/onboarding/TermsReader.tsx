@@ -1,0 +1,206 @@
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faExpand } from '@fortawesome/sharp-light-svg-icons';
+import { ONBOARDING_COPY, termsVersionLabel } from '@skating/core';
+import { useCallback, useEffect, useRef, useState } from 'react';
+
+import { Button } from '../../kit/button';
+import {
+  Dialog,
+  DialogBody,
+  DialogClose,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../../kit/dialog';
+import { Kbd } from '../../kit/kbd';
+import { ScrollArea } from '../../kit/scroll-area';
+import { useEntryScroller } from './EntryScreen';
+import { TermsText } from './TermsText';
+import { WEB_ONBOARDING_COPY } from './webCopy';
+
+/** Where the end was reached: the page's own reader, or the full-screen one. */
+export type TermsReaderVia = 'inline' | 'fullscreen';
+
+/**
+ * Calls `onSeen` once `el` has been wholly on screen inside `root` — the box that scrolls it (the
+ * reader's window, the phone's page, the full-screen reader's body). An `IntersectionObserver`
+ * rooted there, not at the viewport: a desk board drawn wider than its canvas (a story, a narrow
+ * window) must still count the end it scrolled to. Watches only while `armed`, and stops after one
+ * sighting.
+ */
+export function useSeenOnScreen(
+  el: HTMLElement | null,
+  root: HTMLElement | null,
+  armed: boolean,
+  onSeen: () => void,
+): void {
+  const seen = useRef(onSeen);
+  seen.current = onSeen;
+  useEffect(() => {
+    if (!armed || !el || !root || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting && e.intersectionRatio >= 0.99)) {
+          observer.disconnect();
+          seen.current();
+        }
+      },
+      { root, threshold: [0, 0.99, 1] },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [el, root, armed]);
+}
+
+/** How far through its content a box has scrolled, 0–1, or `null` when it doesn't scroll. */
+export function scrollFraction(el: HTMLElement | null): number | null {
+  if (!el) return null;
+  const room = el.scrollHeight - el.clientHeight;
+  if (room <= 1) return null;
+  return Math.min(1, Math.max(0, el.scrollTop / room));
+}
+
+/**
+ * **The terms, read here** (boards 10.3, 10.4, 11.2–11.4; D295). On a desk, a window onto the whole
+ * text with a rail that says how far (the kit's `ScrollArea`, its thumb always drawn); on a phone the
+ * page is the reader — the window lets go of its height and the screen's own body scrolls, and the
+ * hairline under the bar fills instead (`onProgress`).
+ *
+ * The end marker's arrival on screen is the reading's end, in either place: watched while `armed`,
+ * reported once through `onEnd('inline')`. *Open in full-screen* is the kit Dialog at its viewer
+ * size, the same text and marker; reaching its end reports `onEnd('fullscreen')`, and Esc brings the
+ * skater back with the box unlocked. Neither reader gates the Privacy Notice: it is a link.
+ *
+ * `resetKey` starts the reading again from the top (a new version of the text, or a refusal that
+ * says the end wasn't recorded).
+ */
+export function TermsReader({
+  read,
+  armed,
+  resetKey = 0,
+  onEnd,
+  onProgress,
+}: {
+  /** The end has been reached and recorded: the meta line says so. */
+  read: boolean;
+  /** Whether reaching the end counts now (off while it's already counted, or being recorded). */
+  armed: boolean;
+  resetKey?: number;
+  onEnd: (via: TermsReaderVia) => void;
+  onProgress?: (fraction: number) => void;
+}) {
+  const copy = ONBOARDING_COPY.terms;
+  const box = useRef<HTMLDivElement>(null);
+  const [end, setEnd] = useState<HTMLDivElement | null>(null);
+  const [fullEnd, setFullEnd] = useState<HTMLDivElement | null>(null);
+  const scroller = useEntryScroller();
+  const [full, setFull] = useState(false);
+
+  const viewport = useCallback(
+    () => box.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? null,
+    [],
+  );
+
+  // What scrolls the inline end into view: the window when it scrolls (a desk), else the page.
+  const [inlineRoot, setInlineRoot] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    const own = viewport();
+    setInlineRoot(scrollFraction(own) !== null || !scroller ? own : scroller);
+  }, [viewport, scroller]);
+
+  // How far: the window when it scrolls (a desk), else the phone's page.
+  const progress = useRef(onProgress);
+  progress.current = onProgress;
+  useEffect(() => {
+    const own = viewport();
+    const report = () => {
+      const fraction = scrollFraction(own) ?? scrollFraction(scroller);
+      if (fraction !== null) progress.current?.(fraction);
+    };
+    report();
+    own?.addEventListener('scroll', report, { passive: true });
+    scroller?.addEventListener('scroll', report, { passive: true });
+    return () => {
+      own?.removeEventListener('scroll', report);
+      scroller?.removeEventListener('scroll', report);
+    };
+  }, [viewport, scroller]);
+
+  // A new reading starts at the top.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key is the trigger
+  useEffect(() => {
+    if (resetKey === 0) return;
+    viewport()?.scrollTo({ top: 0 });
+    scroller?.scrollTo({ top: 0 });
+    progress.current?.(0);
+  }, [resetKey]);
+
+  useSeenOnScreen(end, inlineRoot, armed && !full, () => onEnd('inline'));
+  useSeenOnScreen(
+    fullEnd,
+    fullEnd?.closest<HTMLElement>('[data-slot="dialog-body"]') ?? null,
+    armed && full,
+    () => onEnd('fullscreen'),
+  );
+
+  return (
+    <div data-slot="terms-reader" className="flex flex-col gap-3">
+      <div ref={box}>
+        <ScrollArea
+          always
+          aria-label={copy.kicker}
+          className="h-[18.5rem] border border-line2 border-solid bg-panel @max-[48rem]/entry:h-auto @max-[48rem]/entry:border-0 @max-[48rem]/entry:bg-transparent @max-[48rem]/entry:[&_[data-slot=scroll-area-scrollbar]]:hidden"
+          viewportClassName="px-[1.375rem] py-5 @max-[48rem]/entry:p-0"
+        >
+          <TermsText ref={setEnd} />
+        </ScrollArea>
+      </div>
+      <div className="flex items-center gap-3 @max-[48rem]/entry:hidden">
+        <span
+          data-slot="terms-meta"
+          className="whitespace-nowrap font-(family-name:--family-mono) font-medium text-[0.75rem] text-fg2 leading-none"
+        >
+          {termsVersionLabel()}
+          {read && ` · ${copy.readToEnd}`}
+        </span>
+        <Dialog open={full} onOpenChange={setFull}>
+          <Button
+            size="sm"
+            className="ml-auto"
+            onClick={() => setFull(true)}
+            data-attr="terms-full-screen"
+          >
+            {copy.openFullScreen}
+            <FontAwesomeIcon icon={faExpand} aria-hidden="true" />
+          </Button>
+          <DialogContent size="viewer" data-surface="skater" className="ph-no-capture">
+            <DialogHeader>
+              <DialogTitle>{copy.kicker}</DialogTitle>
+            </DialogHeader>
+            <DialogBody className="items-center">
+              <div className="w-full max-w-[42rem] py-4">
+                <TermsText ref={setFullEnd} />
+              </div>
+            </DialogBody>
+            <DialogFooter
+              note={
+                <span className="flex items-center gap-2 font-(family-name:--family-mono)">
+                  {termsVersionLabel()}
+                  {read && ` · ${copy.readToEnd}`}
+                </span>
+              }
+            >
+              <Kbd variant="dim" aria-hidden="true">
+                Esc
+              </Kbd>
+              <DialogClose render={<Button size="sm" />}>
+                {WEB_ONBOARDING_COPY.terms.closeFullScreen}
+              </DialogClose>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </div>
+  );
+}

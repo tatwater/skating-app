@@ -5,7 +5,8 @@ import { accountScoped } from './accountScoped';
 
 /**
  * **What the way in keeps in the browser's memory, and nowhere else** (B03 §9.3, D298): the
- * Account step's fields on their way to the Terms step, and the receipt hold.
+ * Account step's fields on their way to the Terms step, the receipt hold, and the Home step's town
+ * on its way to the Profile step.
  *
  * - **The Account step writes nothing.** Its fields ride here to *Record acceptance*, which is
  *   where a profile is born (the governor's R1). A reload loses them and the Terms step falls back
@@ -47,6 +48,11 @@ interface EntryState {
   fields: AccountFields | null;
   /** A username the acceptance refused as taken, marked on the Account step until it changes. */
   taken: string | null;
+  /**
+   * The town of the address picked on the Home step ("Hanover, NH"), offered as the Profile step's
+   * Town. Only a suggestion: nothing saves it but the Profile step's own button.
+   */
+  homeTown: string | null;
 }
 
 const EMPTY: EntryState = {
@@ -55,6 +61,7 @@ const EMPTY: EntryState = {
   account: null,
   fields: null,
   taken: null,
+  homeTown: null,
 };
 
 export const useEntryStore = create<EntryState>(() => ({ ...EMPTY }));
@@ -90,6 +97,11 @@ export function finishReceipt(): void {
 /** The acceptance said the username was taken: back to the Account step, the field marked. */
 export function markUsernameTaken(username: string): void {
   useEntryStore.setState({ hold: null, recorded: false, account: null, taken: username });
+}
+
+/** The Home step picked an address: its town (if the provider named one) waits for Profile. */
+export function carryHomeTown(town: string | null): void {
+  useEntryStore.setState({ homeTown: town });
 }
 
 /** Everything forgotten: a sign-out, a change of person, a test. */

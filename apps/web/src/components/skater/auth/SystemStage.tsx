@@ -23,22 +23,40 @@ export function SystemStage({ corner, children }: { corner?: ReactNode; children
         {children}
       </main>
       <div className="row-start-1 flex items-center px-bar-x">
-        <img
-          src={logoWhite}
-          alt="Gli"
-          className="hidden h-[1.375rem] [:root:not([data-mode])_&]:[@media(prefers-color-scheme:dark)]:block [:root[data-mode=dark]_&]:block"
-        />
-        <img
-          src={logoBlack}
-          alt="Gli"
-          className="hidden h-[1.375rem] [:root:not([data-mode])_&]:[@media(prefers-color-scheme:light)]:block [:root[data-mode=light]_&]:block"
-        />
+        <StageLogo />
       </div>
       <div className="row-start-3 flex flex-wrap items-end justify-between gap-2 px-bar-x pb-[1.375rem]">
         <div>{corner}</div>
         <RegionCredit />
       </div>
     </div>
+  );
+}
+
+/**
+ * The logo where the top bar keeps it, in the root's mode (D241: `data-mode` states an override,
+ * its absence follows the OS). `className` sizes it; the system screens draw it 22 px tall.
+ */
+export function StageLogo({ className = 'h-[1.375rem]' }: { className?: string }) {
+  return (
+    <>
+      <img
+        src={logoWhite}
+        alt="Gli"
+        className={cn(
+          'hidden [:root:not([data-mode])_&]:[@media(prefers-color-scheme:dark)]:block [:root[data-mode=dark]_&]:block',
+          className,
+        )}
+      />
+      <img
+        src={logoBlack}
+        alt="Gli"
+        className={cn(
+          'hidden [:root:not([data-mode])_&]:[@media(prefers-color-scheme:light)]:block [:root[data-mode=light]_&]:block',
+          className,
+        )}
+      />
+    </>
   );
 }
 
