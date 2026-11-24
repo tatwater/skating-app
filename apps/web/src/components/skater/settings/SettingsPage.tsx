@@ -219,7 +219,6 @@ function HomeForm({ profile, view, onNavigate }: HomeProps) {
   const [address, setAddress] = useState('');
   const [chosen, setChosen] = useState<AddressSuggestion | null>(null);
   const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
   const lookup = useAddressSuggestions(chosen === null ? address : '', suggest);
   // This form is still on screen: a save that answers after the skater left neither pulls them back
   // nor writes into a form that is gone.
@@ -243,15 +242,13 @@ function HomeForm({ profile, view, onNavigate }: HomeProps) {
   };
   const save = async (coord: { lat: number; lng: number } | undefined) => {
     setSaving(true);
-    setFailed(false);
     try {
       await setHome(coord === undefined ? {} : { homeCoord: coord });
       if (mounted.current) back();
     } catch (error) {
-      // The form's line, while it is there to say it; a Clear (its summary has no line) or a save
-      // answered after the skater left, a toast — the server's words for a can't-act refusal.
-      if (mounted.current && coord !== undefined) setFailed(true);
-      else toastSaveRefusal(error, ONBOARDING_COPY.home.notSaved);
+      // A toast, as every refusal is — the server's words for a can't-act refusal, else the
+      // not-saved line — whether the form is still there or the skater has left it.
+      toastSaveRefusal(error, ONBOARDING_COPY.home.notSaved);
     } finally {
       if (mounted.current) setSaving(false);
     }
@@ -278,7 +275,6 @@ function HomeForm({ profile, view, onNavigate }: HomeProps) {
       }}
       locate={locate}
       saving={saving}
-      failed={failed}
       onUseLocation={startLocate}
       onSave={() => {
         if (!chosen) return;

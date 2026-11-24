@@ -89,7 +89,6 @@ describe('home', () => {
     onPick: () => {},
     locate: 'idle',
     saving: false,
-    failed: false,
     onUseLocation: () => {},
     onSave: () => {},
     onClear: () => {},

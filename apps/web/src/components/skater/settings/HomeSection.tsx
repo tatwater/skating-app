@@ -56,8 +56,6 @@ export interface HomeSectionProps {
   onPick: (suggestion: AddressSuggestion) => void;
   locate: LocateState;
   saving: boolean;
-  /** A save the server refused. */
-  failed: boolean;
   onUseLocation: () => void;
   onSave: () => void;
   onClear: () => void;
@@ -231,7 +229,6 @@ function HomeForm(props: HomeSectionProps) {
       {props.locate === 'failed' && (
         <FormLine>We couldn’t get your location. Check that the browser may share it.</FormLine>
       )}
-      {props.failed && <FormLine>Your home wasn’t saved. Try again in a moment.</FormLine>}
       {(typed || props.view === 'edit') && (
         <Actions className="mt-(--space-3_5)">
           {typed && (

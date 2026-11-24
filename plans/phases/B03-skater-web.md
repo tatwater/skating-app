@@ -1539,9 +1539,9 @@ and a fix is taken only when nothing superseded it (a typed or picked address, a
 the step by any way — Settings' home form is keyed by its view, so the browser's Back drops a read as Cancel does — another
 locate) — a slowly answered prompt still sets the home; a late fix never replaces one chosen since. The phone's You tab,
 mounted all session, drops its read at the give-up — said as its *couldn't get your location* line — and whenever the tab loses focus (`dropAtGiveUp`). The button waits
-while a save or a skip is out, on both apps; the You tab's says *Saving…*, and its failed save or Clear is a toast (the
-server's words for a refusal, else the *wasn't saved* line), as Settings' failed Clear is. A Settings home save answered
-after the skater left neither navigates back nor writes the gone form (a late failure is a toast). Leaving Settings' home
+while a save or a skip is out, on both apps; the You tab's says *Saving…*. A failed home save or Clear is a toast on
+both apps, the You tab and Settings alike (the server's words for a refusal, else the *wasn't saved* line), never a line
+on the form. A Settings home save answered after the skater left neither navigates back nor writes the gone form. Leaving Settings' home
 edit forgets what it held, a failed location's line included; the address provider's answer is learned once a session,
 so the remounted form draws its field on its first frame. A skip or a location save takes the picked address off the
 field with its town, on both apps (the phone's field and choice are one reducer, `homeFieldReducer`), and a field emptied

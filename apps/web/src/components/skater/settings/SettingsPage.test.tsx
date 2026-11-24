@@ -372,7 +372,29 @@ describe('home and drive time', () => {
     await act(async () =>
       fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
     );
-    expect(screen.getByText(/wasn’t saved/)).toBeInTheDocument();
+    // A refused save is a toast, as every refusal is: no line on the form.
+    expect(m.toast).toHaveBeenCalledExactlyOnceWith({
+      title: ONBOARDING_COPY.home.notSaved,
+      tone: 'bad',
+    });
+    expect(screen.queryByText(/wasn’t saved/)).toBeNull();
+  });
+
+  it('says a refused Save in the server’s words for a can’t-act refusal, as a toast', async () => {
+    m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'quota', suggestions: [] });
+    mutation('profiles:setHome').mockRejectedValueOnce(new ConvexError('Account is suspended'));
+    const geo = {
+      getCurrentPosition: vi.fn((ok: (p: unknown) => void) =>
+        ok({ coords: { latitude: 1, longitude: 2 } }),
+      ),
+    };
+    Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+    page('home', 'edit');
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
+    );
+    expect(m.toast).toHaveBeenCalledExactlyOnceWith({ title: 'Account is suspended', tone: 'bad' });
+    expect(screen.queryByText(/wasn’t saved/)).toBeNull();
   });
 
   it('summarizes a set home, clears it, and opens the change view', async () => {
