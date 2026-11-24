@@ -8929,7 +8929,10 @@ becoming a permanent file on someone who left.
   the full name, a username and a date of birth (the month picked by name, day and year typed); 18 and
   over (D294). Home is the address with the provider's suggestions, or the current location, and can
   be skipped. Profile is all optional: a photo, bio and town, with **Public profile on** and **Show my
-  town on** by default.
+  town on** by default. **A canceled deletion's account keeps the visibility it has when it is
+  re-introduced** — private, as the request left it — and its Profile step shows the switch off (the
+  governor's ruling, 2026-11-24): someone who asked to be deleted should never be made public by a
+  default, only by their own switch.
 - **The profile row is created at *Record acceptance*, not before** (the governor's ruling). The Account
   step validates without writing; the server refuses the acceptance unless the terms' end was
   reached. So every profile that exists has an acceptance on record, and the server's existing gates

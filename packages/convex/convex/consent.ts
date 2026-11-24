@@ -89,8 +89,8 @@ export const CONSENT_SWEEP_PAGE = 256;
 /** How long an unaccepted reading is kept: 30 days after it opened. */
 export const READING_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-/** Records the CLI lookups return at most, newest first. */
-const LOOKUP_CAP = 200;
+/** Records the CLI lookups return at most: the newest, newest first. */
+export const LOOKUP_CAP = 200;
 
 /** A refusal the clients show as a toast (D268): the code to branch on, core's words to show. */
 function refuse(code: ConsentRefusalCode): never {
@@ -274,8 +274,9 @@ async function checkAccount(
  *   with every new account's defaults (`lib/profileIdentity`), the Clerk mirrors, the terms fields and
  *   `welcomeStep: 'home'`.
  * - **A canceled deletion's row** (`needsProfileSetup`): `account` is required and patched in place —
- *   the same row, under the rename cooldown when the handle changes — with the new-account
- *   visibility and `welcomeStep: 'home'`. Its old records stay as they were; this adds one.
+ *   the same row, under the rename cooldown when the handle changes — keeping the visibility it has
+ *   (private, after the request) and gaining `welcomeStep: 'home'`. Its old records stay as they
+ *   were; this adds one.
  * - **Any other row:** `account` must be absent; only the terms fields change. Inactive or suspended
  *   accounts get `requireProfile`'s refusals, and a pending deletion `deletion_pending` (its way back
  *   is the cancel in Settings).
@@ -331,7 +332,9 @@ export const acceptTerms = mutation({
       attested = { fullName: account.displayName, dateOfBirth: account.dateOfBirth };
       const minor = isMinor(account.dateOfBirth, now);
       const defaults = newProfileDefaults(now, minor);
-      // The Clerk mirrors, as `upsertFromClerk` takes them: an unmapped claim leaves them alone.
+      // The Clerk mirrors — onboarding is the first of the three places a claim is written (with
+      // `syncFromClerk` and the webhook, `MirrorClaims` in `profiles.ts`): an unmapped claim leaves
+      // a mirror alone, and an avatar past the cap is not stored (the person shows initials).
       const mirrors = {
         ...(identity.pictureUrl !== undefined
           ? { profileImageUrl: storableAvatarUrl(identity.pictureUrl) }
@@ -361,9 +364,11 @@ export const acceptTerms = mutation({
           ...(renamed ? { usernameChangedAt: now } : {}),
           dateOfBirth: account.dateOfBirth,
           ...mirrors,
-          // The request set it private on the way out; the Profile step that follows shows the
-          // new-account default (D298), so the row starts from it too.
-          profileVisibility: defaults.profileVisibility,
+          // The visibility the row has stays: the deletion request made it private, and someone
+          // who asked to be deleted is never made public by a default (D298). The Profile step
+          // shows it as it is, and only the skater's own switch changes it. A minor is forced
+          // private (D13/D41) — never reached since D294's gate, kept for a lowered minimum.
+          ...(minor ? { profileVisibility: 'private' as const } : {}),
           ...termsFields,
           welcomeStep: 'home',
         });
@@ -755,15 +760,25 @@ export const purgeDue = internalMutation({
 // The evidence lookups (CLI only: nothing on any screen reads them)
 // ─────────────────────────────────────────────────────────────────────────────
 
-/** An account's records, newest first — `npx convex run consent:recordsFor '{"profileId": …}'`. */
+/**
+ * An account's records, newest first — `pnpm exec convex run consent:recordsFor '{"profileId": …}'`.
+ * Past the cap it is the newest `LOOKUP_CAP` that come back: the index orders by kind before time, so
+ * each kind is read from its newest end and the two are merged, never the oldest of either.
+ */
 export const recordsFor = internalQuery({
   args: { profileId: v.id('profiles') },
   handler: async (ctx, { profileId }) => {
-    const rows = await ctx.db
-      .query('consentRecords')
-      .withIndex('by_profile', (q) => q.eq('profileId', profileId))
-      .take(LOOKUP_CAP);
-    return rows.sort((a, b) => b.recordedAt - a.recordedAt);
+    const rows: Doc<'consentRecords'>[] = [];
+    for (const kind of ['terms', 'questions'] as const) {
+      rows.push(
+        ...(await ctx.db
+          .query('consentRecords')
+          .withIndex('by_profile', (q) => q.eq('profileId', profileId).eq('kind', kind))
+          .order('desc')
+          .take(LOOKUP_CAP)),
+      );
+    }
+    return rows.sort((a, b) => b.recordedAt - a.recordedAt).slice(0, LOOKUP_CAP);
   },
 });
 
@@ -781,9 +796,11 @@ export const recordsByEmail = internalQuery({
         ...(await ctx.db
           .query('consentRecords')
           .withIndex('by_email', (q) => q.eq('identity.email', form))
+          // Newest end first (an index orders equal keys by creation): past the cap, the newest.
+          .order('desc')
           .take(LOOKUP_CAP)),
       );
     }
-    return rows.sort((a, b) => b.recordedAt - a.recordedAt);
+    return rows.sort((a, b) => b.recordedAt - a.recordedAt).slice(0, LOOKUP_CAP);
   },
 });

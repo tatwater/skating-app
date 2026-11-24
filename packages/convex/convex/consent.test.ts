@@ -26,7 +26,7 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { CONSENT_SWEEP_PAGE, READING_TTL_MS } from './consent';
+import { CONSENT_SWEEP_PAGE, LOOKUP_CAP, READING_TTL_MS } from './consent';
 import { NOTIFICATION_PREF_DEFAULTS } from './lib/enums';
 import schema from './schema';
 
@@ -589,7 +589,9 @@ describe('acceptTerms: an existing row', () => {
       displayName: 'Back Again',
       username: 'back',
       email: 'back@example.test',
-      profileVisibility: 'public',
+      // Private, as the deletion request left it: someone who asked to be deleted is never made
+      // public by a default (D298). The Profile step shows it off; only its switch changes it.
+      profileVisibility: 'private',
       welcomeStep: 'home',
       termsAcceptedAt: T0 + 30_000,
       // This season's answers still stand.
@@ -981,5 +983,35 @@ describe('the CLI lookups', () => {
         (r) => r._id,
       ),
     ).toEqual([severed, first]);
+  });
+
+  test('past the cap, the newest records come back — of either kind, by account and by email', async () => {
+    const t = harness();
+    const id = await existingProfile(t, 'user_many', { email: 'many@example.test' });
+    // Twice the cap, the kinds interleaved in time: the newest LOOKUP_CAP are the top half.
+    const total = LOOKUP_CAP * 2;
+    await t.run(async (ctx) => {
+      for (let i = 0; i < total; i++) {
+        const kind = i % 2 === 0 ? ('terms' as const) : ('questions' as const);
+        await ctx.db.insert('consentRecords', {
+          kind,
+          profileId: id,
+          clerkUserId: 'user_many',
+          identity: { fullName: 'Many', email: 'many@example.test', dateOfBirth: ADULT_DOB },
+          version: kind === 'terms' ? TERMS.version : KNOW_BEFORE_YOU_GO.version,
+          contentHash: kind === 'terms' ? TERMS_SHA256 : KNOW_BEFORE_YOU_GO_SHA256,
+          context: kind === 'terms' ? 'returning' : 'season',
+          recordedAt: T0 + i * 1000,
+          ...(kind === 'questions' ? { season: null } : {}),
+          surface: { value: 'web', source: 'client_reported' },
+          ipStatus: 'pending',
+        });
+      }
+    });
+    const newest = Array.from({ length: LOOKUP_CAP }, (_, k) => T0 + (total - 1 - k) * 1000);
+    const byAccount = await t.query(internal.consent.recordsFor, { profileId: id });
+    expect(byAccount.map((r) => r.recordedAt)).toEqual(newest);
+    const byEmail = await t.query(internal.consent.recordsByEmail, { email: 'many@example.test' });
+    expect(byEmail.map((r) => r.recordedAt)).toEqual(newest);
   });
 });
