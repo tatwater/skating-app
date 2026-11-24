@@ -1,5 +1,6 @@
-import { CONSENT_RECORD_RETENTION, LOCATE_GIVE_UP_MS } from '@skating/core';
+import { CONSENT_RECORD_RETENTION, LOCATE_GIVE_UP_MS, ONBOARDING_COPY } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ConvexError } from 'convex/values';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { convexReact, fakes, resetFakes } from '../testMocks';
@@ -7,11 +8,16 @@ import { convexReact, fakes, resetFakes } from '../testMocks';
 const m = vi.hoisted(() => ({
   signOut: vi.fn(async () => undefined),
   suggest: vi.fn(),
+  toast: vi.fn(),
   user: null as unknown,
   draft: false,
 }));
 
 vi.mock('convex/react', () => ({ ...convexReact, useAction: () => m.suggest }));
+vi.mock('../../kit/toast', async (original) => ({
+  ...(await original<typeof import('../../kit/toast')>()),
+  toast: m.toast,
+}));
 vi.mock('@clerk/tanstack-react-start', () => ({ useUser: () => ({ user: m.user }) }));
 vi.mock('@/lib/analytics', async (load) => ({
   ...(await load<typeof import('@/lib/analytics')>()),
@@ -102,6 +108,7 @@ beforeEach(() => {
   resetGeocoderSession();
   navigate.mockClear();
   m.signOut.mockClear();
+  m.toast.mockClear();
   m.suggest.mockReset();
   m.suggest.mockResolvedValue({ status: 'ok', attribution: 'A', suggestions: [] });
   m.draft = false;
@@ -379,6 +386,59 @@ describe('home and drive time', () => {
     // No server for a temporary base yet: no Traveling block.
     expect(screen.queryByText('Traveling')).toBeNull();
   });
+
+  it('says a failed Clear as a toast: the server’s words for a refusal, else the not-saved line', async () => {
+    const setHome = mutation('profiles:setHome');
+    setHome
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new ConvexError('Account is suspended'));
+    page('home');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
+    expect(m.toast).toHaveBeenCalledWith({ title: ONBOARDING_COPY.home.notSaved, tone: 'bad' });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
+    expect(m.toast).toHaveBeenLastCalledWith({ title: 'Account is suspended', tone: 'bad' });
+    expect(m.toast).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['saved', (d: { resolve: (v: null) => void }) => d.resolve(null)],
+    ['refused', (d: { reject: (e: Error) => void }) => d.reject(new Error('offline'))],
+  ] as const)(
+    'a save %s after the skater left neither pulls them back nor writes the gone form',
+    async (outcome, settle) => {
+      const held: { resolve: (v: null) => void; reject: (e: Error) => void } = {
+        resolve: () => {},
+        reject: () => {},
+      };
+      mutation('profiles:setHome').mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            held.resolve = resolve;
+            held.reject = reject;
+          }),
+      );
+      const geo = {
+        getCurrentPosition: vi.fn((ok: (p: unknown) => void) =>
+          ok({ coords: { latitude: 43.7, longitude: -72.29 } }),
+        ),
+      };
+      Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+      const { rerender } = page('home', 'edit');
+      await act(async () =>
+        fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
+      );
+      // Off to another section while the save is out.
+      rerender(<SettingsPage section="profile" onNavigate={navigate} />);
+      await act(async () => settle(held as never));
+      expect(navigate).not.toHaveBeenCalledWith('/settings/home', { replace: true });
+      if (outcome === 'refused') {
+        expect(m.toast).toHaveBeenCalledExactlyOnceWith({
+          title: ONBOARDING_COPY.home.notSaved,
+          tone: 'bad',
+        });
+      } else expect(m.toast).not.toHaveBeenCalled();
+    },
+  );
 
   /** A browser whose location answers only when the test says. */
   function slowGeolocation() {

@@ -6,14 +6,16 @@ import {
   isLeaving,
   isMinor,
   type NotificationPrefKey,
+  ONBOARDING_COPY,
   resolveShowPutInDefault,
 } from '@skating/core';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { useAnalytics } from '@/lib/analytics';
 
 import { Skeleton } from '../../kit/skeleton';
+import { toastSaveRefusal } from '../onboarding/consentRefusal';
 import { AccountSection, type StravaState } from './AccountSection';
 import { type BlockedPerson, BlockedSection } from './BlockedSection';
 import { ChangeEmailView } from './ChangeEmail';
@@ -219,6 +221,15 @@ function HomeForm({ profile, view, onNavigate }: HomeProps) {
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
   const lookup = useAddressSuggestions(chosen === null ? address : '', suggest);
+  // This form is still on screen: a save that answers after the skater left neither pulls them back
+  // nor writes into a form that is gone.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   // A fix is saved only when it is the newest read and the skater hasn't typed, picked, saved,
   // cleared or left since (`useLocateRead`): a slowly answered prompt never overwrites a choice.
@@ -235,11 +246,14 @@ function HomeForm({ profile, view, onNavigate }: HomeProps) {
     setFailed(false);
     try {
       await setHome(coord === undefined ? {} : { homeCoord: coord });
-      back();
-    } catch {
-      setFailed(true);
+      if (mounted.current) back();
+    } catch (error) {
+      // The form's line, while it is there to say it; a Clear (its summary has no line) or a save
+      // answered after the skater left, a toast — the server's words for a can't-act refusal.
+      if (mounted.current && coord !== undefined) setFailed(true);
+      else toastSaveRefusal(error, ONBOARDING_COPY.home.notSaved);
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   };
 
