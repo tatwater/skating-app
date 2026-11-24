@@ -485,6 +485,23 @@ describe('home and drive time', () => {
     expect(screen.queryByText(/couldn’t get your location/)).toBeNull();
   });
 
+  it('draws the address field on the edit’s first frame, with one provider ask a session', async () => {
+    const at = (homeView?: 'edit') => (
+      <SettingsPage section="home" {...(homeView ? { homeView } : {})} onNavigate={navigate} />
+    );
+    const { rerender } = render(at());
+    await waitFor(() => expect(m.suggest).toHaveBeenCalledWith({ text: '' }));
+    await act(async () => {});
+    // To the edit (a new form): the field is there at once, not after a round trip.
+    rerender(at('edit'));
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    rerender(at());
+    rerender(at('edit'));
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    await act(async () => {});
+    expect(m.suggest).toHaveBeenCalledOnce();
+  });
+
   it('a browser with no geolocation says so', async () => {
     m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
     Object.defineProperty(navigator, 'geolocation', { value: undefined, configurable: true });

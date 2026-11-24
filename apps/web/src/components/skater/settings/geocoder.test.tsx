@@ -52,6 +52,18 @@ describe('useAddressSuggestions', () => {
     expect(suggest).toHaveBeenCalledTimes(1);
   });
 
+  it('learns "on" once: a field mounted later this session draws at once, asking nothing', async () => {
+    const suggest = vi.fn<SuggestFn>().mockResolvedValue(ok());
+    const first = hook(suggest);
+    await settle();
+    expect(first.result.current).toEqual({ state: 'idle', attribution: ATTR });
+    first.unmount();
+    const again = hook(suggest);
+    expect(again.result.current).toEqual({ state: 'idle', attribution: ATTR });
+    await settle();
+    expect(suggest).toHaveBeenCalledOnce();
+  });
+
   it('debounces: one call per pause, none under three characters', async () => {
     const suggest = vi
       .fn<SuggestFn>()
