@@ -8988,3 +8988,106 @@ acceptance it protects (D294's reasoning) belong together, and one rule for both
 gates drift.
 
 **Related:** D13, D26, D41, D45, D294, D295, D296, D297, B03 §9.
+
+## D299 — Corpus's tasks land lane by lane, each whole, and a sidebar entry appears only for a built lane (B01)
+
+**Decided (2026-11-24, founder).** The whole Corpus task design (§4) is built, one lane at a time:
+- **A lane lands whole** — its read, its writes, what *done* means and what it clears, the undo of
+  every decision, and the retirement of the old page (or part of one) it replaces — in one PR.
+- **No placeholders.** A lane appears in Corpus's sidebar only once it is built; no entry opens an old
+  page, and there is no *Coming soon* lane. The Overview's Corpus links (`consolePathFor`) and Inbox
+  Zero's *Corpus →* move to each lane as it lands, so the first PR carries at least one real lane.
+- **The build model is §12's**: a governor, Opus 5.5 builders at high effort in their own worktrees
+  with disjoint territories, sequential PRs each closed on its own branch, the founder merging — in the
+  fewest coherent PRs, since Greptile is metered per request.
+
+**Why:** a lane half-built (a list with no decision, a decision with no undo) is a queue that can't be
+emptied, which is how the intake queue reached 2,010 rows; and an entry that opens an old page makes
+the console look finished where it isn't (D286's reasoning, applied to navigation).
+
+**Related:** D216, D226, D286, D293, D304, [`phase-B01`](./phases/B01-admin-console.md) §5.3, §8 §4,
+*The Corpus tasks (B01-6, the design)*.
+
+## D300 — "Pre-Season Pass" is the visible name of the pass that was "the pre-ice pass" (B01)
+
+**Decided (2026-11-24, founder).** Every visible label says *Pre-Season Pass*: Corpus's sidebar group,
+the Overview's Corpus card, the status bar's line, the Body console Hazards tab's words, and the
+capability's description. Internal names (`corpus.preIce`, `corpusCounts.preIcePass`, `PreIcePass`)
+stay.
+
+**Why** (the founder's call gave no reason; this is the design's reading): the pass opens at the
+season's turn in July, months before any ice, and is a review of what was reported, not of conditions —
+a name about the season rather than the ice keeps it clear of D3.
+
+**Related:** D3, D301, [`phase-B01`](./phases/B01-admin-console.md) §5.3.
+
+## D301 — The Pre-Season Pass group is seasonal, and dressed apart from the sidebar's other groups (B01)
+
+**Decided (2026-11-24, founder; the design's forks on its edges are open).** In the founder's words:
+*"this nav group should only appear after the July season start, and should stick around until all
+issues within are resolved, then it should disappear for the remainder of the season, until the next
+July."*
+- **Shown from the season's start (1 July, D63) until every task in this season's pass is decided**;
+  then gone until next July. What the pass holds is Recurrence and Promotion candidates; the meter
+  counts those (Known features is a record, not a queue). The pass is a stored record per season, so
+  "decided" and "done" are facts, not inferences.
+- **Dressed to look applied — stuck on, temporary — while urgent.** The design describes four
+  candidate treatments built from the kit and tokens (an inverted plate, a bracketed card, a taped
+  outline, an amber edge), rendered as Storybook variants; **the founder picks one**.
+- The edges (whether a mid-season pattern brings the group back, where Known features lives once the
+  group is gone, how a done pass is read, the July days before it is computed, an undo after it is
+  done) are the design's forks 8–13, ruled separately.
+
+**Why** (the design's reading of the call): the pass is a once-a-year task with a deadline (first ice); a group that stays when there is
+nothing in it teaches the eye to skip it, and one that looks like the rest of the sidebar doesn't say
+it is due.
+
+**Related:** D3, D63, D78, D300, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks (B01-6,
+the design)*.
+
+## D302 — Enrichment gaps and script-filed bay asks are deferred out of Corpus's first wave (B01)
+
+**Decided (2026-11-24, founder).** Two things the plan put in Corpus are not built in this wave, and are
+recorded in the roadmap's deferred register so they aren't lost — the founder: *"let's not forget that
+we will want this functionality eventually so we should record this deferral."*
+- **Enrichment gaps** ("awaiting elevation, wind, depth"): the plan's own *done* is an enrichment run,
+  which is Machinery's (§5). The Overview's *Awaiting enrichment* stays unrecorded until then.
+- **Script-filed bay asks** (`waterBodyRequests.origin: 'seed'`, D289's amendment): they stay decidable
+  where they are today (the old editor's bay queue, the Bodies preview's asks) until a later Corpus
+  lane takes them.
+
+**Why** (the design's reading of the call): neither is a machine-found question this wave's lanes answer: one completes in another mode,
+and the other is a staff-filed queue of sixteen destination bays with a working home.
+
+**Related:** D201, D218, D289, D299, [`phase-B01`](./phases/B01-admin-console.md) §5.3.
+
+## D303 — Task modes stay their own wave; Corpus draws their hand-offs unavailable (B01)
+
+**Decided (2026-11-24, founder).** Place names' *Place it in Body →* and Chord re-fits' *Redraw in Body
+→* hand off to Body console tools that don't exist yet; they are drawn with the kit's
+`UnavailableButton` (*Not available yet*). Everything else those two lanes do is built. Task modes and
+the map's editing tools remain owed as their own wave (the register's Bo23–Bo25).
+
+**Why:** the hand-offs need the map's edit mode, which is a wave of its own; drawing them as the boards
+do, unavailable, keeps the board and the page in agreement (D286's reasoning for tools) without holding
+the rest of the lanes back.
+
+**Related:** D216, D286, D299, [`phase-B01`](./phases/B01-admin-console.md) *Task modes and the map's
+editing tools*.
+
+## D304 — An old admin page retires, and its code is deleted, in the PR that replaces it (B01; amends §12.7)
+
+**Decided (2026-11-24, founder; the governor's wording).** §12.7 said each mode's integration narrows
+the old-shell predicate and redirects an old route when its replacement lands, but deletes the old
+components only at B01's close. Now: **the PR that lands the last lane an old page serves retires the
+page and deletes its code** — the route (or a redirect, where links in the wild may hold it), its
+components, its `OLD_SHELL_TREES` and `LEGACY_PAGES` entries, the init script's copy, `AdminLayout`'s
+nav entry, and the tests and stories that pinned them, together. A page that still serves something no
+lane has replaced stays until something does.
+
+**Why:** the founder asked (2026-11-24) for the Legacy pages already replaced to be stripped out, and
+the Inbox's close-out (#177) already deleted its retired pages' code at the wave's end; dead pages kept
+to the phase's close are a second surface to maintain and a second place for a moderator to act.
+
+**Related:** D299, [`phase-B01`](./phases/B01-admin-console.md) §12.7, *The Inbox (B01-5, the design)*'s
+*Legacy retirement*, *The Corpus tasks (B01-6, the design)*'s *Legacy retirement*.

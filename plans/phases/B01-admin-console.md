@@ -265,6 +265,15 @@ at `/admin/body/$id`, `/admin/bodies` gone without a redirect. The tasks above j
 when they are built; until then Home's Corpus links open the old pages. The sections below that
 say "Bodies" and `/admin/bodies` record what was built under the old name.
 
+*2026-11-24 — the task lanes designed (B01-6, D299–D304).* The table above is superseded where the
+boards and the code differ; see *The Corpus tasks (B01-6, the design)* in §12.8. In short: the tasks
+are decided in place in Corpus's own sidebar, not by opening the Body console (only *Place it in Body*
+and *Redraw in Body* hand off, drawn unavailable until task modes, D303); Duplicates' intake reasons
+and the dedup flags are two unconnected systems today, joined by that design; Orphan bays' *done* is
+*Make a bay of …*, *Demote to landmark* or *Not a bay*; Standing and Curated are already the library's;
+Enrichment gaps is deferred to Machinery (D302); and "the pre-ice pass" is *the Pre-Season Pass* in
+every visible word (D300), a seasonal group shown from July until its last decision (D301).
+
 ### §5.4 — Body console
 
 The report console's frame with the lake as the instrument. Left column: identity (names and
@@ -1052,6 +1061,12 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   `RestoreGate` dead end fixed on the way.
 - **§4 — Corpus.** The task lanes with *done* semantics (clearing `reviewReason` on decision; the
   chord re-fit lane across lakes; the pre-ice pass dated); the browser over every body.
+  **Designed 2026-11-24** (the founder's calls that day, D299–D304): see *The Corpus tasks (B01-6, the
+  design)* in §12.8. The browser is built (B01-3, renamed Corpus by D293); the task lanes land lane by
+  lane in four PRs, each whole with its undo and its old page's retirement; "clearing `reviewReason`"
+  becomes a settled reason the next campaign honors until its evidence changes; "the pre-ice pass
+  dated" becomes a stored pass record that also closes the recurrence rollover's skip bug; enrichment
+  gaps and script-filed bay asks are deferred (D302).
 - **§5 — Machinery.** The job registry with where-it-runs, trigger or instructions (D218); run
   scope, heartbeat and event stream; the cron list with last outcome and next due; the cost
   ledger (D219) with the meters generalized and the invoice form; the catalog-coverage card;
@@ -1276,7 +1291,11 @@ merge and sub-areas; no split), D222 (discipline: no mute; photos' moderation ax
 blue means a transient mode; go-mode; the temperature scale; *bodies*), D224 (a clouded pass shown
 to skaters, per frame, from the Imagery tab). D225 (Reports, a ninth mode; in-context
 moderator controls kept) and D226 (undo for every operator action; a reason only when something is
-taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once). **Added 2026-11-15:** D266 (a body is in a town when 25 m of its shoreline is; states and region follow; one rule for the merge, the import and the facts). **Added 2026-11-15:** D267 (the record sheet's levers and lists: one rule, each item once). **Added 2026-11-17:** D275 (moderators read the sentinels' overnight lows; one named capability decides it).
+taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Teagan from the start — not a role). **Refined 2026-10-17:** D227's grant is a row on an admin's People page that only a holder sees and changes; never no holder; a demotion clears it. **Ported 2026-11-10:** D245 (a saved put-in keeps a body active through the standing rollover; minted on the sweep branch as D228, §7). **Added 2026-11-13:** D249 (the season flips on 1 July, its Metrics window opens on 1 October, empty between), D250 (kudos are positive reactions), D251 (a flag under review is open), D252 (discipline never leaves the ledger without an editor), D253 (what a contribution is), D254 (the sign-in record keeps the current season and one past), D255 (a body's completeness is ten things). **Added 2026-11-14:** D257 (People reads a light row per person; flagged means the person or their content; a staffer's figures, defined once). **Added 2026-11-15:** D266 (a body is in a town when 25 m of its shoreline is; states and region follow; one rule for the merge, the import and the facts). **Added 2026-11-15:** D267 (the record sheet's levers and lists: one rule, each item once). **Added 2026-11-17:** D275 (moderators read the sentinels' overnight lows; one named capability decides it). **Added 2026-11-24 (B01-6):** D299 (Corpus's tasks
+land lane by lane, each whole; no placeholder entries), D300 (*Pre-Season Pass* is the visible name),
+D301 (the pass group is seasonal and dressed apart), D302 (enrichment gaps and script-filed bay asks
+deferred), D303 (task modes stay their own wave; their hand-offs drawn unavailable), D304 (an old page's
+code goes with the PR that retires it).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -1710,7 +1729,9 @@ Verbatim in every brief, with the placeholders filled:
   `routes/admin.tsx` binds `AdminLayout` (the old gate and sidebar) over the whole tree. Each
   integration that lands a mode **narrows the predicate** to the old pages still standing; an old
   route becomes a redirect only when its replacement lands, so the console works at every merge,
-  and the old components are deleted at the close, not before.
+  and the old components are deleted at the close, not before. *Amended 2026-11-24 (D304):* an old
+  page's code is deleted in the PR that retires it — the founder's request that day to strip the
+  Legacy pages already replaced, and what #177 did for the Inbox's pages.
 - **`data-surface="admin"` on `<html>`, per route.** `lib/theme.ts`'s `THEME_INIT_SCRIPT` removes
   `data-surface` under `/admin` today (the old pages don't read the tokens; absent keeps their look).
   The B01 shell takes the attribute over: the init script sets `admin` for the paths the new shell
@@ -7071,6 +7092,8 @@ flags row below moves to the photos PR.
 | 3 | `admin.water.index.tsx` loses its pending card (the duplicates and curated cards stay until §4) | — | — |
 | 6 (support) | `/admin/support` → `?lane=support` | `/admin/support` | `support.create`'s operator mail; People's ticket *Handle* (Pe6) |
 
+*Amended 2026-11-24 (D304):* `BayRequestQueue.tsx` in the next sentence is wrong — it stays with the
+old editor (In29) — and the rule is now that a page's code goes with the PR that retires it.
 The old components (`admin.flags.tsx`, `admin.water.requests.tsx`, `admin.support.tsx`,
 `BayRequestQueue.tsx`) are deleted at B01's close, not before (§12.7); `LandmarkTool.tsx`,
 `useReviewWatch.ts`, `ReviewClosedNotice.tsx` and `corpusRequests.reviewState` stay with the old
@@ -13870,6 +13893,800 @@ landmark" for the bay half of the undo's rule — no bay outlines are stored.
 
 - **A capped body** (near the landmark cap) keeps the spellings-only check on a list.
 - **Not measured on dev:** the withdrawals backfill's pass count and the names backfill's length.
+
+### The Corpus tasks (B01-6, the design)
+
+*Designed 2026-11-24 against `origin/main` at `28a6934c`; nothing built.* Corpus (`/admin/corpus`,
+workstream §4, D293) is today the library of bodies: a lanes sidebar with the groups *Views* and
+*Standing*. This wave adds the plan's task lanes to that same sidebar — **Tasks** (Duplicates, Name
+conflicts, Class conflicts, Contested as water, Orphan bays, Chord re-fits, Place names) and the
+seasonal **Pre-Season Pass** (Recurrence, Promotion candidates, Known features, and the pass meter) —
+from the ten boards `corpus-*-v5.html` in `skating-mockups/admin-variants/` (Review 9 renumbered them
+4.1–4.10; Review 11 holds Corpus's rules). The founder's calls of 2026-11-24 scope it, minted as
+**D299–D304**: each lane lands whole — its read, its writes, what *done* means, its undo, its old
+page's retirement — and a sidebar entry appears only once its lane is built (D299); *Pre-Season Pass*
+is the visible name (D300); the pass group is seasonal and dressed apart (D301); enrichment gaps and
+script-filed bay asks are deferred (D302); task modes stay their own wave (D303); an old page retires,
+and its code goes, in the PR that replaces it (D304). The boards are the spec where they and §5.3
+differ. **The forks** at the end are the decisions the code and the calls could not make; until they
+are ruled, the design carries the recommendation of each.
+
+#### What the code says today
+
+Checked against the code by three scouts and re-grepped; where the plan and the code disagree, the
+code is taken.
+
+| Lane | Read | Writes | Undo today | What the board asks that nothing serves |
+|---|---|---|---|---|
+| Duplicates (4.1) | `waterBodies.listDedupCandidates` (`waterBodies.ts:7892`): not paged — `readDedupFlags` takes 250 flagged rows (`lib/dedupQueue.ts:16`), then one `get` per candidate id with no bound; groups are connected components over `duplicateCandidateIds` computed at read (`lib/dedupQueue.ts:85`), cards of at most 6; no `dedupGroupId` exists. `getDedupGroup` (`:7955`) gives IoU, centroid distance, area ratio and attachment counts per table (each capped at 100) | `merge` (`:3602`, `corpus.duplicates`) → `mergeBodyInto`, change set v2 with `dedupBefore`; `dismissDuplicates` (`:8092`), recording no `prev` | merge ↔ `unmerge_waterbody` (built, #173); `dismiss_duplicate` is `later('§4 Corpus')`, and its plan ("re-flag from `prev`") reads a `prev` the write never stores | which rule flagged the group; a one-sided share; the partners of the import's `duplicate-candidate` (written only to the ETL's scratch `master.ndjson`, `scripts/etl/src/merge.ts:853`); the feature a `same-source-duplicate` absorbed (`mergeRules.ts:93`); *what differs*, field by field |
+| Name conflicts (4.2) | `waterBodies.listReviewQueue(reason)` (`:6005`): one `.paginate()`, 40 a page, on `by_review_reason` (`['reviewReason', 'displayScore']`, `schema.ts:1602`); merged, removed and dormant bodies not filtered. `reviewQueueCounts` (`:6045`) takes 51 a reason, so "50+" | `setWaterBodyName` (`:6113`, `body.identity`; a `user` claim the import keeps) and `setAliases` (`:5036`) | both `setPrev` | the *Different · One letter · Qualifier* split (computable from the two names; never stored); "14 other bodies carry it" (no namesake read); **emails by winter** (no store of lake-name mentions exists in Convex); a record that *keeping* the shown name holds through the next campaign |
+| Class conflicts (4.3) | the same queue, `class-conflict` | `setClass` (`:5266`, `body.identity`; `moderatorClass` survives a re-import, `:787`) | `setPrev` | `classClaims` per catalog (`schema.ts:869`) — absent on every body imported before B01-3d; *what each class would do* as words (the rule exists: `belongsInCorpus`'s unnamed-wetland bar, `core/osm.ts:230`) |
+| Contested as water (4.4) | the same queue, `class-dissent` | `setClass`; `remove` (`:3213`) is **admin-only** (`body.remove`); `setStanding` dormant (`standing.ts:91`) | as their verbs | **which catalog refused, with what token**: the ETL drops refusals from `classClaims` (`masterList.ts:938`) and keeps them only in run stats; the Body preview labels dissent with `confidence.cls`, which can't see a refusal (`bodies.ts:637`) |
+| Orphan bays (4.5) | the same queue, `bay-without-parent` | **none**: no write assigns a parent, turns a body into a sub-area, or demotes one to a landmark | — | *who could hold it*, with what share (no candidate parent is stored; `consoleExtras`' `touching` carries no share); what a conversion keeps and drops |
+| Chord re-fits (4.6) | a count only: `console.corpusCounts` reads `by_mouth_review` (each outcome) and `by_mouth_stale` (`gt('')`), 201 each, with no `removedAt` filter (`console.ts:112-129`) | no settle write. `subAreas.updateChord` (`subAreas.ts:1276`, `body.shape`) clears both fields by re-saving the mouth, audited as `redraw_sub_area`; the ETL's re-clip (`reclipSubAreasToParent`, `:415`, through `noteRederivation`, `:675`) writes them with no audit | `setPrev` on the redraw | **the two outlines**: a `kept` review stores only the old polygon, a `refitted` one only the new — no snapshot (`subAreas.ts:452` only warns); when it happened; who drew the bay; *decided this week* (a decision clears the fields, and nothing says a redraw answered a review) |
+| Place names (4.7) | `corpusPlaceNames.listQueue({ status })` (`corpusPlaceNames.ts:207`): `by_status_messages`, 401, not paged; *Placed* and *Dismissed* are the same read by status | `setLake` (`:289`, **no audit row**), `dismiss` (`:306`, one of `CORPUS_NAME_DISMISS_REASONS` — the board's five), `reopen` (`:341`), `fileAsSpelling` (`:364`) | `dismiss`/`reopen` write the generic `remove`/`restore` verbs with no `prev` and **no handler** (`CORPUS_TARGET_UNDO = {}`, `undoHandlersCorpus.ts:1245`), so History says undo isn't built; `fileAsSpelling`'s undo is refused on purpose (`undoHandlersBody.ts:504`) | which bodies already carry the name (`alreadyNamed` is a boolean); counts by winter |
+| Recurrence (4.8) | `recurrence.listQueue` (`recurrence.ts:642`): paged, one season (`computedForSeason`), whole rows with member ids and geometry; decided rows only through `includeSuppressed`/`includePromoted` | `suppress`, `unsuppress`, `promoteFromRecurrence` (`corpus.preIce`); `recomputeForBody` (no audit row) | suppress ↔ unsuppress; a promotion's undo is a demote | per-winter counts (only the distinct `seasonsObserved`); when a pattern was promoted; a cross-lake count; an index on the decisions |
+| Promotion candidates (4.9) | `hazards.listPromotionCandidates({ waterBodyId })` (`hazards.ts:728`): **one body**, gated `body.read`, the season that ended | `bodyFeatures.promote` (`corpus.preIce`) | its undo is a demote | any cross-lake list or count; **a record of "left hidden"** — nothing records a decision not to promote |
+| Known features (4.10) | `bodyFeatures.listRecent` (`bodyFeatures.ts:64`): the *active* rows among the newest 100 created; not paged | `demote` (`:192`) | **none**: `demote_body_feature` is `later('§3 Body console')`, and no reactivate exists | provenance (*Where it came from*, *Since then*); a demoted list |
+
+**Across them:**
+
+- **Only the import writes an intake reason.** `mergeFields` (`waterBodies.ts:405`) is the sole writer
+  of `reviewReasons`/`reviewReason`, spread into `importCanonical`. A moderator's decision clears
+  nothing, a merged tombstone stays queued, and a re-import overwrites the reasons regardless of any
+  decision. So *done* needs new writes, each with an undo, and a record the import honors.
+- **The queue ranges over the single primary reason**, so a body with two conflicts sits in one lane.
+- **The intake's duplicate reasons and the dedup queue are unconnected.** `duplicate-candidate` and
+  `same-source-duplicate` store no partner, so neither `merge` nor `dismissDuplicates` can answer them;
+  §5.3's "one lane, one decision" has no data under it yet.
+- **Nothing records the pass.** `corpusCounts` returns `preIcePass: null` (`console.ts:157`), so the
+  Overview's *Pre-ice pass* row and the status bar's *pre-ice pass not run* (`overviewStatus.tsx:59`)
+  never render live — and the row's link would open **Standing** (`overviewRoutes.ts:38`), not the pass.
+- **The recurrence rollover leaves no run record** (the standing rollover writes an `importRuns` row,
+  `standing.ts:850`; recurrence writes none), and the deferred register's *yearly recurrence pass can
+  skip itself* is real: a merge or *Recompute* on 1–7 July stamps `computedForSeason`, and
+  `maybeRunRollover` (`recurrence.ts:412`) then skips the corpus-wide pass for the year. The pass's
+  seasonal rule needs exactly the record whose absence causes that bug.
+- **The web frame.** `bodyLanes.ts:29` reserves `{ kind: 'corpusTask'; task: string }`, and
+  `bodyLanes.test.ts:45` proves a lane grouped under "Corpus" draws *Not recorded yet* (`listArgsOf`
+  answers `null` for any read that isn't the library's, `bodiesReads.ts:95`). The kit's `Lanes`
+  (`kit/lanes.tsx`) has a sidebar `foot` but **no per-group dress, slot or tail**. The search file is
+  `bodiesSearch.ts` (D293 and the brief say `bodySearch.ts`); its `lane` must be an id in `BODY_LANES`,
+  and it has no `task` param, so the Overview stories' `/admin/corpus?task=…` (`overviewLinks.tsx:40`)
+  would be dropped. The Corpus mode is gated `body.read` (`consoleNav.ts:88`).
+- **The visible "pre-ice" words** (call 3): `OverviewCards.tsx:140` (*Pre-ice pass*),
+  `overviewStatus.tsx:60` (*pre-ice pass not run*), `HazardsTabView.tsx:345` (*The pre-ice pass couldn't
+  be read*), `hazardsWords.ts:185-188` (*…wait(s) in the pre-ice pass*), the story copy in
+  `ConsoleShell.stories.tsx:105`, and the capability's description (`core/capabilities.ts:120`).
+  Internal names (`corpus.preIce`, `preIcePass`, `PreIcePass`) stay.
+
+**Where §5.3, §8 §4, §11, §12.7 and the Inbox design are stale against the boards or the code:**
+
+- §5.3's "rows that open the body console in the right tool": the boards decide in place; only Place
+  names' *Place it in Body →* and Chord re-fits' *Redraw in Body →* hand off, drawn unavailable (D303).
+- §5.3's *Done means* for Duplicates assumes the intake reason and the dedup flag share a pair; they
+  don't (above). Its *Orphan bays* row ("a parent assigned (new) or demoted to landmark") is the board's
+  *Make a bay of …* / *Demote to landmark* / *Not a bay*, and each of the first two moves rows (below).
+- §5.3's *Standing* and *Curated* rows are already the library's (the Standing lanes; the `curation`
+  facet); *Enrichment gaps* is deferred (D302).
+- §5.3's "the pre-ice pass" is *the Pre-Season Pass* in every visible word (D300).
+- §11's per-verb table puts `demote_body_feature → reactivate` under §3; the Known features lane
+  retires `/admin/features`, so the inverse lands here.
+- §12.7's "the old components are deleted at the close, not before" (and `consoleNav.ts:16`'s comment,
+  and the Inbox design's *Legacy retirement*) is superseded by D304; the Inbox design's line that sends
+  `BayRequestQueue.tsx` to deletion is wrong — it stays with the old editor (In29).
+
+#### The server design
+
+##### The unit: one task per question, stored
+
+As in the Inbox (*The unit*), an operator decides a question, not a row, and the lanes need what the
+source indexes can't give: exact counts (the board's *Name conflicts 412*, where today's counts stop at
+50), facets, a decided tail, a body in every lane it belongs to, and a pass meter with a fixed
+denominator. So the task lanes read **a stored row per task**, written where the facts change (fork 1
+weighs the cheaper alternative):
+
+| Task kind | Lane | One task is | Key | Facets (the board's tabs) |
+|---|---|---|---|---|
+| `duplicate` | `duplicates` | a dedup group (a connected component of flagged bodies, at most 6), or one body's `same-source-duplicate` | `dup:<the group's least body id>`, re-keyed when the group changes; `dup:same:<bodyId>` | *Near certain*, *Suspected*, *Catalog twice* |
+| `reason` | `nameConflicts`, `classConflicts`, `contested`, `orphanBays` | one intake reason on one body | `reason:<reason>:<bodyId>` | names: *Different*, *One letter*, *Qualifier*; classes: *Wetland or lake*, *Other pairs*; contested: *Seasonal*, *Built*, *Not water*; bays: *Partly inside*, *Outside everything* |
+| `refit` | `chordRefits` | one bay under review (`mouthReview` or `mouthStale`) | `refit:<subAreaId>` | *Re-fit held back*, *Re-fit applied unseen* (a stale mouth joins the second) |
+| `pattern` | `recurrence` | one recurrence pattern in this season's pass | `pattern:<season>:<recurrenceId>` | *2 or more winters*, *1 winter* (fork 9) |
+| `candidate` | `promotion` | one hazard of last winter that ranks for promotion | `candidate:<season>:<hazardId>` | none (sorts: *Reported*, *Confirmed ×*, *Said gone*) |
+
+Place names and Known features keep their own tables as their rows: a `corpusPlaceNames` row already is
+one question with a status, and a known feature is a record, not a question. Their lanes read those
+tables directly (below), and their counts move through the same count rows.
+
+- **`corpusTasks`**: `key`, `kind`, `lane`, `facet`, `status` (`open` \| `decided`), `rankKey` (a
+  required number, smaller first — the body's prominence for intake, a pattern's priority, a
+  candidate's rank, a re-fit's age), `filedAt`, `waterBodyId` (required: every task is on a body),
+  `subjectId` (the group's lead, the sub-area, the pattern, the hazard; a string the read checks),
+  `season?` (pass tasks only), and once decided `decidedAt`, `decidedByUserId?`, `decision` (`kept`,
+  `renamed`, `reclassed`, `merged`, `dismissed`, `made_bay`, `made_landmark`, `dormant`, `removed`,
+  `refit_taken`, `kept_as_drawn`, `promoted`, `suppressed`, `left_hidden`, `superseded`),
+  `decisionActionId?`; and `refreshedAt`. Indexes: `by_key`, `by_status_lane_rank`,
+  `by_status_lane_facet_rank`, `by_lane_status_decided` (each lane's decided tab), `by_body_status`
+  (the Body console's *what is asked of this lake*), `by_season_lane_status` (the pass; `eq` on
+  `season` only, never a bare range — it is optional), `by_refreshed_at`.
+- **`corpusTaskCounts`**: one row per `open:<lane>`, `open:<lane>:<facet>` and `pass:<season>:total` /
+  `:decided`, moved by the one writer in the same transaction as the task (the `inboxCounts` pattern),
+  plus `open:placeNames` moved by the place-name writers.
+
+**One writer, `lib/corpusTasks.ts`**: `fileTask(source)` (find or create by key; move the counts);
+`leaveTask(source)` (the question went away with no decision — a campaign stopped asserting the reason,
+a Body console redraw cleared a bay's review, the body was merged away or removed: the task is decided
+`superseded` with no action, so the count falls and nothing claims a person decided it);
+`decideTask(task, decision, actionId)`; `reopenTask(actionId)` (the undo's); `rekey(source)` (a dedup
+group that grew, split or lost a member). A guard in `packages/guards` (`corpusTaskWriters.test.ts`,
+the `inboxWriters` shape) holds every writer of the source fields to calling it. **Every path in the
+code today** (from reading; the guard is the proof):
+
+| Source | Paths that open, close or move a task |
+|---|---|
+| `waterBodies.reviewReasons` | `mergeFields` inside `importCanonical` (insert and patch, `:816,905`); the new settle and its inverse (below); `mergeBodyInto` (a merged loser's tasks go `superseded`); the unmerge (they reopen); `remove` / `restore` |
+| `waterBodies.dedupStatus`, `duplicateCandidateIds` | D36's match-on-create (`:2881`), `flagAsDuplicates` (`:455,705`), `importReconciliation` (`:1308`), `clearDuplicateFlag` (`:8149`), the merge (`:4288`), the unmerge (`unmerge.ts:497,529,554`), the new partner backfill (fork 3) |
+| `waterBodySubAreas.mouthReview`, `mouthStale` | `noteRederivation` (`subAreas.ts:675`), `reclipSubAreasToParent` (`:415`), `restoreSubAreaImpl` (`:1563`), any chord or freehand save (`:773`), the new settle |
+| `hazardRecurrence` (pass tasks) | the pass's opening (below); `recomputeBody`'s diff (a row deleted or re-matched); `suppress`, `unsuppress`, `promoteFromRecurrence`; `demote` (it sends a cluster back to waiting, `bodyFeatures.ts:230`) |
+| `hazards` (candidates) | the pass's opening; `bodyFeatures.promote`; `demote`; a takedown of the hazard (`superseded`) |
+
+A **drift repair** walks open tasks a few a minute and re-derives each from its source, counting fixes
+on Machinery; a **backfill** files every open task from the sources (each reason through
+`by_review_reason`, then every other reason in each body's `reviewReasons`; dedup flags through
+`by_dedup_status`; re-fits through the two mouth indexes). Every pass is bounded by `ReadBudget` on
+bytes and never wedges, as the Inbox's are (*Every pass is bounded on bytes as well as rows*). Reads
+say `pending` until the backfill finishes.
+
+**The import's hook is the expensive seam.** `mergeFields` runs inside every `importCanonical` batch, so
+filing and leaving tasks adds reads and writes for each body a campaign changes. The batch is proven
+on a throwaway local backend at the edge of its refusal before the PR opens (CLAUDE.md), and the batch
+size the loader sends (`scripts/etl`) comes down if it must.
+
+**The one writer's property test** (`fast-check` with `convex-test`): random sequences of source
+events — a campaign asserting and dropping reasons, a settle and its undo, flags and dismissals and
+merges and unmerges in groups of up to six, a re-fit kept or applied, a pass opened, patterns
+recomputed, promoted, suppressed and demoted — then after each step: every live question is the member
+of exactly one open task whose key its fields give; no open task lacks its question; every count row
+equals its tally; the drift repair finds nothing. Mutation checks the builder runs (§12.5): drop
+`leaveTask` from `mergeFields`; drop `rekey` from `clearDuplicateFlag`; skip the count move in
+`decideTask`; skip `reopenTask` in the settle's inverse.
+
+##### The intake lanes: settling a reason, and making it hold
+
+**A settled reason holds through the next campaign until its evidence changes** (fork 2). New on
+`waterBodies`: `reviewSettled?: { reason, evidence, at, actionId }[]`, where `evidence` is a short
+fingerprint of what raised the reason — the sorted name claims for a name conflict; the class claims for
+a class conflict; the refusing catalog and token for dissent; the candidate parents' keys for an orphan
+bay. `mergeFields` drops an incoming reason whose settled fingerprint equals the incoming one, and files
+it again when it differs — the task reopens, its row saying *Raised again by the 3 Mar campaign: the
+catalogs changed* (invented, for the copy pass). One rule in core, `reviewEvidence(reason, record)`,
+computes the fingerprint for the settle and for the import, so the two can't drift.
+
+**One settle path**, `lib/corpusTasks.settleReason(body, reason, decision, actionId)`: removes the reason
+from `reviewReasons`, recomputes `reviewReason` with `primaryReviewReason` (so the old readers — the Body
+preview, the library's `intake` flag — surface the next reason, while its own task already stands in
+its own lane), appends to `reviewSettled`, and decides the task. Every intake decision is **one
+mutation that performs the domain write through its existing impl and settles in the same transaction**,
+so a decision can't half-land:
+
+| Lane | The board's button | Mutation (`corpusWrites.ts`) | Domain write | Capability |
+|---|---|---|---|---|
+| Name conflicts | *Display “Lake Auburn” instead* (⏎) | `decideName({ taskId, pick })` | `setWaterBodyName`'s impl (the refused name stays a claim and searchable) | `body.identity` |
+| | the shown name picked | `decideName({ taskId, pick: 'shown' })` | none — the settle is the decision (`kept`) | `corpus.intake` (new) |
+| Class conflicts | *Set as Wetland* (⏎) | `decideClass({ taskId, bodyClass })` | `setClassImpl` | `body.identity` |
+| Contested as water | *Keep as Lake or pond* (K) | `decideClass({ taskId, bodyClass: <current> })` | none (`kept`) | `corpus.intake` |
+| | *Another class ▾* | `decideClass` | `setClassImpl` | `body.identity` |
+| | *Remove* (R) | `decideContested({ taskId, verb: 'remove', reason })` | `remove`'s impl | `body.remove` (admin; fork 4) |
+| | *Set dormant* (the moderator's way out, fork 4) | `decideContested({ taskId, verb: 'dormant', reason })` | `setStanding`'s impl (dormant, with the note) | `body.standing` |
+| Orphan bays | *Make a bay of Newfound Lake* (M) | `makeBay({ taskId, parentId, reason? })` | below | `corpus.duplicates` and `body.shape` |
+| | *Demote to landmark* (D) | `bayToLandmark({ taskId, parentId })` | below | `corpus.duplicates` and `body.places` |
+| | *Not a bay ▾* (a class) | `decideClass` | `setClassImpl` | `body.identity` |
+
+`corpus.intake` (*Settle an intake question without changing the body*, moderator) joins
+`packages/core/src/capabilities.ts` (fork 20); a decision that changes the body needs that change's own
+capability (D217), which every moderator holds except `body.remove`.
+
+**The facts each board asks for, and where they come from** (`corpusTasks.item`, below):
+
+- **Names (4.2)**: each claim with its catalogs (`nameClaims`); the catalogs' rank in words from
+  `NAME_SOURCE_RANK` (*First: the authority on US names* … *Last: a mapper's free text*); *Elsewhere*, a
+  namesake count, bounded (`bodyLibraryRows.by_scope_name`, `eq(nameKey)`, 51 rows, "50+"); the split
+  from one rule in core over the two names; *Search finds it by either name already* (true by
+  construction: `searchText` holds every claim). **The emails by winter are not served** (fork 5).
+- **Classes (4.3)**: `classClaims` by catalog — the board's FCODE and edit date are **not verified** to be
+  stored (a claim is `{ source, cls }`); the ladder *What each class would do* from one rule in core,
+  `classConsequence(body, cls)` ("Leaves the corpus next campaign, as unnamed wetland under 50 ac" from
+  `belongsInCorpus`; "Waits for a parent: no lake holds it" for a bay); and *The body* (name, depth,
+  what is attached, the nearest body from `bodyGeo`'s stored neighbors). A body imported before B01-3d
+  has no class claims: the ladder still draws, and *The catalogs* reads *Not recorded until the next
+  campaign*.
+- **Contested (4.4)**: the asserting claim from `classClaims`; the **refusing** catalog and its token need
+  the ETL to keep them — `classRefusals?: { source, token }[]` on the body (`masterList.ts:938-985` keeps
+  them today only for run stats) — with the facet (*Seasonal*, *Built*, *Not water*) from one rule in
+  core over the token. A body loaded before that campaign reads *The refusing catalog isn't recorded
+  until the next campaign*, in the *Not water* facet.
+- **Orphan bays (4.5)**: `corpusTasks.bayParents({ taskId })` — the listed bodies within the bay's box
+  grown by its own diagonal (`listedBodiesNearCoord` with `marginMeters`, never without), at most 12 by
+  prominence, each with the share of the bay inside it (core's `coveredFraction`, the merge suggestion's
+  rule) and *Smaller than the bay, so it can't hold it* where it is; *As a bay of …*: the acres kept
+  inside the shore, the acres dropped, the reports that move. The board's second *Newfound Lake, as NHD
+  draws it* row can't be served: a body stores one outline.
+
+**Making a bay of a body, and demoting it to a landmark.** Both fold the orphan into a parent with the
+merge machinery, which already moves every child row, records a change set and has a tested inverse:
+
+- `makeBay`: `mergeBodyInto(parent, bay)` (the bay's reports, hazards, features, put-ins and favorites
+  move; `assertMergeFits` bounds it), then a sub-area from the bay's outline **clipped to the parent's**
+  through `subAreas.create`'s impl (its name and catalog keys; the existing restamp files reports and
+  hazards under it). Refused when the clip keeps less than a core floor of the bay (fork 6) — a bay
+  entirely outside its shore (*Outside everything*) can only become a landmark or *not a bay* — and when
+  the parent isn't listed or is itself a bay.
+- `bayToLandmark`: the same merge, then a landmark on the parent at the bay's representative point,
+  named as the bay, through `landmarks.create`'s impl.
+- **Audit and undo**: one row, `make_bay` or `bay_to_landmark`, whose change set is the merge's plus the
+  created sub-area's or landmark's id. Its inverse, `unmake_bay`, removes the created child through its
+  existing inverse (`create_sub_area` and `create_landmark` → remove), runs the unmerge from the change
+  set, and reopens the task — refused, with History's sentence, when either half was overtaken. The
+  write scales with the bay's attachments, so it is proven on a throwaway local backend at the edge of
+  `assertMergeFits` before its PR opens, as #173's merge was.
+
+##### Duplicates: one lane over both systems
+
+- **The read** is the stored tasks (one per group), paged by `rankKey` (near-certain first, then
+  overlap), each row the board's line — both names with their catalogs, overlap, acres, *What differs*
+  (one rule in core comparing the fourteen fields the board's *Side by side* lists), what is attached.
+  The item adds `getDedupGroup`'s facts and *Why they are one body*, worded from a new `dedupReason`
+  each flagging path stamps (`create-overlap`, `catalog-id`, `reconciliation`, `import-overlap`), and
+  *Kept either way* from the merge's own union rules (`mergedModeratorLists`).
+- **The import's `duplicate-candidate` joins the dedup flag** (fork 3): the ETL carries `duplicateOf`
+  through `toCanonicalBody`, and `importCanonical` stamps it through `flagAsDuplicates`, so the next
+  campaign writes each pair. Until then a one-time Convex backfill (`corpusTasks.backfillPartners`, dry
+  by default, paged) finds each such body's partners among its listed neighbors by core's IoU rule and
+  flags them the same way. A body for which it finds no partner keeps a `duplicate` task with no pair,
+  in *Suspected*, decidable only as *Looks right* (`kept`) or opened in the Body console.
+- **`same-source-duplicate`** (one catalog's two features folded into one body by the merge rule): the
+  absorbed feature is gone, so the only decision is to confirm the fold (*Looks right*). Stored going
+  forward as `absorbedFeatures?: { source, externalId, areaSqM }[]`, so the row can say what was folded
+  in. It sits in *Catalog twice*.
+- **Writes**: *Keep A* / *Keep B* is `merge` with that survivor (its change set and unmerge as built);
+  *Not duplicates* (N) is `dismissDuplicates`, **now recording `prev`** (each body's `dedupStatus` and
+  `duplicateCandidateIds` before), so its inverse `redup_bodies` restores them — paying the §4 row in
+  `undoOwed()`. A dismissal from before this ships has no `prev` and refuses its undo in words ("This was
+  dismissed before undo existed, and nothing records what it replaced."). Each settles the bodies'
+  duplicate reasons in the same transaction.
+
+##### Chord re-fits
+
+- **Both outlines, going forward.** `noteRederivation` and `reclipSubAreasToParent` write the outline they
+  did *not* keep — with its cause (*after the 12 Oct campaign*, *after a source swap*, *after a merge*,
+  *after a restore*) and time — to a side table, **`subAreaRefits`** (`subAreaId`, `polygon` in split
+  rings under the 8,192-item cap, `side: 'refit' | 'drawn'`, `cause`, `at`), since a second polygon on the
+  sub-area row would double every read of it. For a review recorded before this ships: a `kept` review's
+  re-fit is derived at read from the stored mouth against the parent (the server's chord derivation,
+  `core/subAreaChord.ts`); a `refitted` review's drawn outline is gone, and the inspector says so (*The
+  outline as drawn wasn't kept*) and offers only *Take the re-fit* (fork 7).
+- **The read**: both outlines; *Area ×1.7* against the constant the re-derivation already uses (*waits past
+  ×1.5*); the overlap of the two; how far each mouth end moved; the cause; who drew the bay and when (its
+  `create_sub_area` or `redraw_sub_area` row, by `by_target_action`); and per outline, the reports,
+  landmarks and hazards it would hold (bounded `by_parent` reads, clipped in memory).
+- **The settle**, `settleRefit({ taskId, take: 'refit' | 'drawn' })` (`body.shape`): taking the re-fit of a
+  `kept` review applies the stored alternative through the redraw's impl; keeping as drawn clears the
+  review and puts back the mouth's `side` the re-derivation moved (`subAreas.ts:685` moves only `side` —
+  **not verified** that putting it back re-derives the kept outline exactly; the builder proves it or
+  stores the mouth too); for `refitted`, the mirror. One audit verb, `settle_refit`, with `prev` (the
+  outline and mouth as a snapshot, and the review), undone by `setPrev`. *Redraw in Body →* is an
+  `UnavailableButton` (D303).
+- **Decided this week** is the lane's decided tasks, worded *Re-fit taken* / *Kept as drawn* with who
+  decided (Review 11 rule 7: what a campaign did on its own never reads as a decision).
+
+##### Place names
+
+- **The read goes paged**: `corpusPlaceNames.listPage({ status, cursor, endCursor })` on
+  `by_status_messages` (the People `endCursor` chain), tabs *Open · Placed · Dismissed*; each row its
+  emails and skated emails, states, spellings (`aliases`), and the lake, or *Pick a lake · Met N lakes*,
+  or *Already named · On N lakes* — the last from D282's stored `bodyNameLists` for each candidate body
+  (at most 8). **Counts by winter are not stored** and not drawn (fork 5).
+- **Writes get their own verbs and undos**: `dismiss` writes `dismiss_place_name` (with `prev`: status,
+  lake) and `reopen` writes `reopen_place_name`, each the other's inverse under `corpus.placeNames`,
+  replacing the generic `remove`/`restore` rows (whose undo names `content.moderate` and has no
+  handler); `setLake` writes `set_place_name_lake` with `prev` (`setPrev`); a spelling picked or added on
+  the board is `setSpellings({ id, name, aliases })` (new, `setPrev`). `fileAsSpelling`'s undo stays
+  refused, for the reason in its handler. *Place it in Body →* is unavailable (D303). Rows written
+  before the wave as `remove`/`restore` keep their *not built* undo.
+
+##### The Pre-Season Pass
+
+**The pass is a record.** New table **`corpusPasses`**: `season`, `state` (`computing` \| `open` \|
+`done`), `startedAt`, `computedAt?`, `doneAt?`, `doneByUserId?` (who decided its last task); its total
+and decided figures are the `pass:<season>:*` count rows. Written by:
+
+- **The rollover, rewritten around it.** `maybeRunRollover` gates on this season's `corpusPasses` row, not
+  on "any `hazardRecurrence` row stamped with the season" — which **closes the deferred register's
+  *yearly recurrence pass can skip itself*** (due before 1 July 2027). On a July 1–7 tick: no row →
+  insert `computing` and start the run; still `computing` → resume (the existing restart-on-leftover
+  rule); `open` or `done` → nothing. The run's last step, once the queue is empty, **opens the pass**: a
+  `pattern` task for every pattern computed for the season that is neither suppressed nor promoted, and
+  a `candidate` task for every hazard of the winter that just ended that ranks for promotion
+  (`rankPromotionCandidates` above zero, not promoted, visible), discovered by paging
+  `hazards.by_first_reported` over that winter (the index discovery already pages), one `.paginate()`
+  per execution, self-scheduling. Then `open` and `computedAt`; with nothing filed, straight to `done`.
+  The run becomes a Machinery job with a record (`jobFailures` for a body it parks).
+- **The writer**: deciding a pass task moves *decided*; when it equals the total, `done` and `doneAt`; an
+  undo that reopens a pass task sets the pass back to `open` (fork 13).
+- **Mid-season**: a `recomputeForBody` or a merge's re-queue that finds a new pattern doesn't join the pass
+  (fork 8); it waits on that body's Hazards tab and in next July's pass, since the rollover recomputes
+  every body anyway.
+
+**The seasonal rule**, one rule in core — `passVisibility(pass, now)` — asked by the read and held by a
+`fast-check` property over the season boundary and every state:
+
+| This season's pass | The group | Its meter | The Overview's row |
+|---|---|---|---|
+| none yet (1 July, before the first tick) | shown (fork 12) | *Starts this week* | *Not started for 2026–27* |
+| `computing` | shown, its lanes *Being computed* | *Being computed* | *Being computed* |
+| `computing` after 7 July (the run failed) | shown | *Not computed — see Machinery* (red) | the same, red |
+| `open` | shown | *3 of 10 decided* | *3 of 10 decided* (amber) |
+| `done` | **gone** until next July | — | *Done 14 Sep* (fork 11) |
+
+Known features is **not in the meter** (a record, not a queue); where it lives is fork 10. The words
+are invented, for the copy pass.
+
+**The reads:**
+
+- **Recurrence (4.8)**: the pass's `pattern` tasks (tabs *2 or more winters · 1 winter*), and the pattern
+  rows for *Suppressed · Promoted · Stale* through new indexes on `hazardRecurrence` — `by_suppressed`
+  (`suppressedAt`, read `gt(0)`), `by_promoted` (`promotedToFeatureId`, read with a lower bound),
+  `by_stale` (`staleSince`, `gt(0)`): each optional, so never a bare range. A row: the place phrase, the
+  family, pins and people (`memberHazardIds.length`, `distinctAuthorCount`), the four winters seen or
+  not (`seasonsObserved` against `windowSeasons`), *Seen 3 / 4*, the first-reported window (P25–P75).
+  The item adds the pins table (winter, reported, user, confirms — the members, at most 50 with
+  `capped`), per-winter pin counts from the members' `firstReportedAt` (bounded, never stored), and
+  *Becomes* (the suggested type, the medoid's shape). **Writes** as today (`suppress`, `unsuppress`,
+  `promoteFromRecurrence`), each deciding its task; the promote refuses a suppressed pattern (today it
+  doesn't, `recurrence.ts:802`). *Recompute* is `recomputeForBody`, now audited (`recompute_recurrence`,
+  no undo: a recompute rereads the record, and is redone by recomputing).
+- **Promotion candidates (4.9)**: the pass's `candidate` tasks, cross-lake by construction; each the
+  hazard's type and *Becomes*, its body and place phrase, shape and size, reported (when, by whom),
+  confirmations, *said gone* votes, the description, and *Also a pattern · 2 of 4 winters* (the pattern
+  whose members hold it). The item adds last winter's line (confirmed spans solid, unconfirmed dotted, a
+  *voted healed* stop) from the hazard's confirmation rows, bounded. Gated `corpus.read` (the per-body
+  read stays `body.read` for the Hazards tab). **Writes**: `bodyFeatures.promote` (deciding the task) and
+  **`leaveHidden({ taskId, reason })`** (new; `corpus.preIce`; audit `leave_hidden`, inverse
+  `reopen_corpus_task`) — the record "left hidden" never had. The *Promoted · Left hidden* tabs read the
+  lane's decided tasks.
+- **Known features (4.10)**: `bodyFeatures.listPage({ active, waterBodyId?, cursor })` on a new index
+  `by_active_created` (`['active', 'createdAt']`), *By body* through `by_water_body_active`; each card
+  its type, name, body and source line (*From a pattern · 3 of 4 winters*, *Drawn by …*, *From a pin*).
+  The item: *Where it came from* (the pattern or the promoted hazard, and its promote row: who, when,
+  why), *Since then* (pins that joined the pattern after the promotion), *Shown with it* (the note).
+  **Writes**: `demote` as today, and **`reactivate`** (new; the §3 row in `undoOwed()` this wave pays):
+  `active: true`, the source hazard's backlink and the cluster's `promotedToFeatureId` put back from the
+  demote's recorded `prev` (D291) — the demote records them from now on (today only `priorActive`); a
+  demote from before refuses its undo in words.
+
+Nothing in these reads or words says or implies the ice is safe, unsafe or predictable (D3): a pattern
+is *what was reported in these winters*, a known feature is *drawn every winter until someone demotes
+it*, and the meter counts decisions, never conditions.
+
+##### The reads, one shape
+
+All gated `corpus.read`, bounded, on the console's read clock:
+
+- **`corpusTasks.lanes({ now })`**: every task lane's open count and each facet's, from the count rows;
+  place names' and known features'; this season's pass (`passVisibility`'s answer, total, decided,
+  `computedAt`, `doneAt`); `pending` while the backfill runs. The sidebar, the Overview's Corpus card
+  (which moves onto it with the first lane, so card and sidebar agree by construction, and stops reading
+  `reviewQueueCounts`) and Inbox Zero's *Not in the inbox* line all read it.
+- **`corpusTasks.listPage({ lane, facet?, tab?, q?, cursor, endCursor, pageSize })`**: the People and
+  Inbox `endCursor` chain; `tab` is `open` or `decided` (newest first); `q` searches the task's body by
+  name, id or external id (through `bodyLibraryRows`' search, bounded), as each board's search box asks.
+  Each row its label facts, resolved at read, and **`can`**.
+- **`corpusTasks.item({ ref })`** behind `?item=`; `ref` a task id or a source ref (`body:`, `subArea:`,
+  `pattern:`, `hazard:`, `placeName:`, `feature:`), so the audit feed's links and the Body console's
+  *what is asked of this lake* resolve to the task that holds them; `{ item, pending }` with *No such
+  task* and *Not yet*, as `inbox.item`.
+
+##### Per-row `can`: one rule shared by read and write
+
+`lib/corpusRules.ts`, in `lib/inboxRules.ts`'s shape: per verb, `null` or the write's own refusal
+sentence, in one order — capability (D217) → the task already decided (D283's lock: "Decided by Sarah ·
+14:42 · renamed") → the subject changed under it (the body merged away or removed, the bay redrawn) →
+the verb's preconditions (a clip that keeps too little, a parent not listed, *Remove* without
+`body.remove`). The list's `can` and every write ask the same function; a refused button is not drawn
+(D217); a verb drawn and then refused by a later write is one toast (D268). A task decided by someone
+else while it is open locks the inspector, as the Inbox's items do.
+
+##### Undo: the inverses this wave pays
+
+Every decision answers in `InboxDecisionResult`'s shape (`lib/decisionResult.ts`, renamed
+`DecisionResult` now that two modes use it): `{ taskId, actionId }` and the undo offer. Every inverse
+restores recorded before-values through the forward paths (D291).
+
+| Verb | Inverse | Notes |
+|---|---|---|
+| `settle_review_reason` (the settle-only outcomes) | `unsettle_review_reason` | `reviewReasons`, `reviewReason`, `reviewSettled` back from `prev`; the task reopens |
+| `set_water_body_name`, `set_class` made from a lane | as today (`setPrev`) | their rows carry `taskId`, so the undo also unsettles and reopens |
+| `make_bay`, `bay_to_landmark` | `unmake_bay` (new) | the created child removed, then the unmerge from the change set; refused if overtaken |
+| `merge_waterbody` from Duplicates | `unmerge_waterbody` (built) | the unmerge also reopens the task |
+| `dismiss_duplicate` | `redup_bodies` (new; was `later('§4 Corpus')`) | from the `prev` it now records; earlier rows refuse |
+| `settle_refit` | `setPrev` (a snapshot) | the review and the outline back |
+| `dismiss_place_name` ↔ `reopen_place_name`; `set_place_name_lake`, `set_place_name_spellings` | each other; `setPrev` | the generic `remove`/`restore` rows stop being written |
+| `suppress_recurrence`, `promote_recurrence`, `promote_body_feature` | as today | the undo also reopens the pass task |
+| `leave_hidden` | `reopen_corpus_task` (new) | — |
+| `demote_body_feature` | `reactivate_body_feature` (new; was `later('§3 Body console')`) | from the demote's new `prev` |
+| `unmerge_hazards` | re-merge (was `later('§4 Corpus')`) | only if fork 14 gives hazard unmerge a home in this wave |
+
+`undoOwed()` loses `dismiss_duplicate`, `demote_body_feature` and (per fork 14) `unmerge_hazards`; it
+keeps `set_parking_area` and `promote_landmark` (§3). Each new verb joins `MODERATION_ACTIONS` and the
+registry (whose exhaustiveness test holds it), with a `convex-test` round trip, its overtaken case and
+its capability refusal.
+
+##### Every schema change, and its rollout
+
+| Table | Change | Rollout |
+|---|---|---|
+| `corpusTasks`, `corpusTaskCounts`, `corpusTaskJobRuns` | new | deploy, then `corpusTasks:backfill` to done; reads `pending` until it is |
+| `waterBodies` | `reviewSettled?`, `classRefusals?`, `absorbedFeatures?`, `dedupReason?` | widen only; the middle two are written by the next campaign, `dedupReason` also by the partner backfill; each reads *not recorded* until then |
+| `subAreaRefits` | new | deploy; written going forward |
+| `corpusPasses` | new | deploy, then `corpusPasses:openNow '{"season":2026}'` once on dev (dry first): the season is past July, so the deploy opens this season's pass from the patterns and candidates as they stand |
+| `hazardRecurrence` | `by_suppressed`, `by_promoted`, `by_stale` | indexes only |
+| `bodyFeatures` | `by_active_created` | index only |
+| `moderationActions` | the verbs above join `action`; `targetType` gains `corpusTask` | widen only |
+| `jobFailures.job` | `corpusTaskBackfill`, `corpusTaskRepair`, `recurrencePass` | widen, each with its cron in `CRON_OF` |
+
+Nothing is narrowed. The `by_review_reason` index stays for the Body preview and the library until they
+read the tasks.
+
+#### The web design
+
+##### The route and its search
+
+One route, `/admin/corpus`, one sidebar. A task lane is an entry in the lane list beside the library's:
+`bodyLanes.ts`'s reserved read becomes typed — `{ kind: 'corpusTask'; task: CorpusTaskLane }`, the
+union from core — and each lane joins `BODY_LANES` **in the PR that builds it** (D299). `BodiesRoute`
+dispatches on the lane's read: a library lane draws `BodiesView`'s list and preview as today; a task
+lane draws `CorpusTaskView` (its list and its inspector) **beside the same lanes column**, which moves
+out of `BodiesView` into `CorpusLanes` so both views mount one sidebar. `bodiesSearch.ts` gains,
+validated and never trusted:
+
+- **`lane`**: the task lanes' ids — `duplicates`, `name-conflicts`, `class-conflicts`, `contested`,
+  `orphan-bays`, `chord-refits`, `place-names`, `recurrence`, `promotion`, `known-features`; an id whose
+  lane isn't built is dropped, as today.
+- **`tab`**: the lane's facet or status tab (*Near certain*, *Placed*, *Suppressed*, *Decided* …); one the
+  lane doesn't have is dropped.
+- **`item`**: a task id or a source ref (above); anything else is dropped.
+- **`q`**: as the library's.
+
+The Overview stories' `?task=` (`overviewLinks.tsx:40`) becomes `?lane=` with the first lane. The Corpus
+mode still opens on *Active* (D293); opening a lane resets the place, as the library's lanes do.
+
+##### The sidebar
+
+Groups, in order (fork 18): **Pre-Season Pass** (while `passVisibility` shows it), **Tasks**, **Views**,
+**Standing**. Each lane's count comes from `corpusTasks.lanes` (amber where a person is waited on, dim
+at zero; no tooltips, Review 11 rule 1). The pass meter (*3 of 10 decided*, the kit `Meter`) sits with
+the pass group, inside its dress or at the sidebar's foot over a hairline (Review 9 rule 8), depending
+on the dress chosen. `Lanes` gains what every candidate needs — a per-group `dress` and a per-group
+`foot` — as a kit change (the governor's seam, §12.3), its stories four-up.
+
+##### The dress: candidates for the founder (D301)
+
+Each is built from the kit and tokens that exist, and each is rendered as a Storybook variant of `Lanes`
+(`kit/lanes.stories.tsx`, a `PassDress` set of four named stories, four-up: both surfaces, both modes)
+for the founder to pick from. **None is picked here.** The cost is each one's, beyond the shared
+`dress`/`foot` API.
+
+1. **The inverted plate.** The group sits on an inverted ground — `inv-bg` with `inv-fg` ink, as
+   `SectionSlug`'s chip and the boards' lit tab already invert — inset from the sidebar's edges, square
+   (`radius.container`), its kicker in the plate's own ink, the meter inside at its foot. It reads as a
+   label stuck onto the sidebar, and as the loudest thing on it. *Cost:* the most. Every lane-row state
+   (the hover wash, the selected plate and its 2 px bar, the focus ring, dim, the amber and red counts)
+   needs an inverted counterpart — a new `lane-inv-*` token set in `packages/design` — and amber on the
+   inverted ground must pass contrast in both modes.
+2. **The bracketed card.** The group wrapped in the kit's `Plate` (`variant="card"`, `tone="warn"`): a
+   hairline box with amber corner ticks — the console's own mark for the thing being worked on — and the
+   meter inside at its foot. It reads as applied and bounded, urgent through the amber ticks alone.
+   *Cost:* low — `Plate` as the group's wrapper. The card's padding narrows the rows' labels (the 236 px
+   column gives up about 16 px), so their inset must be reconciled with the other groups'.
+3. **The taped outline.** A 1 px **dashed** amber outline (`warn-line`) round the group, a solid amber
+   `Badge` in the kicker's row (*Due*, or *3 of 10*), and the meter under the lanes. It reads as
+   temporary: tape, a sticker's die line. *Cost:* low. But **dashed already means something in this
+   console** — a layer with nothing to draw (Review 12 rule 3) and the outline badge's `dim` tone
+   (`badge.tsx:68`) — so the founder should weigh the clash.
+4. **The amber edge.** No box: a 2 px amber rule down the group's whole left edge (the `Note`
+   `tone="warn"` rule, `stroke-note`), the kicker in amber, a faint `warn-tint` wash behind the group,
+   the meter as its last row. It reads as flagged rather than applied. *Cost:* the lowest. But it
+   competes with the selected lane's own 2 px left bar (`shadow-select-rule`), so the rule must sit in
+   the gutter, outside the rows, or the selected bar change inside this group.
+
+The stories land in the first PR so the pick is made long before the pass's PR (fork 18); the unpicked
+stories go when the pick ships.
+
+##### The layout the boards share
+
+Three columns — the lanes, the lane's list, the inspector — on the console's tokens (`--size-lanes` 236,
+`--size-list` 340, the rest; the boards draw 212 | 420, fork 19) and the console's one narrow rule
+(`useColumnsFit`, `usePaneFocus`). The list's head is the lane's page word and kicker (*Name conflicts ·
+412 bodies*), the search, the facet tabs and *Filter ▾* (the kit `FacetMenu`), then the rows, with the
+decided tail as the Inbox's. The inspector is the Inbox's `InspectorFrame` (a 36 px pane head with *Open
+in Body →*, the scroll, the floating `ActionBar` whose buttons carry their keys) and its `DecidedLock`.
+The head map is square (Review 11 rule 6) and real geography — `InboxMap`'s composition
+(`useBodyMapCanvas`, `BodyMapPane` with `rack={false}` and a `plate`), its legend a kit plate. **Now and
+Suggested** (Review 11 rule 3) on every choice: the current value wears *Now*; the queue's suggestion
+wears *Suggested* and is the default pick; the bar's button names the pick (*Display “Lake Auburn”
+instead*, *Set as Wetland*, *Take the re-fit*).
+
+Under `apps/web/src/components/admin/corpus/` (the library stays in `bodies/`):
+
+```
+CorpusLanes.tsx          the one sidebar (both views): the groups, the pass group, its dress and meter
+CorpusTaskView.tsx       a task lane's list and inspector, drawn from props (stories and the board compare)
+taskLanes.ts             the task lanes as data (id, group, title, word, tabs, reader)
+taskSearch.ts            tab and item validation (bodiesSearch.ts imports it)
+list/                    TaskList, TaskRow (a variant per lane), DecidedTail, taskReads.ts (the chain)
+handlers/                Duplicates/, Names/, Classes/, Contested/, Bays/, Refits/, PlaceNames/,
+                         Recurrence/, Promotion/, Features/
+map/                     the head map and thumbnails, over InboxMap's pieces
+pass/                    PassMeter, passWords.ts (the seasonal states' words)
+actions/useCorpusWrites.ts  every write through `said` and the shared decision runner
+words/corpusWords.ts     every word no board supplied, in one module for the copy pass
+```
+
+**Reused, by path:** the shell, palette, undo toast and History (`admin/shell/`); `columnsFit`,
+`usePaneFocus`; `reads/consoleReads.ts`, `pageChain` and `useChainedPages`; `lib/loadAhead`; `said.ts`
+(D268); the Inbox's `useDecisionRunner`, `InspectorFrame` and `DecidedLock`, moved to `admin/actions/`
+and `admin/inspector/` (a seam: two modes now use them); the kit's `Lanes`, `Plate`, `Meter`, `Badge`,
+`FacetMenu`, `Tabs`, `CompareTable` (4.1's *Side by side*), `OverlapGauge` (4.1, 4.5), `ItemTimeline`,
+`FactList`, `PersonLockup`, `RadioCell`, `UnavailableButton`; `body/map/`'s descriptors (`candidate` for a
+second outline, `bay`, `neighbor`, `mouth`, `gap`).
+
+**Kit candidates** (one writer promotes, §12.3): `WinterStrip` (4.8's four winters, seen or not),
+`ChoiceRows` (Now and Suggested with a radio on each, 4.2–4.6), `ConsequenceLadder` (4.3's *What each
+class would do*), `SeasonLine` (4.9's confirmations across a winter), `OutlinePair` (4.6's thumbnail of
+two outlines), `PassMeter`.
+
+##### The boards, mapped
+
+| Board | Mock | Components | Reads | Writes |
+|---|---|---|---|---|
+| 4.1 Duplicates | `corpus-v5.html` (and `?top=a`) | `Duplicates/` (the pair line, *A on top / B on top*, `CompareTable`, *Kept either way*, *Also on this body*) | `listPage`, `item` | `merge` (A, B), `dismissDuplicates` (N) |
+| 4.2 Name conflicts | `corpus-names-v5.html` | `Names/` (`ChoiceRows` of the claims with rank and namesakes, *Once … shows*, *In the app*) | `listPage`, `item` | `decideName` (⏎) |
+| 4.3 Class conflicts | `corpus-classes-v5.html` | `Classes/` (`ConsequenceLadder`, *The catalogs*, *The body*, the aerial) | the same | `decideClass` (⏎) |
+| 4.4 Contested as water | `corpus-dissent-v5.html` | `Contested/` (asserts and refutes, *If it stays* / *If it goes*, the two futures) | the same | `decideClass` (K, ▾), `decideContested` (R, admin) |
+| 4.5 Orphan bays | `corpus-bays-v5.html` | `Bays/` (*Who could hold it* with `OverlapGauge`, *As a bay of …*, *The other ways out*) | `item`, `bayParents` | `makeBay` (M), `bayToLandmark` (D), `decideClass` (▾) |
+| 4.6 Chord re-fits (and `?map=1`) | `corpus-refits-v5.html` | `Refits/` (thumbnail rows with their chip, *As drawn · Re-fit · Both*, the numbers, *What the campaign did*, the two outlines as `ChoiceRows`; the large map as the viewer modal) | `listPage`, `item` | `settleRefit` (⏎); *Redraw in Body →* unavailable |
+| 4.7 Place names (and `?pick=flats`) | `corpus-places-v5.html` | `PlaceNames/` (the spelling chips, *Which lake* cards, the Dismiss menu with its five reasons) | `listPage`, `item` | `setLake` (S), `setSpellings`, `dismiss` (D ▾), `reopen`; *Place it in Body →* unavailable |
+| 4.8 Recurrence | `corpus-recurrence-v5.html` | `Recurrence/` (`WinterStrip` rows, the pins table, *Becomes*, *Reason*) | `listPage`, `item` | `promoteFromRecurrence` (P), `suppress` (S), `unsuppress`, *Recompute* |
+| 4.9 Promotion candidates | `corpus-promotion-v5.html` | `Promotion/` (cards with `SeasonLine`, *Becomes*, the pattern's link) | the same | `promote` (P), `leaveHidden` (L) |
+| 4.10 Known features | `corpus-features-v5.html` | `Features/` (the grid of thumbnails, *Where it came from*, *Since then*) | `bodyFeatures.listPage`, the item | `demote` (D); `reactivate` from History and the *Demoted* tab |
+
+Every board renders beside its mock at 1440 × 900 in both modes before handoff (§12.5).
+
+**Where the boards and this design differ** (the design stands until the founder rules): every visible
+*pre-ice pass* reads *Pre-Season Pass* (D300), and the foot's *Not yet done for 2026–27* takes the
+seasonal states above; 4.2's emails-by-winter strip and 4.7's per-winter counts are not drawn (fork 5);
+4.5's second *as NHD draws it* row can't exist (one stored outline); 4.6's *as drawn* outline is missing
+on a re-fit recorded before the wave; 4.4's *Remove* is drawn for admins only (fork 4); *Place it in
+Body →* and *Redraw in Body →* say *Not available yet* (D303); the boards' 212 | 420 columns are the
+console's 236 | 340 (fork 19).
+
+##### Where the Overview and Inbox Zero link
+
+- **`overviewRoutes.ts` `consolePathFor`**: each Corpus task moves from its old page to
+  `/admin/corpus?lane=<id>` **in the PR that lands its lane**. The pinning test (`overviewRoutes.test.ts`,
+  every Corpus task "starts with `/admin/water`") becomes a per-task table — the lane once built, the old
+  page until then — and the last PR drops the old-page half. The *Pre-Season Pass* row opens the pass's
+  first lane with an open task (never Standing, as today). `auditPath`'s `bodyFeature`,
+  `hazardRecurrence` and `corpusPlaceName` move to their lanes' `?item=`. Audit rows for sub-areas,
+  put-ins, lots, access alerts and landmarks open the `/admin/water` list today
+  (`overviewRoutes.ts:99-103`); once that list retires they would land on its redirect, so the PR that
+  retires it gives `FeedTarget` (`overviewData.ts:304`) the body id — a server field — and opens the Body
+  console (fork 16).
+- **The Overview's Corpus card** reads `corpusTasks.lanes`: a row per built lane, the *Pre-Season Pass* row
+  by the seasonal table; *Awaiting enrichment* stays `null` (D302). The status bar's *pre-ice pass not
+  run* becomes *Pre-Season Pass not done*, shown while the pass is open from 1 October (the ice watch's
+  default floor; invented, for the founder's look).
+- **Inbox Zero's *Corpus →*** goes live with the first lane: `ComingSoonLink` becomes a link to the first
+  task lane with an open task, and `InboxRoute` passes `notInInbox.corpus` from `corpusTasks.lanes`' open
+  total (it passes nothing today).
+- **The Body console's Hazards tab** says *…wait in the Pre-Season Pass* and opens a pattern at
+  `?lane=recurrence&item=pattern:<id>` (today `HazardsTab.tsx:171` opens `/admin/recurrence`).
+
+#### Legacy retirement
+
+An old page retires, and its code is deleted, in the PR that lands the last lane it still serves (D304;
+the governor's Legacy audit of 2026-11-24, re-grepped here). When a menu page retires, these move
+together: `consoleNav.ts`'s `OLD_SHELL_TREES` and `LEGACY_PAGES`, `lib/theme.ts`'s string copy,
+`AdminLayout.tsx`'s `NAV` and `ADMIN_ONLY_PREFIXES`, the generated route tree, and the tests and stories
+that pin them (`consoleNav.test.ts`, `oldShellPredicate.test.tsx`, `ConsoleLayout.test.tsx`,
+`ConsoleShell.stories.tsx`, `AdminLayout.test.tsx`). No page can be stripped whole today: each still
+serves a lane this wave builds.
+
+| Old page | What it still does | Retires with | Slice |
+|---|---|---|---|
+| `/admin/water/review` (`admin.water.review.tsx`) | the six reasons, list only, linking to the editor | the last intake lane (Duplicates, Orphan bays) | 6b |
+| `/admin/water` index (`admin.water.index.tsx`) | open a lake (the palette does it); *Curated bodies* (`listCurated`, covered by the library's `curation` facet); *Suspected duplicates*, merge and **`dismissDuplicates`, whose only caller it is** (`:36`) | Duplicates: a redirect to `?lane=duplicates`. The `/admin/water` **tree** stays in `OLD_SHELL_TREES`: the old editor lives under it | 6b |
+| `/admin/water/place-names` (`PlaceNameQueue.tsx`) | the corpus-wide queue, `setLake`, `reopen` (dismiss and file-as-spelling also exist per body in the Places tab) | Place names | 6c |
+| `/admin/features` (`admin.features.tsx`) | `listRecent` and demote (demote also per body in the Hazards tab) | Known features | 6d |
+| `/admin/recurrence` (`admin.recurrence.tsx`) | the recurrence queue with suppress and unsuppress; **and** `hazards.listRecentMerges` with `hazards.unmerge` (`:35-36`): undoing an automatic hazard merge, which no console page offers and no board draws | Recurrence — **if** fork 14 gives hazard unmerge a home; else the page outlives the lane for it | 6d |
+| `/admin/water/standing` | the five lanes (already the library's), *Recently activated* (`standing.listRecentActivations`, Season's), the enrichment-awaiting column (Machinery's) | not this wave; its lanes half can be stripped now, and `standing.listLane` then loses its only caller (fork 15) | 6a, if ruled |
+| the old editor, `/admin/water/$id` | stays (task modes, D303). It also holds recurrence promote, suppress, unsuppress and recompute, and `bodyFeatures.create`/`promote`, per body — the Recurrence, Promotion and Known features lanes duplicate them cross-lake; both stay until the editor goes | — | — |
+| Dashboard, Ice calibration, Seasons, Tuning, Imports | stay (Instruments, Season, Machinery) | — | — |
+| the redirects `/admin/flags`, `/admin/support`, `/admin/users`, `/admin/users/$id` | no code links to the first two; `/admin/users*` is still linked from `clerkAdmin.ts:141` (`deepLinkPath`) and `placesModel.ts:245` (`personPath`) | fork 15 | 6a, if ruled |
+
+`/admin/water/requests` stays a redirect while the old editor stands (In22). #177 deleted every
+component only the Inbox's retired pages used; nothing dead is left over from that wave.
+
+#### The build plan
+
+##### The slices (four sequential PRs, each closed on its own branch, §12.2)
+
+Each PR lands at least one lane whole (D299), retires its old page (D304), and moves the Overview's and
+Inbox Zero's links for its lanes. Sizes are estimates with tests, scaled from the Inbox wave's actuals
+(#170 was ~4,800 lines of server for the item machinery and its first writes).
+
+| PR | What it holds | Size (est.) | Builders |
+|---|---|---|---|
+| **B01-6a — The task frame and the judgment lanes** | the stored tasks, counts, one writer and its guard, backfill, drift repair, property test; `lanes`, `listPage`, `item`; `lib/corpusRules`; the settle path, `reviewSettled` and the import honoring it (`mergeFields`, `reviewEvidence`), `classRefusals` in the ETL; `decideName`, `decideClass`, `decideContested` and their inverses; `corpus.intake`; the web frame (`CorpusLanes`, `CorpusTaskView`, the search, the moved inspector), **Name conflicts, Class conflicts, Contested as water**; the Overview's card on `corpusTasks.lanes`; Inbox Zero's *Corpus →*; the `Lanes` `dress`/`foot` API and **the four dress stories**; fork 15's deletions if ruled | ~6,500 lines, ~110 files — over the guideline, because a frame with no lane can't ship (D299) and the server's machinery reviews worse apart from its first consumers | 4 and an executor |
+| **B01-6b — Duplicates and Orphan bays** | `duplicate` tasks over both systems, `dedupReason`, `absorbedFeatures`, the ETL's `duplicateOf`, the partner backfill; `dismissDuplicates`' `prev` and `redup_bodies`; `bayParents`, `makeBay`, `bayToLandmark`, `unmake_bay`, proven on a real local backend; boards 4.1 and 4.5; `/admin/water/review` and the `/admin/water` index retired; `FeedTarget`'s body id | ~5,000, ~75 | 3 |
+| **B01-6c — Chord re-fits and Place names** | `subAreaRefits` and its writers, `settleRefit`; the paged place-name read, its verbs and undos, `setSpellings`; boards 4.6 and 4.7; `/admin/water/place-names` retired | ~4,000, ~60 | 3 |
+| **B01-6d — The Pre-Season Pass** | `corpusPasses`, the rollover rewritten (the skip bug closed), the pass's opening, `passVisibility`, the new `hazardRecurrence` and `bodyFeatures` indexes, `leaveHidden`, `reactivate`, `recompute_recurrence`, hazard unmerge's home (fork 14); boards 4.8–4.10, the chosen dress, the meter, the seasonal states; every visible *pre-ice* word renamed (D300); the Overview's row, the status bar, the Hazards tab's link; `/admin/features` and `/admin/recurrence` retired | ~5,500, ~80 | 4 |
+
+The pass's PR must merge before **1 July 2027**: the skip bug's deadline, and the first July the group
+has to appear on its own.
+
+##### Builders, per slice
+
+`packages/convex` and `packages/core` are split by file between a slice's server builders, as the Inbox's
+were (*Briefs (PR 1)*); `schema.ts`, the route tree, `consoleNav.ts`, `lib/theme.ts`, `AdminLayout.tsx`,
+`kit/`, `packages/design`, `package.json` and `plans/` are the governor's seams, applied by an executor.
+Each brief carries §12.4's invariants verbatim.
+
+| Slice | Agent | Owns | Starts |
+|---|---|---|---|
+| 6a | **S1 — tasks** | `convex/corpusTasks.ts`, `lib/corpusTasks.ts`, `lib/corpusRules.ts`; the writer hooks in `waterBodies.ts` (`mergeFields`, `mergeBodyInto`, `remove`, `restore` only) and `unmerge.ts`; the backfill and repair; `console.ts`' Corpus card; `core/corpusTasks.ts`; `guards/src/corpusTaskWriters.test.ts` | T0 |
+| | **S2 — intake writes** | `convex/corpusWrites.ts` (`decideName`, `decideClass`, `decideContested`), `lib/undoPolicy.ts`, `lib/undoHandlersCorpus.ts`, `lib/decisionResult.ts`; `core/reviewEvidence.ts`, `core/capabilities.ts` (`corpus.intake`); `scripts/etl/src/masterList.ts`, `transform.ts` (`classRefusals`) | T1, on S1's writer |
+| | **W1 — frame** | `admin/bodies/` (`BodiesRoute.tsx`, `BodiesView.tsx`, `bodyLanes.ts`, `bodiesSearch.ts`); `admin/corpus/` but `handlers/`; `overview/` (card, routes, status bar); `inbox/list/InboxZero.tsx`, `InboxRoute.tsx`'s prop | T0, after the executor's moves |
+| | **W2 — handlers** | `admin/corpus/handlers/{Names,Classes,Contested}/`, `admin/corpus/map/` | T0, on `InspectorFrame` (moved, unchanged) |
+| | *executor* | the inspector and runner moves; the `Lanes` `dress`/`foot` API and the four `PassDress` stories; the schema | T0 |
+| 6b | **S3 — duplicates** | the dedup hooks, `dedupReason`, the partner backfill, `dismissDuplicates`' `prev` and `redup_bodies`; the ETL's `duplicateOf` and `absorbedFeatures` | T0 |
+| | **S4 — bays** | `bayParents`, `makeBay`, `bayToLandmark`, `unmake_bay` (in `corpusWrites.ts`, reusing `unmerge.ts`), the real-backend proof | T0 |
+| | **W3** | `handlers/{Duplicates,Bays}/`, the two-outline map pieces (the `body/map/` seam), the retirements, `FeedTarget` and its routes | T0 |
+| 6c | **S5** | `subAreaRefits` and its writers in `subAreas.ts`, `settleRefit`; `corpusPlaceNames.ts` (the paged read, the verbs, `setSpellings`) and their undos | T0 |
+| | **W4**, **W5** | `handlers/Refits/` with the viewer modal; `handlers/PlaceNames/` and the retirement | T0 |
+| 6d | **S6** | `corpusPasses`, `recurrence.ts`' rollover and the pass's opening, `passVisibility` in core, the candidates' discovery, `leaveHidden`, the new indexes' reads | T0 |
+| | **S7** | `bodyFeatures.ts` (`listPage`, `reactivate`, the demote's `prev`), `recompute_recurrence`, hazard unmerge per fork 14, their undos | T0 |
+| | **W6**, **W7** | `handlers/{Recurrence,Promotion}/` and `pass/`; `handlers/Features/`, the renames (`OverviewCards.tsx`, `overviewStatus.tsx`, `HazardsTabView.tsx`, `hazardsWords.ts`, `ConsoleShell.stories.tsx`), the Hazards tab's link, the retirements | T0 |
+
+##### Shared seams
+
+- **Schema**: each slice's tables, fields and indexes in one executor commit at its T0.
+- **The lane union** (S1 lands it in core; W1 imports): `CORPUS_TASK_LANES`, `CORPUS_TASK_FACETS`,
+  `CORPUS_TASK_DECISIONS`, `CorpusTaskLane`, and the server's `CorpusTaskItemView` (a variant per kind)
+  through the API types. Where a brief's snippet and the landed file differ, the file wins.
+- **The moves**: `inbox/inspector/InspectorFrame.tsx`, `DecidedLock.tsx` and
+  `inbox/actions/useDecisionRunner.ts` to `admin/inspector/` and `admin/actions/`, both modes' imports
+  updated, by the executor at 6a's T0, so no two builders move them.
+- **The map**: a two-outline legend and the *Both* toggle as `body/map/` additions; nothing existing
+  changes behavior.
+- **`consoleNav.ts`'s comment** on deleting old components (`:16`) is rewritten to D304's rule by the
+  slice that first edits the file (6a, or 6b's retirements).
+- **`plans/`**: `06-data-model.md` for each new table (its register test), the roadmap, this doc.
+
+##### After each merge, on dev
+
+1. `convex dev --once` from main by the named executor (codegen committed first).
+2. 6a: `corpusTasks:backfill` to done (told by its job row, not the logs); the sidebar's counts equal
+   `corpusTasks:lanes` and the Overview's card; a name conflict settled and undone; a re-import of one
+   settled body keeping it settled — **not verified** that the loader can re-import one body; if it
+   can't, a `convex-test` stands for it and the next campaign is checked.
+3. 6b: `corpusTasks:backfillPartners` dry, its pairs read back against the *duplicate-candidate* rows,
+   then applied; a merge and its unmerge from the lane; a bay made and unmade, compared row by row.
+4. 6c: a re-fit settled each way and undone; a place name dismissed and its undo.
+5. 6d: `corpusPasses:openNow '{"season":2026}'` dry, then applied; the meter equals the patterns and
+   candidates filed; one decided and undone; the group's disappearance on its last decision checked on a
+   throwaway local backend, not on dev's real queue.
+
+#### The forks
+
+Each is a decision the code and the founder's calls could not make; the design above carries the
+recommendation until it is ruled. **F** marks the founder's call, **G** the governor's.
+
+1. **Stored task rows, or read the sources?** (G) The lanes could read today's sources directly — the
+   review queue by `by_review_reason`, the dedup flags, the mouth indexes, the recurrence rows — with
+   clearing writes and a new `moderationActions` index for decided tails. That is roughly 2,000 lines
+   cheaper, but the counts stay "50+" (the board says 412), a body with two reasons sits in one lane at
+   a time, the facets need stored fields anyway, and the pass meter still needs a record. Stored tasks
+   (the Inbox's shape) give exact counts, a body in every lane it belongs to, one rule for read and
+   write, and the pass's fixed denominator, at the price of a writer hook in every import batch.
+   **Recommend stored tasks.**
+2. **Does a settled question come back?** (F) Today the next campaign re-raises every reason, whatever a
+   moderator decided. Options: (a) settled for good; (b) settled until the evidence behind it changes (a
+   catalog publishes a new name, a class claim moves), when the task reopens saying the catalogs
+   changed; (c) every campaign asks again. **Recommend (b)**: a decision holds against the facts it was
+   made on, and new facts deserve a look.
+3. **One Duplicates lane over both systems?** (F) The import's `duplicate-candidate` reason (the 283
+   overlap pairs at IoU 0.30–0.49) stores no partner, so it can't be merged or dismissed as a pair
+   today. Options: (a) a one-time partner backfill in Convex, and the ETL carrying partners from now on,
+   so the reason becomes a dedup pair and one lane holds both — a body with no partner found is decided
+   *Looks right*; (b) keep those bodies in their own lane, decidable only by *Looks right* or *Open in
+   Body*. And `same-source-duplicate` (one catalog's two features already folded into one body): the only
+   decision left is to confirm the fold. **Recommend (a)**, with same-source as confirm-only rows in the
+   *Catalog twice* tab.
+4. **Can a moderator take a contested body off the map?** (F) The board's *Remove* is admin-only
+   (`body.remove`), so a moderator who thinks a vernal pool isn't water can't finish the task. Options:
+   (a) *Remove* for admins only, moderators keep or reclass; (b) moderators get *Set dormant* (off the
+   map, kept, reversible), admins *Remove*; (c) open removal to moderators for this lane. **Recommend
+   (b)**: every moderator can finish every task, and removal stays where D37 drew it.
+5. **The emails behind a name.** (F) Board 4.2 shows *Emails · 9 mentions, the last Jan 2026* and an
+   emails-by-winter strip for each name; 4.7 counts by winter. Nothing in Convex stores mentions of lake
+   names, and place names store only totals. Options: (a) leave the email facts out of this wave,
+   recorded as owed; (b) load the mention inventory (the A10 seed's input) into a new table and serve it —
+   a data run and a schema, about 1,000 lines more. **Recommend (a)**: the decision doesn't need them,
+   and the namesake count (served) carries the board's other evidence.
+6. **What making a bay keeps.** (F) *Make a bay of Newfound Lake* clips the bay to the lake's shore: the
+   part beyond it is dropped, and the bay's reports move to the lake. Options: (a) as the board says —
+   clip and drop, and refuse when the clip keeps too little of the bay (a floor in core; a quarter is
+   invented); (b) keep the dropped part as its own body. *Demote to landmark* folds the bay into the lake
+   as a named point either way. **Recommend (a).**
+7. **Re-fits recorded before the wave.** (G) A *re-fit applied unseen* recorded before `subAreaRefits`
+   exists has lost its drawn outline; no campaign can bring it back (the old shore is gone). Options: (a)
+   offer only *Take the re-fit* and say the drawn outline wasn't kept; (b) leave such bays out of the
+   lane. **Recommend (a).**
+8. **Is the pass a snapshot?** (F) A merge or *Recompute* can find a new recurring pattern mid-season.
+   Options: (a) the pass is what the July rollover found; a later pattern waits on its body's Hazards tab
+   and in next July's pass, and the group stays gone; (b) any new pattern joins the pass and brings the
+   group back. **Recommend (a)**: it is the founder's "disappear for the remainder of the season", and
+   next July's rollover recomputes every body anyway.
+9. **Do one-winter patterns count?** (F) Board 4.8 has a *1 winter* tab, but a pattern seen in one winter
+   isn't advisable (D78). Options: (a) the meter counts patterns seen in two or more winters, and *1
+   winter* is read-only; (b) every pattern must be decided. **Recommend (a).**
+10. **Where Known features lives.** (F) It isn't a queue and the meter doesn't count it, so when the pass
+    is done and the group goes, the lane would go with it. Options: (a) a permanent lane in *Views*,
+    never in the pass group; (b) in the pass group while it shows, in *Views* otherwise; (c) only per
+    body, in the Hazards tab. **Recommend (a)**: a lane that moves is harder to find than one that
+    doesn't, and demoting a feature is a year-round act.
+11. **Reading a done pass.** (F) After the group goes, the Overview says *Done 14 Sep*. Options: (a) that
+    row opens the Recurrence lane's decided tab by URL — the lane resolves with no sidebar entry, its
+    head saying this season's pass is done; (b) the row is plain text until the Season mode reads
+    passes; (c) the group stays as one collapsed *Done* line. **Recommend (a)**: the record is built, so
+    it's not a placeholder.
+12. **Between 1 July and a computed pass.** (F) The rollover runs on the first daily tick of July 1–7.
+    Options: (a) the group appears on 1 July, saying it is being computed; (b) it appears only once there
+    is something to decide. **Recommend (a)**, with a red *Not computed — see Machinery* if the run fails
+    past the window, so a silent failure can't read as nothing to do.
+13. **An undo after the pass is done.** (F) Undoing the pass's last decision reopens a task. Options: (a)
+    the pass reopens and the group comes back until it is decided; (b) the pass stays done and the task
+    is decided from the Body console. **Recommend (a)**: the meter must never say done with work open.
+14. **Hazard unmerge's home.** (F) `/admin/recurrence` also lists the season's automatic hazard merges
+    with *Unmerge* (`hazards.listRecentMerges`, `hazards.unmerge`); no console page or board offers it,
+    and `HazardsTab.tsx:171` links there. Options: (a) *Unmerge* on the merged hazard in the Body
+    console's Hazards tab, plus History's undo of an automatic `merge_hazards` row (its inverse is
+    already `unmerge_hazards`), with a cross-lake list owed to Machinery's hazard-identity job; (b) a
+    *Recent merges* tab in the Recurrence lane, which then vanishes with the pass; (c) `/admin/recurrence`
+    outlives the Recurrence lane for it. **Recommend (a)**, built in 6d, so the old page retires whole.
+15. **The old redirects, and Standing's half.** (G; the founder told) `/admin/flags` and `/admin/support`
+    have no code links (#177 kept them "until a bookmark's life has passed"); `/admin/users*` can go once
+    two links point at `/admin/people` (`clerkAdmin.ts:141`, `placesModel.ts:245`, with its fixtures,
+    tests and story); Standing's lanes half can be stripped now. **Recommend** deleting the four redirects
+    and repointing the two links in 6a, keeping `/admin/water/requests` (In22), and stripping Standing's
+    lanes half in 6a.
+16. **Audit links for a body's parts.** (G) Sub-area, put-in, lot, access-alert and landmark rows open the
+    `/admin/water` list, which 6b retires. **Recommend** giving `FeedTarget` the body id in 6b and
+    opening the Body console, not recording it as owed.
+17. **Four PRs or three?** (G; the founder told) The founder wants the fewest coherent PRs. Three is
+    possible — 6b and 6c as one, every geometry lane in one review, about 9,000 lines and 135 files —
+    at nearly twice the guideline. **Recommend four**, with 6a's overage stated for its reason; each
+    slice is one review subject.
+18. **The sidebar's order, and when the dress is picked.** (F) Options for the order: (a) Pre-Season
+    Pass, Tasks, Views, Standing — the urgent group first; (b) Tasks, Pre-Season Pass, Views, Standing,
+    as the boards draw it; (c) the library's groups first. The four dress stories land in 6a. **Recommend
+    (a)**, and the dress picked at 6a's look, so 6d ships it.
+19. **The boards' columns.** (G) The boards draw 212 | 420; the console's tokens are 236 | 340 (the
+    Inbox's and the library's). **Recommend the tokens**, named as a board difference.
+20. **A capability for settling.** (G) Keeping a body as it is changes nothing but the queue. **Recommend
+    `corpus.intake`** (moderator) for the settle-only outcomes; every outcome that changes the body keeps
+    its own capability (D217).
 
 ## Ruled out
 
