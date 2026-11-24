@@ -168,7 +168,16 @@ export const AccountUnderEighteen: Story = {
       'aria-invalid',
       'true',
     );
-    // Fixed by the year: the line goes, the hint comes back.
+  },
+};
+
+export const AccountUnderEighteenLight: Story = { ...AccountUnderEighteen, ...desk('light') };
+
+/** 10.2, fixed by the year: the line goes, the hint comes back, *Continue* turns on. */
+export const AccountUnderEighteenFixed: Story = {
+  ...AccountUnderEighteen,
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
     await userEvent.clear(c.getByRole('textbox', { name: 'Year' }));
     await userEvent.type(c.getByRole('textbox', { name: 'Year' }), '1990');
     await waitFor(() => expect(c.queryByRole('alert')).toBeNull());
@@ -477,8 +486,7 @@ const keyFor = (index: number, right: boolean) => {
 
 /**
  * 10.6 — a question: seven cells, the prompt, two answers with their keys, the feedback line's room
- * kept, *Next question* off. Then the keyboard path: the wrong key is a miss (10.8) and the button
- * stays off; the right key settles it (10.7) and the button takes focus, so Enter goes on.
+ * kept, *Next question* off.
  */
 export const QuestionAsk: Story = {
   ...desk(),
@@ -488,6 +496,23 @@ export const QuestionAsk: Story = {
     await expect(lit(canvasElement)).toBe(2);
     await expect(c.getByRole('button', { name: 'Next question' })).toBeDisabled();
     await expect(c.getByText('1', { selector: 'kbd' })).toBeVisible();
+    // The feedback line keeps its room before a pick, so the card never jumps.
+    const line = canvasElement.querySelector<HTMLElement>('[data-slot="question-feedback"]');
+    await expect(line).not.toBeVisible();
+  },
+};
+
+export const QuestionAskLight: Story = { ...QuestionAsk, ...desk('light') };
+
+/**
+ * The keyboard path from 10.6: the wrong key is a miss (10.8) and the button stays off; the right
+ * key settles it (10.7) and the button takes focus, so Enter goes on to the next question.
+ */
+export const QuestionKeyboard: Story = {
+  ...desk(),
+  render: () => <Questions initial={ASK_3} />,
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
     await userEvent.keyboard(keyFor(2, false));
     await expect(await c.findByText('Not quite.')).toBeVisible();
     await expect(c.getByText(/Pick the correct answer to continue\./)).toBeVisible();
@@ -504,8 +529,6 @@ export const QuestionAsk: Story = {
   },
 };
 
-export const QuestionAskLight: Story = { ...QuestionAsk, ...desk('light'), play: undefined };
-
 /** 10.7 — correct: the pick outlined with a check, the other dimmed, "Correct." and the why. */
 export const QuestionCorrect: Story = {
   ...desk(),
@@ -519,26 +542,32 @@ export const QuestionCorrect: Story = {
 
 export const QuestionCorrectLight: Story = { ...QuestionCorrect, ...desk('light') };
 
-/** 10.8 — not quite: the miss amber with a cross; the right answer still waits for its press. */
+/** 10.8 — not quite: the miss amber with a cross; the button stays off. */
 export const QuestionNotQuite: Story = {
   ...desk(),
   render: () => <Questions initial={{ stage: 'question', index: 3, state: 'miss' }} />,
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
+    await expect(c.getByText('Not quite.')).toBeVisible();
     await expect(c.getByRole('button', { name: 'Next question' })).toBeDisabled();
+  },
+};
+
+/** 10.8 → 10.7: the right answer still waits for its press, and the button turns on. */
+export const QuestionNotQuiteThenRight: Story = {
+  ...QuestionNotQuite,
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
     const picks = canvasElement.querySelectorAll<HTMLElement>('[data-slot="question-pick"]');
     const right = [...picks].find((p) => p.dataset.look === 'open');
     if (!right) throw new Error('The right answer should still be open.');
     await userEvent.click(right);
     await waitFor(() => expect(c.getByRole('button', { name: 'Next question' })).toBeEnabled());
+    await expect(c.getByText('Correct.')).toBeVisible();
   },
 };
 
-export const QuestionNotQuiteLight: Story = {
-  ...QuestionNotQuite,
-  ...desk('light'),
-  play: undefined,
-};
+export const QuestionNotQuiteLight: Story = { ...QuestionNotQuite, ...desk('light') };
 
 /** The seventh question: *Finish*, and Enter brings up all seven. */
 export const QuestionLast: Story = {
@@ -579,6 +608,16 @@ export const NewSeason: Story = {
     await expect(c.getByText(/Welcome back, Kate\./)).toBeVisible();
     await expect(c.getByText('Last answered Nov 16, 2026')).toBeVisible();
     await expect(canvasElement.querySelector('[data-slot="entry-foot"]')).toBeNull();
+  },
+};
+
+/** 10.13's two buttons: *Not now — sign out* signs out; *Start the questions* asks the first. */
+export const NewSeasonButtons: Story = {
+  ...desk(),
+  render: () => <Questions flavor="season" />,
+  play: async ({ canvasElement }) => {
+    onSeasonSignOut.mockClear();
+    const c = within(canvasElement);
     await userEvent.click(c.getByRole('button', { name: 'Not now — sign out' }));
     await expect(onSeasonSignOut).toHaveBeenCalledOnce();
     await userEvent.click(c.getByRole('button', { name: 'Start the questions' }));
@@ -588,7 +627,7 @@ export const NewSeason: Story = {
   },
 };
 
-export const NewSeasonLight: Story = { ...NewSeason, ...desk('light'), play: undefined };
+export const NewSeasonLight: Story = { ...NewSeason, ...desk('light') };
 
 /** 11.6 */
 export const QuestionAskPhone: Story = {
@@ -680,22 +719,31 @@ function Home({ phone: onPhone = false, typing = false }: { phone?: boolean; typ
   );
 }
 
-/** 10.10 — typing: Settings' own suggestions, the first lit; ↓ then Enter picks the second. */
+/** 10.10 — typing: Settings' own suggestions under the field, the first lit. */
 export const HomeTyping: Story = {
+  ...desk(),
+  render: () => <Home typing />,
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await expect(c.getAllByRole('option')).toHaveLength(4);
+    await expect(c.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
+  },
+};
+
+export const HomeTypingLight: Story = { ...HomeTyping, ...desk('light') };
+
+/** 10.10's keys: ↓ then Enter picks the second suggestion. */
+export const HomeTypingKeys: Story = {
   ...desk(),
   render: () => <Home typing />,
   play: async ({ canvasElement }) => {
     onPick.mockClear();
     const c = within(canvasElement);
-    await expect(c.getAllByRole('option')).toHaveLength(4);
-    await expect(c.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
     c.getByRole('combobox').focus();
     await userEvent.keyboard('{ArrowDown}{Enter}');
     await expect(onPick).toHaveBeenCalledWith(SUGGESTIONS[1]);
   },
 };
-
-export const HomeTypingLight: Story = { ...HomeTyping, ...desk('light'), play: undefined };
 
 /** 10.11 — the picked address, "or", *Use my current location*, and the two buttons. */
 export const HomePicked: Story = {
@@ -763,12 +811,21 @@ export const ProfileStepDesk: Story = {
     await expect(c.getByRole('button', { name: 'Add a photo' })).toBeVisible();
     await expect(c.getByRole('switch', { name: 'Public profile' })).toBeChecked();
     await expect(c.getByRole('switch', { name: 'Show my town' })).toBeChecked();
+  },
+};
+
+export const ProfileStepLight: Story = { ...ProfileStepDesk, ...desk('light') };
+
+/** 10.12's switches: Show my town turns off. */
+export const ProfileStepSwitches: Story = {
+  ...desk(),
+  render: () => <Profile />,
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
     await userEvent.click(c.getByRole('switch', { name: 'Show my town' }));
     await waitFor(() => expect(c.getByRole('switch', { name: 'Show my town' })).not.toBeChecked());
   },
 };
-
-export const ProfileStepLight: Story = { ...ProfileStepDesk, ...desk('light'), play: undefined };
 
 /** 11.12 */
 export const ProfileStepPhone: Story = { ...phone, render: () => <Profile phone /> };

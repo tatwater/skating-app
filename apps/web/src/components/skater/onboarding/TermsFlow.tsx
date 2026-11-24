@@ -79,16 +79,20 @@ export function TermsFlow({
   const before = useRef(profile);
   if (!held) before.current = profile;
 
-  // The reading starts (again, on a reset): its promise is what the end waits on.
-  const opened = useRef<Promise<unknown> | null>(null);
+  // The reading starts (again, on a reset): whether it did is what the end waits on. A refusal
+  // is said here, once; the end then has nothing to record.
+  const opened = useRef<Promise<boolean>>(Promise.resolve(false));
   // biome-ignore lint/correctness/useExhaustiveDependencies: the reset key is the trigger
   useEffect(() => {
     if (held) return;
-    const open = openTerms({ ...TERMS_CLAIM, surface: 'web' });
+    const open: Promise<boolean> = openTerms({ ...TERMS_CLAIM, surface: 'web' }).then(
+      () => true,
+      (error: unknown) => {
+        if (opened.current === open) toastRefusal(error);
+        return false;
+      },
+    );
     opened.current = open;
-    open.catch((error: unknown) => {
-      if (opened.current === open) toastRefusal(error);
-    });
   }, [resetKey]);
 
   const restart = () => {
@@ -103,7 +107,11 @@ export function TermsFlow({
     inFlight.current = true;
     setReaching(true);
     try {
-      await opened.current;
+      // A reading the server never started has no end to record: begin it again from the top.
+      if (!(await opened.current)) {
+        restart();
+        return;
+      }
       await reachTermsEnd({ ...TERMS_CLAIM, via });
       setRead(true);
       analytics.capture('terms_read_to_end', { via });

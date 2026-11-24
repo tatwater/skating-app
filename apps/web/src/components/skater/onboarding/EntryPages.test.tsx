@@ -6,7 +6,7 @@ import {
   TERMS,
   TERMS_SHA256,
 } from '@skating/core';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -15,7 +15,11 @@ import { convexReact, fakes, resetFakes } from '../testMocks';
 
 const m = vi.hoisted(() => ({
   /** The address provider: on, with nothing to suggest unless a test says otherwise. */
-  suggest: async () => ({ status: 'ok', suggestions: [], attribution: 'Powered by Geoapify' }),
+  suggest: vi.fn(async (_args: { text: string }) => ({
+    status: 'ok',
+    suggestions: [] as unknown[],
+    attribution: 'Powered by Geoapify',
+  })),
   toast: vi.fn(),
   signOut: vi.fn(async () => undefined),
   capture: vi.fn(),
@@ -55,6 +59,7 @@ import {
   OnboardingPage,
   profilePatch,
   TermsPage,
+  useUsernameAvailability,
   WelcomePage,
 } from './EntryPages';
 
@@ -127,6 +132,12 @@ beforeEach(() => {
   m.toast.mockClear();
   m.capture.mockClear();
   m.signOut.mockClear();
+  m.suggest.mockReset();
+  m.suggest.mockImplementation(async () => ({
+    status: 'ok',
+    suggestions: [],
+    attribution: 'Powered by Geoapify',
+  }));
   vi.stubGlobal('IntersectionObserver', SeenAtOnce);
   fakes.queries.set('consent:watchAnchor', null);
 });
@@ -455,6 +466,144 @@ describe('/welcome', () => {
     fakes.queries.set('profiles:current', undefined);
     const { container } = render(<WelcomePage step="home" onStep={vi.fn()} />);
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('useUsernameAvailability', () => {
+  it('asks once a typed handle holds still, and answers only for the handle on screen', async () => {
+    fakes.queries.set('profiles:usernameAvailable', (args: unknown) => {
+      const { username } = args as { username: string };
+      return username === 'kdonovan'
+        ? { username, available: false, reason: 'taken' }
+        : { username, available: true };
+    });
+    const { result, rerender } = renderHook(({ u }) => useUsernameAvailability(u), {
+      initialProps: { u: 'kdonovan' as string | null },
+    });
+    // A handle the step opens with (coming back to it) is asked at once.
+    expect(result.current).toBe('taken');
+    rerender({ u: 'katedonovan' });
+    // The old answer is for another handle: unknown until the new one has held still.
+    expect(result.current).toBe('unknown');
+    await waitFor(() => expect(result.current).toBe('free'));
+    rerender({ u: null });
+    expect(result.current).toBe('unknown');
+  });
+
+  it('reads an invalid handle as unknown, never as free', async () => {
+    fakes.queries.set('profiles:usernameAvailable', {
+      username: 'k_',
+      available: false,
+      reason: 'invalid',
+    });
+    const { result } = renderHook(() => useUsernameAvailability('k_'));
+    await new Promise((r) => setTimeout(r, 350));
+    expect(result.current).toBe('unknown');
+  });
+});
+
+describe('the reading’s start', () => {
+  it('says a refused open once, and starts again when the end is reached', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:openTerms').mockRejectedValueOnce(
+      new ConvexError({ code: 'terms_changed', message: 'The terms were just updated.' }),
+    );
+    render(<TermsPage />);
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({ title: 'The terms were just updated.', tone: 'bad' }),
+    );
+    // The end was seen, but there was no reading to record it on: a new reading, no reach.
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    expect(m.toast).toHaveBeenCalledOnce();
+  });
+});
+
+describe('Home’s picked address', () => {
+  it('saves its point, carries its town to Profile, and counts it saved', async () => {
+    const user = userEvent.setup();
+    m.suggest.mockImplementation(async ({ text }: { text: string }) => ({
+      status: 'ok',
+      suggestions:
+        text.length >= 3
+          ? [
+              {
+                label: '14 School Street, Hanover, NH 03755, USA',
+                lat: 43.7,
+                lng: -72.29,
+                town: 'Hanover, NH',
+              },
+            ]
+          : [],
+      attribution: 'Powered by Geoapify',
+    }));
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await user.type(await screen.findByRole('combobox'), '14 School');
+    await user.click(await screen.findByRole('option', { name: /14 School Street/ }));
+    expect(useEntryStore.getState().homeTown).toBe('Hanover, NH');
+    await user.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() =>
+      expect(mutation('profiles:setHome')).toHaveBeenCalledWith({
+        homeCoord: { lat: 43.7, lng: -72.29 },
+      }),
+    );
+    expect(mutation('consent:advanceWelcome')).toHaveBeenCalledWith({ from: 'home' });
+    await waitFor(() =>
+      expect(m.capture).toHaveBeenCalledWith('welcome_step_finished', {
+        step: 'home',
+        outcome: 'saved',
+      }),
+    );
+  });
+
+  it('says a location the browser won’t share in the field, and saves nothing', async () => {
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      geolocation: {
+        getCurrentPosition: (_ok: unknown, fail: (e: unknown) => void) => fail(new Error('denied')),
+      },
+    });
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await act(async () => {
+      screen.getByRole('button', { name: 'Use my current location' }).click();
+    });
+    expect(await screen.findByText(/We couldn’t get your location/)).toBeInTheDocument();
+    expect(mutation('profiles:setHome')).not.toHaveBeenCalled();
+  });
+});
+
+describe('Profile’s save', () => {
+  it('says a profile the server didn’t take as a toast, and doesn’t advance', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'profile' });
+    mutation('profiles:updateProfile').mockRejectedValueOnce(new Error('offline'));
+    render(<WelcomePage step="profile" onStep={vi.fn()} />);
+    await user.type(screen.getByRole('textbox', { name: 'Bio' }), 'Hi');
+    await user.click(screen.getByRole('button', { name: 'Open the map' }));
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({
+        title: 'Your profile wasn’t saved. Try again in a moment.',
+        tone: 'bad',
+      }),
+    );
+    expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
+  });
+
+  it('skips by advancing alone, saving nothing typed', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'profile' });
+    render(<WelcomePage step="profile" onStep={vi.fn()} />);
+    await user.type(screen.getByRole('textbox', { name: 'Bio' }), 'Hi');
+    await user.click(screen.getByRole('button', { name: 'Skip' }));
+    await waitFor(() =>
+      expect(mutation('consent:advanceWelcome')).toHaveBeenCalledWith({ from: 'profile' }),
+    );
+    expect(mutation('profiles:updateProfile')).not.toHaveBeenCalled();
+    expect(m.capture).toHaveBeenCalledWith('welcome_step_finished', {
+      step: 'profile',
+      outcome: 'skipped',
+    });
   });
 });
 
