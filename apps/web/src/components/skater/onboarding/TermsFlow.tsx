@@ -29,7 +29,7 @@ import {
 } from '@/lib/entryHold';
 
 import { toast } from '../../kit/toast';
-import { clientReport, readConsentRefusal, toastRefusal, useProfileNow } from './consentRefusal';
+import { clientReport, readConsentRefusal, toastRefusal } from './consentRefusal';
 import { OutdatedStep, reloadPage } from './OutdatedStep';
 import type { TermsReaderVia } from './TermsReader';
 import { ReceiptStep, TermsStep } from './TermsStep';
@@ -85,8 +85,6 @@ export function TermsFlow({
   const reachTermsEnd = useMutation(api.consent.reachTermsEnd);
   const acceptTerms = useMutation(api.consent.acceptTerms);
   const profile = useQuery(api.profiles.current, {});
-  // The profile as it stands when a refusal is heard (the gate's can't-act hold records it).
-  const profileNow = useProfileNow();
   const watch = useQuery(api.consent.watchAnchor, {});
   const held = useEntryStore((s) => s.hold === 'receipt');
   const recorded = useEntryStore((s) => s.recorded);
@@ -133,7 +131,7 @@ export function TermsFlow({
           const refusal = readConsentRefusal(error);
           const final = consentRefusalAction(refusal.code) === 'outdated';
           if (final || refusal.cannotAct || (!mine.quiet && !mine.awaited)) {
-            toastRefusal(error, profileNow.current);
+            toastRefusal(error);
           }
           if (final) stop();
         }
@@ -186,7 +184,7 @@ export function TermsFlow({
       setRead(true);
       analytics.capture('terms_read_to_end', { via });
     } catch (error) {
-      const { code } = toastRefusal(error, profileNow.current);
+      const { code } = toastRefusal(error);
       const action = consentRefusalAction(code);
       switch (action) {
         case 'outdated':
@@ -241,7 +239,7 @@ export function TermsFlow({
       analytics.capture('terms_accepted', { context });
       if (context === 'first_run') analytics.capture('onboarding_completed');
     } catch (error) {
-      const { code } = toastRefusal(error, profileNow.current);
+      const { code } = toastRefusal(error);
       const action = consentRefusalAction(code);
       if (account !== null && action === 'account') {
         returnToAccount(code === 'username_taken' ? account.username : undefined);

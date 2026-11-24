@@ -33,9 +33,7 @@ initSentry();
  * - signed out → `(auth)`;
  * - no profile row, or a canceled deletion's emptied one → `onboarding` (Account, then Terms);
  * - a pending deletion, or an account the server's profile gate refuses right now (banned, being
- *   finalized, suspended at this instant — or, while its standing is unchanged, one the server
- *   refused a way-in screen's call for) → the tabs (read-only, with support), before any consent
- *   check;
+ *   finalized, suspended) → the tabs (read-only, with support), before any consent check;
  * - terms not accepted at this version → `terms`;
  * - Know Before You Go due (never answered, or not this season) → `know-before-you-go`;
  * - a new account's Home and Profile still ahead → `welcome`;
@@ -89,9 +87,6 @@ function RootNavigator() {
       anchor === undefined ? undefined : anchor === null ? null : { openedAt: anchor.openedAt },
     hold: session.hold,
     now: Date.now(),
-    // A way-in screen's can't-act refusal, with the standing it was heard at: the tabs while the
-    // profile still stands so.
-    cannotAct: session.cannotAct,
   });
   const group = entryGroup(route, session.heldOn);
   if (group === null) return null;

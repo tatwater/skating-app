@@ -40,7 +40,7 @@ import {
 } from '../../lib/termsReading';
 import { useSignOut } from '../../lib/useSignOut';
 import { useToast } from '../Toast';
-import { useEntrySession, useProfileNow } from './EntrySession';
+import { useEntrySession } from './EntrySession';
 import { Kicker, OnboardingFrame, PrimaryButton, StepHeader } from './OnboardingFrame';
 import { OutdatedScreen } from './OutdatedScreen';
 
@@ -129,7 +129,6 @@ function Reader({
 }) {
   const { sessionId } = useAuth();
   const { dispatch } = useEntrySession();
-  const profileNow = useProfileNow();
   const toast = useToast();
   const openTerms = useMutation(api.consent.openTerms);
   const reachTermsEnd = useMutation(api.consent.reachTermsEnd);
@@ -144,8 +143,8 @@ function Reader({
 
   // The calls change identity only with the client. The controller is made in the effect (not a
   // memo) so a remount always gets a live one.
-  const calls = useRef({ openTerms, reachTermsEnd, toast, dispatch, profileNow });
-  calls.current = { openTerms, reachTermsEnd, toast, dispatch, profileNow };
+  const calls = useRef({ openTerms, reachTermsEnd, toast });
+  calls.current = { openTerms, reachTermsEnd, toast };
   const readingRef = useRef<TermsReading | null>(null);
   useEffect(() => {
     const reading = createTermsReading({
@@ -161,14 +160,7 @@ function Reader({
           termsHash: TERMS_SHA256,
           via: 'inline',
         }),
-      onRefusal: (error) => {
-        const refusal = readRefusal(error);
-        calls.current.toast(refusal.message);
-        // The account can't act right now: the gate sends the skater to the tabs.
-        if (refusal.cannotAct) {
-          calls.current.dispatch({ type: 'cannotAct', profile: calls.current.profileNow.current });
-        }
-      },
+      onRefusal: (error) => calls.current.toast(readRefusal(error).message),
       // The end reached with no opening on the server (each retry failed too): why, then the top.
       onUnopened: () => calls.current.toast(consentRefusalMessage('terms_not_opened')),
       onChange: setState,
@@ -237,9 +229,6 @@ function Reader({
       dispatch({ type: 'acceptFailed' });
       const refusal = readRefusal(error);
       toast(refusal.message);
-      // The account can't act right now (a device clock ahead of the server's sent a suspended
-      // account here early): the gate sends the skater to the tabs.
-      if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
       const action = consentRefusalAction(refusal.code);
       if (account && onAccountRefused && action === 'account') {
         onAccountRefused(refusal.code as string, account.username);

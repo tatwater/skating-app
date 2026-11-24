@@ -4,8 +4,8 @@ import { useEffect, useReducer } from 'react';
 /**
  * The instant the gate reads `resolveEntryRoute` at, and a wake-up when that answer changes with
  * time alone: a suspension's end (`entryRouteRecheckIn`), after which the consent checks apply
- * again. Nothing else in the rule moves with the clock (a can't-act hold ends only with a change of
- * the profile), so the gate re-renders on its queries otherwise.
+ * again. Nothing else in the rule moves with the clock, so the gate re-renders on its queries
+ * otherwise.
  */
 export function useEntryNow(profile: EntryProfile | null | undefined): number {
   const [woken, wake] = useReducer((n: number) => n + 1, 0);

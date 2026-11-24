@@ -359,7 +359,6 @@ describe('/terms', () => {
         tone: 'bad',
       }),
     );
-    expect(useEntryStore.getState().cannotAct).toBeNull();
   });
 
   it('says the profile gate’s own plain-string refusal as it is, as the phone does', async () => {
@@ -373,9 +372,6 @@ describe('/terms', () => {
       expect(m.toast).toHaveBeenCalledWith({ title: 'Account is suspended', tone: 'bad' }),
     );
     expect(useEntryStore.getState().hold).toBeNull();
-    // And it tells the gate, with the standing it was heard at: the app while the profile stands so
-    // (a device clock ahead of the server's routed a still-suspended account here).
-    expect(useEntryStore.getState().cannotAct).toEqual({ status: 'suspended', suspendedUntil: 1 });
   });
 
   it('draws the receipt with Continue when no questions are due, and lets go on it', async () => {
@@ -451,7 +447,7 @@ describe('/know-before-you-go', () => {
     expect(m.capture).not.toHaveBeenCalledWith('know_before_you_go_completed', expect.anything());
   });
 
-  it('tells the gate when the server says the account can’t act, so it goes to the app', async () => {
+  it('says the server’s own can’t-act refusal of a completion as it is', async () => {
     const user = userEvent.setup();
     fakes.queries.set('profiles:current', { ...LIVE, knowBeforeYouGoAt: undefined });
     mutation('consent:completeKnowBeforeYouGo').mockRejectedValueOnce(
@@ -463,7 +459,7 @@ describe('/know-before-you-go', () => {
     await waitFor(() =>
       expect(m.toast).toHaveBeenCalledWith({ title: 'Account is not active', tone: 'bad' }),
     );
-    expect(useEntryStore.getState().cannotAct).toEqual({});
+    expect(m.toast).toHaveBeenCalledOnce();
   });
 
   it('opens a season’s asking on its card; Not now signs out and counts it', async () => {
@@ -609,10 +605,14 @@ describe('/welcome', () => {
     expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
   });
 
-  it('says the server’s own can’t-act refusal of a home as it is, and tells the gate', async () => {
+  it('says the server’s own can’t-act refusal of a home as it is', async () => {
     // Lapsed by this tab's clock, which runs ahead of the server's.
-    const standing = { status: 'suspended', suspendedUntil: 1 };
-    fakes.queries.set('profiles:current', { ...LIVE, ...standing, welcomeStep: 'home' });
+    fakes.queries.set('profiles:current', {
+      ...LIVE,
+      status: 'suspended',
+      suspendedUntil: 1,
+      welcomeStep: 'home',
+    });
     mutation('profiles:setHome').mockRejectedValueOnce(new ConvexError('Account is suspended'));
     vi.stubGlobal('navigator', {
       ...navigator,
@@ -629,7 +629,6 @@ describe('/welcome', () => {
       expect(m.toast).toHaveBeenCalledWith({ title: 'Account is suspended', tone: 'bad' }),
     );
     expect(m.toast).toHaveBeenCalledOnce();
-    expect(useEntryStore.getState().cannotAct).toEqual(standing);
     expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
   });
 
@@ -941,7 +940,6 @@ describe('a failing end', () => {
     await waitFor(() =>
       expect(m.toast).toHaveBeenLastCalledWith({ title: 'Account is suspended', tone: 'bad' }),
     );
-    expect(useEntryStore.getState().cannotAct).toEqual({ status: 'suspended', suspendedUntil: 1 });
     clock += TERMS_OPEN_RETRY_GAP_MS;
     scroll();
     expect(await screen.findByRole('heading', { name: 'Time for an update' })).toBeInTheDocument();
@@ -1331,7 +1329,7 @@ describe('Profile’s visibility', () => {
 });
 
 describe('Profile’s save', () => {
-  it('says the server’s own can’t-act refusal as it is, and tells the gate', async () => {
+  it('says the server’s own can’t-act refusal as it is', async () => {
     const user = userEvent.setup();
     fakes.queries.set('profiles:current', { ...LIVE, status: 'banned', welcomeStep: 'profile' });
     mutation('profiles:updateProfile').mockRejectedValueOnce(
@@ -1344,7 +1342,6 @@ describe('Profile’s save', () => {
       expect(m.toast).toHaveBeenCalledWith({ title: 'Account is not active', tone: 'bad' }),
     );
     expect(m.toast).toHaveBeenCalledOnce();
-    expect(useEntryStore.getState().cannotAct).toEqual({ status: 'banned' });
     expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
   });
 

@@ -13,7 +13,7 @@
  * | — | `hold === 'receipt'` | `receipt` |
  * | 1 | `profile` still `undefined` | `loading` |
  * | 3 | `profile === null` | `account` |
- * | 4 | a deletion is pending, or the account can't act (`canActNow` at `now`, or a can't-act hold still standing) | `app` |
+ * | 4 | a deletion is pending, or the account can't act at `now` (`canActNow`) | `app` |
  * | 5 | `needsProfileSetup(profile)` (a canceled deletion's emptied row) | `account` |
  * | 1 | `watch` still `undefined` | `loading` |
  * | 6 | `profile.termsVersion !== TERMS.version` | `terms` |
@@ -42,15 +42,12 @@
  * (`entryRouteRecheckIn`). `now` is an argument, so the rule stays pure.
  *
  * **`now` is the device's clock; the server's is the one that counts.** The rule judges a suspension
- * at `now` exactly, as the server does, so with a correct clock a lapsed suspension goes straight on
- * to whatever consent it owes. A device running ahead would send a still-suspended account to a step
- * whose every call is refused; the server catches that itself. A refusal that says the account can't
- * act right now (`isCannotActRefusal`), heard on a way-in step, records the profile's standing as it
- * was then (`entryStanding`: its `status` and `suspendedUntil`) as the client's `cannotAct` hold, and
- * the rule sends the skater to the app for as long as the profile still stands that way
- * (`cannotActHolds`). No timer and no retry: the hold ends when either field changes (a moderator's
- * lift, a new suspension) or the session restarts (a reload, a relaunch: the hold is in memory), so a
- * clock that stays ahead can never bounce the skater between the app and a refused step.
+ * at `now` exactly, as the server does, with no margin, so with a correct clock a lapsed suspension
+ * goes straight on to whatever consent it owes. A device clock running ahead of the server's shows
+ * that consent step early, in a suspension's last moments: its button is refused in the server's own
+ * words ("Account is suspended", a toast) until the suspension really ends, and then it works. That
+ * clears by itself and needs no reload, so nothing on the client remembers a refusal to route by
+ * (B03 §9.17).
  *
  * The watch is only awaited past row 5, so a signed-out, new or leaving skater never waits on it.
  */
@@ -88,30 +85,6 @@ export interface EntryProfile {
   welcomeStep?: WelcomeStep;
 }
 
-/** What the profile gate judges an account by: the two fields a can't-act hold is keyed on. */
-export type EntryStanding = Pick<EntryProfile, 'status' | 'suspendedUntil'>;
-
-/** The profile's standing, alone: what a can't-act refusal records as its hold. */
-export function entryStanding(profile: EntryStanding): EntryStanding {
-  return {
-    ...(profile.status !== undefined ? { status: profile.status } : {}),
-    ...(profile.suspendedUntil !== undefined ? { suspendedUntil: profile.suspendedUntil } : {}),
-  };
-}
-
-/**
- * Whether a can't-act hold (the standing recorded when the server refused this account as unable to
- * act) still holds for `profile`: only while its `status` and `suspendedUntil` are both what they
- * were. Either changing ends it; nothing about the clock does.
- */
-export function cannotActHolds(
-  hold: EntryStanding | null | undefined,
-  profile: EntryStanding,
-): boolean {
-  if (hold === null || hold === undefined) return false;
-  return hold.status === profile.status && hold.suspendedUntil === profile.suspendedUntil;
-}
-
 export function resolveEntryRoute({
   isLoaded,
   isSignedIn,
@@ -119,7 +92,6 @@ export function resolveEntryRoute({
   watch,
   hold = null,
   now,
-  cannotAct = null,
 }: {
   isLoaded: boolean;
   // Clerk reports `isSignedIn` as `undefined` until `isLoaded`; read as signed out.
@@ -131,12 +103,6 @@ export function resolveEntryRoute({
   hold?: EntryHold;
   /** The instant a suspension is judged at (the caller's clock). */
   now: number;
-  /**
-   * The profile's standing when the server last refused this account as unable to act right now
-   * (`isCannotActRefusal`), or `null`: while the profile still stands so (`cannotActHolds`), the
-   * skater is in the app.
-   */
-  cannotAct?: EntryStanding | null;
 }): EntryRoute {
   if (!isLoaded) return 'loading';
   if (!isSignedIn) return 'auth';
@@ -144,7 +110,7 @@ export function resolveEntryRoute({
   if (profile === undefined) return 'loading';
   if (profile === null) return 'account';
   if (profile.deletionRequestedAt !== undefined) return 'app';
-  if (!canActNow(profile, now) || cannotActHolds(cannotAct, profile)) return 'app';
+  if (!canActNow(profile, now)) return 'app';
   if (needsProfileSetup(profile)) return 'account';
   if (watch === undefined) return 'loading';
   if (profile.termsVersion !== TERMS.version) return 'terms';
@@ -160,7 +126,7 @@ export const MAX_TIMER_DELAY_MS = 2_147_483_647;
  * When a gate should read `resolveEntryRoute` again on its own, in ms from `now`, or `null` when
  * nothing time-bound is pending: a suspension with an end lapses then, and the consent checks apply
  * again. Capped at `MAX_TIMER_DELAY_MS` (a longer suspension just wakes the gate early, and it asks
- * again); one past the end, so the rule reads it as lapsed. A can't-act hold has no end in time.
+ * again); one past the end, so the rule reads it as lapsed.
  */
 export function entryRouteRecheckIn(
   profile: EntryProfile | null | undefined,

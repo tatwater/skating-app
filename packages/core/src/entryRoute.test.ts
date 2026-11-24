@@ -1,12 +1,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
-  cannotActHolds,
   type EntryProfile,
   type EntryRoute,
-  type EntryStanding,
   entryRouteRecheckIn,
-  entryStanding,
   MAX_TIMER_DELAY_MS,
   resolveEntryRoute,
 } from './entryRoute';
@@ -126,51 +123,6 @@ describe('resolveEntryRoute, row by row', () => {
     expect(route(ended(1))).toBe('terms');
   });
 
-  it('4: keeps an account the server refused as unable to act in the app while it stands so', () => {
-    // A device clock ahead of the server's: the rule says the suspension lapsed, the server says it
-    // hasn't, and its refusal recorded the standing the profile had then.
-    const lapsed: EntryProfile = {
-      displayName: 'Kate',
-      status: 'suspended',
-      suspendedUntil: NOW - 60_000,
-    };
-    const hold = entryStanding(lapsed);
-    const at = (now: number, profile: EntryProfile, cannotAct: EntryStanding | null) =>
-      resolveEntryRoute({ ...signedIn, now, profile, watch, cannotAct });
-    expect(at(NOW, lapsed, null)).toBe('terms');
-    expect(at(NOW, lapsed, hold)).toBe('app');
-    // No clock ends it: an hour, a year later, still the app (no five-minute bounce).
-    expect(at(NOW + 60 * 60 * 1000, lapsed, hold)).toBe('app');
-    expect(at(NOW + 365 * 24 * 60 * 60 * 1000, lapsed, hold)).toBe('app');
-    // A change of either field ends it: lifted, or suspended anew.
-    expect(at(NOW, { ...lapsed, status: 'active' }, hold)).toBe('terms');
-    expect(at(NOW, { ...lapsed, suspendedUntil: NOW - 1 }, hold)).toBe('terms');
-    expect(at(NOW, { displayName: 'Kate' }, hold)).toBe('terms');
-    // Never past the receipt hold, or for a caller without a row.
-    expect(
-      resolveEntryRoute({ ...signedIn, profile: done, watch, hold: 'receipt', cannotAct: hold }),
-    ).toBe('receipt');
-    expect(resolveEntryRoute({ ...signedIn, profile: null, watch, cannotAct: hold })).toBe(
-      'account',
-    );
-  });
-
-  it('records a standing as its two fields alone, and matches only both', () => {
-    expect(entryStanding({ status: 'suspended', suspendedUntil: NOW })).toEqual({
-      status: 'suspended',
-      suspendedUntil: NOW,
-    });
-    expect(entryStanding({ ...done, status: 'active' })).toEqual({ status: 'active' });
-    expect(entryStanding(done)).toEqual({});
-    expect(cannotActHolds(entryStanding(done), done)).toBe(true);
-    expect(cannotActHolds({}, { status: 'active' })).toBe(false);
-    expect(cannotActHolds({ status: 'active' }, { status: 'active', suspendedUntil: NOW })).toBe(
-      false,
-    );
-    expect(cannotActHolds(null, done)).toBe(false);
-    expect(cannotActHolds(undefined, done)).toBe(false);
-  });
-
   it('5: sends a canceled deletion’s emptied row back to the Account step', () => {
     expect(route({ ...done, displayName: DELETED_DISPLAY_NAME })).toBe('account');
     expect(route({ displayName: DELETED_DISPLAY_NAME }, undefined)).toBe('account');
@@ -279,17 +231,6 @@ const profileArb: fc.Arbitrary<EntryProfile> = fc.record(
   },
   { requiredKeys: [] },
 );
-const statusArb = fc.constantFrom(
-  'active' as const,
-  'suspended' as const,
-  'banned' as const,
-  'deleting' as const,
-  'deleted' as const,
-);
-const standingArb: fc.Arbitrary<EntryStanding> = fc.record(
-  { status: statusArb, suspendedUntil: instant },
-  { requiredKeys: [] },
-);
 const watchArb = fc.option(instant.map((openedAt) => ({ openedAt })));
 const input = fc.record({
   isLoaded: fc.boolean(),
@@ -298,7 +239,6 @@ const input = fc.record({
   watch: fc.oneof(fc.constant(undefined), watchArb),
   hold: fc.constantFrom('receipt' as const, null),
   now: instant,
-  cannotAct: fc.option(standingArb),
 });
 
 describe('resolveEntryRoute, properties', () => {
@@ -310,15 +250,14 @@ describe('resolveEntryRoute, properties', () => {
         return (
           i.profile.termsVersion === TERMS.version ||
           i.profile.deletionRequestedAt !== undefined ||
-          !canActNow(i.profile, i.now) ||
-          cannotActHolds(i.cannotAct, i.profile)
+          !canActNow(i.profile, i.now)
         );
       }),
     );
   });
 
   it('with a correct clock, never shows the app to a lapsed suspension that owes consent', () => {
-    // The clock agrees with the server and nothing was refused: the suspension is over, so the
+    // The clock agrees with the server: the suspension is over, so the
     // consent it owes comes first — never the app, which would let it act without consent.
     fc.assert(
       fc.property(input, fc.integer({ min: 0, max: 400 * 24 * 60 * 60 * 1000 }), (i, ago) => {
@@ -339,24 +278,8 @@ describe('resolveEntryRoute, properties', () => {
           hold: null,
           watch: i.watch === undefined ? null : i.watch,
           profile,
-          cannotAct: null,
         });
         return r !== 'app';
-      }),
-    );
-  });
-
-  it('keeps the refused account out of the steps while its standing holds, and never after', () => {
-    fc.assert(
-      fc.property(input, (i) => {
-        if (!i.profile) return true;
-        const held = resolveEntryRoute({ ...i, cannotAct: entryStanding(i.profile) });
-        if (i.isLoaded && i.isSignedIn && i.hold === null && held !== 'app') return false;
-        // A hold the profile no longer stands at changes nothing: the route is the unheld one.
-        if (i.cannotAct && !cannotActHolds(i.cannotAct, i.profile)) {
-          return resolveEntryRoute(i) === resolveEntryRoute({ ...i, cannotAct: null });
-        }
-        return true;
       }),
     );
   });
@@ -400,7 +323,6 @@ describe('resolveEntryRoute, properties', () => {
         if (i.hold === 'receipt') return r === 'receipt';
         if (i.profile?.deletionRequestedAt !== undefined) return r === 'app';
         if (i.profile && !canActNow(i.profile, i.now)) return r === 'app';
-        if (i.profile && cannotActHolds(i.cannotAct, i.profile)) return r === 'app';
         return r !== 'auth' && r !== 'receipt';
       }),
     );
@@ -434,7 +356,6 @@ describe('resolveEntryRoute, properties', () => {
             i.profile !== null &&
             i.profile.deletionRequestedAt === undefined &&
             canActNow(i.profile, i.now) &&
-            !cannotActHolds(i.cannotAct, i.profile) &&
             i.profile.displayName !== DELETED_DISPLAY_NAME)
         );
       }),

@@ -6,7 +6,6 @@ import { useMutation, useQuery } from 'convex/react';
 import { type ReactNode, useReducer, useState } from 'react';
 import { Button, Paragraph, Separator, Switch, Text, useTheme, XStack, YStack } from 'tamagui';
 import { AddressField } from '../src/components/onboarding/AddressField';
-import { useEntrySession, useProfileNow } from '../src/components/onboarding/EntrySession';
 import {
   FieldHint,
   FieldLabel,
@@ -77,8 +76,6 @@ function HomeStep({
 }) {
   const { text, choice } = home;
   const toast = useToast();
-  const { dispatch } = useEntrySession();
-  const profileNow = useProfileNow();
   const setHome = useMutation(api.profiles.setHome);
   const advance = useMutation(api.consent.advanceWelcome);
   const [busy, setBusy] = useState(false);
@@ -94,12 +91,6 @@ function HomeStep({
     supersede,
   } = useLocateRead(({ lat, lng }) => onHome({ type: 'located', lat, lng }));
 
-  // The account can't act right now: the gate sends the skater to the tabs.
-  const told = (refusal: { message: string; cannotAct?: true }) => {
-    toast(refusal.message);
-    if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
-  };
-
   async function finish(save: boolean) {
     if (busy) return;
     setBusy(true);
@@ -111,8 +102,8 @@ function HomeStep({
         try {
           await setHome({ homeCoord });
         } catch (error) {
-          // The server's own "can't act" is said as such; anything else is the not-saved line.
-          told(readSaveRefusal(error, copy.notSaved));
+          // The server's own "can't act" is said in its words; anything else is the not-saved line.
+          toast(readSaveRefusal(error, copy.notSaved).message);
           setBusy(false);
           return;
         }
@@ -123,7 +114,7 @@ function HomeStep({
       if (!save) onHome({ type: 'skipped' });
       await advance({ from: 'home' });
     } catch (error) {
-      told(readRefusal(error));
+      toast(readRefusal(error).message);
       setBusy(false);
     }
   }
@@ -231,19 +222,11 @@ function ProfileStep({
   onSignOut: () => void;
 }) {
   const toast = useToast();
-  const { dispatch } = useEntrySession();
-  const profileNow = useProfileNow();
   const updateProfile = useMutation(api.profiles.updateProfile);
   const advance = useMutation(api.consent.advanceWelcome);
   const [draft, setDraft] = useState<ProfileDraft>(() => initialProfileDraft(choice, visibility));
   const [busy, setBusy] = useState(false);
   const copy = ONBOARDING_COPY.profile;
-
-  // The account can't act right now: the gate sends the skater to the tabs.
-  const told = (refusal: { message: string; cannotAct?: true }) => {
-    toast(refusal.message);
-    if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
-  };
 
   async function finish(save: boolean) {
     if (busy) return;
@@ -254,15 +237,15 @@ function ProfileStep({
         try {
           await updateProfile(patch);
         } catch (error) {
-          // The server's own "can't act" is said as such; anything else is the not-saved line.
-          told(readSaveRefusal(error, copy.notSaved));
+          // The server's own "can't act" is said in its words; anything else is the not-saved line.
+          toast(readSaveRefusal(error, copy.notSaved).message);
           setBusy(false);
           return;
         }
       }
       await advance({ from: 'profile' });
     } catch (error) {
-      told(readRefusal(error));
+      toast(readRefusal(error).message);
       setBusy(false);
     }
   }

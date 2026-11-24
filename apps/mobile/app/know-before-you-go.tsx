@@ -22,7 +22,7 @@ import Constants from 'expo-constants';
 import { useReducer, useState } from 'react';
 import { Platform } from 'react-native';
 import { Paragraph, Text, useTheme, XStack, YStack } from 'tamagui';
-import { useEntrySession, useProfileNow } from '../src/components/onboarding/EntrySession';
+import { useEntrySession } from '../src/components/onboarding/EntrySession';
 import {
   OnboardingFrame,
   PrimaryButton,
@@ -313,8 +313,6 @@ function AllSeven({
   onOutdated: () => void;
 }) {
   const { sessionId } = useAuth();
-  const { dispatch } = useEntrySession();
-  const profileNow = useProfileNow();
   const theme = useTheme();
   const toast = useToast();
   const complete = useMutation(api.consent.completeKnowBeforeYouGo);
@@ -340,8 +338,6 @@ function AllSeven({
     } catch (error) {
       const refusal = readRefusal(error);
       toast(refusal.message);
-      // The account can't act right now: the gate sends the skater to the tabs.
-      if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
       setBusy(false);
       const action = consentRefusalAction(refusal.code);
       switch (action) {

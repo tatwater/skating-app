@@ -45,13 +45,7 @@ vi.mock('./skater/BootScreen', () => ({
 }));
 
 import { BOOT_COOKIE, bootCookieString, readBootZoneFromCookie } from '../lib/boot';
-import {
-  finishReceipt,
-  forgetEntry,
-  holdForReceipt,
-  markCannotAct,
-  recordReceipt,
-} from '../lib/entryHold';
+import { finishReceipt, forgetEntry, holdForReceipt, recordReceipt } from '../lib/entryHold';
 import { AuthGate, usesOldShell } from './AuthGate';
 
 /** The Ice Watch opened this season (the instant pinned, D243). */
@@ -390,47 +384,6 @@ describe('the way in', () => {
       unmount();
     }
     expect(mocks.push).not.toHaveBeenCalled();
-  });
-
-  it('keeps an account the server refused as unable to act in the app while its standing holds', () => {
-    // A device clock far ahead: by it the suspension lapsed long ago, so the rule alone would say
-    // the terms. The server refused it there: the app, for as long as the profile stands so — an
-    // hour on, still the app (no timed bounce back to a refused step); lifted, the terms.
-    vi.useFakeTimers();
-    vi.setSystemTime(OPENED_AT);
-    try {
-      const refused = {
-        displayName: 'Skater',
-        status: 'suspended' as const,
-        suspendedUntil: Date.UTC(2000, 0, 1),
-      };
-      mocks.profile = refused;
-      mocks.pathname = '/settings/data';
-      markCannotAct(refused);
-      const { rerender } = render(<AuthGate>page</AuthGate>);
-      expect(screen.getByText('page')).toBeInTheDocument();
-      act(() => {
-        vi.advanceTimersByTime(60 * 60 * 1000);
-      });
-      rerender(<AuthGate>page</AuthGate>);
-      expect(mocks.push).not.toHaveBeenCalled();
-      expect(vi.getTimerCount()).toBe(0);
-      // A moderator lifts it: the standing changed, the hold is over, and the consent comes first.
-      mocks.profile = { ...refused, status: 'active' };
-      rerender(<AuthGate>page</AuthGate>);
-      expect(mocks.push).toHaveBeenCalledWith('/terms');
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it('forgets a can’t-act hold with everything else: a new session starts unheld', () => {
-    const refused = { displayName: 'Skater', status: 'suspended' as const, suspendedUntil: 1 };
-    markCannotAct(refused);
-    forgetEntry();
-    mocks.profile = refused;
-    render(<AuthGate>page</AuthGate>);
-    expect(mocks.push).toHaveBeenCalledWith('/terms');
   });
 
   it('sends a lapsed suspension through the terms again', () => {

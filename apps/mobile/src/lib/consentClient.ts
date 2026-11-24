@@ -27,7 +27,7 @@ export interface Refusal {
   unlocksAt?: number;
   /**
    * The profile gate's own refusal: this account can't act right now (suspended, or locked out).
-   * The screen tells the gate (`{ type: 'cannotAct' }`), which sends the skater to the tabs.
+   * Said in the server's words, and nothing else: no route follows it (B03 §9.17).
    */
   cannotAct?: true;
 }
@@ -74,8 +74,8 @@ export function readRefusal(error: unknown): Refusal {
 
 /**
  * A welcome step's own write failed (`setHome`, `updateProfile`): the profile gate's can't-act
- * refusal keeps the server's words and its `cannotAct` (the screen tells the gate), as from any
- * way-in call; anything else is the step's `notSaved` line.
+ * refusal keeps the server's words, as from any way-in call; anything else is the step's `notSaved`
+ * line.
  */
 export function readSaveRefusal(error: unknown, notSaved: string): Refusal {
   const refusal = readRefusal(error);

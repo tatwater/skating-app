@@ -14,9 +14,7 @@ import {
   type EntryHold,
   type EntryProfile,
   type EntryRoute,
-  type EntryStanding,
   entryRouteRecheckIn,
-  entryStanding,
 } from '@skating/core';
 
 /** The root navigator's groups: each is one `Stack.Protected`, or nothing while loading. */
@@ -71,14 +69,6 @@ export interface EntrySession {
    * not on the season card, which would only say again what the receipt just said.
    */
   questionsFromReceipt: boolean;
-  /**
-   * The profile's standing (`status`, `suspendedUntil`) when the server last refused this account
-   * as unable to act right now — the profile gate's "Account is suspended" or "Account is not
-   * active" (core's `isCannotActRefusal`). While the profile still stands so, core's rule sends the
-   * skater to the tabs rather than leave them on a step every press of which is refused
-   * (`resolveEntryRoute`'s `cannotAct`); a change of either field, or a relaunch, ends it.
-   */
-  cannotAct: EntryStanding | null;
 }
 
 export const EMPTY_ENTRY_SESSION: EntrySession = {
@@ -86,7 +76,6 @@ export const EMPTY_ENTRY_SESSION: EntrySession = {
   heldOn: null,
   accountSeen: false,
   questionsFromReceipt: false,
-  cannotAct: null,
 };
 
 export type EntrySessionEvent =
@@ -100,11 +89,6 @@ export type EntrySessionEvent =
   /** The acceptance was refused: the screen stays on the reader, so nothing is held. */
   | { type: 'acceptFailed' }
   | { type: 'released'; startQuestions: boolean }
-  /**
-   * The server refused this account as unable to act (`refusal.cannotAct`), with the profile as the
-   * refusing screen saw it. No profile, nothing to hold: the rule never reads it without a row.
-   */
-  | { type: 'cannotAct'; profile: EntryStanding | null | undefined }
   | { type: 'signedOut' };
 
 export function entrySessionReducer(state: EntrySession, event: EntrySessionEvent): EntrySession {
@@ -122,8 +106,6 @@ export function entrySessionReducer(state: EntrySession, event: EntrySessionEven
         heldOn: null,
         questionsFromReceipt: event.startQuestions,
       };
-    case 'cannotAct':
-      return event.profile ? { ...state, cannotAct: entryStanding(event.profile) } : state;
     case 'signedOut':
       return state === EMPTY_ENTRY_SESSION ? state : EMPTY_ENTRY_SESSION;
   }
@@ -141,8 +123,7 @@ export function sessionEnded(isLoaded: boolean, isSignedIn: boolean | undefined)
 /**
  * Wakes the gate when its route changes with time alone — a suspension's end, after which the
  * consent checks apply again (core's `entryRouteRecheckIn`) — and returns the cancel for the
- * effect's cleanup. Nothing scheduled when nothing in the rule moves with the clock (a can't-act
- * hold ends only with a change of the profile).
+ * effect's cleanup. Nothing scheduled when nothing in the rule moves with the clock.
  */
 export function scheduleEntryRecheck(
   profile: EntryProfile | null | undefined,

@@ -47,7 +47,7 @@ export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
   // between two of them would land in a table an earlier stage already drained and outlive its own
   // deletion (PR #29 review). Note this is the finalization lock, not the 30-day pending request —
   // a pending request deliberately gates nothing, so the person can still sign in and cancel.
-  // Core's words, which the way in reads back (`isCannotActRefusal`) to send the skater to the app.
+  // Core's words, which the way in reads back (`isCannotActRefusal`) to say as they are.
   if (isLockedOut(profile)) throw new ConvexError(ACCOUNT_NOT_ACTIVE_MESSAGE);
   if (isSuspendedNow(profile, Date.now())) throw new ConvexError(ACCOUNT_SUSPENDED_MESSAGE);
   return profile;
