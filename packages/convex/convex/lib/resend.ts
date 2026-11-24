@@ -5,9 +5,11 @@
  * much smaller surface: the log-and-skip posture, the never-throw contract and the HTML escaping are
  * the parts that matter, and two copies would eventually disagree about one of them.
  *
- * **All Resend env vars ship unset.** `RESEND_API_KEY` / `RESEND_FROM_EMAIL` are provisioned during the
- * prod cutover, so on dev this logs and returns. That is deliberate rather than a gap to fix later:
- * a build that fails without a mail provider would block every deploy on a founder task.
+ * **Without its keys, a send logs and returns.** `RESEND_API_KEY` and `RESEND_FROM_EMAIL` are set on
+ * the dev deployment (since 2026-09-11; `05-accounts-and-credentials.md`), so dev sends real mail.
+ * They are unset in the tests and on a fresh deployment, where every send is skipped with a log line
+ * and reported `rejected` (`unconfigured`). That is deliberate rather than a gap to fix: a build that
+ * fails without a mail provider would block every deploy on a founder task.
  */
 
 const RESEND_ENDPOINT = 'https://api.resend.com/emails';

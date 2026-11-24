@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faLocationDot, faMagnifyingGlass } from '@fortawesome/sharp-light-svg-icons';
-import { type KeyboardEvent, type ReactNode, useId, useState } from 'react';
+import { ADDRESS_FIELD_COPY } from '@skating/core';
+import { type KeyboardEvent, type ReactNode, useEffect, useId, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -79,6 +80,7 @@ export function AddressField({
   onValueChange,
   lookup,
   onPick,
+  onOpenChange,
   autoFocus = false,
 }: {
   label: string;
@@ -87,6 +89,8 @@ export function AddressField({
   onValueChange: (value: string) => void;
   lookup: AddressLookup;
   onPick: (suggestion: AddressSuggestion) => void;
+  /** Told when the suggestion list opens or closes (the Home step clears room for it). */
+  onOpenChange?: (open: boolean) => void;
   autoFocus?: boolean;
 }) {
   const listId = useId();
@@ -94,6 +98,7 @@ export function AddressField({
   const [closed, setClosed] = useState(false);
   const suggestions = lookup.state === 'ok' || lookup.state === 'loading' ? lookup.suggestions : [];
   const open = !closed && suggestions.length > 0;
+  useEffect(() => onOpenChange?.(open), [open, onOpenChange]);
   const attribution =
     lookup.state === 'ok'
       ? lookup.attribution
@@ -159,7 +164,7 @@ export function AddressField({
           aria-activedescendant={open ? `${listId}-${lit}` : undefined}
           autoComplete="off"
           autoFocus={autoFocus}
-          placeholder="Start typing an address"
+          placeholder={ADDRESS_FIELD_COPY.placeholder}
           value={value}
           data-attr="settings-address"
           onChange={(e) => {
@@ -237,9 +242,7 @@ export function AddressField({
         </div>
       )}
       <FieldDescription className="mt-(--space-2)">
-        {lookup.state === 'error'
-          ? 'Suggestions didn’t load. Keep typing, or use your current location.'
-          : hint}
+        {lookup.state === 'error' ? ADDRESS_FIELD_COPY.suggestionsFailed : hint}
       </FieldDescription>
     </Field>
   );

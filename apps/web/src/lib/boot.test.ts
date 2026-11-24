@@ -16,14 +16,24 @@ function clearBootCookie() {
 afterEach(clearBootCookie);
 
 describe('isBootZone', () => {
-  it.each(['auth', 'onboarding', 'reack', 'app'])('accepts the settled zone %s', (zone) => {
-    expect(isBootZone(zone)).toBe(true);
-  });
+  it.each(['auth', 'receipt', 'account', 'terms', 'questions', 'welcome', 'app'])(
+    'accepts the settled zone %s',
+    (zone) => {
+      expect(isBootZone(zone)).toBe(true);
+    },
+  );
 
   it.each([undefined, '', 'loading', 'App', 'admin'])('rejects %s', (value) => {
     // `loading` is rejected on purpose: it is the absence of an answer, so it can never be stored.
     expect(isBootZone(value)).toBe(false);
   });
+
+  it.each(['onboarding', 'reack'])(
+    'reads the retired zone %s as no zone at all — an old cookie is a cold start',
+    (value) => {
+      expect(isBootZone(value)).toBe(false);
+    },
+  );
 });
 
 describe('readBootZoneFromCookie', () => {
@@ -33,7 +43,7 @@ describe('readBootZoneFromCookie', () => {
 
   it('reads it from among other cookies, whatever the spacing', () => {
     expect(readBootZoneFromCookie('gli-theme=dark; gli-boot=auth; __session=x')).toBe('auth');
-    expect(readBootZoneFromCookie('a=1;gli-boot=reack;b=2')).toBe('reack');
+    expect(readBootZoneFromCookie('a=1;gli-boot=terms;b=2')).toBe('terms');
   });
 
   it('is null when there is no cookie — which is the cold start', () => {
@@ -60,8 +70,8 @@ describe('bootCookieString', () => {
 
   it('round-trips through the document', () => {
     // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; this module reads document.cookie
-    document.cookie = bootCookieString('onboarding');
-    expect(readBootZoneFromCookie(document.cookie)).toBe('onboarding');
+    document.cookie = bootCookieString('account');
+    expect(readBootZoneFromCookie(document.cookie)).toBe('account');
   });
 });
 

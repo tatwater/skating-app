@@ -13,12 +13,20 @@ import { useEffect, useRef, useState } from 'react';
  * - **`off` is learned once** — the provider's key isn't set on the deployment — and the field
  *   gives way to the fallback for the rest of the session. The first ask is an empty text, which the server answers
  *   without calling any provider.
+ * - **`on` is learned once too** — once the provider has answered, a field mounted later in the
+ *   session (Settings' home form starts over on every view) draws on its first frame, with no
+ *   second ask; a later `off` or `quota` still latches as above.
  */
 
 export interface AddressSuggestion {
   label: string;
   lat: number;
   lng: number;
+  /**
+   * The suggestion's town as a profile shows it ("Hanover, NH"), when the provider named one: the
+   * onboarding's Profile step offers it as the Town. Settings' field doesn't read it.
+   */
+  town?: string;
 }
 
 /** `geocode.suggest`'s answer, as the client reads it. */
@@ -34,10 +42,13 @@ export const SUGGEST_MIN_CHARS = 3;
 /** Why the typed address is out for this session: no provider, or the provider's limit. */
 type Latch = 'off' | 'quota' | null;
 let latch: Latch = null;
+/** The provider has answered this session: its attribution, for a field mounted later. */
+let known: { attribution: string } | null = null;
 
 /** Test seam: a new session. */
 export function resetGeocoderSession(): void {
   latch = null;
+  known = null;
 }
 
 export type AddressLookup =
@@ -57,6 +68,7 @@ function settle(
 ): AddressLookup {
   if (result.status === 'ok') {
     attribution.current = result.attribution;
+    known = { attribution: result.attribution };
     return query.length >= SUGGEST_MIN_CHARS
       ? { state: 'ok', attribution: result.attribution, suggestions: result.suggestions }
       : { state: 'idle', attribution: result.attribution };
@@ -74,21 +86,26 @@ function settle(
  */
 export function useAddressSuggestions(text: string, suggest: SuggestFn): AddressLookup {
   const [lookup, setLookup] = useState<AddressLookup>(() =>
-    latch !== null ? { state: latch } : { state: 'unknown' },
+    latch !== null
+      ? { state: latch }
+      : known !== null
+        ? { state: 'idle', attribution: known.attribution }
+        : { state: 'unknown' },
   );
-  const attribution = useRef<string | null>(null);
+  const attribution = useRef<string | null>(known?.attribution ?? null);
   const suggestRef = useRef(suggest);
   suggestRef.current = suggest;
 
-  // The first ask learns whether a provider is on at all, for free.
+  // The first ask learns whether a provider is on at all, for free — once a session.
   useEffect(() => {
-    if (latch !== null) return;
+    if (latch !== null || known !== null) return;
     let live = true;
     suggestRef
       .current({ text: '' })
       .then((result) => {
-        if (live)
-          setLookup((now) => (now.state === 'unknown' ? settle(result, '', attribution) : now));
+        // What the probe learned is the session's, whether or not this field is still here.
+        const learned = settle(result, '', attribution);
+        if (live) setLookup((now) => (now.state === 'unknown' ? learned : now));
       })
       .catch(() => {
         if (live) setLookup({ state: 'error', attribution: null });

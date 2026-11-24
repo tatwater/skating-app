@@ -28,14 +28,17 @@ reconnect). Newsfeed / Bounties / You stay placeholders for their later phases.
 ```
 app/                         # Expo Router routes (file-based)
   _layout.tsx                # Sentry wrap + providers + auth-gated Stack.Protected
-  (auth)/                    # signed-out flow — sign-in, sign-up (16+ gate + risk ack)
+  (auth)/                    # signed-out flow — sign-in, sign-up
+  onboarding.tsx             # a new account's way in: Account, then Terms (B03 §9)
+  terms.tsx · know-before-you-go.tsx · welcome.tsx   # the rest of the way in, one route each
   (tabs)/                    # Map · Newsfeed · ＋Report · Bounties · You
     (map)/                   # persistent map + bottom-sheet drawer: index, water/[id], report/[id]
   about.tsx                  # license disclosure (AGPL-3.0 + App Store exception, D43)
 src/
   providers/Providers.tsx    # Clerk → Convex → Tamagui → SafeArea
-  lib/                       # env, convex client, sentry, risk-ack, waterMap + photo helpers
-  components/                # MapView, MapDrawer, WaterBody/Report detail, ReportForm, photoPipeline
+  lib/                       # env, convex client, sentry, the entry gate + onboarding logic, waterMap + photo helpers
+  components/                # MapView, MapDrawer, WaterBody/Report detail, ReportForm, photoPipeline, Toast
+    onboarding/              # the way in's screens' parts (frame, Account, Terms, address field)
 tamagui.config.ts            # design-token → Tamagui bridge
 app.config.ts                # dynamic Expo config (single source of truth; no app.json)
 ```

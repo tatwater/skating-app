@@ -6,9 +6,9 @@ import { z } from 'zod';
  * `?post=` is the New report sheet, open over whatever page you came from; `?postBody=` seeds
  * which lake a new report starts on. They are **root** params — valid from any skater page — but
  * they are validated on the pathless *skater layout* route, never on `__root`: `/admin`,
- * `/sign-in`, `/sign-up`, `/onboarding`, `/reack` and `/google-photos/callback` sit outside the
- * layout, so `?post=new` can never open the report sheet over the admin console (§1.0 of the
- * phase doc).
+ * `/sign-in`, `/sign-up`, the way in (`/onboarding`, `/terms`, `/know-before-you-go`, `/welcome`)
+ * and `/google-photos/callback` sit outside the layout, so `?post=new` can never open the report
+ * sheet over the admin console (§1.0 of the phase doc).
  *
  * Every schema here uses `.catch()` so a bad or stale link degrades to the default view instead
  * of an error page — the grammar's contract is "old links keep working", and a link that half

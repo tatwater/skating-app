@@ -1,11 +1,17 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCOUNT_NOT_ACTIVE_MESSAGE,
+  ACCOUNT_SUSPENDED_MESSAGE,
   BIO_MAX_LENGTH,
+  canActNow,
   canSetProfilePublic,
   DATA_EXPORT_TTL_DAYS,
   DELETION_GRACE_DAYS,
   DEPARTED_CONTENT_MAX_AGE_DAYS,
   DISPLAY_NAME_MAX_LENGTH,
+  isCannotActRefusal,
+  isLockedOut,
+  isSuspendedNow,
   isValidBio,
   isValidDisplayName,
   isValidTownLabel,
@@ -129,5 +135,38 @@ describe('deletion window invariants (D62)', () => {
     // route: `myExports` needs a sign-in, and after day 30 there isn't one. Founder call 2026-07-27,
     // and the reason the TTL moved from 7 days to 30.
     expect(DATA_EXPORT_TTL_DAYS).toBeGreaterThanOrEqual(DELETION_GRACE_DAYS);
+  });
+});
+
+describe('the profile gate’s standing (D37): isLockedOut, isSuspendedNow, canActNow', () => {
+  const NOW = Date.UTC(2026, 10, 24, 15);
+
+  it('locks out banned, finalizing and deleted accounts, whatever the clock says', () => {
+    for (const status of ['banned', 'deleting', 'deleted'] as const) {
+      expect(isLockedOut({ status })).toBe(true);
+      expect(canActNow({ status }, NOW)).toBe(false);
+    }
+    expect(isLockedOut({ status: 'active' })).toBe(false);
+    expect(isLockedOut({ status: 'suspended' })).toBe(false);
+    expect(isLockedOut({})).toBe(false);
+  });
+
+  it('holds a suspension until it lapses: open-ended or future gates, past or at now does not', () => {
+    expect(isSuspendedNow({ status: 'suspended' }, NOW)).toBe(true);
+    expect(isSuspendedNow({ status: 'suspended', suspendedUntil: NOW + 1 }, NOW)).toBe(true);
+    expect(isSuspendedNow({ status: 'suspended', suspendedUntil: NOW }, NOW)).toBe(false);
+    expect(isSuspendedNow({ status: 'active', suspendedUntil: NOW + 1 }, NOW)).toBe(false);
+    expect(canActNow({ status: 'suspended', suspendedUntil: NOW + 1 }, NOW)).toBe(false);
+    expect(canActNow({ status: 'suspended', suspendedUntil: NOW }, NOW)).toBe(true);
+    expect(canActNow({ status: 'active' }, NOW)).toBe(true);
+    expect(canActNow({}, NOW)).toBe(true);
+  });
+
+  it('reads its two refusals, and nothing else, as an account that can’t act', () => {
+    expect(isCannotActRefusal(ACCOUNT_NOT_ACTIVE_MESSAGE)).toBe(true);
+    expect(isCannotActRefusal(ACCOUNT_SUSPENDED_MESSAGE)).toBe(true);
+    for (const other of ['Not authenticated', '', null, undefined, { code: 'terms_first' }]) {
+      expect(isCannotActRefusal(other)).toBe(false);
+    }
   });
 });

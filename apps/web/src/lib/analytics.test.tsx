@@ -1,3 +1,4 @@
+import type { KnowBeforeYouGoContext, TermsAcceptanceContext } from '@skating/core';
 import { renderHook } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -160,6 +161,12 @@ describe('the event contract', () => {
     strava_connect_started: true,
     sign_in_code_sent: true,
     sign_in_completed: true,
+    // The way in (B03 §9.10).
+    terms_read_to_end: true,
+    terms_accepted: true,
+    know_before_you_go_completed: true,
+    welcome_step_finished: true,
+    season_check_signed_out: true,
   };
   const names = Object.keys(EXPECTED);
 
@@ -190,6 +197,21 @@ describe('the event contract', () => {
         expect(`${key}:${value}`).not.toMatch(CONDITION_CLAIM);
       }
     }
+  });
+});
+
+/**
+ * The way in's enums are the records' own vocabularies (B03 §9.10): an event's `context` is the
+ * terms record's, so a dashboard and the evidence never name one moment two ways.
+ */
+describe('the way in’s enums', () => {
+  it('carry exactly the terms record’s contexts, and the questions’ two flavors', () => {
+    const contexts: readonly TermsAcceptanceContext[] = ANALYTICS_ENUMS.terms_accepted_context;
+    expect([...contexts].sort()).toEqual(
+      ['first_run', 'reintroduced', 'returning', 'version_change'].sort(),
+    );
+    const flavors: readonly KnowBeforeYouGoContext[] = ANALYTICS_ENUMS.know_before_you_go_flavor;
+    expect([...flavors].sort()).toEqual(['first_run', 'season']);
   });
 });
 

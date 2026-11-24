@@ -1,145 +1,73 @@
-import { api } from '@skating/convex/api';
-import {
-  isValidDisplayName,
-  isValidUsername,
-  MINIMUM_SIGNUP_AGE,
-  meetsMinimumAge,
-  normalizeDisplayName,
-  normalizeUsername,
-  parseDateOfBirth,
-} from '@skating/core';
-import { useMutation } from 'convex/react';
-import { ConvexError } from 'convex/values';
-import { useState } from 'react';
-import { ScrollView } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { Button, H1, Paragraph, Text, YStack } from 'tamagui';
-import { RiskAckConsent } from '../src/components/RiskAckConsent';
-import { Input } from '../src/components/ThemedInputs';
-import { RISK_ACK_VERSION } from '../src/lib/riskAck';
+import { useEffect, useState } from 'react';
+import { BackHandler } from 'react-native';
+import { AccountStep } from '../src/components/onboarding/AccountStep';
+import { useEntrySession } from '../src/components/onboarding/EntrySession';
+import { type AccountFields, TermsStep } from '../src/components/onboarding/TermsStep';
+import { type AccountDraft, EMPTY_ACCOUNT_DRAFT } from '../src/lib/accountStep';
+import { useSignOut } from '../src/lib/useSignOut';
 
 /**
- * Profile provisioning (D26). Reached only when the user is Clerk-authenticated but has
- * no Convex `profiles` row yet (see the gate in `app/_layout.tsx`). This is the client
- * half of the trust boundary: it collects the profile fields and the blocking Phase 00
- * gates — the 16+ age gate (D41) and the assumption-of-risk acknowledgment (D45) — then
- * calls `upsertFromClerk`, which *re-enforces* all of it server-side (D37).
+ * **A new account's way in** (D298; B03 §9.6 boards 11.1–11.5, §9.7): Account, then Terms, as
+ * internal steps of one screen, so the Account fields ride in memory to the acceptance and nothing
+ * is written before *Record acceptance* creates the row. Reached when the gate says `account` — no
+ * profile row yet, or a canceled deletion's emptied one (re-introduced in place by the acceptance).
  *
- * DOB + ack are passed straight to the enforced mutation — never staged in Clerk
- * `unsafeMetadata`. On success the reactive `profiles.current` query flips and the root
- * gate swaps this screen for the tabs, so no manual navigation is needed.
+ * After the acceptance the root holds this screen for the receipt (the row now exists and the route
+ * has moved on); the receipt's button releases it, and the gate takes the skater on to the
+ * questions. A sign-out from either step goes back to the sign-in.
  */
 export default function OnboardingScreen() {
-  const upsertFromClerk = useMutation(api.profiles.upsertFromClerk);
+  const { session, dispatch } = useEntrySession();
+  const signOut = useSignOut();
+  const [step, setStep] = useState<'account' | 'terms'>('account');
+  const [draft, setDraft] = useState<AccountDraft>(EMPTY_ACCOUNT_DRAFT);
+  const [account, setAccount] = useState<AccountFields | null>(null);
+  const [refused, setRefused] = useState<ReadonlySet<string>>(new Set());
 
-  const [displayName, setDisplayName] = useState('');
-  const [username, setUsername] = useState('');
-  const [dob, setDob] = useState('');
-  const [ack, setAck] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  // The Account step was on screen: this is a new account, and its steps carry "N of 5".
+  useEffect(() => {
+    dispatch({ type: 'accountSeen' });
+  }, [dispatch]);
 
-  const dobMs = parseDateOfBirth(dob);
-  const oldEnough = dobMs !== null && meetsMinimumAge(dobMs, Date.now());
-  const dobTouched = dob.trim().length > 0;
+  // Android's back goes from Terms to Account, not out of the app — until the acceptance is in.
+  const held = session.hold === 'receipt';
+  useEffect(() => {
+    if (step !== 'terms') return;
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (!held) setStep('account');
+      return true;
+    });
+    return () => sub.remove();
+  }, [step, held]);
 
-  const normalizedUsername = normalizeUsername(username);
-  const usernameOk = isValidUsername(normalizedUsername);
-  const usernameTouched = username.trim().length > 0;
-  const nameOk = isValidDisplayName(normalizeDisplayName(displayName));
-
-  const canSubmit = !busy && nameOk && usernameOk && oldEnough && ack;
-
-  async function onSubmit() {
-    if (!canSubmit || dobMs === null) return;
-    setBusy(true);
-    setError(null);
-    try {
-      await upsertFromClerk({
-        displayName: normalizeDisplayName(displayName),
-        username: normalizedUsername,
-        dateOfBirth: dobMs,
-        riskAckVersion: RISK_ACK_VERSION,
-        // The acceptance time is stamped server-side (trust boundary, D37) — not sent.
-      });
-      // Success: no navigation — the root gate reacts to the now-provisioned profile.
-    } catch (e) {
-      // ConvexErrors carry a user-safe message in `.data` (e.g. "Username is already
-      // taken"); anything else is redacted, so fall back to a generic line.
-      setError(
-        e instanceof ConvexError
-          ? String(e.data)
-          : e instanceof Error
-            ? e.message
-            : 'Could not finish setting up your profile',
-      );
-    } finally {
-      setBusy(false);
-    }
+  if (step === 'terms' && account !== null) {
+    return (
+      <TermsStep
+        account={account}
+        showStep
+        heldOn="onboarding"
+        onAccountRefused={(code, username) => {
+          // A name someone took between the steps stays marked; any other account refusal just
+          // sends the skater back to fix the field (the toast says which).
+          if (code === 'username_taken') setRefused((names) => new Set(names).add(username));
+          setStep('account');
+        }}
+      />
+    );
   }
 
   return (
-    <SafeAreaView style={{ flex: 1 }}>
-      <ScrollView contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 16 }}>
-        <YStack gap="3" backgroundColor="background">
-          <H1 color="foreground">Finish your profile</H1>
-          <Paragraph color="foregroundMuted">
-            A few details before you start — this is how other skaters will see you.
-          </Paragraph>
-
-          <YStack gap="1">
-            <Input
-              value={displayName}
-              onChangeText={setDisplayName}
-              placeholder="Display name"
-              autoCapitalize="words"
-            />
-          </YStack>
-
-          <YStack gap="1">
-            <Input
-              value={username}
-              onChangeText={setUsername}
-              placeholder="Username"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            {usernameTouched && !usernameOk ? (
-              <Text color="danger">
-                3–30 characters: letters, numbers, or underscores (no leading or trailing _).
-              </Text>
-            ) : null}
-          </YStack>
-
-          <YStack gap="1">
-            <Input
-              value={dob}
-              onChangeText={setDob}
-              placeholder="Date of birth (YYYY-MM-DD)"
-              autoCapitalize="none"
-              keyboardType="numbers-and-punctuation"
-            />
-            {dobTouched && dobMs === null ? (
-              <Text color="danger">Enter a valid date as YYYY-MM-DD.</Text>
-            ) : dobTouched && !oldEnough ? (
-              <Text color="danger">You must be at least {MINIMUM_SIGNUP_AGE} to use Gli.</Text>
-            ) : null}
-          </YStack>
-
-          <RiskAckConsent checked={ack} onToggle={() => setAck((v) => !v)} />
-
-          {error ? <Text color="danger">{error}</Text> : null}
-
-          <Button
-            backgroundColor="primary"
-            color="primaryForeground"
-            disabled={!canSubmit}
-            onPress={onSubmit}
-          >
-            {busy ? 'Setting up…' : 'Start skating'}
-          </Button>
-        </YStack>
-      </ScrollView>
-    </SafeAreaView>
+    <AccountStep
+      draft={draft}
+      onDraft={setDraft}
+      refused={refused}
+      // The 18+ rule's clock: read per render, as the field is typed.
+      nowMs={Date.now()}
+      onSignOut={() => void signOut()}
+      onContinue={(fields) => {
+        setAccount(fields);
+        setStep('terms');
+      }}
+    />
   );
 }

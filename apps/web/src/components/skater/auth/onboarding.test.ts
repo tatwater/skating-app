@@ -1,47 +1,6 @@
 import { isValidUsername } from '@skating/core';
-import { ConvexError } from 'convex/values';
 import { describe, expect, it } from 'vitest';
-import { classifyUpsertError, suggestUsernames, usernameNeedsFixing } from './onboarding';
-
-describe('classifyUpsertError', () => {
-  it('draws the two username refusals in the field', () => {
-    expect(classifyUpsertError(new ConvexError('Username is already taken'))).toEqual({
-      kind: 'taken',
-    });
-    expect(
-      classifyUpsertError(
-        new ConvexError('Username must be 3–30 characters: letters, numbers, or underscores'),
-      ),
-    ).toEqual({ kind: 'badname' });
-  });
-
-  it('says any other refusal as the server put it', () => {
-    expect(classifyUpsertError(new ConvexError('You must be at least 16 years old'))).toEqual({
-      kind: 'message',
-      message: 'You must be at least 16 years old',
-    });
-  });
-
-  it('says a structured refusal by its message, and the generic line when it has none', () => {
-    const message = 'You can change your username once every 30 days.';
-    expect(
-      classifyUpsertError(new ConvexError({ code: 'username_cooldown', message, unlocksAt: 1 })),
-    ).toEqual({ kind: 'message', message });
-    expect(classifyUpsertError(new ConvexError({ code: 'odd' }))).toEqual({
-      kind: 'message',
-      message: 'Could not finish setting up your profile',
-    });
-  });
-
-  it('gives anything that is not a ConvexError the generic line, never its text', () => {
-    expect(
-      classifyUpsertError(new Error('[CONVEX M(profiles:upsertFromClerk)] Server Error')),
-    ).toEqual({
-      kind: 'message',
-      message: 'Could not finish setting up your profile',
-    });
-  });
-});
+import { suggestUsernames, usernameNeedsFixing } from './onboarding';
 
 describe('usernameNeedsFixing', () => {
   it('flags a character that can never be in a username at once', () => {

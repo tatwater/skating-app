@@ -33,7 +33,10 @@ import { isConfigured } from './env';
  * that would need one does not belong here.
  */
 export interface AnalyticsEventProperties {
-  /** A signed-in user's profile row was provisioned — the end of the onboarding funnel. */
+  /**
+   * A profile row was provisioned: a new account's *Record acceptance* created it (B03 §9.10 —
+   * unchanged in meaning; the acceptance is where a profile is born now).
+   */
   onboarding_completed: undefined;
   /** A new ice report was published. `report_count` is how many readings rode along. */
   report_posted: { report_count: number };
@@ -144,6 +147,20 @@ export interface AnalyticsEventProperties {
   sign_in_code_sent: { method: SignInMethod };
   /** The sign-in flow completed. */
   sign_in_completed: { method: SignInMethod };
+
+  // ── The way in (B03 §9.10): counts and shapes only. No miss count and no per-question event —
+  // ── a wrong pick is stored nowhere, PostHog included.
+
+  /** The end of the terms was on screen and the server recorded it, in which reader. */
+  terms_read_to_end: { via: TermsReadVia };
+  /** *Record acceptance* went through, and why it was asked (the record's four contexts). */
+  terms_accepted: { context: TermsAcceptedContext };
+  /** All seven answered and the completion recorded: a first time, or a season's asking. */
+  know_before_you_go_completed: { flavor: KnowBeforeYouGoFlavor };
+  /** A welcome step's button: saved, or skipped. */
+  welcome_step_finished: { step: WelcomeStepName; outcome: WelcomeStepOutcome };
+  /** *Not now — sign out* on the season card. */
+  season_check_signed_out: undefined;
 }
 
 /** Whether a favorite was placed on a whole body or one of its sub-areas. */
@@ -209,6 +226,11 @@ export const ANALYTICS_ENUMS = {
   directions_target: ['put_in', 'parking'],
   unread_bucket: ['0', '1-3', '4-9', '10+'],
   sign_in_method: ['email_code'],
+  terms_read_via: ['inline', 'fullscreen'],
+  terms_accepted_context: ['first_run', 'reintroduced', 'returning', 'version_change'],
+  know_before_you_go_flavor: ['first_run', 'season'],
+  welcome_step: ['home', 'profile'],
+  welcome_step_outcome: ['saved', 'skipped'],
 } as const;
 
 export type WaterBodyOpenSource = (typeof ANALYTICS_ENUMS.water_body_opened_source)[number];
@@ -228,6 +250,11 @@ export type ImageryBand = (typeof ANALYTICS_ENUMS.imagery_band)[number];
 export type DirectionsTarget = (typeof ANALYTICS_ENUMS.directions_target)[number];
 export type UnreadBucket = (typeof ANALYTICS_ENUMS.unread_bucket)[number];
 export type SignInMethod = (typeof ANALYTICS_ENUMS.sign_in_method)[number];
+export type TermsReadVia = (typeof ANALYTICS_ENUMS.terms_read_via)[number];
+export type TermsAcceptedContext = (typeof ANALYTICS_ENUMS.terms_accepted_context)[number];
+export type KnowBeforeYouGoFlavor = (typeof ANALYTICS_ENUMS.know_before_you_go_flavor)[number];
+export type WelcomeStepName = (typeof ANALYTICS_ENUMS.welcome_step)[number];
+export type WelcomeStepOutcome = (typeof ANALYTICS_ENUMS.welcome_step_outcome)[number];
 
 /** A query's size without its text: the bucket is countable shape, the characters are content. */
 export function bucketQueryLength(length: number): Exclude<QueryLengthBucket, 'recent'> {

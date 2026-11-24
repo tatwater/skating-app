@@ -8,7 +8,7 @@
  *  - **who counts** — a suspended account signed in; a pending or finished deletion leaves no new
  *    record, and no profile means nothing to record.
  */
-import { RISK_ACK_VERSION } from '@skating/core';
+import { PRIVACY_NOTICE_SHA256, PRIVACY_NOTICE_VERSION, TERMS, TERMS_SHA256 } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
@@ -27,13 +27,27 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-async function onboard(t: ReturnType<typeof convexTest>, subject: string) {
-  return t.withIdentity({ subject }).mutation(api.profiles.upsertFromClerk, {
-    displayName: subject,
-    username: subject,
-    dateOfBirth: Date.UTC(1986, 0, 1),
-    riskAckVersion: RISK_ACK_VERSION,
+/** The way in (D298): the terms read to the end, then accepted with the Account step's fields. */
+async function onboard(t: ReturnType<typeof convexTest>, subject: string): Promise<Id<'profiles'>> {
+  // A minute before the test's clock, so the opens that follow get their own instants (the harness
+  // keeps each write's clock after the last one's).
+  const at = Date.now();
+  vi.setSystemTime(at - 60_000);
+  const as = t.withIdentity({ subject });
+  const claim = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
+  await as.mutation(api.consent.openTerms, { ...claim, surface: 'web' });
+  await as.mutation(api.consent.reachTermsEnd, { ...claim, via: 'inline' });
+  await as.mutation(api.consent.acceptTerms, {
+    ...claim,
+    privacyVersion: PRIVACY_NOTICE_VERSION,
+    privacyHash: PRIVACY_NOTICE_SHA256,
+    surface: 'web',
+    account: { displayName: subject, username: subject, dateOfBirth: Date.UTC(1986, 0, 1) },
   });
+  const profile = await as.query(api.profiles.current, {});
+  if (profile === null) throw new Error('the acceptance made no profile');
+  vi.setSystemTime(at);
+  return profile._id;
 }
 
 const open = (t: ReturnType<typeof convexTest>, subject: string) =>

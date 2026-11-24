@@ -11,4 +11,12 @@ describe('crons', () => {
       expect(Object.keys(registry.crons)).toContain('flush notification queue');
     }
   });
+
+  test('registers the consent record’s two daily sweeps (B03 §9.11)', () => {
+    const registry = crons as unknown as { crons?: Record<string, unknown> };
+    expect(registry.crons).toBeTruthy();
+    expect(Object.keys(registry.crons ?? {})).toEqual(
+      expect.arrayContaining(['prune terms readings', 'purge due consent records']),
+    );
+  });
 });

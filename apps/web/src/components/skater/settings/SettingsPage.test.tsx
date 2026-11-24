@@ -1,4 +1,6 @@
+import { CONSENT_RECORD_RETENTION, LOCATE_GIVE_UP_MS, ONBOARDING_COPY } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import { ConvexError } from 'convex/values';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { convexReact, fakes, resetFakes } from '../testMocks';
@@ -6,11 +8,16 @@ import { convexReact, fakes, resetFakes } from '../testMocks';
 const m = vi.hoisted(() => ({
   signOut: vi.fn(async () => undefined),
   suggest: vi.fn(),
+  toast: vi.fn(),
   user: null as unknown,
   draft: false,
 }));
 
 vi.mock('convex/react', () => ({ ...convexReact, useAction: () => m.suggest }));
+vi.mock('../../kit/toast', async (original) => ({
+  ...(await original<typeof import('../../kit/toast')>()),
+  toast: m.toast,
+}));
 vi.mock('@clerk/tanstack-react-start', () => ({ useUser: () => ({ user: m.user }) }));
 vi.mock('@/lib/analytics', async (load) => ({
   ...(await load<typeof import('@/lib/analytics')>()),
@@ -101,6 +108,7 @@ beforeEach(() => {
   resetGeocoderSession();
   navigate.mockClear();
   m.signOut.mockClear();
+  m.toast.mockClear();
   m.suggest.mockReset();
   m.suggest.mockResolvedValue({ status: 'ok', attribution: 'A', suggestions: [] });
   m.draft = false;
@@ -364,7 +372,29 @@ describe('home and drive time', () => {
     await act(async () =>
       fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
     );
-    expect(screen.getByText(/wasn’t saved/)).toBeInTheDocument();
+    // A refused save is a toast, as every refusal is: no line on the form.
+    expect(m.toast).toHaveBeenCalledExactlyOnceWith({
+      title: ONBOARDING_COPY.home.notSaved,
+      tone: 'bad',
+    });
+    expect(screen.queryByText(/wasn’t saved/)).toBeNull();
+  });
+
+  it('says a refused Save in the server’s words for a can’t-act refusal, as a toast', async () => {
+    m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'quota', suggestions: [] });
+    mutation('profiles:setHome').mockRejectedValueOnce(new ConvexError('Account is suspended'));
+    const geo = {
+      getCurrentPosition: vi.fn((ok: (p: unknown) => void) =>
+        ok({ coords: { latitude: 1, longitude: 2 } }),
+      ),
+    };
+    Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+    page('home', 'edit');
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
+    );
+    expect(m.toast).toHaveBeenCalledExactlyOnceWith({ title: 'Account is suspended', tone: 'bad' });
+    expect(screen.queryByText(/wasn’t saved/)).toBeNull();
   });
 
   it('summarizes a set home, clears it, and opens the change view', async () => {
@@ -377,6 +407,181 @@ describe('home and drive time', () => {
     expect(setHome).toHaveBeenCalledWith({});
     // No server for a temporary base yet: no Traveling block.
     expect(screen.queryByText('Traveling')).toBeNull();
+  });
+
+  it('says a failed Clear as a toast: the server’s words for a refusal, else the not-cleared line', async () => {
+    const setHome = mutation('profiles:setHome');
+    setHome
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new ConvexError('Account is suspended'));
+    page('home');
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
+    expect(m.toast).toHaveBeenCalledWith({ title: ONBOARDING_COPY.home.notCleared, tone: 'bad' });
+    await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
+    expect(m.toast).toHaveBeenLastCalledWith({ title: 'Account is suspended', tone: 'bad' });
+    expect(m.toast).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['saved', (d: { resolve: (v: null) => void }) => d.resolve(null)],
+    ['refused', (d: { reject: (e: Error) => void }) => d.reject(new Error('offline'))],
+  ] as const)(
+    'a save %s after the skater left neither pulls them back nor writes the gone form',
+    async (outcome, settle) => {
+      const held: { resolve: (v: null) => void; reject: (e: Error) => void } = {
+        resolve: () => {},
+        reject: () => {},
+      };
+      mutation('profiles:setHome').mockImplementationOnce(
+        () =>
+          new Promise((resolve, reject) => {
+            held.resolve = resolve;
+            held.reject = reject;
+          }),
+      );
+      const geo = {
+        getCurrentPosition: vi.fn((ok: (p: unknown) => void) =>
+          ok({ coords: { latitude: 43.7, longitude: -72.29 } }),
+        ),
+      };
+      Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+      const { rerender } = page('home', 'edit');
+      await act(async () =>
+        fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
+      );
+      // Off to another section while the save is out.
+      rerender(<SettingsPage section="profile" onNavigate={navigate} />);
+      await act(async () => settle(held as never));
+      expect(navigate).not.toHaveBeenCalledWith('/settings/home', { replace: true });
+      if (outcome === 'refused') {
+        expect(m.toast).toHaveBeenCalledExactlyOnceWith({
+          title: ONBOARDING_COPY.home.notSaved,
+          tone: 'bad',
+        });
+      } else expect(m.toast).not.toHaveBeenCalled();
+    },
+  );
+
+  /** A browser whose location answers only when the test says. */
+  function slowGeolocation() {
+    const pending: Array<(p: unknown) => void> = [];
+    const geo = {
+      getCurrentPosition: vi.fn((ok: (p: unknown) => void) => {
+        pending.push(ok);
+      }),
+    };
+    Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+    return {
+      fix: (lat: number, lng: number) => {
+        for (const ok of pending.splice(0)) ok({ coords: { latitude: lat, longitude: lng } });
+      },
+    };
+  }
+
+  it('stops looking busy after a while, and still saves a slowly answered location', async () => {
+    // A permission prompt answered late: the button came back, and nothing was chosen since.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
+      const setHome = mutation('profiles:setHome');
+      const geo = slowGeolocation();
+      page('home', 'edit');
+      const locate = () => screen.getByRole('button', { name: 'Use my current location' });
+      await act(async () => fireEvent.click(locate()));
+      expect(locate()).toHaveAttribute('aria-busy', 'true');
+      await act(() => vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS));
+      expect(locate()).not.toHaveAttribute('aria-busy');
+      await act(async () => geo.fix(43.7, -72.29));
+      expect(setHome).toHaveBeenCalledWith({ homeCoord: { lat: 43.7, lng: -72.29 } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a late location once the skater types, picks or leaves', async () => {
+    m.suggest.mockImplementation(async ({ text }: { text: string }) => ({
+      status: 'ok',
+      attribution: 'Powered by Geoapify | © OpenStreetMap contributors',
+      suggestions: text
+        ? [{ label: '14 School Street, Hanover, NH 03755, USA', lat: 43.701, lng: -72.289 }]
+        : [],
+    }));
+    const setHome = mutation('profiles:setHome');
+    const geo = slowGeolocation();
+    page('home', 'edit');
+    const input = await screen.findByRole('combobox');
+    const locate = () => screen.getByRole('button', { name: 'Use my current location' });
+    // Typed after the press: the late fix never overwrites the address being typed.
+    await act(async () => fireEvent.click(locate()));
+    fireEvent.change(input, { target: { value: '14 School' } });
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
+    // Left the edit after the press: dropped too.
+    await act(async () => fireEvent.click(locate()));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
+  });
+
+  it('drops a late location once the edit is left by the browser’s Back, or Settings is left', async () => {
+    m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
+    const setHome = mutation('profiles:setHome');
+    const geo = slowGeolocation();
+    const at = (homeView?: 'edit') => (
+      <SettingsPage section="home" {...(homeView ? { homeView } : {})} onNavigate={navigate} />
+    );
+    const { rerender, unmount } = render(at('edit'));
+    const locate = () => screen.getByRole('button', { name: 'Use my current location' });
+    await act(async () => fireEvent.click(locate()));
+    // Back: the search loses `edit` with no Cancel pressed; then forward to the edit again.
+    rerender(at());
+    rerender(at('edit'));
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
+    // Settings' home left altogether while a read is out.
+    await act(async () => fireEvent.click(locate()));
+    unmount();
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
+  });
+
+  it('forgets a failed location when the edit is left, so the next edit starts clean', async () => {
+    m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
+    const geo = {
+      getCurrentPosition: vi.fn((_ok: unknown, no: (e: unknown) => void) => no(new Error('x'))),
+    };
+    Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+    const at = (homeView?: 'edit') => (
+      <SettingsPage section="home" {...(homeView ? { homeView } : {})} onNavigate={navigate} />
+    );
+    const { rerender } = render(at('edit'));
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn’t get your location/);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(navigate).toHaveBeenCalledWith('/settings/home', { replace: true });
+    rerender(at());
+    rerender(at('edit'));
+    expect(screen.getByRole('button', { name: 'Use my current location' })).toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t get your location/)).toBeNull();
+  });
+
+  it('draws the address field on the edit’s first frame, with one provider ask a session', async () => {
+    const at = (homeView?: 'edit') => (
+      <SettingsPage section="home" {...(homeView ? { homeView } : {})} onNavigate={navigate} />
+    );
+    const { rerender } = render(at());
+    await waitFor(() => expect(m.suggest).toHaveBeenCalledWith({ text: '' }));
+    await act(async () => {});
+    // To the edit (a new form): the field is there at once, not after a round trip.
+    rerender(at('edit'));
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    rerender(at());
+    rerender(at('edit'));
+    expect(screen.getByRole('combobox')).toBeInTheDocument();
+    await act(async () => {});
+    expect(m.suggest).toHaveBeenCalledOnce();
   });
 
   it('a browser with no geolocation says so', async () => {
@@ -565,6 +770,8 @@ describe('data and account', () => {
     );
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export my data' })));
     expect(request).toHaveBeenCalled();
+    // Leaving says what outlives the account before it happens (B03 §9.11, D297): one sentence.
+    expect(screen.getByText(CONSENT_RECORD_RETENTION)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
     const yes = screen.getByRole('button', { name: 'Yes, delete my account' });
     expect(yes).toHaveAttribute('data-armed');

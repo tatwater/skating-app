@@ -31,9 +31,9 @@ feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dorman
 
 | # | Gate | Refs | Status | What clears it |
 |---|---|---|---|---|
-| L1 | ToS, privacy policy, assumption-of-risk enforceability, disclaimers | Q10, D3, D45 | 🟡 | the lawyer |
-| L2 | Minor (16–17) data collection and the read-only posture | D41, Q10 | 🟡 | the lawyer confirms the posture; decide whether minors may ever post |
-| L3 | Deletion, retention, export — the policy wording | D62, Q10 | 🟡 | the lawyer confirms the wording matches what's built |
+| L1 | ToS, privacy policy, assumption-of-risk enforceability, disclaimers | Q10, D3, D45, D295, D296 | 🟡 | the lawyer |
+| L2 | Minors: none admitted while the minimum is 18; the read-only posture for 16–17 is dormant | D41, D294, Q10 | 🟡 | the lawyer confirms 18+ is enough as built; decide whether, and how, the minimum ever comes down |
+| L3 | Deletion, retention, export — the policy wording | D62, D297, Q10 | 🟡 | the lawyer confirms the wording matches what's built |
 | L4 | AGPL §7 App Store / Play distribution exception | D43, Q10 | 🟡 | the lawyer confirms the exception text before any store listing |
 | L5 | Forum / Facebook / Google Group **ingestion** — republishing others' posts | Q8, D21 | 🔬⛔ | feasibility → consent model → ToS pass |
 | L5a | The one-time private corpus extraction for design | Q8 | 🟢 | done; guardrails held |
@@ -58,20 +58,37 @@ feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dorman
 ## L1 — ToS, privacy, assumption of risk (Q10) 🟡
 The umbrella. A safety app's terms have to survive the *"peer observation, never a guarantee"*
 framing (D3) and the assumption-of-risk acknowledgment (D45) being enforced as written.
-- **Live:** interim [`TERMS.md`](../TERMS.md) and [`PRIVACY.md`](../PRIVACY.md); the 16+ gate;
-  a versioned, server-stamped risk-ack (`RISK_ACK_VERSION`) that re-prompts on change.
-- [ ] Lawyer engaged. [ ] Final ToS + privacy policy supersede the interim files. [ ] Risk-ack
-      wording reviewed; bump the version if it changes. [ ] The policy states D248's retention
+- **Live:** interim [`TERMS.md`](../TERMS.md) and [`PRIVACY.md`](../PRIVACY.md); the 18+ gate (D294);
+  the terms acceptance below, which re-prompts when `TERMS.version` changes (it replaced the
+  versioned risk-ack, `RISK_ACK_VERSION`, retired by B03 §9 — the profile keeps its old stamps,
+  unread).
+- [ ] Lawyer engaged. [ ] Final ToS + privacy policy supersede the interim files. [ ] Terms
+      wording reviewed; bump `TERMS.version` if it changes. [ ] The policy states D248's retention
       (L3).
+- **Built (B03 §9, D295, D296; on dev once deployed):** the risk-ack retired; the terms are read to the end in the app,
+  accepted in one line that also names the Privacy Notice, and recorded with their version and hash,
+  three server stamps, the IP from the sign-in provider's session and an emailed copy; seven Know Before
+  You Go questions are answered at sign-up and each season, misses never stored. For counsel:
+  - [ ] Is a scroll-to-the-end clickwrap with a recorded version, stamps and an emailed copy
+        enforceable as built, in each state of the coverage area?
+  - [ ] Can one line have the skater *agree to* the Privacy Notice, or does that turn a notice into
+        contract terms we don't want? Should a notice change ever re-ask (built: it doesn't)?
+  - [ ] Does the Know Before You Go record help or hurt (a completed set of correct answers on file,
+        each season), and is its wording right for that?
+  - [ ] An IP read from the session's latest activity, seconds after the acceptance: worth keeping as
+        evidence, and disclosed correctly?
 
-## L2 — Minors, 16–17 (D41) 🟡
-Under-13 is avoided by construction; 16–17 are still minors and we store DOB. The posture — minors
-are read-only, profile forced private, DOB scrubbed on deletion, minor status derived at read time —
-and everything it would take to open participation up is
+## L2 — Minors (D41, D294) 🟡
+The minimum age is **18** (D294), so no account belongs to a minor and whoever accepts the terms
+is of age to accept them. Age is self-attested from a stored DOB. The posture D41 built for
+16–17-year-olds — read-only, profile forced private, DOB scrubbed on deletion, minor status derived
+at read time — stays in the code, unreachable by a new signup, and everything it would take to
+bring the minimum back down is
 [`docs/minors-and-age-policy.md`](../docs/minors-and-age-policy.md).
-- [ ] Lawyer confirms collection + retention for our regions (US state law, GDPR ages, the UK code).
-- [ ] Decide whether minors may ever post public reports (a one-line flip if cleared).
-- [ ] Confirm no parental-consent flow is needed at 16+.
+- [ ] Lawyer confirms a self-attested 18+ gate, and DOB collection + retention, for our regions.
+- [ ] Decide whether the minimum ever comes down. If it does: which ages, whether a minor's
+      acceptance of the terms holds, and whether a parental-consent flow is needed.
+- [ ] Decide then whether minors may ever post public reports (a one-line flip if cleared).
 
 ## L3 — Deletion, retention, export (D62) 🟡
 Built and decided: the request *is* the deletion; three buckets (erased / redacted at 30 days /
@@ -79,6 +96,11 @@ anonymized); a 30-day login grace; a JSON export. [`docs/account-deletion.md`](.
 The **wording** in the terms and privacy policy waits on Q10.
 - [ ] Lawyer confirms the three-bucket model and windows. [ ] Export contents meet portability
       obligations (no tokens, nothing of other users').
+- [ ] **D297 (being built, B03 §9):** the consent record outlives a deleted account by six years —
+      severed from the account at finalization, then purged. Confirm six years (Maine's limitation
+      period, the longest in the coverage area) and how tolling bears on it; that keeping it through a
+      deletion request is permitted (a legal-claims exception) in each state; and the disclosure in
+      `PRIVACY.md` and on the delete screens.
 - [ ] **D248 (must land before the store launch, Phase B02):** the policy and the in-app delete
       confirmation say that deleted content is kept 30 days and then erased, content under a
       moderator's verdict is kept as evidence, the verdict record outlives the content, and what a

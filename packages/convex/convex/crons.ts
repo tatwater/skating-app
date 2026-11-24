@@ -431,6 +431,26 @@ crons.daily(
   {},
 );
 
+// ── B03 §9: the consent record (D295, D297) ──────────────────────────────────────────────────
+
+/** Terms readings that never became an acceptance go 30 days after they opened, a bounded page a run. */
+crons.daily(
+  'prune terms readings',
+  { hourUTC: 10, minuteUTC: 30 },
+  internal.consent.pruneReadings,
+  {},
+);
+/**
+ * Severed consent records whose six years are up (D297): the only delete of a record. Bounded, and
+ * its range starts at `purgeAt >= 1` — the index is on an optional field (`consent.purgeDue`).
+ */
+crons.daily(
+  'purge due consent records',
+  { hourUTC: 10, minuteUTC: 40 },
+  internal.consent.purgeDue,
+  {},
+);
+
 // ── B01-3b: the geometry facts ──────────────────────────────────────────────────────────────────
 
 /** Recompute the bodies whose touching bodies and places are stale (an action: geometry has room). */

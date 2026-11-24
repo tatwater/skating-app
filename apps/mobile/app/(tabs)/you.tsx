@@ -1,4 +1,3 @@
-import { useAuth } from '@clerk/expo';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faBell } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
@@ -14,6 +13,7 @@ import {
   NOTIFICATION_PREF_LABELS,
   NOTIFICATION_PREF_ORDER,
   type NotificationPrefKey,
+  ONBOARDING_COPY,
   resolveShowPutInDefault,
   SHOW_PUT_IN_HEADING,
   SHOW_PUT_IN_LABEL,
@@ -21,9 +21,8 @@ import {
 } from '@skating/core';
 import { THEME_PREFERENCES, type ThemePreference } from '@skating/design';
 import { useMutation, useQuery } from 'convex/react';
-import * as Location from 'expo-location';
-import { Link, useRouter } from 'expo-router';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, useTheme, XStack, YStack } from 'tamagui';
@@ -32,18 +31,20 @@ import { ChangeEmail } from '../../src/components/ChangeEmail';
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
+import { useToast } from '../../src/components/Toast';
 import { TrackHistory } from '../../src/components/TrackHistory';
 import { UnreportedSkates } from '../../src/components/UnreportedSkates';
-import { clearNotificationCache } from '../../src/lib/notificationCache';
+import { readSaveRefusal } from '../../src/lib/consentClient';
 import {
   disablePushOnThisDevice,
   enablePushOnThisDevice,
   isDeviceOptedOut,
   registerIfPermitted,
-  unregisterThisDevice,
 } from '../../src/lib/pushRegistration';
 import { tapTargetSlop } from '../../src/lib/tapTarget';
 import { THEME_PREFERENCE_LABELS } from '../../src/lib/themePreference';
+import { useLocateRead } from '../../src/lib/useLocateRead';
+import { useSignOut } from '../../src/lib/useSignOut';
 import { useThemePreference } from '../../src/providers/ThemeProvider';
 
 /**
@@ -52,31 +53,14 @@ import { useThemePreference } from '../../src/providers/ThemeProvider';
  * account deletion (D33/D62), the license/about link (D43), and sign-out.
  */
 export default function YouScreen() {
-  const { signOut } = useAuth();
   const profile = useQuery(api.profiles.current, {});
   const router = useRouter();
   const theme = useTheme();
   // The bell's dot (A08 §1.3). The tab bar shows the same signal on the You icon from every screen.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
-  // Sign-out takes this phone's push address with it and drops the offline inbox (A08 PR 3): a phone
-  // nobody is signed in on must not keep ringing — or reading back — for the account that left.
-  // Both best-effort and *before* the Clerk sign-out. The release itself needs no session (it's
-  // keyed by the token), so one that's still queued when the session ends still lands; the tabs
-  // layout re-registers on the next sign-in.
-  const registerToken = useMutation(api.pushTokens.register);
-  const unregisterToken = useMutation(api.pushTokens.unregister);
-  const releaseToken = useMutation(api.pushTokens.release);
-  async function onSignOut() {
-    await unregisterThisDevice({
-      register: registerToken,
-      unregister: unregisterToken,
-      release: releaseToken,
-    });
-    clearNotificationCache();
-    await signOut();
-    router.replace('/sign-in');
-  }
+  // Push release + inbox drop + Clerk sign-out, the same from every screen that signs out.
+  const onSignOut = useSignOut();
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>
@@ -195,22 +179,32 @@ export default function YouScreen() {
 function HomeLocation() {
   const profile = useQuery(api.profiles.current, {});
   const setHome = useMutation(api.profiles.setHome);
-  const [status, setStatus] = useState<'idle' | 'locating' | 'error'>('idle');
+  const toast = useToast();
+  const [saving, setSaving] = useState(false);
   const hasHome = profile?.homeCoord !== undefined;
 
-  async function useCurrentLocation() {
-    setStatus('locating');
+  // The Home step's rule (core's `createLocateRead`): the button stops looking busy after a while
+  // even if the read is never answered, and only the newest read nobody superseded is saved. This
+  // tab stays mounted all session, so here the read is also dropped at the give-up (said as the
+  // couldn't-locate line) and whenever the tab loses focus: a fix landing later, with nothing on
+  // screen, never replaces the home. Leaving the tab also forgets a said failure (`reset`), so the
+  // couldn't-locate line isn't still there on the way back.
+  const { locate, start, supersede, reset } = useLocateRead((homeCoord) => void save(homeCoord), {
+    dropAtGiveUp: true,
+  });
+  useFocusEffect(useCallback(() => reset, [reset]));
+  // A save or a clear the server didn't take: its words for a refusal (the tabs hold suspended,
+  // read-only accounts), else the not-saved or not-cleared line — a toast, as every refusal is.
+  const refused = (error: unknown, line: string = ONBOARDING_COPY.home.notSaved) =>
+    toast(readSaveRefusal(error, line).message);
+  async function save(homeCoord: { lat: number; lng: number }) {
+    setSaving(true);
     try {
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (!perm.granted) {
-        setStatus('error');
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({});
-      await setHome({ homeCoord: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
-      setStatus('idle');
-    } catch {
-      setStatus('error');
+      await setHome({ homeCoord });
+    } catch (error) {
+      refused(error);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -227,27 +221,35 @@ function HomeLocation() {
         <Button
           size="md"
           hitSlop={tapTargetSlop('$3')}
-          onPress={useCurrentLocation}
-          disabled={status === 'locating'}
+          onPress={start}
+          disabled={locate === 'locating' || saving}
         >
-          {hasHome ? 'Update home' : 'Set home from location'}
+          {saving
+            ? ONBOARDING_COPY.home.saving
+            : hasHome
+              ? 'Update home'
+              : 'Set home from location'}
         </Button>
         {hasHome ? (
           <Button
             size="md"
             hitSlop={tapTargetSlop('$3')}
             variant="quiet"
-            onPress={() => void setHome({})}
+            onPress={() => {
+              // Cleared: a location still being read never sets it back.
+              supersede();
+              void setHome({}).catch((error) => refused(error, ONBOARDING_COPY.home.notCleared));
+            }}
           >
             Clear
           </Button>
         ) : null}
       </XStack>
-      {status === 'locating' ? (
+      {locate === 'locating' ? (
         <Text color="foregroundMuted" fontSize={13}>
           Locating…
         </Text>
-      ) : status === 'error' ? (
+      ) : locate === 'failed' ? (
         <Text color="danger" fontSize={13}>
           Couldn't get your location.
         </Text>

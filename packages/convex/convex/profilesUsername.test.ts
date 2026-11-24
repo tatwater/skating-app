@@ -1,4 +1,10 @@
-import { RISK_ACK_VERSION } from '@skating/core';
+import {
+  DELETED_DISPLAY_NAME,
+  PRIVACY_NOTICE_SHA256,
+  PRIVACY_NOTICE_VERSION,
+  TERMS,
+  TERMS_SHA256,
+} from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import { describe, expect, test, vi } from 'vitest';
@@ -14,15 +20,35 @@ const modules = import.meta.glob('./**/*.*s');
 
 const ADULT_DOB = Date.UTC(new Date().getUTCFullYear() - 40, 0, 1);
 
+const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
+
+/**
+ * The way in (D298): the terms read to the end, then *Record acceptance* with the Account step's
+ * fields — for a new account, or a canceled deletion's emptied row being re-introduced.
+ */
+async function accept(
+  as: ReturnType<ReturnType<typeof convexTest>['withIdentity']>,
+  username: string,
+  beforeAccepting?: () => void,
+) {
+  await as.mutation(api.consent.openTerms, { ...TERMS_CLAIM, surface: 'web' });
+  await as.mutation(api.consent.reachTermsEnd, { ...TERMS_CLAIM, via: 'inline' });
+  beforeAccepting?.();
+  await as.mutation(api.consent.acceptTerms, {
+    ...TERMS_CLAIM,
+    privacyVersion: PRIVACY_NOTICE_VERSION,
+    privacyHash: PRIVACY_NOTICE_SHA256,
+    surface: 'web',
+    account: { displayName: 'Ada', username, dateOfBirth: ADULT_DOB },
+  });
+}
+
 async function onboard(t: ReturnType<typeof convexTest>, subject: string, username: string) {
   const as = t.withIdentity({ subject });
-  const id = await as.mutation(api.profiles.upsertFromClerk, {
-    displayName: subject,
-    username,
-    dateOfBirth: ADULT_DOB,
-    riskAckVersion: RISK_ACK_VERSION,
-  });
-  return { id, as };
+  await accept(as, username);
+  const profile = await as.query(api.profiles.current, {});
+  if (profile === null) throw new Error('the acceptance made no profile');
+  return { id: profile._id, as };
 }
 
 describe('profiles.usernameAvailable (B03 §11)', () => {
@@ -138,8 +164,11 @@ describe('profiles.changeUsername — one rename per 30 days', () => {
   const T0 = Date.UTC(2026, 10, 8, 15, 0);
 
   async function renamedAt(t: ReturnType<typeof convexTest>) {
-    vi.useFakeTimers({ now: T0 });
+    // Onboarded a minute before: the harness keeps each write's clock after the last one's, so the
+    // rename gets its own instant, T0.
+    vi.useFakeTimers({ now: T0 - 60_000 });
     const { id, as } = await onboard(t, 'clerk_ada', 'ada');
+    vi.setSystemTime(T0);
     // The handle picked at onboarding starts no cooldown: the first rename goes through at once.
     expect(await as.mutation(api.profiles.changeUsername, { username: 'ada2' })).toEqual({
       username: 'ada2',
@@ -223,13 +252,17 @@ describe('profiles.changeUsername — one rename per 30 days', () => {
     const t = convexTest(schema, modules);
     try {
       const { id, as } = await renamedAt(t);
-      const resync = (username: string) =>
-        as.mutation(api.profiles.upsertFromClerk, {
-          displayName: 'clerk_ada',
-          username,
-          dateOfBirth: ADULT_DOB,
-          riskAckVersion: RISK_ACK_VERSION,
-        });
+      // Onboarding re-runs only on a canceled deletion's emptied row (`acceptTerms` re-introduces
+      // it in place), so each attempt starts from one.
+      const resync = async (username: string) => {
+        // The emptying and the reading a moment before, so the acceptance lands at the instant
+        // the test set (the harness keeps each write's clock after the last one's).
+        const at = Date.now();
+        vi.setSystemTime(at - 10_000);
+        await t.run((ctx) => ctx.db.patch(id, { displayName: DELETED_DISPLAY_NAME }));
+        await accept(as, username, () => vi.setSystemTime(at));
+        return (await as.query(api.profiles.current, {}))?._id;
+      };
       vi.setSystemTime(T0 + 1_000);
       // The same handle re-synced is not a rename.
       await expect(resync('ada2')).resolves.toBe(id);

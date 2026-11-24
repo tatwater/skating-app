@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faDownload, faRotateLeft, faTrash } from '@fortawesome/sharp-light-svg-icons';
 import {
+  CONSENT_RECORD_RETENTION,
   DATA_EXPORT_TTL_DAYS,
   DELETION_GRACE_DAYS,
   DELETION_GRACE_MS,
@@ -198,6 +199,10 @@ export function DataSection({
             comments, and photo captions are deleted for good once they’re{' '}
             {DEPARTED_CONTENT_MAX_AGE_DAYS} days old. The account itself goes in{' '}
             {DELETION_GRACE_DAYS} days.
+          </p>
+          <p className="m-0" data-slot="consent-retention">
+            {/* What outlives the account (D297), said before it happens, in both apps' words. */}
+            {CONSENT_RECORD_RETENTION}
           </p>
           <p className="m-0">
             During those {DELETION_GRACE_DAYS} days you can still sign in, and canceling keeps the

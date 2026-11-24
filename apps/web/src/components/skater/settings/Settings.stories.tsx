@@ -367,7 +367,6 @@ function home(over: Partial<HomeSectionProps> = {}): HomeSectionProps {
     onPick: () => {},
     locate: 'idle',
     saving: false,
-    failed: false,
     onUseLocation: () => {},
     onSave: () => {},
     onClear: () => {},

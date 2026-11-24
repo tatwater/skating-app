@@ -1,12 +1,13 @@
 /**
  * Profile identity + editable-profile fields (06-data-model.md, D13). Single-sourced here so the
  * collection/edit UI (mobile onboarding + the Phase-03 profile editor, web + mobile) and the
- * `upsertFromClerk` / `updateProfile` trust boundary (D37) normalize + validate *identically*: the
+ * `consent.acceptTerms` / `updateProfile` trust boundary (D37) normalize + validate *identically*: the
  * client gives instant feedback, but the Convex function is what actually enforces these before
  * writing the `profiles` row. Never trust the client's normalization — re-run it server-side.
  */
 
 import { isMinor } from './age';
+import type { UserStatus } from './types';
 
 /** Username length bounds — short enough to type, long enough to stay distinctive. */
 export const USERNAME_MIN_LENGTH = 3;
@@ -222,6 +223,56 @@ export function needsProfileSetup(
   // deletion leaves a live account holding a cleared row.
   if (profile.deletionRequestedAt !== undefined) return false;
   return profile.displayName === DELETED_DISPLAY_NAME;
+}
+
+/**
+ * Banned, being taken apart, or gone: the server's profile gate (`requireProfile`, D37) refuses every
+ * call outright. One rule for the gate and for the way in (`resolveEntryRoute`), so the two can't
+ * disagree about who can act at all.
+ */
+export function isLockedOut(profile: { status?: UserStatus }): boolean {
+  return (
+    profile.status === 'banned' || profile.status === 'deleting' || profile.status === 'deleted'
+  );
+}
+
+/**
+ * A suspension blocks until it lapses (D37): an unset or future `suspendedUntil` still gates; a past
+ * one is treated as active (the flip to `active` happens separately). Compared at the instant given,
+ * so the rule needs no scheduled cleanup.
+ */
+export function isSuspendedNow(
+  profile: { status?: UserStatus; suspendedUntil?: number },
+  now: number,
+): boolean {
+  return (
+    profile.status === 'suspended' &&
+    (profile.suspendedUntil === undefined || profile.suspendedUntil > now)
+  );
+}
+
+/** Whether the profile gate lets this account act at `now`: neither locked out nor suspended. */
+export function canActNow(
+  profile: { status?: UserStatus; suspendedUntil?: number },
+  now: number,
+): boolean {
+  return !isLockedOut(profile) && !isSuspendedNow(profile, now);
+}
+
+/** `requireProfile`'s refusal of a banned, finalizing or deleted account (`lib/auth.ts`). */
+export const ACCOUNT_NOT_ACTIVE_MESSAGE = 'Account is not active';
+/** `requireProfile`'s refusal of an account suspended right now (`lib/auth.ts`). */
+export const ACCOUNT_SUSPENDED_MESSAGE = 'Account is suspended';
+
+/**
+ * Whether a refusal is the profile gate's own "this account can't act right now" — a plain-string
+ * `ConvexError` whose `data` is one of the two messages above. The way in reads it to say the
+ * server's own words for it, and nothing else: a welcome step's save shows them rather than its own
+ * "wasn't saved" line, and the Terms step's end says them rather than `terms_not_opened` (nothing
+ * routes on it: the profile query's own update moves the route, B03 §9.17).
+ */
+export function isCannotActRefusal(data: unknown): boolean {
+  return data === ACCOUNT_NOT_ACTIVE_MESSAGE || data === ACCOUNT_SUSPENDED_MESSAGE;
 }
 
 /**

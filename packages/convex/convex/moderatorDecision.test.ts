@@ -16,8 +16,11 @@ import {
   NOTIFICATION_PREF_DEFAULTS,
   NOTIFICATION_TYPES,
   type NotificationView,
-  RISK_ACK_VERSION,
+  PRIVACY_NOTICE_SHA256,
+  PRIVACY_NOTICE_VERSION,
   requestNameKeyFor,
+  TERMS,
+  TERMS_SHA256,
 } from '@skating/core';
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
@@ -955,13 +958,18 @@ describe('who is never told', () => {
       ),
     ).toBe(true);
 
-    // Onboarding writes every key from core's defaults (`upsertFromClerk`): this one on.
+    // Onboarding writes every key from core's defaults (`consent.acceptTerms`, through
+    // `lib/profileIdentity`): this one on.
     const fresh = w.t.withIdentity({ subject: 'clerk_fresh' });
-    await fresh.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Fresh',
-      username: 'fresh',
-      dateOfBirth: Date.UTC(1990, 0, 1),
-      riskAckVersion: RISK_ACK_VERSION,
+    const terms = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
+    await fresh.mutation(api.consent.openTerms, { ...terms, surface: 'web' });
+    await fresh.mutation(api.consent.reachTermsEnd, { ...terms, via: 'inline' });
+    await fresh.mutation(api.consent.acceptTerms, {
+      ...terms,
+      privacyVersion: PRIVACY_NOTICE_VERSION,
+      privacyHash: PRIVACY_NOTICE_SHA256,
+      surface: 'web',
+      account: { displayName: 'Fresh', username: 'fresh', dateOfBirth: Date.UTC(1990, 0, 1) },
     });
     const profile = await fresh.query(api.profiles.current, {});
     expect(profile?.notificationPrefs.moderatorDecision).toBe(true);

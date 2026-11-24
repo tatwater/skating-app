@@ -1,12 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { ConvexError } from 'convex/values';
+import { render, screen } from '@testing-library/react';
 import type { ComponentType, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { RISK_ACK_COPY, RISK_ACK_VERSION } from '../lib/riskAck';
 import { Route as CallbackRoute } from './google-photos.callback';
-import { Route as OnboardingRoute } from './onboarding';
-import { Route as ReackRoute } from './reack';
 import { Route as SignInRoute } from './sign-in';
 import { Route as SignUpRoute } from './sign-up';
 
@@ -47,86 +42,6 @@ const page = (route: { options: { component?: unknown } }) => {
 beforeEach(() => {
   vi.clearAllMocks();
   m.user = { primaryEmailAddress: { emailAddress: 'kate.donovan@gmail.com' } };
-});
-
-describe('/onboarding', () => {
-  async function submitReady(user: ReturnType<typeof userEvent.setup>) {
-    await user.type(screen.getByRole('textbox', { name: 'Your full name' }), 'Kate Donovan');
-    await user.type(screen.getByRole('textbox', { name: 'Username' }), 'kdonovan');
-    await user.type(screen.getByRole('textbox', { name: 'Date of birth' }), '1988-11-02');
-    await user.click(screen.getByRole('checkbox', { name: RISK_ACK_COPY }));
-    await user.click(screen.getByRole('button', { name: 'Start skating' }));
-  }
-
-  it('sends the profile and the current acknowledgment to upsertFromClerk, and counts it', async () => {
-    const user = userEvent.setup();
-    m.mutation.mockResolvedValue('profile-id');
-    page(OnboardingRoute);
-    expect(screen.getByText('kate.donovan@gmail.com')).toBeInTheDocument();
-    await submitReady(user);
-    await waitFor(() =>
-      expect(m.mutation).toHaveBeenCalledWith({
-        displayName: 'Kate Donovan',
-        username: 'kdonovan',
-        dateOfBirth: Date.UTC(1988, 10, 2),
-        riskAckVersion: RISK_ACK_VERSION,
-      }),
-    );
-    expect(m.capture).toHaveBeenCalledWith('onboarding_completed');
-  });
-
-  it('turns a taken username into the field’s state', async () => {
-    const user = userEvent.setup();
-    m.mutation.mockRejectedValue(new ConvexError('Username is already taken'));
-    page(OnboardingRoute);
-    await submitReady(user);
-    expect(await screen.findByText(/@kdonovan is taken/)).toBeInTheDocument();
-    expect(m.capture).not.toHaveBeenCalled();
-  });
-
-  it('signs out, and copes without a Clerk user', async () => {
-    const user = userEvent.setup();
-    m.user = null;
-    page(OnboardingRoute);
-    await user.click(screen.getByRole('button', { name: 'Sign out' }));
-    expect(m.signOut).toHaveBeenCalledOnce();
-    expect(screen.getByText('your account')).toBeInTheDocument();
-  });
-});
-
-describe('/reack', () => {
-  async function accept(user: ReturnType<typeof userEvent.setup>) {
-    await user.click(screen.getByRole('checkbox', { name: RISK_ACK_COPY }));
-    await user.click(screen.getByRole('button', { name: 'Accept and continue' }));
-  }
-
-  it('accepts the current version', async () => {
-    const user = userEvent.setup();
-    m.mutation.mockResolvedValue(null);
-    page(ReackRoute);
-    await accept(user);
-    await waitFor(() =>
-      expect(m.mutation).toHaveBeenCalledWith({ riskAckVersion: RISK_ACK_VERSION }),
-    );
-  });
-
-  it.each([
-    [new ConvexError('Account suspended'), 'Account suspended'],
-    [new Error('[CONVEX] Server Error'), 'Could not save your acknowledgment'],
-  ])('says a refusal (%s)', async (error, line) => {
-    const user = userEvent.setup();
-    m.mutation.mockRejectedValue(error);
-    page(ReackRoute);
-    await accept(user);
-    expect(await screen.findByRole('alert')).toHaveTextContent(line);
-  });
-
-  it('signs out instead', async () => {
-    const user = userEvent.setup();
-    page(ReackRoute);
-    await user.click(screen.getByRole('button', { name: 'Not now — sign out' }));
-    expect(m.signOut).toHaveBeenCalledOnce();
-  });
 });
 
 describe('/sign-in and /sign-up', () => {

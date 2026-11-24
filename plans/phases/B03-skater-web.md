@@ -1,6 +1,7 @@
 # Phase B03 — The skater web app
 
-> **Status:** complete, 2026-11-07. PRs #95–#98 built it; #100–#104 are the close-out and the live-test
+> **Status:** complete, 2026-11-07; **reopened 2026-11-24** for the onboarding and the season check, §9
+> (with the 18+ change, D294), built in PR #180 and complete again 2026-11-24. PRs #95–#98 built it; #100–#104 are the close-out and the live-test
 > fixes that followed, and §8 is their record. The build model held: one governor and parallel agents in
 > their own worktrees, cut from main on `phase-b03-skater-web`. The deferred and owed rows live in the
 > roadmap entry (`07-roadmap.md`, Phase B03). Mocks: Paper *Gli · Web app · Review 3* (157 boards), rules
@@ -289,8 +290,8 @@ The old components re-skin into these: `ChangeEmail`, `AccountLifecycle`, `Aggre
 |---|---|---|
 | `/sign-in` | none (email → code → wrong code are component steps) | A custom Clerk flow over the regional map (8.1–8.3, 8.15) |
 | `/sign-up` | none | 8.4 |
-| `/onboarding` | none | Finish your profile: empty, under 16, ready, username taken, username not allowed (8.5–8.7, 8.16, 8.18, 8.19) |
-| `/reack` | none | One quick thing (8.8), with the risk acknowledgment verbatim |
+| `/onboarding` | none | Finish your profile: empty, under 18 (D294), ready, username taken, username not allowed (8.5–8.7, 8.16, 8.18, 8.19) |
+| `/reack` | none | One quick thing (8.8), with the risk acknowledgment verbatim — retired by §9 (D295); both rows are superseded by §9.6 |
 | `/google-photos/callback` | none | The pop-up's four states (8.9) |
 | root `notFoundComponent` | | 404 under the top bar when signed in, with the region beneath it (8.14) |
 | root `errorComponent` / `Sentry.ErrorBoundary` fallback | | Something broke (8.11) |
@@ -694,6 +695,10 @@ This doc is the phase doc. The ⚪ roadmap entry was written at scoping (2026-11
 - §10 Analytics
 - §11 Server gaps (if approved)
 
+The onboarding addition (2026-11-24) is written up as this doc's section 9 and cited as `§9.N`; the
+narrow-screens workstream above keeps its name, and the roadmap's pointers to it now cite §1.7, the phone's
+route map, so no `§9` means two things.
+
 The build's findings go in the phase doc, not the roadmap. Deferred-register rows: the slow-pan region video,
 Garmin (already deferred under D24), and replay (L12).
 
@@ -719,6 +724,8 @@ decision, so the route grammar took D242 instead — gaps never close, tokens ne
 - **D242:** the skater route grammar and URL state. Old paths are kept; tabs, actions and New report are
   search params (`?post=`, `?tab=`, `?act=`), validated on the skater layout route, never `__root` (§1.0);
   `/feed` → `/latest`; no coordinates or camera in any URL; filters stay the saved D166 preference (Q3).
+- **D294–D298** (2026-11-22 to 2026-11-24): the onboarding addition — the 18+ minimum, the terms
+  acceptance, Know Before You Go, the consent record and the onboarding itself (§9).
 
 ## 8. What the build found
 
@@ -1178,3 +1185,714 @@ so there is no Garmin connection to restore, before the lake or after.
 **A dragged caret read "END …" until it settled.** It now shows the minute a release would save, by
 core's `caretLabel` — the settled caret's own rule, in the lake's zone — in a fixed box of tabular
 figures; each caret is a slider with arrow, page and Home/End steps and an `aria-valuetext`.
+
+---
+
+## 9. The onboarding and the season check (added 2026-11-24)
+
+> **Status:** built 2026-11-24, all three stages integrated on `phase-b03-onboarding` and shipped in
+> PR #180. An addition to this phase, not a new one (founder, 2026-11-24): one PR, carrying the
+> already-committed 18+ change (D294) and this build. Where the build departed from the plan, the plan
+> below is corrected in place; §9.17 records what the build found. Decisions: D295 (the terms acceptance, retiring the risk acknowledgment), D296 (Know Before
+> You Go and its season rule), D297 (the consent record and its six years), D298 (the onboarding's order,
+> defaults and reach). Mocks: the *Onboarding* page in *Gli · Web app · Review 3* (rows 10 and
+> 11, 26 boards), from `skating-mockups/skater-web/sys-welcome.html` (every word of copy is there; `RULES`
+> and `TERMS` are the quiz and the terms as drawn) and `boards-onb.tsv`; the founder's calls are the
+> README's *Onboarding*, *First review* and *Second review*.
+
+A new skater's way in is five steps — **Account → Terms → Know Before You Go → Home → Profile** — on the
+web and in the Android/iOS app. Every existing account passes through the terms and the questions at its
+next sign-in, and every skater answers the questions again at their first sign-in after the Ice Watch
+(the A06i season watch) opens a new season. The one-checkbox risk acknowledgment (D45, `riskAckVersion`,
+`/reack`) retires in favor of the terms acceptance. What the skater accepted, and when, is kept in a
+sealed record that outlives a deleted account by six years.
+
+The founder's calls this plan builds on (2026-11-22 to 2026-11-24, not re-opened here): the order, with no
+Garmin step; 18+ (D294, built); terms read to the end before the box unlocks, the line *"I have read and
+agree to the Terms of Use and the Privacy Notice."*, the Privacy Notice a link and never scroll-gated, an
+*Open in full-screen* reader on a desk whose end counts, *Record acceptance*, server-stamped moments that
+are never shown on screen, then *Acceptance recorded* with the emailed copy; the quiz named **Know Before
+You Go** (never "ground rules": "you know this, we're just making sure"), seven questions one at a time,
+two first-person answers each, a miss explains and waits for the right pick, wrong picks never stored, the
+questions in one versioned source the founder edits each summer; the season rule with its 30-day early
+window; Public profile and Show my town on by default, everything in Profile optional; the six-year
+retention (Maine's limitation period, the longest in the coverage area); existing accounts through terms
+and questions; mobile built now on its existing tokens. The standing skater-UI rules hold: relaxed, human
+copy; US spellings and the Oxford comma; no decision numbers, `§` or phase tokens on a screen; every
+server refusal a toast (D268), a client-side field problem the amber inline message as drawn; PostHog
+gets the Clerk user id only, counts and never content.
+
+### 9.1 What the interrogation found in the code
+
+1. **Today's gate.** `packages/core/src/authRoute.ts` (`resolveAuthRoute`, five states, shared by
+   `apps/web/src/components/AuthGate.tsx` and `apps/mobile/app/_layout.tsx`) routes on `profiles.current`
+   alone: no row → `onboarding`; `needsProfileSetup` (a canceled deletion's emptied row) → `onboarding`;
+   `isCurrentRiskAckVersion(riskAckVersion)` → `app`, else `reack`. The web maps states to paths in
+   `lib/authZone.ts` and remembers the zone in a boot cookie (`lib/boot.ts`, `BOOT_ZONES` names `reack`);
+   mobile swaps `Stack.Protected` groups. The server never gates a write on the acknowledgment —
+   `requireProfile` checks only status, suspension and lock (`lib/auth.ts`) — so a stale ack is
+   client-routed today, and stale terms and questions can be too.
+2. **Where a profile is born.** Only `profiles.upsertFromClerk` creates a row (it requires the current
+   `RISK_ACK_VERSION`, the 18+ gate, a valid name and a free username, and server-stamps `riskAckAt`).
+   It also re-onboards a canceled deletion in place (same row, `assertMayRename` applies) and silently
+   returns an inactive or ghost row unchanged. `acceptCurrentRiskAck` is `/reack`'s mutation. Tests insert
+   `profiles` rows directly 247 times in 181 files, none of them through either mutation, and no test or
+   server read depends on `riskAckVersion` beyond the two mutations, the tombstone's scrub and the inbox
+   seed (`inboxSeed.ts` stamps it). `checkUsername` and the create defaults are private to `profiles.ts`.
+3. **The pieces that exist to reuse.** `profiles.usernameAvailable` already answers before a row exists
+   (identity only). `geocode.suggest` (Geoapify, identity only) feeds the web's `AddressField` +
+   `geocoder.ts` lookup; its suggestion carries `label`, `lat` and `lng` only — **no town**, which the
+   Profile step's "Taken from your home address" needs. `profiles.setHome`, `profiles.updateProfile`
+   (bio, `homeTownLabel`, visibility) and the web's `ProfilePhoto` (Clerk avatar) cover Home and Profile.
+   **There is no "Show my town" setting**: a public profile shows `homeTownLabel` whenever it is set
+   (Settings' own copy says so). Mobile has no typed-address field (its You tab sets home from the
+   phone's location only), no avatar upload, and no toast.
+4. **Mail.** `lib/resend.ts`'s `sendEmailOutcome` reports `accepted | rejected | unknown` and never throws;
+   `lib/emailBlocks.ts` renders typed blocks (`**bold**` inline) to HTML and text from one source. The
+   module header still says *"All Resend env vars ship unset … on dev this logs and returns"* — stale:
+   `05-accounts-and-credentials.md` has `RESEND_API_KEY` and `RESEND_FROM_EMAIL` set on dev since
+   2026-09-11, and the founder receives the season emails through it. Stage one corrects the comment.
+5. **IP.** Convex gives a mutation no caller IP. Clerk's Backend API does: a session's
+   `latest_activity.ip_address` (`SessionActivityJSON` in `@clerk/backend`), on `GET /v1/sessions/{id}` and
+   `GET /v1/sessions?user_id=…&status=active`. **The session id is not in our token**: the apps reach Convex
+   through `ConvexProviderWithClerk`, which asks for the JWT template `convex` unless the instance runs
+   Clerk's Convex integration (`auth.config.ts` names `applicationID: 'convex'`, the template), and Clerk's
+   docs say session-bound claims (`sid`) cannot be put in a custom JWT. Both Clerk SDKs expose `sessionId`
+   on `useAuth()`, so the client can name its session and the server can check it belongs to the caller.
+   `clerkAdmin.ts` is the server-to-server pattern (`CLERK_SECRET_KEY`, timeout, no-op without the key);
+   the key is set on dev (the register).
+6. **The Ice Watch's opening.** `imageryIngestSeasons` holds one row per season (`season: 'winter-YYYY-YY'`,
+   `by_season`), written once by `imageryIngest.recordSeasonOpen`. Two times sit on it: `opensOn`, the
+   *observed* date the gate opened (a date string, read back from the weather series, so often days
+   before anyone knew), and `detectedAt`, the instant the system recorded the opening. An admin's
+   `seasonWatch.resetSeason` moves the row whole to `imageryIngestSeasonsSuperseded` and deletes it — a
+   reset is how a too-early opening is *postponed*, so until the next tick re-opens it the season is not
+   open. The row exists only once a season has opened; before that the newest row is last winter's.
+7. **Deletion and export.** `requestDeletion` scrubs the identity at once (email included);
+   `finalizeAccount` runs `lock → redact → erase → tracks → photos → tombstone`, each a transaction, and the
+   tombstone clears `riskAckVersion`/`riskAckAt`. `dataExport.collect` deliberately leaves out the email and
+   the Clerk subject. Purges elsewhere run as hourly or daily crons over an index.
+8. **Analytics.** Web only (the phone sends none, `PRIVACY.md`). `lib/analytics.ts` has
+   `onboarding_completed` ("a profile row was provisioned"). Autocapture is on with skater text masked
+   (D240), but a click's on-screen label is what autocapture records — a month picked in the date of birth
+   or a quiz answer clicked would otherwise reach PostHog.
+9. **Two things the mock says that the rules have to reconcile.** The mock's `TERMS` is a shortened
+   rewrite of `TERMS.md`: it drops *keep your login secure*, *don't post what you don't have the right to
+   share or interfere with the app*, the license's *according to the visibility settings you choose*,
+   *you're responsible for what you post (including photos)*, *the operator may remove content or suspend
+   or ban accounts*, the named third-party services, the Code of Conduct and the contact address — some of
+   that is substance, not wording (a founder call, §9.15). And board 10.13 shows *"Last answered Nov 16,
+   2026"*: a stored completion's day, on screen. The no-times rule is about the terms' stamps; this plan
+   draws 10.13 as the founder reviewed it (day only).
+
+### 9.2 The governor's rulings, checked against the code
+
+- **R1 — confirmed.** The profile is born at *Record acceptance*; the Account step validates with
+  `usernameAvailable` and core's `meetsMinimumAge` and writes nothing; the fields ride in client memory to
+  the Terms step. The invariant holds as "a profile exists ⇒ some acceptance was recorded" — every row
+  today carries a risk acknowledgment (`upsertFromClerk` requires one) — so `requireProfile` and the
+  fixtures need no sweep. Two cases the ruling has to name: a canceled deletion's row already exists and
+  is re-introduced in place (as `upsertFromClerk` does now), and a username free at Account can be taken
+  by Terms (the acceptance refuses, the skater is sent back to Account with a toast).
+- **R2 — confirmed, with three additions.** (a) A **pending deletion** goes to `app` before any consent
+  check: it is read-only and its cancel button lives in Settings; forcing a departing skater through the
+  questions to reach it would be absurd. (b) The routing rule needs the watch's opening as a second input,
+  read by a small query beside `profiles.current`. (c) A **receipt hold**: *Record acceptance* flips the
+  route at once (the profile reactively gains its terms), which would redirect past board 10.5. Both
+  gates honor a client hold set on a successful acceptance and cleared by the receipt's button. Built as
+  a new `resolveEntryRoute` beside the old function in stage one, so nothing moves until the apps switch.
+- **R3 — confirmed, with additions.** The pre-acceptance stamps live in their own table
+  (`termsReadings`), so the record is written once and whole. Severing at finalize clears the Clerk
+  subject as well as the profile pointer. The record is indexed by the snapshot's email so a deleted
+  person's record can still be found when it is needed (internal, CLI only). A guard holds the "sealed"
+  part (§9.12).
+- **R4 — changed in mechanism.** The JWT carries no `sid` (item 5). The capture: the client sends its
+  Clerk `sessionId` with the write; a scheduled internal action reads `GET /v1/sessions/{id}`, uses it
+  only if its `user_id` is the caller's subject, else falls back to the caller's most recently active
+  session (`GET /v1/sessions?user_id=…&status=active`); a `sid` claim, if the instance ever moves to the
+  Convex integration, is preferred over both. *As built:* only a named session that exists and is
+  someone else's falls back; a Clerk error on the named session records `error` and does not, so a
+  failed lookup is never papered over with a different session's address. The IP stored is the session's *latest activity* IP read
+  within seconds of the write — evidence of where the session was, not the HTTP request's own address —
+  and the record says which match was used. No key, no session, no activity, or any error: the record
+  says `unavailable` with the reason; the acceptance never waits on it and never fails for it.
+- **R5 — confirmed, with a fork on the text.** Terms and questions live in core as versioned data with a
+  committed SHA-256 each — *as built,* in an append-only ledger keyed by version (`TERMS_HASHES`,
+  `KNOW_BEFORE_YOU_GO_HASHES`, `legal/hashLedger.ts`), so every version ever published keeps its hash
+  and a version missing from its ledger matches nothing a client can send (a core test recomputes the
+  current one, so an edit without a version bump fails with instructions); `TERMS.md`'s body is exactly core's rendering (a `packages/guards` test). The Privacy
+  Notice's version and hash are also committed in core and held to `PRIVACY.md` by the same guard, so the
+  record can say which notice the line agreed to. Which text the terms are is the founder's (item 9).
+- **R6 — confirmed.** Stage one adds and changes no route; stage two switches both apps; stage three
+  deletes the old paths and narrows nothing. One consequence to say out loud: after the merge deploys, an
+  Android build from before it cannot onboard a new account (its mutation is gone), so the owed device
+  pass installs the new preview build first.
+- **R7 — confirmed, made precise.** The anchor is `detectedAt` on the live `imageryIngestSeasons` row with
+  the greatest `season` — the instant the system knew, which is what "the first sign-in after the watch
+  opens" can honestly mean (`opensOn` is a backdated observation). Superseded rows never anchor: a reset
+  postpones the opening, and a completion counts if it falls on or after the re-detected opening minus
+  30 days. The rule is pure, takes every instant as an argument, and its tests pin their clocks
+  (D243): no `Date.now()` in a fixture or story.
+- **R8 — confirmed.** The copy is sent by a scheduled action after the commit, with the record id as
+  Resend's idempotency key, and its outcome lands on the record. Board 10.5's line shows while the send is
+  pending, accepted or `unknown` (it may have gone); it changes only when the send is known not to have
+  happened (`rejected`, or no address at all).
+
+### 9.3 The state machine
+
+`resolveEntryRoute({ isLoaded, isSignedIn, profile, watch })` in `packages/core/src/entryRoute.ts` (*as built,* also
+`hold` and `now`, the instant a suspension is judged at), first match wins:
+
+| # | Condition | Route | Web path | Mobile group |
+|---|---|---|---|---|
+| 1 | Clerk not loaded, or signed in and `profile` or (past row 5) `watch` still `undefined` | `loading` | hold | `null` |
+| 2 | signed out | `auth` | `/sign-in`, `/sign-up`, `/about` | `(auth)` |
+| — | `hold === 'receipt'` (*as built:* the hold is an input to the rule) | `receipt` | the page the skater is on | the group the acceptance was on |
+| 3 | `profile === null` | `account` | `/onboarding` | `onboarding` |
+| 4 | `profile.deletionRequestedAt` set, or *(as built)* the account can't act — banned, finalizing, deleted, or suspended (core's `canActNow`, the rule `requireProfile` applies, judged at `now` exactly, as the server judges it) | `app` | as today | `(tabs)` |
+| 5 | `needsProfileSetup(profile)` | `account` | `/onboarding` | `onboarding` |
+| 6 | `profile.termsVersion !== TERMS.version` | `terms` | `/terms` | `terms` |
+| 7 | `knowBeforeYouGoDue(profile.knowBeforeYouGoAt, watch) !== null` | `questions` | `/know-before-you-go` | `know-before-you-go` |
+| 8 | `profile.welcomeStep` set | `welcome` | `/welcome?step=` | `welcome` |
+| 9 | otherwise | `app` | as today | `(tabs)` |
+
+`knowBeforeYouGoDue(lastAt, watch)` (`packages/core/src/knowBeforeYouGoSeason.ts`) answers `'never'` when
+`lastAt` is undefined, `null` when `watch` is `null` (no season has opened: only the never-answered are
+asked), `null` when `lastAt ≥ watch.openedAt − KNOW_BEFORE_YOU_GO_EARLY_MS` (30 × 24 h, elapsed), and
+`'season'` otherwise. Its answer is the screen's flavor: `'never'` opens straight on the first question
+(after a receipt, if one is held); `'season'` opens on board 10.13 — except straight from the receipt's
+*Start the questions*, which opens on the first question on both apps (the governor's ruling: the
+receipt has just said what comes next, and the card would say it again). The step counter (*N of 5*) shows only
+when the account is new this session (the Account step was seen); a returning account's terms and questions
+carry no counter.
+
+The receipt hold: on a successful acceptance the client sets `entryHold = 'receipt'` (*as built,* both apps
+set it **before** the mutation is sent and release it on a refusal: Convex shows the new profile no later
+than it resolves the call, so a hold set on the answer can lose the race to the redirect); while it is
+set `resolveEntryRoute` answers `receipt` and both gates stay on the screen the skater is on; *Start the questions* (questions due) or *Continue* (none due)
+clears it and the route takes over. A sign-out clears it. The questions need no hold: the last answer shows
+board 10.9 locally, and the completion is written by its *Continue*.
+
+Who sees what:
+
+| Who | Steps |
+|---|---|
+| New account | Account → Terms → receipt → 7 questions → All seven → Home → Profile → app |
+| Canceled deletion (row emptied) | Account → Terms → receipt → questions only if this season's are not answered → Home → Profile |
+| Existing account, first sign-in after merge | Terms → receipt → 7 questions → All seven → app (never Home or Profile) |
+| Terms version bumped | Terms → receipt → app, or the questions if they are also due |
+| First sign-in after the watch opens | 10.13 → 7 questions → All seven → app |
+| Pending deletion | app (read-only, as today) |
+| Banned, finalizing, or suspended now (*as built*) | app (read-only, with the support screen to appeal from); when a suspension lapses the gate wakes and the rows past 4 apply again |
+
+*As built,* `now` is the device's clock and the server's is the one that counts. The rule judges a suspension at `now`
+exactly, as the server does, with no margin, so with a correct clock a lapsed suspension goes straight on to the consent it
+owes and is never let into the app without it (a property test holds this). `entryRouteRecheckIn` wakes both gates at a
+suspension's end, and each gate re-arms its timer on every wake, so a timer that fires a hair early sets another. The
+profile gate's two refusals ("Account is suspended", "Account is not active" — core's
+`ACCOUNT_SUSPENDED_MESSAGE`/`ACCOUNT_NOT_ACTIVE_MESSAGE`, which `lib/auth.ts` throws, read back by `isCannotActRefusal`)
+heard on any way-in step route nothing: each is a toast in the server's own words, and the profile query's own update moves
+the route. **The accepted limit** (the governor's ruling, after three review rounds of defects in a client-side hold that
+tried to cover it): a device whose clock runs ahead of the server's shows the consent step that early at the end of a
+suspension, and pressing its button says "Account is suspended" until the suspension really ends; then it works. It clears
+by itself and needs no reload.
+
+### 9.4 The data model
+
+All widen-only; nothing narrows (the old `riskAckVersion`/`riskAckAt` stay, optional, on every row that has
+them). Every new table gets its row in `plans/06-data-model.md` in the same commit (`dataModelRegister`).
+
+**`profiles`, five optional fields** — the routing denormalization, written only by `consent.ts`:
+`termsVersion` and `termsAcceptedAt` (the latest acceptance), `knowBeforeYouGoAt` and
+`knowBeforeYouGoVersion` (the latest completion), and `welcomeStep: 'home' | 'profile'` (set only when an
+acceptance creates or re-introduces an account; cleared by the Profile step). None is indexed. The
+tombstone clears all five.
+
+**`termsReadings`** — the reading stamps before an acceptance, keyed by the Clerk subject because no row
+may exist yet: `clerkUserId`, `termsVersion`, `openedAt`, `reachedEndAt?`, `reachedEndVia?: 'inline' |
+'fullscreen'`, `surface: 'web' | 'android' | 'ios'` (client-reported). Indexes `by_clerk_version
+[clerkUserId, termsVersion]` and `by_opened [openedAt]`. Deleted by the acceptance that consumes it, by the
+finalize `erase` stage, and by a daily prune of rows opened more than 30 days ago.
+
+**`consentRecords`** — sealed, append-only:
+
+| Field | What |
+|---|---|
+| `kind` | `'terms' \| 'questions'` |
+| `profileId?`, `clerkUserId?` | the pointers; both cleared at finalize |
+| `identity` | `{ fullName, email?, dateOfBirth }` as attested: the Account step's values for a new or re-introduced account, the profile's for a returning one; `email` from the token, else the profile's mirror, else filled once by a Clerk lookup after the commit (an acceptance's by its copy's send, a completion's by `fillRecordEmail`) |
+| `version`, `contentHash` | what was accepted or answered (core's committed version and SHA-256) |
+| `privacyVersion?`, `privacyHash?` | terms only: the notice the line agreed to |
+| `context` | `'first_run' \| 'reintroduced' \| 'returning' \| 'version_change'` for terms; `'first_run' \| 'season'` for questions |
+| `openedAt`, `reachedEndAt`, `reachedEndVia` | terms only, copied from the reading row (server stamps of what the client reported) |
+| `recordedAt` | server `now`: the acceptance, or the completion |
+| `season?` | questions only: the newest opened season at `recordedAt`, or `null` before any; which seasons a completion satisfies is always derivable from the times and the watch history, so nothing else is claimed |
+| `surface`, `userAgent?` | client-reported, labeled so (`{ value, source: 'client_reported' }`, capped at 512 characters) |
+| `ip?` | `{ address, source: 'clerk_session_activity', match: 'token_sid' \| 'client_session' \| 'most_recent_session', fetchedAt }` |
+| `ipStatus` | `'pending' \| 'captured' \| 'unavailable'`, with `ipUnavailable?: 'no_key' \| 'no_session' \| 'no_activity' \| 'error'` |
+| `copyEmail?` | terms only: `{ status: 'pending' \| 'accepted' \| 'rejected' \| 'unknown', at? }` |
+| `severedAt?`, `purgeAt?` | set together at finalize; `purgeAt` = the finalize instant plus six calendar years, UTC (29 February lands on 1 March) |
+
+Indexes `by_profile [profileId, kind, recordedAt]`, `by_email [identity.email]`, `by_purge [purgeAt]`.
+Every range on `by_purge` starts `gte('purgeAt', 1)`: the field is optional and `undefined` sorts first, so
+a bare `lte(now)` would match every live record. Wrong picks have no field anywhere.
+
+Writes after the insert are fill-once and named: `ipStatus`/`ip`/`ipUnavailable` once, `copyEmail` once
+(from `pending`), `identity.email` once if absent, and the finalize sever. Nothing else patches a record;
+the purge is the only delete.
+
+### 9.5 Server functions (`packages/convex/convex/consent.ts`)
+
+Every refusal is a `ConvexError({ code, message })`; the message is skater copy (the founder's copy pass
+owns the words), and the clients show it as a toast.
+
+| Function | Gate | Contract | Refusals |
+|---|---|---|---|
+| `watchAnchor` (query) | none | `{ season, label, openedAt } \| null` from the newest `imageryIngestSeasons` row (`label` "Winter 2027–28") | — |
+| `openTerms` (mutation) | identity; *as built,* a banned, finalizing or deleted profile is refused (a reading written after `erase` would outlive the deletion) | `{ termsVersion, termsHash, surface }`; upserts the reading row, keeping the first `openedAt` | `client_outdated`, "Account is not active" |
+| `reachTermsEnd` (mutation) | as `openTerms` | `{ termsVersion, termsHash, via }`; sets `reachedEndAt` once | `client_outdated`, `terms_not_opened`, "Account is not active" |
+| `acceptTerms` (mutation) | identity | `{ termsVersion, termsHash, privacyVersion, privacyHash, surface, userAgent?, clientSessionId?, account?: { displayName, username, dateOfBirth } }` → `{ recordId, repeat }` (*as built,* `repeat: true` only when the call recorded nothing). No row: `account` required, the 18+ gate, name and username rules, then the row is created with the new-profile defaults (`lib/profileIdentity`, which `upsertFromClerk` used until stage three deleted it) and the Clerk mirrors, plus the terms fields and `welcomeStep: 'home'`. A canceled deletion's row: `account` required, patched in place (rename cooldown applies), **its visibility kept** (private after the request; a minor forced private), `welcomeStep: 'home'`. Any other row: `account` must be absent; *as built,* one that has already accepted this version gets its newest acceptance back and nothing is written (no record, no email, no Clerk lookup — before the reading is asked for, so a retry after a lost answer gets the same answer). Then the record, the reading deleted, the profile's terms fields, `refreshPersonRow`, and two scheduled actions (the copy's carries the copy, rendered here). | `client_outdated` (version or hash, either document: this build's bundled words aren't the server's), `terms_not_read` (no reading with `reachedEndAt`), `account_required`, `account_unexpected`, `underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`, the inactive and suspended refusals of `requireProfile`, `deletion_pending` |
+| `completeKnowBeforeYouGo` (mutation) | `requireContributor` | `{ version, hash, termsVersion, termsHash, surface, userAgent, clientSessionId? }` (*as built,* the client's bundled terms too) → `{ season, repeat }`; the record, the profile's two fields, the IP action. *As built:* any **published** version of the questions is taken (core's `isPublishedKnowBeforeYouGo`, over the ledger), and the record and `knowBeforeYouGoVersion` name the version answered — an older phone keeps working after the yearly edit. When neither the token nor the profile's mirror has an address, `fillRecordEmail` is scheduled too (*as built,* Greptile on #180). When the questions aren't due (`knowBeforeYouGoDue`, the gate's own season rule, read here) the call returns the newest completion's season with `repeat: true` and writes nothing; that replaced the 60-second repeat rule and covers it. | `account_required` (*as built:* a canceled deletion's emptied row, which must be re-introduced first), `terms_first` (*as built,* only when the client's terms claim is the server's: its gate routes by that version and will take it to the terms), `client_outdated` (a version or hash nobody published, or — when the profile hasn't accepted the server's terms — a terms claim that isn't the server's: an old build that routed itself here by its own old version, which the terms screen can't help), the contributor refusals |
+| `advanceWelcome` (mutation) | `requireContributor` | `{ from: 'home' \| 'profile' }`; home → profile → cleared; a `from` that isn't the current step is a no-op | contributor refusals |
+| `latestTermsReceipt` (query) | profile | `{ email, copy: 'pending' \| 'sent' \| 'not_sent' }` for board 10.5 (`accepted`/`unknown` read `sent`; `rejected` or no address read `not_sent`) | — |
+| `captureIp` (internal action) | — | the R4 lookup through `lib/clerkSessions.ts`, then `setIp` (internal mutation, fill-once). Never throws. | — |
+| `fillRecordEmail` (internal action) | — | *As built:* a completion's missing address — the caller's Clerk address (`lib/clerkEmail`), then `setRecordEmail` (internal mutation, fill-once: a record that has one is left alone). No key, no address or an error leaves the record as it is; the profile's mirror is never written here (its three writers are ordered by Clerk's `updated_at`, which a lookup lacks). Never throws. | — |
+| `sendTermsCopy` (internal action) | — | `{ recordId, clerkUserId, copy: { subject, html, text } }`: *as built,* the copy is rendered by `acceptTerms` from the `TERMS` its record names (core's terms through `lib/emailBlocks`: version line, no times) and passed in the job's arguments (about 9 KB, no arrays), so a deployment that changes the terms while the job waits can't change what is sent; the action never renders the current terms (Greptile on #180). Then `sendEmailOutcome` with `idempotencyKey: recordId`, then `setCopyOutcome` (fill-once). | — |
+| `pruneReadings`, `purgeDue` (internal mutations, daily crons) | — | each deletes at most 256 rows through its index and re-schedules itself when the page was full; *as built,* `purgeDue` also requires `severedAt` on each row and re-schedules only after a full page that deleted something (a page it skipped whole would re-read itself forever) | — |
+| `recordsFor`, `recordsByEmail` (internal queries) | CLI only | the evidence lookup, newest first; past the cap of 200 it is the newest that come back (each range read from its newest end); nothing on any screen reads them | — |
+
+Shared pieces move out of `profiles.ts` in stage one so both writers use one rule: `checkUsername`,
+`USERNAME_MESSAGES`, `assertMayRename` and the new-profile defaults go to `lib/profileIdentity.ts`.
+`accountDeletion.ts` gains a `consent` stage between `photos` and `tombstone` (it needs the profile id the
+tombstone keeps but the index must still find), severing each record and setting `purgeAt`, and `erase`
+deletes the subject's reading rows. `dataExport.collect` adds `consentRecords` without `identity.email`,
+`clerkUserId` or `profileId`, by the bundle's existing rule. `lib/geocoder.ts`'s Geoapify parse adds an
+optional `town` ("Hanover, NH": the result's city, else town or village, then `state_code`); the clients
+offer it as the Profile step's Town.
+
+### 9.6 Web: routes and boards
+
+Desk at 1440 is rows 10; below `md` the phone layout is rows 11 (390 wide). All four routes render on
+`SystemStage` over the region, outside the skater shell, with the *Signed in as … · Sign out* foot except
+10.13 (its second button is the way out).
+
+| Board (10.x desk · 11.x phone) | Route and state |
+|---|---|
+| 10.1 / 11.1 Account | `/onboarding` (`?step=account`, the zod `.catch` default): full name, `@`username (live `usernameAvailable`), date of birth as a month `Select` by name, day and year typed; *Continue* |
+| 10.2 Account · Under 18 | same; amber inline under the date of birth ("You must be at least 18 to use Gli."), *Continue* off — a client-side field problem |
+| 10.3 / 11.2 Terms · Locked | `/onboarding?step=terms` (a new account; with no carried fields it falls back to `account`) or `/terms` (an existing one); the reader at its top, the box locked, `openTerms` on first render |
+| 11.3 Terms · Reading (phone only) | the page is the reader; the hairline under the bar fills with the scroll |
+| 10.4 / 11.4 Terms · Read to the End | the end marker has been on screen: `reachTermsEnd`, the meta line gains "· Read to the end", the box unlocks |
+| *(not drawn)* Open in full-screen | the kit `Dialog` at full size over the step, the same text and end marker; reaching its end calls `reachTermsEnd({ via: 'fullscreen' })`; Esc returns with the box unlocked |
+| 10.5 / 11.5 Terms · Recorded | the same path under the receipt hold: "Acceptance recorded", the sent-to line from `latestTermsReceipt`, the *Next: Know Before You Go* block only if the questions are due, then *Start the questions* (else *Continue*, no block — not drawn) |
+| 10.6 / 11.6 Question | `/know-before-you-go`: seven cells, the question, two picks in the data's order, keys 1 and 2 on a desk, the feedback line's room kept |
+| 10.7 / 11.7 Correct | the pick outlined, "Correct." and the why; *Next question* (*Finish* on the seventh) |
+| 10.8 / 11.8 Not Quite | the miss amber with a cross, "Not quite." + why + "Pick the correct answer to continue."; the button stays off until the right pick |
+| 10.9 / 11.9 All Seven | local after the seventh; the seven `say` lines; *Continue* calls `completeKnowBeforeYouGo` |
+| 10.13 / 11.13 New Season | `/know-before-you-go` when the flavor is `season`: the season label, "Welcome back, <first name>", the two rows (terms "Unchanged since" the version's date; the questions' last-answered day in the skater's zone), *Start the questions*, *Not now — sign out* |
+| 10.10 / 11.10 Home · Typing | `/welcome?step=home`: `AddressField` with the geocoder's list open; "or" and *Use my current location* step aside while it is |
+| 10.11 / 11.11 Home | the picked address; "or"; *Use my current location*; *Save and continue* (`setHome`, then `advanceWelcome`) and *Skip for now* (`advanceWelcome` alone) |
+| 10.12 / 11.12 Profile | `/welcome?step=profile`: `ProfilePhoto`, Bio, Town (prefilled from the picked suggestion's `town`), Public profile showing the row's own visibility (on for a new account, off for a re-introduced one), Show my town on; *Open the map* saves what changed with `updateProfile` then `advanceWelcome`; *Skip* only advances |
+
+**Show my town** stores nothing of its own: on, the Town field is saved as `homeTownLabel`; off, it isn't
+(a founder confirmation, §9.15). Public profile shows the row's visibility and writes `profileVisibility`
+only when the skater changes it (the governor's ruling: a re-introduced account stays private, D298).
+`authZone.ts` maps the new routes; `boot.ts`'s zones become the new names (an old cookie's `reack` or
+`onboarding` is ignored, as unknown values already are); `/reack` and `/onboarding`'s old form are deleted
+in stage three; `skaterSearch.ts`'s comment follows.
+
+Refusals from `acceptTerms` and `completeKnowBeforeYouGo` are toasts (the skater toaster); every refusal of
+the Account fields (`underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`,
+and `account_required`: core's `isAccountRefusal`, read by both apps) also returns a new account to the
+Account step with its fields as typed — `username_taken` with the field marked — `terms_not_opened` starts the reading
+again at its top, `terms_not_read` re-arms the end marker. *As built,* what each code does beyond its toast is one table in
+core (`CONSENT_REFUSAL_ACTIONS`: `account`, `reopen`, `rearm`, `outdated`, `say`), and each app's handling is a `switch` over
+it with a `never` default, so a new code is a type error until both apps answer it. `client_outdated` — the tab's or the
+build's bundled terms, Privacy Notice or questions aren't the server's — can't be fixed by reading the same text again, so
+it stops the step on a blocking screen (*Time for an update*: the web offers *Reload the page*, the phone says to update
+the app) and nothing re-arms after it; its words never say the terms changed (a notice-only change is one). A failed end
+stamp is said once and tried again only after the marker has left the screen and come back, on both apps. *As built,* a
+failed opening is said once and tried again quietly as the skater scrolls, no more often than core's
+`TERMS_OPEN_RETRY_GAP_MS` (five seconds, and due at once if the device clock was set back past the last try; a retry, like
+a restarted reading's opening, speaks only when it is out of date, which stops the step), so the server normally has the
+reading by the end. An end reached while an opening is out waits for its answer, never silent, on both apps: on the
+reading's first opening (a slow connection; a text that fits the screen, which then counts once its opening answers —
+a restarted reading's never does, a known limit, §9.17), a
+success stamps the end then and a failure is said once — `terms_not_opened`'s words, or the server's own for a can't-act
+refusal — and the reading starts again; on a retried one (an earlier opening of this reading failed, so most of the text
+was read with no reading on the server), whatever it answers, the end says why once and the reading starts again. An
+end that has waited on the server for `TERMS_WAITING_LINE_MS` (three seconds; its opening unanswered or its stamp out,
+offline say) gets a quiet line by the agreement, *Still connecting. This will pick up once you're back online.* (a
+draft for the copy pass), on both apps. A
+reading the server doesn't have at the end — no opening ever succeeded, said then in `terms_not_opened`'s words (or the
+server's for a can't-act refusal), or `terms_not_opened` itself — is opened anew from the top of whichever
+reader is open (the web's full-screen reader scrolls to its top too), and its end counts only once the marker has left the
+screen and been reached again, on both apps: a new reading is read again, not counted from where the old one ended, and
+never a loop against a server that keeps refusing. `terms_first` is
+`say`: the gate takes the skater to the terms once its profile catches up. `terms_not_read` re-arms the end on the opening
+the reading already has, on both apps, never a new one. A failed end stamp and a restarted reading are what disarm the
+end until the marker has left and come back; quiet retries of a failed opening are never paused, a restarted reading's
+included. The stamps say when the server heard of each moment, not how long the reading took (§9.17). The profile gate's can't-act refusals on any
+way-in step are a toast in the server's words and route nothing (§9.3) — the Home and Profile steps' own saves too, which
+say the server's words for it and the step's *wasn't saved* line for anything else. The web counts `terms_accepted`, `onboarding_completed` and
+`know_before_you_go_completed` only when the call says it recorded something (`repeat: false`). On the Home step, *Save and
+continue* and *Skip for now* never wait on a location read. *As built,* every *Use my current location* — the web's Home
+step and Settings' home, the phone's Home step and its You tab — runs through core's `createLocateRead`: the button stops
+looking busy after `LOCATE_GIVE_UP_MS` (30 seconds) even if a permission prompt is never answered, but the read stays live,
+and a fix is taken only when nothing superseded it (a typed or picked address, a save, a skip, a clear, leaving the edit or
+the step by any way — Settings' home form is keyed by its view, so the browser's Back drops a read as Cancel does — another
+locate) — a slowly answered prompt still sets the home; a late fix never replaces one chosen since. The phone's You tab,
+mounted all session, drops its read at the give-up — said as its *couldn't get your location* line — and whenever the tab loses focus (`dropAtGiveUp`). The button waits
+while a save or a skip is out, on both apps; the You tab's says *Saving…*. A failed home save or Clear is a toast on
+both apps, the You tab and Settings alike (the server's words for a refusal, else the *wasn't saved* line — *wasn't
+cleared* for a Clear), never a line on the form. A Settings home save answered after the skater left neither navigates back nor writes the gone form. Leaving Settings' home
+edit forgets what it held, a failed location's line included; the address provider's answer is learned once a session,
+so the remounted form draws its field on its first frame. A skip or a location save takes the picked address off the
+field with its town, on both apps (the phone's field and choice are one reducer, `homeFieldReducer`), and a field emptied
+or set from outside closes its suggestions and forgets the old query (the web derives its lookup from the value; the
+phone's screen bumps a `reset` counter on a pick, the location and a skip, never on typing).
+
+### 9.7 Mobile: the same screens on the existing tokens
+
+Expo Router screens, `Stack.Protected` per route in `app/_layout.tsx`, the receipt hold in the root
+navigator's state. Built on Tamagui and `ThemedInputs` as an approximation of rows 11; the re-skin waits.
+
+| Route | Screen | Notes |
+|---|---|---|
+| `account` | `app/onboarding.tsx` (rewritten): Account then Terms as internal steps | the month by name — *as built,* a modal list (`MonthPicker`), not a Tamagui `Select`; the terms read on the page (`onScroll` against content height) with the hairline; ack and *Record acceptance* in the foot |
+| `terms` | `app/terms.tsx` | the Terms step alone, for an existing account |
+| `questions` | `app/know-before-you-go.tsx` | 10.13's card for the season flavor; picks as full-width pressables; no number keys |
+| `welcome` | `app/welcome.tsx` | Home: a new typed-address field over `geocode.suggest` (with the provider's attribution) and the existing location path; Profile: Bio, Town, the two switches; **no photo row** (no avatar upload exists on mobile, deferred) |
+
+The phone shows refusals in a small toast (`src/components/Toast.tsx`, new, mobile-owned). The Privacy
+Notice link opens `links.ts`'s URL. No product analytics on mobile (`PRIVACY.md`).
+
+### 9.8 What is reused, and what is new
+
+- **Web kit and compositions:** `SystemStage`/`SystemCard`/`FormLine`, `AuthField`, kit `Input`,
+  `InputGroup`, `Select`, `CheckboxRow`, `Switch`/`SwitchRow`, `Button`, `Dialog`, `Kbd`, the meter's cell
+  ramp (the seven cells), `toast`; Settings' `AddressField`, `geocoder.ts` and `ProfilePhoto`; `useSignOut`.
+  New compositions in `components/skater/onboarding/`: `TermsReader` (scroll window, rail, end detection
+  by `IntersectionObserver` on the end marker), `AgreeLine`, `QuestionCard`, `SeasonCard`, `DobField`.
+  Kit candidates go through §1.0's promotion rule.
+- **Core:** `meetsMinimumAge`, `parseDateOfBirth`/`dob.ts`, the username and name rules, `needsProfileSetup`.
+- **Convex:** `usernameAvailable`, `geocode.suggest`, `setHome`, `updateProfile`, `lib/clerkEmail`,
+  `lib/emailBlocks`, `sendEmailOutcome`, the `clerkAdmin.ts` request pattern.
+
+### 9.9 Where the words live
+
+- **Legal text and the questions are core data, edited in one place.** `packages/core/src/legal/terms.ts`
+  (`TERMS = { version, sections: [{ heading, blocks: [{ kind: 'p' | 'li', text }] }] }`, inline `**bold**`
+  only — the email renderer's markup), `TERMS_SHA256`, `renderTermsMarkdown`; `legal/privacyNotice.ts`
+  (`PRIVACY_NOTICE_VERSION` = `PRIVACY.md`'s *Last updated*, `PRIVACY_NOTICE_SHA256`);
+  `knowBeforeYouGo.ts` (`KNOW_BEFORE_YOU_GO = { version, questions: [{ id, prompt, right, wrong, why, say,
+  rightFirst }] }`, `KNOW_BEFORE_YOU_GO_SHA256`). The answer order is the data's `rightFirst` per question,
+  fixed and editable — the mock's `flip` — so boards, tests and keys stay stable. Its header tells the
+  founder how to edit: change the words, bump `version`, update the hash the failing test prints. A version
+  bump never re-asks anyone mid-season; the next season's asking picks it up.
+- **The screens' words** (headings, ledes, buttons, the receipt's lines, the refusal messages' client
+  fallbacks) live in `packages/core/src/onboardingCopy.ts`, so the two apps say the same thing (the
+  `hazardCopy.ts` precedent). The name is **Know Before You Go** in title case everywhere it is a name.
+- The founder's copy pass owns every string; two lines are not drawn and are this plan's drafts: the
+  receipt when no copy went ("We couldn't email you a copy. You can read the terms any time in Settings,
+  under About.") and the receipt's *Continue* when no questions are due. *As built,* the apps needed more
+  undrawn lines, all drafts and all in core so the two apps say the same thing (the governor's ruling):
+  the taken handle, the full-screen reader's way back, the Home step's location and address states, the
+  two not-saved toasts and the *Your home wasn't cleared* toast, the terms' still-connecting line (an end
+  waiting on the server), the typed-address field's own words (`ADDRESS_FIELD_COPY`, shared with the web's
+  Settings), the refusal toasts, and the delete screens' sentence (`CONSENT_RECORD_RETENTION`). Only a
+  platform's own words stay in its app: the phone's month picker ("Pick a month", "Cancel") and its
+  user-agent format.
+
+### 9.10 Observability
+
+PostHog (web only), typed in `lib/analytics.ts`, countable shape only:
+
+| Event | Properties | When |
+|---|---|---|
+| `onboarding_completed` | — | unchanged meaning: an acceptance created a profile row |
+| `terms_read_to_end` | `via: 'inline' \| 'fullscreen'` | `reachTermsEnd` succeeded |
+| `terms_accepted` | `context` (the record's four values) | `acceptTerms` succeeded |
+| `know_before_you_go_completed` | `flavor: 'first_run' \| 'season'` | the completion succeeded |
+| `welcome_step_finished` | `step: 'home' \| 'profile'`, `outcome: 'saved' \| 'skipped'` | either button |
+| `season_check_signed_out` | — | *Not now — sign out* |
+
+No miss count and no per-question event: wrong picks are not stored, in our tables or anyone's.
+`ph-no-capture` on the date of birth, the name and username fields, the quiz picks and the receipt's email
+line, so autocapture's labels can't carry a birth month or a wrong answer. The D240 test over event names
+and enum values covers the new ones. Sentry: confirm `sentryPrivacy` strips `dateOfBirth`, `email`,
+`userAgent` and `ip` at any depth of a breadcrumb's args (the account object nests the date of birth).
+*As built,* it did not strip `userAgent` or a bare `ip`; both joined its exact-match list, with the
+record's `fullName`.
+
+### 9.11 Deletion, retention, export, and the documents
+
+- **The six years.** At finalize the `consent` stage severs each record and sets `purgeAt`; `purgeDue`
+  deletes it then. Nothing earlier deletes a record — a pending deletion, a cancel and a re-onboarding
+  leave the old records as they are and add new ones. A live account's records are kept while it lives.
+- **The disclosures**, written in stage one so the PR's documents say what it makes true: `PRIVACY.md` (a
+  section on the record — what it holds, IP read from the sign-in provider's session, client-reported
+  device details, six years past a deletion then deleted, never public, in the export; the retention bullet;
+  Clerk's role in the IP), `TERMS.md` (§7 and §9 as the mock words them: the record, and re-acceptance on
+  change), `docs/account-deletion.md`. The **delete screens** in both apps (web Settings' account section,
+  mobile `AccountLifecycle`) add one plain sentence on the six years, in stage two — *as built,* one
+  sentence for both, core's `CONSENT_RECORD_RETENTION`: what the record holds (the name, email and date
+  of birth given, which terms and when, when the questions were answered), that it is kept privately
+  for six years after the deletion and then deleted, and that the Privacy Notice has the details.
+- **Export:** the records as above.
+
+### 9.12 The test plan
+
+- **Core (Vitest, `fast-check`):** `resolveEntryRoute`'s table row by row plus properties — never `app`
+  while terms are stale unless a deletion is pending, never `account` for a live complete row, priority
+  order total; `knowBeforeYouGoDue` properties — monotone in `lastAt`, exact at the 30-day edge, `null` for
+  every `lastAt` once no watch exists except `undefined`; the hashes recomputed (node `crypto`), the quiz's
+  shape (seven, distinct ids, `right ≠ wrong`, every `why` and `say` present), `renderTermsMarkdown`
+  deterministic, the Geoapify `town` parse. Instants pinned, never `Date.now()` (D243).
+- **Guards (`packages/guards`):** `termsDocument.test.ts` — `TERMS.md` between its markers equals
+  `renderTermsMarkdown(TERMS)`, `PRIVACY_NOTICE_VERSION` equals `PRIVACY.md`'s *Last updated* and its hash
+  the file's; `consentWriters.test.ts` — only `consent.ts`, the finalize stage and the purge write the two
+  tables, and every `patch` on a record names only the fill-once fields.
+- **Convex (`convex-test`, the suite's harness limits):** every `acceptTerms` refusal; create,
+  re-introduce, re-accept; the reading consumed; a username taken between steps; the 18+ edge (the
+  D294 property, through this mutation); the two actions scheduled; `captureIp` with stubbed fetch — no
+  key, a foreign session id falling back, no session, an error, never throwing, fill-once; `sendTermsCopy`'s
+  three outcomes and the receipt's mapping; `completeKnowBeforeYouGo` with no watch, a live row, a reset
+  (superseded) row, the 30-day edge, `terms_first`, a repeat while not due (*as built,* replacing the 60-s repeat); finalize severs and dates `purgeAt`
+  (a 29 February case); `purgeDue` deletes due rows and never one without `purgeAt` (the optional-index
+  trap, seeded with both); `pruneReadings`; the export's shape.
+- **Web:** stories for all 26 boards (four-up dark and light, the keyboard path asserted — 1/2, Enter,
+  Esc out of the full-screen reader), the hold in `AuthGate` tests, `authZone`'s new table, the
+  `?step=` fallbacks, the analytics no-capture attributes, `BOARD_NOW` for the season card's dates.
+- **Mobile:** no render harness exists, so each screen's logic is a plain hook or function with Vitest
+  tests (the reading's end detection, the step machine, the hold), and the screens get the device pass.
+
+### 9.13 The build: three stages and who owns what
+
+Every commit green (`pnpm check-types`, the touched suites, lint); `/code-review xhigh --fix` and the full
+suites before the PR opens. Nobody runs `convex dev` or `convex deploy`; codegen is
+`pnpm --filter @skating/convex codegen`.
+
+**Stage one — the foundation, additive (one agent, then the governor reviews before stage two starts).**
+Owns `packages/core/**`, `packages/convex/**`, `packages/guards/**`, `TERMS.md`, `PRIVACY.md`,
+`docs/account-deletion.md`, `plans/06-data-model.md`. Delivers: core's terms, notice, questions, copy,
+`resolveEntryRoute` and the season rule beside the untouched `resolveAuthRoute`; the schema widening and
+the two tables; `consent.ts`, `lib/clerkSessions.ts`, `lib/profileIdentity.ts`, the finalize stage, the
+export, the crons, the geocoder's `town`, the resend comment fixed; both guards; codegen. The old
+`upsertFromClerk` and `acceptCurrentRiskAck` keep working untouched. The founder's text call (§9.15) is
+settled before this stage commits the terms.
+
+**Stage two — the apps, in parallel (two agents, own worktrees off the stage-one commit).**
+- **Web agent** owns `apps/web/**` only: the four routes, `components/skater/onboarding/**`, `AuthGate.tsx`,
+  `lib/authZone.ts`, `lib/boot.ts`, `lib/entryHold.ts`, `lib/analytics.ts`, `routeTree.gen.ts`, the
+  Settings delete copy, stories and tests.
+- **Mobile agent** owns `apps/mobile/**` only: `app/_layout.tsx`, `app/onboarding.tsx`, `app/terms.tsx`,
+  `app/know-before-you-go.tsx`, `app/welcome.tsx`, `src/components/onboarding/**`,
+  `src/components/Toast.tsx`, `AccountLifecycle`'s copy, logic tests.
+
+Neither touches `packages/*`; a needed change there is a request to the governor, who lands it on the
+stage-one line and both rebase. The two never share a file.
+
+**Stage three — the cleanup (the governor's delegate, after both integrate; done 2026-11-24).** Deletes
+`profiles.upsertFromClerk`, `profiles.acceptCurrentRiskAck`, core's `riskAck.ts` and `resolveAuthRoute`
+(and their exports and tests), the web's `/reack`, `ReackForm`, `RiskAck`, `OnboardingForm`, `lib/riskAck.ts`,
+the mobile `reack.tsx`, `RiskAckConsent`, `src/lib/riskAck.ts`; moves the tests that named them; the inbox
+seed stamps the new fields instead. The schema keeps `riskAckVersion`/`riskAckAt` (narrows nothing). Then
+this section's findings, the roadmap entry, `/code-review`, the PR.
+
+### 9.14 Deferred and ruled out
+
+Deferred: a console view of the records (and any staff read of them beyond the CLI queries); a legal hold
+that pauses one record's purge; a minimum reading time before the box unlocks; an in-app Privacy Notice
+page (the link opens the repository's file today); the phone's profile photo step; product analytics on
+mobile; the mobile re-skin to the mocks' look; the receipt and season card's undrawn variants getting
+boards. Ruled out: storing wrong picks, anywhere; showing the terms' stamps on any screen; scroll-gating
+the Privacy Notice; a Garmin step.
+
+### 9.15 The founder's calls this build waits on
+
+1. **The terms text.** The mock's ten sections drop clauses of `TERMS.md` that are substance (item 9 of
+   §9.1). Options: (a) the mock's text as drawn; (b) the mock's voice with every dropped clause put back,
+   in its section; (c) `TERMS.md` as it stands plus the mock's two new sentences. **Recommended: (b)** —
+   the voice the founder reviewed, nothing the current terms promise given up without a decision. Settled
+   before stage one commits `terms.ts`.
+2. **Show my town without a setting of its own** (§9.6). Recommended: yes — on saves the town, off doesn't;
+   a stored switch would be a Settings and public-profile change for one onboarding toggle.
+3. **A Privacy Notice change does not re-ask.** The record pins the notice's version and hash; only a
+   terms version bump re-prompts. Recommended: yes, with counsel's view (the next section's items).
+4. **10.13's "Last answered" day stays as drawn** (§9.1 item 9). Recommended: yes — it is the skater's own
+   day, not one of the terms' stamps.
+
+**Ruled (the governor, 2026-11-24), and built that way:** (1) option (b) — the mock's voice with every
+dropped clause put back in its section; (2) Show my town stores nothing of its own; (3) a Privacy Notice
+change does not re-ask; (4) "Last answered" stays. Counsel's view on (3) is still owed (§9.16).
+
+### 9.16 Owed after merge
+
+- `convex dev --once` on dev **before the device pass or any use of the app against dev** (two tables,
+  five optional fields, indexes, two crons; widen-only, no backfill): both apps' root gates now query
+  `consent.watchAnchor`, which dev doesn't have until the push. `CLERK_SECRET_KEY` and the Resend keys
+  confirmed present on the dev deployment (names only).
+- On dev, one real acceptance checked end to end: the record's IP against the session in Clerk's dashboard,
+  and whether the web's server-side Clerk handshake ever makes Vercel's address the session's latest
+  activity (if it does, the web sends its session id from the browser only and the record's `match`
+  says so); the copy received.
+- The Android pass on a fresh EAS `preview` build (the pre-merge build cannot onboard: `upsertFromClerk`
+  is gone): a new account through all five steps, an existing account through terms and questions, a
+  canceled deletion set up again (Public profile off).
+- The founder's browser pass, desk and 390; the copy pass on every string and every drafted line (§9.9's
+  list, the refusal toasts, the delete sentence, the copy email's intro).
+- Counsel's questions (L1, L3): agreeing to a privacy notice in the terms' line, the six years and tolling,
+  IP as evidence, keeping the record through a deletion request.
+
+### 9.17 What the build found
+
+Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
+
+- **Hashes are ledgers, not one constant.** A single committed SHA-256 per text would have made every
+  earlier version's records unverifiable the day the text changed; each text keeps an append-only ledger
+  keyed by version (R5 is corrected).
+- **The hold belongs in the rule.** Each gate holding the receipt its own way would have let them differ;
+  `resolveEntryRoute` takes `hold` and answers `receipt` (§9.3's table gains the row). Both apps set it
+  before the send — a hold set on the answer lost the race to the redirect.
+- **`userAgent` is optional.** A browser can report none, and an empty one is stored as none.
+- **A Clerk error doesn't fall back.** Only a named session that exists and is someone else's falls back
+  to the most recent one; an error records `error` (R4 is corrected).
+- **The sweeps and the readers needed edges.** `purgeDue` also requires `severedAt` and re-schedules only
+  after a page that deleted something; `openTerms` and `reachTermsEnd` refuse a banned, finalizing or
+  deleted profile, so no reading outlives `erase`; the CLI lookups returned the *oldest* 200 past their
+  cap, and now return the newest.
+- **The terms as built.** Section 9 is headed "When these terms change"; a few of the risk phrases are
+  bold (the email renderer's `**…**`, the one markup the data allows).
+- **The two apps drifted, and were brought back.** The web sent only `username_taken` back to the
+  Account step, opened the season card straight after the receipt, and kept "or" and the location
+  button under the open suggestion list (the phone did too); each now matches the phone or the board,
+  and the refusal set is core's. Both apps wrote the Public switch only when it was switched off, so a
+  private account could not be made public from the step; both now write only a change. Each app had put the undrawn lines in a file
+  of its own; they moved to core, one wording each.
+- **A re-introduced account was being made public.** `acceptTerms` reset a canceled deletion's emptied
+  row to the new-account default; it now keeps the row's visibility (D298), as `upsertFromClerk` did.
+- **The web's phone layout keys on the card, not the viewport.** The way in's screens switch to rows 11
+  at the entry card's own width (a container query), so a narrow pane on a desk gets the phone layout.
+- **The month list's plate is the kit's.** One screenshot made the date of birth's month list look
+  see-through: it sits on `--plate-solid`, the token every Select and menu shares, which is 96% opaque by
+  design, so the form under it shows at 4% (as in Settings). A story holds the plate and the finished
+  fade; whether the token should be fully opaque is a design call, not this build's.
+- **Sentry kept two of the record's fields.** `userAgent` and a bare `ip` passed `sentryPrivacy`; both are
+  withheld now, with `fullName`.
+- **Nothing `upsertFromClerk` did was lost.** Its every behavior — the defaults, the server's stamps, the
+  18+ gate, the name and username rules, the Clerk mirrors (the first of the three writers), the inactive
+  and deleted rows left alone, the minor forced private and the grown-up kept private, the People row —
+  is now held by tests against `acceptTerms`; the inbox seed stamps the routing fields instead of the
+  acknowledgment.
+- **The review's eleven (2026-11-24).** A banned, finalizing or suspended account with stale consent
+  was routed to the terms, which its own gate refuses: it lost the app and the appeal; the rule now
+  sends an account that can't act to `app` (`canActNow`, shared with `requireProfile`), and the gates
+  wake when a suspension lapses. A client whose bundled words weren't the server's was told
+  `terms_changed`/`questions_changed` and re-read the same text forever; the questions now take any
+  published version, and the terms and notice answer one `client_outdated` that stops on a blocking
+  screen. The `'unpublished'` sentinel matched itself, so a build mid-edit could record an acceptance
+  (`claimMatches` refuses it). Repeat acceptances and completions sealed new records and sent new
+  emails; they now return the first. An emptied row could complete the questions under the scrubbed
+  name. The web counted the end without a scroll (an observer rooted at a window that clips nothing,
+  chosen once at mount), re-ticked the agreement after a reset, retried a failing end in a tight loop,
+  kept an abandoned address's town, and let a late location fix overwrite the home; the phone's
+  reading never recovered from `terms_not_opened` (a cached opening). Each is fixed and tested.
+- **The second review's eight (2026-11-24): gaps the first round's fixes left.** The Home step held
+  Skip and Save while a location read was out, and a permission prompt nobody answers never ends one
+  (`currentPosition` now gives up after 30 s; neither button waits; either press drops a late fix). An
+  old build bundling the terms a profile last accepted routed itself to the questions and was told
+  `terms_first` forever: the completion now carries the client's terms claim and answers such a build
+  `client_outdated`. The web's restart re-armed its end at once and scrolled only the inline reader,
+  so a failing open looped in the full-screen reader; a restart now scrolls every reader to its top and
+  stays disarmed until the end leaves and comes back. The web's wake-up timer was keyed on its instant
+  alone, so one that fired a hair early set no new one (the wake count is a dependency now, as on the
+  phone). The town went before a failed save had kept the address it belonged to (the address now goes
+  with it). The phone patched up a lost reading by opening and stamping in one breath, a record of
+  terms opened and finished in the same instant; it now does what the web does. The rule judged a
+  suspension by the device's clock (a five-minute margin, and a can't-act refusal sends the skater to
+  the app — both replaced in the third round, below). A second tab counted one sealed record twice in
+  analytics (`repeat` on both returns).
+- **The third review's ten (2026-11-24): what the second round's fixes broke or left on one app.** The
+  five-minute margin let a just-lapsed suspension into the app without the consent it owed, and its
+  five-minute refusal hold bounced a fast clock between the app and a refused step: the rule now judges a
+  suspension at the instant, and a can't-act refusal holds the skater in the app while the profile's
+  `status` and `suspendedUntil` are unchanged (removed in the fourth round, below). A failed opening ended
+  the reading with a silent jump to the top: it is now retried as the skater scrolls, and an end reached
+  with none says why. The Home and Profile steps swallowed the server's can't-act refusal of their own
+  saves. The phone's `terms_not_read` re-armed on a fresh opening, stamping it at once. The phone's Home
+  step let a late fix replace a picked address, never gave up on a read nobody answered, and kept the
+  picked address on the field after a failed skip. The web's 30-second give-up failed a slowly answered
+  prompt (Settings too); one rule in core now bounds the busy state and not the read, for all three
+  callers. The phone reading's stale-opening guards gained their tests, core's stranded import moved
+  up, and two web tests restore their spies in `afterEach`.
+- **The fourth review's nine (2026-11-24): the can't-act hold removed, and what the third round's
+  fixes left.** The client-side can't-act hold had produced a defect in each of three rounds (a
+  five-minute free pass, a bounce loop, then a hold that outlived a naturally lapsed suspension — the
+  row's fields don't change until a sweep — or one recorded from a standing that could act, which
+  re-engaged later and pinned the skater in the app). It existed for one rare case, a suspended
+  account owing consent on a device clock ahead of the server's in the suspension's last moments, so
+  it is gone on both apps and in core (the governor's ruling). **Accepted limit:** a device whose
+  clock is ahead of the server's shows the consent step that early at the end of a suspension, and
+  pressing its button says "Account is suspended" until the suspension really ends; it clears by
+  itself and needs no reload (§9.3). A can't-act refusal is now a toast in the server's words and
+  nothing else; at the Terms step's end it no longer adds `terms_not_opened`, restarts the reading or
+  sends another opening. An end reached while an opening (first or retried) was out could still be
+  stamped the moment it answered; it now never counts on that opening, on both apps. A device clock
+  set back stopped the opening's retries for as long as the step back (now due at once). Settings'
+  home kept a location read across the browser's Back, and its failed line across Cancel and the
+  next Edit (the form is now keyed by its view). The phone's Home step let the location button be
+  pressed mid-save and kept a failed skip's old suggestions listed; its You tab hung on a read
+  nobody answered (now core's rule). The phone reading's doc comment was put back on its function.
+  (The end's leave-and-come-back rule and the can't-act end's disarm were replaced in the fifth
+  round, below.)
+- **The fifth review's nine (2026-11-24).** The fourth round's rule for an end reached while an
+  opening was out — it never counted, and the marker had to leave and come back — left the agree box
+  locked with nothing said on a slow first opening, and a text that fits the screen could never
+  count. As ruled, the end now waits for that opening's answer: the reading's first opening, answered,
+  stamps it; refused, it is said once and the reading starts again; a retried one's answer, either
+  way, starts the reading again with one toast (§9.6). The leave-and-come-back disarm is back to
+  a failed end stamp and a restarted reading only, so a can't-act end now restarts like any unopened
+  end, in the server's words, and quiet retries are never paused. The web's step said a late opening failure on another
+  screen (it now goes quiet when unmounted). Settings' home painted *Change home* without its address
+  field, which popped in a round trip later (the provider's `on` is now learned once a session),
+  pulled the skater back to the home when a save answered after they left, and said nothing for a
+  failed Clear. The phone's You tab kept a read armed past its give-up and across tab changes (now
+  dropped), failed Clear silently and said a refused save as a location failure with no busy label.
+  The phone's address field could mistake an effect for an older value for an outside change and drop
+  the live query (an explicit `reset` counter now).
+- **The sixth review's nine (2026-11-24).** The phone's You tab returned to idle, saying nothing,
+  when its give-up dropped a read (it now says its couldn't-locate line). The docs still called the
+  stamps a measure of reading time and a restart's disarm gone (corrected, below). Settings' refused
+  home Save kept an inline line, and a failed Clear on either app said the home wasn't *saved*: both
+  are toasts now, a Clear in its own words. A reached end waiting on the server said nothing (a
+  quiet line after three seconds now, both apps). The geocoder's probe taught the session nothing if
+  its field had unmounted. The web step's two gone guards gained tests. A text that fits the screen
+  after a restart is recorded as a known limit, below.
+- **What the three stamps are, and are not (the governor's ruling).** `openedAt`, `reachedEndAt` and
+  the acceptance's time are when the server heard of each moment: the opening, the end on screen,
+  the button. They are not a measure of reading time, and nothing reads them as one. An end that
+  waited on its opening is stamped when the opening answers, so a device offline for the whole read
+  sends both on reconnect and `openedAt` and `reachedEndAt` land together; that is accepted. What
+  the record does hold is the order — opened, then the end, then the acceptance — and the words
+  (version and hash).
+- **Known limit: a text that fits the screen locks for good after a restart.** A restarted reading's
+  end counts only once the marker has left the screen and been reached again; when there is nothing
+  to scroll the marker can never leave, so the agree box stays locked until the step is left and
+  entered again. Lifting it on both apps needs each to know whether its reader scrolls *and* whether
+  the new opening has answered (the web's reader and its step each hold one half), plus a guard so a
+  refusing server can't loop: more than a few lines, so it is recorded instead (the governor's
+  fallback). It cannot occur with today's terms (about 1,700 words, never one screen on either app);
+  a short text, or a much larger screen, would need it lifted first.
+- **A completion could hold no address (Greptile on #180).** Only the terms copy's send asked Clerk
+  for an address the token lacked, so a questions record from such a token, before the profile's mirror
+  had one, kept none, and once deletion severed it `recordsByEmail` could never find it. The completion
+  now schedules `fillRecordEmail` (fill-once) in that case. The profile's mirror stays with its three
+  writers: a lookup has no `updated_at` to order it against the webhook, so filling the mirror from it
+  could put back an address the person had since changed.
+- **The copy could carry words that weren't accepted (Greptile on #180).** `sendTermsCopy` rendered the
+  current `TERMS` when it ran, not the version on the acceptance, so a send that waited across a
+  deployment that changed the terms would mail different words under "the Terms of Use you accepted".
+  `acceptTerms` now renders the copy from the same `TERMS` its record names and passes it in the job's
+  arguments (about 9 KB of strings; a scheduled job's arguments are stored as a document, limit 1 MiB);
+  a test swaps the server's terms between an acceptance and its send.

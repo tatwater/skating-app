@@ -626,6 +626,9 @@ spatial + visibility + safety logic is exactly what property tests and `convex-t
 are good at. Vitest keeps one runner/config idiom across the stack (matches D7).
 
 ## D41 — Minimum age 16; minors get private profiles and are read-only (interim)
+> **Amended by [D294](#d294--the-minimum-age-is-18-nobody-under-18-holds-an-account-amends-d41) (2026-11-22).** The minimum is **18**, so no new account is a
+> minor. The under-18 mechanics below stand in the code, unreachable by a signup.
+
 **Decided (mechanics revised 2026-07-15 alongside the D13 "reports are always public" simplification).**
 - **Minimum age is 16.** Under-16 accounts are not permitted. **We collect the user's
   date of birth at signup** and *derive* the age gate (≥16) and minor status (<18) from
@@ -754,6 +757,10 @@ and the per-body feed query off it. If the path matches no known body, we fall b
 to the D14/D36 create-or-attach flow (offer to create/attach a water body).
 
 ## D45 — In-app assumption-of-risk acknowledgment at signup (interim, pre-legal)
+> **Amended by [D295](#d295--the-terms-of-use-are-read-to-the-end-and-their-acceptance-recorded-it-replaces-the-risk-acknowledgment-amends-d45) (2026-11-24).** The acknowledgment retires: a skater reads
+> the Terms of Use to the end and their acceptance is recorded instead. Built in B03 §9; until that
+> build's last stage lands, the mechanics below are still the code.
+
 **Decided.** Because this is a *safety* app, signup includes a short, blocking
 **assumption-of-risk + non-authoritative acknowledgment** ("reports are peers'
 observations, never a safety guarantee; you alone decide whether to step on ice") and
@@ -1430,6 +1437,9 @@ curating a water body meant holding it in your head across a queue row, a CSV an
 alpha skaters see materially better. One map, one session, every lever.
 
 ## D62 — Account deletion: a 30-day grace window, and three buckets rather than two (A03, amends D33)
+> **Amended by [D297](#d297--the-consent-record-sealed-severed-from-the-account-at-deletion-kept-six-years-then-purged-amends-d62) (2026-11-24).** The record of a skater's terms acceptances and
+> Know Before You Go completions outlives the account: severed at finalization, purged six years later.
+
 **Decided (2026-07-27).** D33 settled *that* users can delete and export, and that public content is
 **anonymized rather than erased**. Both still hold. What D33 could not have known is what the app would
 later store, so this amends its mechanics.
@@ -8776,3 +8786,189 @@ a Corpus item still to come that would duplicate it. Renaming now, while the URL
 inside the console, costs one route and no redirect.
 
 **Related:** D216, D217, [`phase-B01`](./phases/B01-admin-console.md) §5.3.
+
+## D294 — The minimum age is 18: nobody under 18 holds an account (amends D41)
+
+**Decided (2026-11-22, founder).** `MINIMUM_SIGNUP_AGE` is **18**, up from D41's 16. Web, mobile
+and `profiles.upsertFromClerk` read the one constant, so the gate, its message and the server's
+refusal moved together; `TERMS.md` §3 and `PRIVACY.md` say 18 and drop the under-18 passages.
+- **The gate errs toward refusing.** `meetsMinimumAge` evaluates age at `now − 12 h` (UTC−12, the
+  last calendar on Earth to reach a date), where under D41 it evaluated at `now + 14 h` to admit a
+  16-year-old early. At 18 the old direction admitted a 17-year-old for up to the last 19 hours
+  before a birthday (in US Eastern) and left that new account a minor, forced private, until UTC
+  caught up. Now whoever passes the gate is an adult on every calendar and by `isMinor`'s clock,
+  held as a property test. A skater waits at most until noon UTC on their 18th birthday.
+- **The under-18 protections stay, dormant.** `isMinor`, the authoring gates (reports, hazards,
+  confirmations, comments, photos, bounties) and the forced-private profile are untouched and
+  still apply to any row that is a minor. Onboarding's own "force a minor private" branches can no
+  longer be reached, so `profilesMinorSignup.test.ts` runs it with the gate held open: lowering
+  the minimum again is the constant plus policy work, and can never mint a public 17-year-old.
+- **Nobody is grandfathered, because nobody is there.** Dev held no under-18 account on
+  2026-11-22 (15 profiles, checked), and production has never been initialized. An under-18 row,
+  were one to exist, keeps its account under the read-only rules but cannot re-run onboarding.
+- **No re-acknowledgment.** `RISK_ACK_VERSION` is not bumped: the acknowledgment's words are
+  unchanged and every existing account already meets the new minimum.
+
+**Why:** Gli's posture rests on each skater accepting, for themselves, that reports are peer
+observations and that the choice and the risk on the ice are theirs (D3, D45). An agreement made
+by a minor is the weakest link in that: read-only (D41) kept a 16-year-old from *authoring* safety
+content, but they still had to accept the terms to read it. At 18 everyone who accepts is of age
+to. It also clears the ground for the onboarding being designed now, which records a scrolled-and-
+accepted terms and a per-season set of acknowledged statements; those records are only worth
+keeping if the person who made them could. D41 chose 16 so the occasional independent teen skater
+could take part. That is still wanted, and it is now a question for counsel (Q10, L2) with a
+built answer waiting, not a default we ship first.
+
+**Related:** D41, D45, D13, D37, Q10, [`minors-and-age-policy`](../docs/minors-and-age-policy.md).
+
+## D295 — The Terms of Use are read to the end and their acceptance recorded; it replaces the risk acknowledgment (amends D45)
+
+**Decided (2026-11-22 to 2026-11-24, founder; the governor's rulings on what he didn't spell out are
+marked).** A skater accepts the Terms of Use by reading them, not by ticking a box beside a link:
+- **Read to the end first.** The terms are shown in full in the app; the checkbox unlocks only once
+  the end of the text has been on screen. On a desk an *Open in full-screen* reader exists, and
+  reaching its end counts. On a phone the page is the reader.
+- **One line agrees to both documents:** *"I have read and agree to the Terms of Use and the Privacy
+  Notice."* The Privacy Notice is a link in that line and is never scroll-gated. The button is
+  *Record acceptance*.
+- **The server stamps three moments** — the terms opened, their end reached (and in which reader), the
+  acceptance — and **none of them is ever shown on a screen**. They are evidence, not interface.
+  Each is when the server heard of that moment, **not a measure of reading time**: an end reached
+  while the opening is still on its way is stamped when the opening answers, so a device offline for
+  the whole read lands its opening and its end together on reconnect (the governor's ruling,
+  2026-11-24). They prove the order and the words, not how long anyone read.
+  After the acceptance the skater sees *Acceptance recorded* and that a copy of the accepted terms was
+  emailed to them (sent through the existing Resend transport; the line changes only when the send is
+  known not to have happened — the governor's ruling).
+- **The text accepted in the app is versioned data in `packages/core`**, with a committed SHA-256; the
+  record stores the version and the hash, and `TERMS.md` is held to core's rendering by a
+  `packages/guards` test, so the file and the app cannot say different things. The Privacy Notice's
+  version and hash are pinned beside it (the governor's ruling). **A terms version change re-asks
+  everyone** at their next sign-in, as `TERMS.md` §9 says; a privacy-notice change alone does not
+  (the governor's recommendation, the founder to confirm). An app carrying other words than the
+  server's — an old phone build, a tab open across a deploy — is told it is out of date and asked to
+  reload or update, never sent round the same text again (the governor's ruling, 2026-11-24).
+- **D45's acknowledgment retires.** `RISK_ACK_VERSION`, `upsertFromClerk`'s acknowledgment,
+  `acceptCurrentRiskAck` and `/reack` are removed by the build's last stage; existing accounts pass
+  through the terms (and the questions, D296) at their next sign-in. The profile's
+  `riskAckVersion`/`riskAckAt` stay in the schema, unread (nothing narrows).
+
+**Why:** Gli's posture rests on each skater accepting, for themselves, that reports are peers'
+observations and that the decision and the risk on the ice are theirs (D3). D45's single checkbox
+was the right interim and is weak evidence: it shows a box was ticked, not that anything was read or
+which words were agreed to. Making the text read to its end, pinning its exact version, keeping the
+moments and sending the skater their own copy turns the acceptance into a record that can stand on
+its own — which is also why the stamps stay off the screen: they are kept for the record, not to
+make the skater feel watched. One line for both documents keeps the moment short; the notice is
+informational, so gating it on a scroll would add friction without adding meaning.
+
+**Related:** D3, D45, D37, D294, D296, D297, D298, Q10, L1, B03 §9.
+
+## D296 — Know Before You Go: seven questions at sign-up and again each season, keyed to the Ice Watch's opening
+
+**Decided (2026-11-22 to 2026-11-24, founder; the governor's rulings marked).**
+- **Seven questions, one at a time**, each answered by picking one of two first-person sentences; the
+  order of the two varies by question (fixed in the data and editable, the governor's ruling). A wrong
+  pick says why and waits for the right one. **Wrong picks are never stored** — not in our tables, not
+  in product analytics, and autocapture is kept off the answers.
+- **The name is Know Before You Go**, never "ground rules" or a "safety check": the tone is "you know
+  this, we're just making sure", not "you must obey". Gli checks nothing about the ice (D3).
+- **The questions live in one versioned source in `packages/core`**, with a committed hash, so the
+  founder can rewrite them each summer in one file; a new version applies from the next season's
+  asking and never re-asks anyone mid-season (the governor's ruling). A completion of **any
+  published version** counts and names the words answered, so an older app keeps working after the
+  yearly edit (the governor's ruling, 2026-11-24).
+- **Every season, again.** A skater answers them at their first sign-in after the Ice Watch opens a new
+  season. The anchor is the instant the system recorded the opening (`imageryIngestSeasons.detectedAt`
+  on the live row; a reset postpones an opening, so a superseded row never anchors — the governor's
+  ruling). **Answers given in the 30 days before that instant count** toward the season. Before any
+  season has opened, only a skater who has never answered is asked.
+- Each completion is a record (D297): who, which version, when, which season was current, and the IP.
+
+**Why:** the reports are only as safe to use as the reader's habits — reading a report as one person's
+look at one spot, checking the ice yourself, telling someone your plan, bringing the gear. A skater
+who has done this for years knows every answer; a minute at the start of a winter is a cheap reminder
+when it matters most, and the same seven for every skater keeps it fair. The 30-day window means
+someone who joins in early November isn't asked again a fortnight later. Not storing misses keeps the
+point on learning rather than grading, and avoids building a list of who once picked a wrong answer
+to a safety question.
+
+**Related:** D3, D63, D149, D212, D213, D243, D295, D297, B03 §9.
+
+## D297 — The consent record: sealed, severed from the account at deletion, kept six years, then purged (amends D62)
+
+**Decided (2026-11-24, founder; the governor's rulings marked).**
+- **One sealed, append-only record per terms acceptance and per Know Before You Go completion**
+  (`consentRecords`). Each holds an identity snapshot as attested — full name, email, date of birth —
+  the version and hash of what was accepted or answered, the server's stamps, the season current at
+  a completion, the IP address, and the client-reported device and user agent, labeled as such. Not
+  stored: wrong picks. After the insert, only named fill-once fields may be written (the IP, the
+  copy's send outcome, an email the token lacked) and the deletion's sever; a guard holds that.
+- **The IP comes from the sign-in provider, server to server** (the governor's ruling, revised against
+  the code): Convex gives a mutation no caller address, and the session id is not in our token, so a
+  scheduled action reads the caller's Clerk session — the one the client names, verified as theirs,
+  else their most recently active one — and stores its latest-activity IP with a field saying how it
+  was matched. It is never allowed to delay or fail the acceptance; without the key or a session it
+  records why it has none.
+- **Six years past a deletion.** At finalization each record's links to the account (profile and Clerk
+  subject) are severed, so it cannot re-identify the anonymized public ice record, and a purge time
+  six calendar years on is set; a bounded daily cron deletes due records. A canceled deletion
+  re-onboards and writes new records beside the old ones. While the account lives, its records are
+  kept.
+- **The skater's own data export includes their records** (without the email or internal ids, by the
+  export's existing rule). No staff screen reads them in this build; a CLI lookup by account or email
+  exists for when a record is needed.
+- `PRIVACY.md` and both apps' delete screens say this plainly.
+
+**Why:** the record exists for one situation — someone is hurt on the ice and the question becomes
+what they had read and agreed to — and that question can arrive years after the skater left the app.
+Six years is Maine's limitation period for an injury claim, the longest in the coverage area (the
+founder's figure; counsel confirms it, and tolling). Severing keeps D62's promise that the departed
+skater's observations are not tied back to them; keeping the identity snapshot inside the record is
+what makes it worth keeping, and is disclosed rather than hidden. Purging on a clock keeps it from
+becoming a permanent file on someone who left.
+
+**Related:** D33, D62, D248, D295, D296, Q10, L1, L3, B03 §9.
+
+## D298 — The onboarding: five steps, the profile made at Record acceptance, existing accounts through terms and questions, both apps now
+
+**Decided (2026-11-22 to 2026-11-24, founder; the governor's rulings marked).**
+- **The order is Account → Terms → Know Before You Go → Home → Profile.** No Garmin step. Account takes
+  the full name, a username and a date of birth (the month picked by name, day and year typed); 18 and
+  over (D294). Home is the address with the provider's suggestions, or the current location, and can
+  be skipped. Profile is all optional: a photo, bio and town, with **Public profile on** and **Show my
+  town on** by default. **A canceled deletion's account keeps the visibility it has when it is
+  re-introduced** — private, as the request left it — and its Profile step shows the switch off (the
+  governor's ruling, 2026-11-24): someone who asked to be deleted should never be made public by a
+  default, only by their own switch.
+- **The profile row is created at *Record acceptance*, not before** (the governor's ruling). The Account
+  step validates without writing; the server refuses the acceptance unless the terms' end was
+  reached. So every profile that exists has an acceptance on record, and the server's existing gates
+  and every test fixture stand unchanged.
+- **Routing stays one shared pure rule in core** for both apps: no profile → the Account and Terms
+  steps; terms missing or stale → the terms; the questions never answered or stale for the season →
+  the questions (a first-run screen, or *A new season on the ice* for a returning skater); a new
+  account's Home and Profile pending → those; otherwise the app. A pending deletion is never routed
+  through any of it (the governor's ruling), nor is an account the server refuses right now —
+  banned, being finalized, or suspended — which goes to the read-only app and its support screen
+  until it can act again (the governor's ruling, 2026-11-24; a suspension's end is judged at the
+  instant, as the server judges it, with no margin. A refusal heard on a way-in step routes
+  nothing: it is a toast in the server's words. The accepted limit: a device clock running ahead
+  of the server's shows the consent step that early at a suspension's end, and its button says
+  "Account is suspended" until the suspension really ends, then works, with no reload, B03 §9.3,
+  §9.17). Stale terms and questions are client-routed, as the acknowledgment was.
+- **Existing accounts** see the terms and the questions at their next sign-in, and never the Home and
+  Profile steps.
+- **Built on the web and in the Android/iOS app in the same PR**, the phone on its existing design
+  tokens as an approximation of the mocks; a re-skin comes later. The 18+ change (D294) ships in the
+  same PR, recorded as an addition to Phase B03, not a new phase.
+
+**Why:** the order puts who you are and what you agree to before anything else, and the questions
+before the map; home and profile come last because they are useful, optional and easy to change in
+Settings. Public on by default because every account is an adult (D294) and reports are public
+anyway. Creating the row only at acceptance keeps "a profile means consent was recorded" true by
+construction rather than by a check someone has to remember. One PR because the age line and the
+acceptance it protects (D294's reasoning) belong together, and one rule for both apps because two
+gates drift.
+
+**Related:** D13, D26, D41, D45, D294, D295, D296, D297, B03 §9.

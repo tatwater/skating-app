@@ -65,6 +65,12 @@ import {
 import { defineSchema, defineTable } from 'convex/server';
 import { v } from 'convex/values';
 import {
+  consentRecordFields,
+  consentSurface,
+  termsReaderVia,
+  welcomeStep,
+} from './lib/consentValidators';
+import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_STATUSES,
   ACCESS_ALERT_TARGETS,
@@ -172,9 +178,9 @@ export default defineSchema({
     homeCoord: v.optional(latLng), // PRIVATE — filter input only (D11); set at onboarding
     homeTownLabel: v.optional(v.string()), // optional PUBLIC label (D11)
     bio: v.optional(v.string()), // optional PUBLIC blurb, shown only on a public profile (D13)
-    // Avatar mirrored from Clerk's `imageUrl` — written at `upsertFromClerk` (Phase 03 decision #2) and
-    // refreshed on every app open by `syncFromClerk` — no upload pipeline; users manage it via Clerk's
-    // own UI. Optional ⇒ migration-free; scrubbed on deletion.
+    // Avatar mirrored from Clerk's `imageUrl` — written at onboarding (`consent.acceptTerms`; Phase 03
+    // decision #2) and refreshed on every app open by `syncFromClerk` — no upload pipeline; users
+    // manage it via Clerk's own UI. Optional ⇒ migration-free; scrubbed on deletion.
     profileImageUrl: v.optional(v.string()),
     driveTimePrefMinutes: v.number(), // legacy single pref (D18); superseded by the bands + notif radii below
     // Drive-time bands derived from the PRIVATE `homeCoord` (Phase 04, decision #2). 30/60 are hosted-ORS
@@ -262,7 +268,8 @@ export default defineSchema({
     timezone: v.optional(v.string()),
     /**
      * The primary email, mirrored from the Clerk identity's `email` claim — written at
-     * `upsertFromClerk` (A08 PR 3 / D174) and refreshed on every app open by `syncFromClerk` — the same
+     * onboarding (`consent.acceptTerms`; A08 PR 3 / D174) and refreshed on every app open by
+     * `syncFromClerk` — the same
      * posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is not a Clerk API call per
      * recipient (`lib/clerkEmail` says why that doesn't scale). PRIVATE:
      * never on a public profile, scrubbed at the deletion request and again at the tombstone. Absent
@@ -289,8 +296,22 @@ export default defineSchema({
      */
     emailUnsubscribeSecret: v.optional(v.string()),
     dateOfBirth: v.number(), // UTC-midnight epoch ms; age gate (≥16) + minor status (<18) DERIVED (D41)
-    riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45)
+    riskAckVersion: v.optional(v.string()), // assumption-of-risk accepted (D45); retiring, unread (D295)
     riskAckAt: v.optional(v.number()),
+    /**
+     * **The way in's routing state** (D295, D296, D298; B03 §9.4): a denormalization of the newest
+     * `consentRecords` rows, so `resolveEntryRoute` reads one profile rather than the records.
+     * Written only by `consent.ts`; cleared by the tombstone. None is indexed. `termsVersion` and
+     * `termsAcceptedAt` are the latest terms acceptance; `knowBeforeYouGoAt` and
+     * `knowBeforeYouGoVersion` the latest Know Before You Go completion; `welcomeStep` is set only
+     * when an acceptance creates or re-introduces an account (Home, then Profile) and cleared by the
+     * Profile step. All optional ⇒ migration-free: a row without them is routed to the terms.
+     */
+    termsVersion: v.optional(v.string()),
+    termsAcceptedAt: v.optional(v.number()),
+    knowBeforeYouGoAt: v.optional(v.number()),
+    knowBeforeYouGoVersion: v.optional(v.string()),
+    welcomeStep: v.optional(welcomeStep),
     reputationPoints: v.number(), // cosmetic/reputational only (D17); aggregated from `pointEvents` (D50, Phase 06)
     // Separate achievement currency for fulfilling bounties (D17 decision 11) — kept OUT of
     // `reputationPoints` so trust stays purely about report/hazard accuracy. Optional ⇒ migration-free;
@@ -449,6 +470,39 @@ export default defineSchema({
       searchField: 'displayName',
       filterFields: ['profileVisibility'],
     }),
+
+  /**
+   * **A reading of the terms before it is accepted** (D295, B03 §9.4): when the reader opened and when
+   * its end was on screen, server-stamped, so the acceptance's record is written once and whole.
+   * Keyed by the Clerk subject because a new account has no profile yet. Deleted by the acceptance
+   * that consumes it, by the finalize `erase` stage, and by `consent.pruneReadings` 30 days after it
+   * opened. Written only by `consent.ts` (`packages/guards` `consentWriters.test.ts`).
+   */
+  termsReadings: defineTable({
+    clerkUserId: v.string(),
+    termsVersion: v.string(),
+    openedAt: v.number(),
+    reachedEndAt: v.optional(v.number()),
+    reachedEndVia: v.optional(termsReaderVia),
+    /** Client-reported. */
+    surface: consentSurface,
+  })
+    .index('by_clerk_version', ['clerkUserId', 'termsVersion'])
+    .index('by_opened', ['openedAt']),
+
+  /**
+   * **The consent record** (D297, B03 §9.4): one sealed, append-only row per terms acceptance and per
+   * Know Before You Go completion. After the insert only named fill-once fields change — the IP, the
+   * copy's outcome, an email the token lacked — and the finalize sever; the purge is the only delete
+   * (`packages/guards` `consentWriters.test.ts`). Wrong picks have no field anywhere.
+   *
+   * ⚠ `by_purge` is an index on an optional field, so it is not sparse: every live record sits in it
+   * with `undefined`, which sorts first. Every range on it starts `gte('purgeAt', 1)`.
+   */
+  consentRecords: defineTable(consentRecordFields)
+    .index('by_profile', ['profileId', 'kind', 'recordedAt'])
+    .index('by_email', ['identity.email'])
+    .index('by_purge', ['purgeAt']),
 
   /**
    * **One light row per person, for the People lists** (B01 §5.7) — exactly what a list shows, sorts

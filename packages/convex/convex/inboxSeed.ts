@@ -30,14 +30,15 @@
 import {
   allLevels,
   cellForPoint,
+  KNOW_BEFORE_YOU_GO,
   type LatLng,
   NOTIFICATION_PREF_KEYS,
   nameSortKey,
   pointInPolygon,
-  RISK_ACK_VERSION,
   representativePoint,
   SCOPE_ALL,
   standingOf,
+  TERMS,
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { LineString, MultiPolygon, Polygon } from 'geojson';
@@ -2263,8 +2264,14 @@ export const ensurePeople = internalMutation({
         notificationPrefs: PREFS_OFF,
         channelPrefs: CHANNELS_OFF,
         dateOfBirth: Date.UTC(1980 + i, i % 12, 1 + i),
-        riskAckVersion: RISK_ACK_VERSION,
-        riskAckAt: now,
+        // Routed as an account through the way in (D298): the current terms accepted and this
+        // season's questions answered, so a seeded person reads as any skater who has done both.
+        // The seed writes no consent record — these people never accepted anything; nothing reads
+        // a record to route.
+        termsVersion: TERMS.version,
+        termsAcceptedAt: now,
+        knowBeforeYouGoAt: now,
+        knowBeforeYouGoVersion: KNOW_BEFORE_YOU_GO.version,
         reputationPoints: p.reputationPoints,
         reportCount: 0,
         commentCount: 0,

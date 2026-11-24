@@ -20,7 +20,7 @@ your notes, your comments, your photo captions, permanently.
 
 Decisions behind this: **D33** and **D62** with its amendments (the window, the buckets, read-only,
 redact-don't-erase), **D58** (publish-is-consent), **D13** (all reports public), **D3** (never assert
-safety).
+safety), **D297** (the consent record, kept six years past finalization).
 
 ---
 
@@ -89,6 +89,11 @@ The **observations**, indefinitely, for the community's sake rather than yours:
   can be posted or fenced by now.
 - **Published GPS tracks**, severed from your identity — see [the four buckets](#the-four-buckets).
 
+And one thing for a different reason, and for a fixed time: **the record of what you agreed
+to** — each terms acceptance and each Know Before You Go completion, with the name, email and date of
+birth they were made under — sealed, severed from the account at finalization, and purged six years
+later. See [the consent record](#the-consent-record-sealed-severed-six-years).
+
 ---
 
 ## Signing back in, and what canceling can't do
@@ -108,9 +113,11 @@ photo before leaving must not silently un-delete themselves.
 | Your reserved @handle | The notes, comments and captions already cleared |
 | Every report, hazard and track you filed | Your saved drive-time bands |
 
-You're routed back through onboarding to introduce yourself again — the same screen as a new account.
-That's the honest version of what happened: the data was deleted, and a cancel that pretended
-otherwise would be the one dishonest thing in this flow.
+You're routed back through onboarding to introduce yourself again — the same Account and Terms steps
+as a new account, and the questions if this season's aren't answered. That's the honest version of
+what happened: the data was deleted, and a cancel that pretended otherwise would be the one dishonest
+thing in this flow. Your earlier consent records stay as they were (a pending deletion never touches
+them), and the new acceptance writes a new one beside them.
 
 The **handle is reserved, not released**. Invisibility comes from the read gates, not from mutating
 the field, so releasing it would buy nothing and could cost you your name to a squatter in a window
@@ -119,7 +126,9 @@ you might well cancel in.
 One field is deliberately *not* scrubbed at request, and it's worth knowing why: **date of birth**.
 Scrubbing it means writing the tombstone's fixed 1900 sentinel, which derives to *adult* — so a minor
 who canceled would come back with an adult's posting rights. It's the one place a privacy scrub would
-open a safety hole, so it waits for finalization, where there's no coming back.
+open a safety hole, so it waits for finalization, where there's no coming back. (The consent record
+keeps its own copy, as attested at each acceptance; that copy lives outside the profile and follows
+[its own clock](#the-consent-record-sealed-severed-six-years).)
 
 ---
 
@@ -234,7 +243,10 @@ the request; the private side-tables wait for finalization.
 - **OAuth tokens** (Strava and any future watch provider)
 - **Home location and drive-time bands** *(at request, with the profile)*
 - **Saved lakes** (still editable during the window — a private bookmark, not a contribution),
-  **feed filter preferences**, **risk acknowledgements**
+  **feed filter preferences**, **risk acknowledgements**, and the profile's own **terms and Know
+  Before You Go fields** (the tombstone clears them)
+- **Terms reading stamps** (`termsReadings`) — the opened and read-to-the-end moments of a reading
+  that never became an acceptance, keyed by the Clerk subject (the `erase` stage)
 - **Notifications** and the pending queue — flushing a digest to a tombstone is a push nobody reads
 - **Blocks, in both directions** — leaving the second kind would filter a tombstone's content for the
   blocker forever, over a person who no longer exists
@@ -323,6 +335,34 @@ rather than luck. All four of its gates read data that survives:
 
 ---
 
+## The consent record: sealed, severed, six years
+
+The one thing finalization neither erases nor pseudonymizes. Each terms acceptance and each Know
+Before You Go completion is a row in `consentRecords`: the full name, email and date of birth it was
+made under, the version and hash of what was accepted or answered, the server's stamps, the season,
+the IP address read from the Clerk session, and the client-reported device. It exists for one
+situation — someone is hurt on the ice and the question becomes what they had read and agreed to —
+and that question can come years after they left.
+
+- **Nothing earlier touches it.** A pending deletion, a cancel and a re-onboarding leave the old
+  records as they are and add new ones. A live account's records are kept while it lives.
+- **Finalization severs it.** A `consent` stage between `photos` and `tombstone` clears each record's
+  `profileId` and `clerkUserId` and sets `purgeAt` to the finalize instant plus six calendar years
+  (UTC; a 29 February lands on 1 March). Severing keeps D62's promise: the record can't tie the
+  tombstone's surviving reports back to a person. The identity snapshot inside it stays — that is what
+  makes it worth keeping, and the Privacy Notice says so.
+- **A daily purge deletes it on time.** `purgeDue` walks `by_purge` from `purgeAt ≥ 1` (the field is
+  optional, and `undefined` sorts first) and deletes at most a page per run.
+- **Sealed.** After the insert, only named fill-once fields change (the IP, the emailed copy's
+  outcome, an email the token lacked) plus the sever; a guard holds that. Wrong answers are never
+  stored anywhere.
+- **Found by email, not by account, once severed** — an internal, CLI-only lookup; no screen reads it.
+
+Six years is Maine's limitation period for an injury claim, the longest in the coverage area (the
+founder's figure, for counsel to confirm along with tolling).
+
+---
+
 ## Why safety information outlives its author
 
 **A report is a fact about ice, not a fact about a person.** "I skated here on the 14th, 4 inches with
@@ -403,6 +443,8 @@ most likely to want their record — and the moment after confirming is too late
   named rather than dropped.
 - **Secrets and join keys stripped.** OAuth tokens reduce to provider/scope/date; the Clerk subject is
   excluded — it's the join key an attacker would most want from a leaked bundle.
+- **Your consent records are in it**, by the same rule: without the email they hold, the Clerk subject
+  or the profile id.
 - **Emailed and listed in settings.** The address comes from Clerk at send time, because we never
   stored one. The listing means a spam-filtered email isn't a dead end.
 - **The link works for 30 days**, measured from when the bundle exists rather than when it was
@@ -436,6 +478,8 @@ most likely to want their record — and the moment after confirming is too late
 | Weather cache rows | 24 hours | 6-hourly prune |
 | A departed skater's put-ins | indefinitely, deliberately | — |
 | Bounty gate analytics referencing them | 180 days, self-expiring | existing prune |
+| Your consent records (terms acceptances, Know Before You Go completions) | while the account lives, then six years past finalization, severed | the finalize `consent` stage, then the daily `purgeDue` |
+| A terms reading that never became an acceptance | 30 days, or finalization | daily `pruneReadings`, and the finalize `erase` stage |
 
 ---
 
@@ -475,6 +519,10 @@ rows look right, and something is quietly wrong for a person who can no longer c
   only then refuses it. This has two sides for operators: the clients gate navigation and read-only
   operator chrome on holding the role, and every control that *submits* on holding the role **and** not
   leaving — mirroring `requireRole` vs `requireContributorRole` exactly.
+- **Only finalization severs a consent record, and only the purge deletes one.** A record deleted
+  early is evidence lost for good; one left linked re-identifies a pseudonymized ice record. Every
+  range on `by_purge` starts at `purgeAt ≥ 1`, for the same optional-index reason as the finalize
+  sweep.
 - **A gate that asks about `status` is asking the wrong question about a ghost.** `status` stays
   `active` for the whole window on purpose, because it is what `requireProfile` reads and a departing
   person has to keep being able to sign in and cancel. Anything that means "is this account really

@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import {
+  CONSENT_RECORD_RETENTION,
   DATA_EXPORT_TTL_DAYS,
   DELETION_GRACE_DAYS,
   DEPARTED_CONTENT_MAX_AGE_DAYS,
@@ -153,6 +154,10 @@ function DeleteAccount() {
         <Text fontWeight="700">wrote</Text> goes — your notes, comments and photo captions are
         deleted for good once they're {DEPARTED_CONTENT_MAX_AGE_DAYS} days old. The account itself
         goes in {DELETION_GRACE_DAYS} days.
+      </Paragraph>
+      {/* The consent record's six years (D297), said before the tap like everything else here. */}
+      <Paragraph color="foregroundMuted" fontSize={13}>
+        {CONSENT_RECORD_RETENTION}
       </Paragraph>
       <Paragraph color="foregroundMuted" fontSize={13}>
         During those {DELETION_GRACE_DAYS} days you can still sign in, and canceling keeps the

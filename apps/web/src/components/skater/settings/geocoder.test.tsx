@@ -52,6 +52,18 @@ describe('useAddressSuggestions', () => {
     expect(suggest).toHaveBeenCalledTimes(1);
   });
 
+  it('learns "on" once: a field mounted later this session draws at once, asking nothing', async () => {
+    const suggest = vi.fn<SuggestFn>().mockResolvedValue(ok());
+    const first = hook(suggest);
+    await settle();
+    expect(first.result.current).toEqual({ state: 'idle', attribution: ATTR });
+    first.unmount();
+    const again = hook(suggest);
+    expect(again.result.current).toEqual({ state: 'idle', attribution: ATTR });
+    await settle();
+    expect(suggest).toHaveBeenCalledOnce();
+  });
+
   it('debounces: one call per pause, none under three characters', async () => {
     const suggest = vi
       .fn<SuggestFn>()
@@ -138,13 +150,23 @@ describe('useAddressSuggestions', () => {
     expect(result.current).toEqual({ state: 'error', attribution: null });
   });
 
-  it('an answer after unmount is dropped', async () => {
-    let resolve: (r: SuggestResult) => void = () => {};
-    const suggest = vi.fn<SuggestFn>(() => new Promise((r) => (resolve = r)));
-    const { unmount } = hook(suggest);
-    unmount();
-    await act(async () => resolve(off));
-    // The session didn't learn "off" from a field nobody saw… but the latch is the server's word.
-    expect(suggest).toHaveBeenCalledTimes(1);
-  });
+  it.each([
+    ['on', ok(), { state: 'idle', attribution: ATTR }],
+    ['off', off, { state: 'off' }],
+  ] as const)(
+    'a probe answered after its field unmounted still teaches the session "%s"',
+    async (_, answer, drawn) => {
+      let resolve: (r: SuggestResult) => void = () => {};
+      const suggest = vi.fn<SuggestFn>(() => new Promise((r) => (resolve = r)));
+      const { result, unmount } = hook(suggest);
+      unmount();
+      await act(async () => resolve(answer));
+      // The gone field draws nothing new; the next one draws what was learned, asking nothing.
+      expect(result.current).toEqual({ state: 'unknown' });
+      const again = hook(suggest);
+      expect(again.result.current).toEqual(drawn);
+      await settle();
+      expect(suggest).toHaveBeenCalledOnce();
+    },
+  );
 });

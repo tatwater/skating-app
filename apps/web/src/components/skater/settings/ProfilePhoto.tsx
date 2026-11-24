@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { type ReactNode, useRef, useState } from 'react';
 
 import { AVATAR_ACCEPT } from '@/lib/photo';
 
@@ -34,6 +34,11 @@ export interface ProfilePhotoProps {
   onRemove: () => Promise<boolean>;
   /** Where the confirm portals to (a story's themed quad); the page's body otherwise. */
   container?: HTMLElement | null;
+  /**
+   * The words for a screen that isn't Settings' (the onboarding's Profile step, board 10.12): the
+   * button while there is no photo yet, and the line under it at rest.
+   */
+  words?: { add: ReactNode; hint: string };
 }
 
 /**
@@ -51,6 +56,7 @@ export function ProfilePhoto({
   onChange,
   onRemove,
   container,
+  words,
 }: ProfilePhotoProps) {
   const input = useRef<HTMLInputElement>(null);
   const [confirming, setConfirming] = useState(false);
@@ -73,7 +79,7 @@ export function ProfilePhoto({
             disabled={inert}
             onClick={() => input.current?.click()}
           >
-            Change photo
+            {words !== undefined && imageUrl === undefined ? words.add : 'Change photo'}
           </Button>
           {imageUrl !== undefined && (
             <AlertDialog open={confirming} onOpenChange={setConfirming}>
@@ -121,7 +127,7 @@ export function ProfilePhoto({
             {error}
           </p>
         ) : (
-          <p className="m-0 text-assist text-fg3">JPEG, PNG, WebP, or HEIC.</p>
+          <p className="m-0 text-assist text-fg3">{words?.hint ?? 'JPEG, PNG, WebP, or HEIC.'}</p>
         )}
       </div>
       <input

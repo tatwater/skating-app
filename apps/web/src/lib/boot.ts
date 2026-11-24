@@ -1,4 +1,4 @@
-import type { AuthRoute } from '@skating/core';
+import type { EntryRoute } from '@skating/core';
 import { createIsomorphicFn } from '@tanstack/react-start';
 import { getCookie } from '@tanstack/react-start/server';
 
@@ -30,10 +30,22 @@ import { getCookie } from '@tanstack/react-start/server';
 
 export const BOOT_COOKIE = 'gli-boot';
 
-/** A settled zone: every `AuthRoute` but `loading`, which is the absence of an answer. */
-export type BootZone = Exclude<AuthRoute, 'loading'>;
+/**
+ * A settled zone: every `EntryRoute` but `loading`, which is the absence of an answer. A cookie
+ * from before the way in was rebuilt (`onboarding`, `reack`) names no zone and reads as a cold
+ * start, as any unknown value does.
+ */
+export type BootZone = Exclude<EntryRoute, 'loading'>;
 
-const BOOT_ZONES: ReadonlySet<string> = new Set<BootZone>(['auth', 'onboarding', 'reack', 'app']);
+const BOOT_ZONES: ReadonlySet<string> = new Set<BootZone>([
+  'auth',
+  'receipt',
+  'account',
+  'terms',
+  'questions',
+  'welcome',
+  'app',
+]);
 
 export function isBootZone(value: string | undefined): value is BootZone {
   return value !== undefined && BOOT_ZONES.has(value);

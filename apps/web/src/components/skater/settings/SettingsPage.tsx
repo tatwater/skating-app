@@ -6,20 +6,23 @@ import {
   isLeaving,
   isMinor,
   type NotificationPrefKey,
+  ONBOARDING_COPY,
   resolveShowPutInDefault,
 } from '@skating/core';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 
 import { useAnalytics } from '@/lib/analytics';
 
 import { Skeleton } from '../../kit/skeleton';
+import { toastSaveRefusal } from '../onboarding/consentRefusal';
 import { AccountSection, type StravaState } from './AccountSection';
 import { type BlockedPerson, BlockedSection } from './BlockedSection';
 import { ChangeEmailView } from './ChangeEmail';
+import { useLocateRead } from './currentPosition';
 import { DataSection, type ExportRow } from './DataSection';
 import { type AddressSuggestion, type SuggestFn, useAddressSuggestions } from './geocoder';
-import { HomeSection, type HomeView, type LocateState } from './HomeSection';
+import { HomeSection, type HomeView } from './HomeSection';
 import { NotificationsSection, radiusPatch } from './NotificationsSection';
 import { ProfilePhoto } from './ProfilePhoto';
 import { ProfileSection } from './ProfileSection';
@@ -191,55 +194,66 @@ function YourProfile({ profile }: { profile: Profile }) {
   );
 }
 
-/** The browser's position, once. Rejects when there's no geolocation or it's refused. */
-export function currentPosition(): Promise<{ lat: number; lng: number }> {
-  return new Promise((resolve, reject) => {
-    if (typeof navigator === 'undefined' || !navigator.geolocation) {
-      reject(new Error('unavailable'));
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      reject,
-      { maximumAge: 60_000, timeout: 20_000 },
-    );
-  });
-}
-
-function Home({
-  profile,
-  view,
-  onNavigate,
-}: {
+interface HomeProps {
   profile: Profile;
   view: HomeView;
   onNavigate: (href: string, options?: { replace?: boolean }) => void;
-}) {
+}
+
+/**
+ * Each stretch of the home form is its own: arriving at the edit or leaving it (Cancel, a save, the
+ * browser's Back), or a home set or cleared, starts the form over. A location read still out goes
+ * with the old form (its controller is disposed as it unmounts, as on leaving Settings' home
+ * altogether), so a prompt answered long after never overwrites the home; and nothing typed, picked
+ * or failed — "We couldn't get your location" included — carries into the next edit.
+ */
+function Home(props: HomeProps) {
+  const stretch =
+    props.view === 'edit' ? 'edit' : props.profile.homeCoord !== undefined ? 'set' : 'unset';
+  return <HomeForm key={stretch} {...props} />;
+}
+
+function HomeForm({ profile, view, onNavigate }: HomeProps) {
   const setHome = useMutation(api.profiles.setHome);
   const suggest = useAction(api.geocode.suggest) as unknown as SuggestFn;
   const [address, setAddress] = useState('');
   const [chosen, setChosen] = useState<AddressSuggestion | null>(null);
-  const [locate, setLocate] = useState<LocateState>('idle');
   const [saving, setSaving] = useState(false);
-  const [failed, setFailed] = useState(false);
   const lookup = useAddressSuggestions(chosen === null ? address : '', suggest);
+  // This form is still on screen: a save that answers after the skater left neither pulls them back
+  // nor writes into a form that is gone.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
+  // A fix is saved only when it is the newest read and the skater hasn't typed, picked, saved,
+  // cleared or left since (`useLocateRead`): a slowly answered prompt never overwrites a choice.
+  const { locate, start: startLocate, supersede } = useLocateRead((coord) => void save(coord));
+
+  // Out of the edit: a read still out is dropped now, and the form starts over as the view changes
+  // (`Home`'s key).
   const back = () => {
-    setAddress('');
-    setChosen(null);
-    setFailed(false);
+    supersede();
     onNavigate('/settings/home', { replace: true });
   };
   const save = async (coord: { lat: number; lng: number } | undefined) => {
     setSaving(true);
-    setFailed(false);
     try {
       await setHome(coord === undefined ? {} : { homeCoord: coord });
-      back();
-    } catch {
-      setFailed(true);
+      if (mounted.current) back();
+    } catch (error) {
+      // A toast, as every refusal is — the server's words for a can't-act refusal, else the
+      // not-saved (or not-cleared) line — whether the form is still there or the skater has left it.
+      toastSaveRefusal(
+        error,
+        coord === undefined ? ONBOARDING_COPY.home.notCleared : ONBOARDING_COPY.home.notSaved,
+      );
     } finally {
-      setSaving(false);
+      if (mounted.current) setSaving(false);
     }
   };
 
@@ -253,28 +267,27 @@ function Home({
       onAddressChange={(value) => {
         setChosen(null);
         setAddress(value);
+        supersede();
       }}
       lookup={lookup}
       chosen={chosen}
       onPick={(s) => {
         setChosen(s);
         setAddress(s.label);
+        supersede();
       }}
       locate={locate}
       saving={saving}
-      failed={failed}
-      onUseLocation={() => {
-        setLocate('locating');
-        currentPosition().then(
-          (coord) => {
-            setLocate('idle');
-            void save(coord);
-          },
-          () => setLocate('failed'),
-        );
+      onUseLocation={startLocate}
+      onSave={() => {
+        if (!chosen) return;
+        supersede();
+        void save({ lat: chosen.lat, lng: chosen.lng });
       }}
-      onSave={() => chosen && void save({ lat: chosen.lat, lng: chosen.lng })}
-      onClear={() => void save(undefined)}
+      onClear={() => {
+        supersede();
+        void save(undefined);
+      }}
       onEdit={() => onNavigate('/settings/home?edit=true')}
       onCancel={back}
     />

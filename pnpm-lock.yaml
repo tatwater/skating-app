@@ -655,6 +655,9 @@ importers:
         specifier: ^7946.0.16
         version: 7946.0.16
     devDependencies:
+      '@types/node':
+        specifier: ^26.6.6
+        version: 26.6.6
       '@vitest/coverage-v8':
         specifier: ^5.1.0
         version: 5.1.0(@vitest/browser-playwright@5.1.0)(@vitest/browser@5.1.0)(@vitest/ui@5.1.0)(utf-8-validate@6.0.6)(vitest@5.1.0)
