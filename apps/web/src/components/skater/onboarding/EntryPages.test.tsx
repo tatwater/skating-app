@@ -683,6 +683,79 @@ describe('a failing end', () => {
     expect(m.toast).toHaveBeenCalledTimes(2);
   });
 
+  /** An answer after a round trip: `null`, or the refusal given. */
+  const later = (refusal?: Error, ms = 5) =>
+    new Promise((resolve, reject) =>
+      setTimeout(() => (refusal ? reject(refusal) : resolve(null)), ms),
+    );
+  /** The skater opens the full-screen reader with its end out of view, then scrolls to it. */
+  async function readInFullScreen(user: ReturnType<typeof userEvent.setup>) {
+    await user.click(screen.getByRole('button', { name: 'Open in full-screen' }));
+    await screen.findByRole('dialog');
+    await act(async () => Visibility.scroll(true));
+  }
+  /** Whether the full-screen reader's body was scrolled to its top. */
+  const fullScreenToTop = (scrollTo: { mock: { contexts: unknown[]; calls: unknown[][] } }) =>
+    scrollTo.mock.contexts.some(
+      (el, i) =>
+        (el as HTMLElement).dataset?.slot === 'dialog-body' &&
+        (scrollTo.mock.calls[i]?.[0] as { top?: number } | undefined)?.top === 0,
+    );
+
+  it('a failing open, reached in full-screen, starts again from its top once, not in a loop', async () => {
+    const user = userEvent.setup();
+    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo');
+    Visibility.visible = false;
+    fakes.queries.set('profiles:current', LIVE);
+    // Each open is refused after a slow round trip, and the end is reached while the first is
+    // still out: the end waits on it, and on each new one the restart sends.
+    mutation('consent:openTerms').mockImplementation(() => later(new Error('offline'), 100));
+    render(<TermsPage />);
+    await readInFullScreen(user);
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    // Settled: the end still sits in view, and nothing opens again by itself.
+    await new Promise((r) => setTimeout(r, 350));
+    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
+    expect(m.toast).toHaveBeenCalledTimes(2);
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+    expect(fullScreenToTop(scrollTo)).toBe(true);
+    // Read down to the end again: one more try.
+    await act(async () => Visibility.scroll(false));
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
+    await new Promise((r) => setTimeout(r, 350));
+    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3);
+    scrollTo.mockRestore();
+  });
+
+  it('a lost reading, reached in full-screen, is read again from its top before the end counts', async () => {
+    const user = userEvent.setup();
+    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo');
+    Visibility.visible = false;
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:reachTermsEnd').mockImplementationOnce(() =>
+      later(new ConvexError({ code: 'terms_not_opened', message: 'Please read them again.' })),
+    );
+    mutation('consent:openTerms').mockImplementation(() => later());
+    render(<TermsPage />);
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledOnce());
+    await readInFullScreen(user);
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    // The new reading was not stamped at once: the end must be reached again.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce();
+    expect(fullScreenToTop(scrollTo)).toBe(true);
+    await act(async () => Visibility.scroll(false));
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledTimes(2));
+    expect(mutation('consent:reachTermsEnd')).toHaveBeenLastCalledWith({
+      termsVersion: TERMS.version,
+      termsHash: TERMS_SHA256,
+      via: 'fullscreen',
+    });
+    scrollTo.mockRestore();
+  });
+
   it('records on the way back once the server answers', async () => {
     fakes.queries.set('profiles:current', LIVE);
     mutation('consent:reachTermsEnd').mockRejectedValueOnce(new Error('offline'));

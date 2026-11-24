@@ -115,9 +115,10 @@ export function readingRoot(own: HTMLElement | null, page: HTMLElement | null): 
  * size, the same text and marker; reaching its end reports `onEnd('fullscreen')`, and Esc brings the
  * skater back with the box unlocked. Neither reader gates the Privacy Notice: it is a link.
  *
- * `resetKey` starts the reading again from the top (a refusal that says the server has no
- * reading). While `disarmed` — a stamp failed — the end doesn't count; the reader watches for the
- * marker to leave the screen instead and says so through `onEndGone`, so the next arrival can.
+ * `resetKey` starts the reading again from the top of both readers (a refusal that says the server
+ * has no reading). While `disarmed` — a stamp failed, or the reading started again — the end doesn't
+ * count; the reader watches for the marker to leave the screen instead and says so through
+ * `onEndGone`, so the next arrival can.
  */
 export function TermsReader({
   read,
@@ -184,12 +185,14 @@ export function TermsReader({
     };
   }, [viewport, scroller]);
 
-  // A new reading starts at the top.
+  // A new reading starts at the top, in every reader: the full-screen one too, or its end would
+  // still sit in view.
   // biome-ignore lint/correctness/useExhaustiveDependencies: the key is the trigger
   useEffect(() => {
     if (resetKey === 0) return;
     viewport()?.scrollTo({ top: 0 });
     scroller?.scrollTo({ top: 0 });
+    fullEnd?.closest<HTMLElement>('[data-slot="dialog-body"]')?.scrollTo({ top: 0 });
     progress.current?.(0);
   }, [resetKey]);
 

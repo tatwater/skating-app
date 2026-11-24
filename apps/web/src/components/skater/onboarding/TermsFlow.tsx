@@ -41,7 +41,9 @@ const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
  * 2. The end marker on screen: `reachTermsEnd` with the reader it was reached in — after the open
  *    has answered, so a fast scroll can't reach the end of a reading the server hasn't started.
  *    Recorded, the box unlocks. Failed, the toast, and the end stays disarmed until the marker has
- *    left the screen and come back — as on the phone — so a persistent error is said once.
+ *    left the screen and come back — as on the phone — so a persistent error is said once. A
+ *    reading the server doesn't have (the open failed, or `terms_not_opened`) starts again from the
+ *    top of whichever reader is open, disarmed the same way.
  * 3. *Record acceptance*: the hold first (`lib/entryHold` says why), then `acceptTerms`. Through,
  *    the receipt draws under the hold; refused, a toast, the hold let go, and — by core's
  *    `consentRefusalAction` — the end marker re-arms (`terms_not_read`), or a new account goes
@@ -118,9 +120,13 @@ export function TermsFlow({
     opened.current = open;
   }, [resetKey]);
 
+  // The reading starts again from the top — the reader scrolls there, in the full-screen reader as
+  // inline — and the end stays disarmed until the marker has left the view and come back: reached
+  // again, never re-stamped the instant the new reading opens (the marker may still sit in view
+  // while the scroll lands), and never a loop of opens against a server that keeps refusing.
   const restart = () => {
     setRead(false);
-    setDisarmed(false);
+    setDisarmed(true);
     setResetKey((k) => k + 1);
   };
 
