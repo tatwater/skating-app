@@ -86,6 +86,17 @@ const EXACT_SENSITIVE_FIELD_NAMES: ReadonlySet<string> = new Set([
   'displayname',
   'ipaddress',
 
+  // The consent record's evidence (D297): the IP read from the sign-in provider (`ip`, an
+  // object whose `address` the fragment below also catches) and the client-reported user agent,
+  // which ride as the consent functions' arguments and the record's fields. Exact: `ip` as a
+  // fragment would match `zip`, `tip`, `description`; `useragent` covers `userAgent`,
+  // `user_agent` and the `User-Agent` header (which the web SDK never sends: `dataCollection`
+  // drops every header).
+  'ip',
+  'useragent',
+  // The record's identity snapshot names the person as `fullName` (the profile says `displayName`).
+  'fullname',
+
   // A URL's query string and fragment, split out into attributes of their own on an HTTP span:
   // `url.query` / `url.fragment` (SDK v11) and `http.query` / `http.fragment` (v10, mobile). The
   // value is a bare `?token=…` or `access_token=…`, not URL-shaped, so `redactUrlQuery` passes it

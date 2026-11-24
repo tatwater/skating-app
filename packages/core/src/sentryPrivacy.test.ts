@@ -32,6 +32,13 @@ describe('isSensitiveFieldName', () => {
     'displayName',
     'email',
     'phoneNumber',
+    // The consent record's evidence (D297): the IP and the client-reported user agent.
+    'ip',
+    'ip_address',
+    'userAgent',
+    'user_agent',
+    'User-Agent',
+    'fullName',
     // Credentials. `accessToken`/`refreshToken` are the activityConnections rows the
     // schema calls the worst in the app to leak.
     'accessToken',
@@ -69,6 +76,11 @@ describe('isSensitiveFieldName', () => {
     'url',
     'appVersion',
     'deviceModel',
+    // `ip` is matched whole, never as a fragment.
+    'zip',
+    'description',
+    'tooltip',
+    'ipStatus',
   ])('leaves %s alone', (fieldName) => {
     expect(isSensitiveFieldName(fieldName)).toBe(false);
   });
@@ -89,6 +101,58 @@ describe('redactSensitiveData', () => {
     });
 
     expect(redacted).toEqual({ path: { type: 'LineString', coordinates: REDACTION_PLACEHOLDER } });
+  });
+
+  it("keeps the consent functions' arguments and the record's evidence out at any depth", () => {
+    // `acceptTerms`' arguments as a breadcrumb or an error's context would carry them: the
+    // account object nests the date of birth (B03 §9.10).
+    expect(
+      redactSensitiveData({
+        args: {
+          termsVersion: '2026-11-24',
+          surface: 'web',
+          userAgent: 'Mozilla/5.0',
+          clientSessionId: 'sess_abc',
+          account: { displayName: 'Ada Lovelace', username: 'ada', dateOfBirth: 645408000000 },
+        },
+      }),
+    ).toEqual({
+      args: {
+        termsVersion: '2026-11-24',
+        surface: 'web',
+        userAgent: REDACTION_PLACEHOLDER,
+        clientSessionId: REDACTION_PLACEHOLDER,
+        account: {
+          displayName: REDACTION_PLACEHOLDER,
+          username: REDACTION_PLACEHOLDER,
+          dateOfBirth: REDACTION_PLACEHOLDER,
+        },
+      },
+    });
+    // A record, as a CLI lookup or a failed write would carry it.
+    expect(
+      redactSensitiveData({
+        record: {
+          kind: 'terms',
+          identity: { fullName: 'Ada', email: 'ada@example.test', dateOfBirth: 1 },
+          userAgent: { value: 'Mozilla/5.0', source: 'client_reported' },
+          ip: { address: '203.0.113.7', match: 'client_session' },
+          ipStatus: 'captured',
+        },
+      }),
+    ).toEqual({
+      record: {
+        kind: 'terms',
+        identity: {
+          fullName: REDACTION_PLACEHOLDER,
+          email: REDACTION_PLACEHOLDER,
+          dateOfBirth: REDACTION_PLACEHOLDER,
+        },
+        userAgent: REDACTION_PLACEHOLDER,
+        ip: REDACTION_PLACEHOLDER,
+        ipStatus: 'captured',
+      },
+    });
   });
 
   it('reaches into arrays and nested objects', () => {
