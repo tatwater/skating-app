@@ -69,6 +69,8 @@ export function TermsStep({
   step,
   read,
   armed,
+  disarmed = false,
+  onEndGone,
   busy,
   resetKey,
   email,
@@ -82,6 +84,9 @@ export function TermsStep({
   step: number | null;
   read: boolean;
   armed: boolean;
+  /** A failed stamp: the end counts again only once the marker has left the screen (`onEndGone`). */
+  disarmed?: boolean;
+  onEndGone?: () => void;
   /** *Record acceptance* is on its way. */
   busy: boolean;
   resetKey?: number;
@@ -135,6 +140,8 @@ export function TermsStep({
       <TermsReader
         read={read}
         armed={armed}
+        disarmed={disarmed}
+        onEndGone={onEndGone}
         resetKey={resetKey}
         onEnd={onEnd}
         onProgress={setProgress}

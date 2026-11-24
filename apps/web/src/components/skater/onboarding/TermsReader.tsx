@@ -57,6 +57,34 @@ export function useSeenOnScreen(
   }, [el, root, armed]);
 }
 
+/**
+ * Calls `onGone` once `el` is wholly off screen inside `root` — how a disarmed end learns the marker
+ * has left, so the next arrival can count again. Watches only while `active` and `root` is known.
+ */
+export function useGoneFromScreen(
+  el: HTMLElement | null,
+  root: HTMLElement | null,
+  active: boolean,
+  onGone: () => void,
+): void {
+  const gone = useRef(onGone);
+  gone.current = onGone;
+  useEffect(() => {
+    if (!active || !el || !root || typeof IntersectionObserver === 'undefined') return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => !e.isIntersecting)) {
+          observer.disconnect();
+          gone.current();
+        }
+      },
+      { root, threshold: [0] },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [el, root, active]);
+}
+
 /** How far through its content a box has scrolled, 0–1, or `null` when it doesn't scroll. */
 export function scrollFraction(el: HTMLElement | null): number | null {
   if (!el) return null;
@@ -87,12 +115,15 @@ export function readingRoot(own: HTMLElement | null, page: HTMLElement | null): 
  * size, the same text and marker; reaching its end reports `onEnd('fullscreen')`, and Esc brings the
  * skater back with the box unlocked. Neither reader gates the Privacy Notice: it is a link.
  *
- * `resetKey` starts the reading again from the top (a new version of the text, or a refusal that
- * says the end wasn't recorded).
+ * `resetKey` starts the reading again from the top (a refusal that says the server has no
+ * reading). While `disarmed` — a stamp failed — the end doesn't count; the reader watches for the
+ * marker to leave the screen instead and says so through `onEndGone`, so the next arrival can.
  */
 export function TermsReader({
   read,
   armed,
+  disarmed = false,
+  onEndGone,
   resetKey = 0,
   onEnd,
   onProgress,
@@ -101,6 +132,9 @@ export function TermsReader({
   read: boolean;
   /** Whether reaching the end counts now (off while it's already counted, or being recorded). */
   armed: boolean;
+  /** A stamp failed: watch for the end marker to leave the screen (`onEndGone`). */
+  disarmed?: boolean;
+  onEndGone?: () => void;
   resetKey?: number;
   onEnd: (via: TermsReaderVia) => void;
   onProgress?: (fraction: number) => void;
@@ -166,11 +200,11 @@ export function TermsReader({
     () => onEnd('inline'),
     () => readingRoot(viewport(), scroller) === inlineRoot,
   );
-  useSeenOnScreen(
-    fullEnd,
-    fullEnd?.closest<HTMLElement>('[data-slot="dialog-body"]') ?? null,
-    armed && full,
-    () => onEnd('fullscreen'),
+  const fullRoot = fullEnd?.closest<HTMLElement>('[data-slot="dialog-body"]') ?? null;
+  useSeenOnScreen(fullEnd, fullRoot, armed && full, () => onEnd('fullscreen'));
+  // Disarmed: the marker in whichever reader is open has to leave before it can count again.
+  useGoneFromScreen(full ? fullEnd : end, full ? fullRoot : inlineRoot, disarmed, () =>
+    onEndGone?.(),
   );
 
   return (

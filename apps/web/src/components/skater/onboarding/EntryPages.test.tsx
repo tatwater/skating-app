@@ -611,6 +611,87 @@ describe('the reading’s start', () => {
   });
 });
 
+/**
+ * The end marker's place on screen, set by the test: every observer hears the state it starts in,
+ * and every change after.
+ */
+class Visibility {
+  static visible = true;
+  static all: Visibility[] = [];
+  private live = true;
+  private targets: Element[] = [];
+  constructor(private readonly callback: IntersectionObserverCallback) {
+    Visibility.all.push(this);
+  }
+  private tell() {
+    if (!this.live) return;
+    const v = Visibility.visible;
+    this.callback(
+      this.targets.map(
+        (target) =>
+          ({
+            target,
+            isIntersecting: v,
+            intersectionRatio: v ? 1 : 0,
+          }) as IntersectionObserverEntry,
+      ),
+      this as unknown as IntersectionObserver,
+    );
+  }
+  observe(target: Element) {
+    this.targets.push(target);
+    queueMicrotask(() => this.tell());
+  }
+  disconnect() {
+    this.live = false;
+  }
+  unobserve() {}
+  takeRecords() {
+    return [];
+  }
+  static scroll(visible: boolean) {
+    Visibility.visible = visible;
+    for (const o of [...Visibility.all]) o.tell();
+  }
+}
+
+describe('a failing end', () => {
+  beforeEach(() => {
+    Visibility.visible = true;
+    Visibility.all = [];
+    vi.stubGlobal('IntersectionObserver', Visibility);
+  });
+
+  it('is said once while the end sits on screen, and tried again only after it leaves and comes back', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:reachTermsEnd').mockRejectedValue(new Error('offline'));
+    render(<TermsPage />);
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+    // Settled: no retry storm while the marker stays in view.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce();
+    expect(m.toast).toHaveBeenCalledOnce();
+    // Scrolled away and back: one more try.
+    await act(async () => Visibility.scroll(false));
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledTimes(2);
+    expect(m.toast).toHaveBeenCalledTimes(2);
+  });
+
+  it('records on the way back once the server answers', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:reachTermsEnd').mockRejectedValueOnce(new Error('offline'));
+    render(<TermsPage />);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
+    await act(async () => Visibility.scroll(false));
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(screen.getByRole('checkbox')).not.toHaveAttribute('aria-disabled'));
+    expect(m.capture).toHaveBeenCalledWith('terms_read_to_end', { via: 'inline' });
+  });
+});
+
 describe('an out-of-date tab (client_outdated)', () => {
   const OUTDATED = new ConvexError({
     code: 'client_outdated',

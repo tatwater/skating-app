@@ -40,7 +40,8 @@ const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
  * 1. The reader opens: `openTerms` stamps the reading (the server keeps the first stamp).
  * 2. The end marker on screen: `reachTermsEnd` with the reader it was reached in — after the open
  *    has answered, so a fast scroll can't reach the end of a reading the server hasn't started.
- *    Recorded, the box unlocks.
+ *    Recorded, the box unlocks. Failed, the toast, and the end stays disarmed until the marker has
+ *    left the screen and come back — as on the phone — so a persistent error is said once.
  * 3. *Record acceptance*: the hold first (`lib/entryHold` says why), then `acceptTerms`. Through,
  *    the receipt draws under the hold; refused, a toast, the hold let go, and — by core's
  *    `consentRefusalAction` — the end marker re-arms (`terms_not_read`), or a new account goes
@@ -82,6 +83,9 @@ export function TermsFlow({
 
   const [read, setRead] = useState(false);
   const [reaching, setReaching] = useState(false);
+  // A failed stamp disarms the end until the marker has left the screen and come back (the phone's
+  // rule): a persistent error is one toast, not a storm of retries while the end sits in view.
+  const [disarmed, setDisarmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resetKey, setResetKey] = useState(0);
   // `client_outdated`: the step stops for good (a ref too, for the answers already on their way).
@@ -116,6 +120,7 @@ export function TermsFlow({
 
   const restart = () => {
     setRead(false);
+    setDisarmed(false);
     setResetKey((k) => k + 1);
   };
 
@@ -149,6 +154,8 @@ export function TermsFlow({
         case 'rearm':
         case 'account':
         case 'say':
+          // Tried again only once the end has been off screen and back.
+          setDisarmed(true);
           break;
         default: {
           const unhandled: never = action;
@@ -203,6 +210,7 @@ export function TermsFlow({
           break;
         case 'rearm':
           setRead(false);
+          setDisarmed(false);
           break;
         // An existing account has no Account step: its toast is all there is.
         case 'account':
@@ -260,7 +268,9 @@ export function TermsFlow({
     <TermsStep
       step={step}
       read={read}
-      armed={!read && !reaching && !held}
+      armed={!read && !reaching && !held && !disarmed}
+      disarmed={disarmed}
+      onEndGone={() => setDisarmed(false)}
       busy={busy || (held && !recorded)}
       resetKey={resetKey}
       email={email}
