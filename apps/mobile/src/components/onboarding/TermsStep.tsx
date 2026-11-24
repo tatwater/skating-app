@@ -10,11 +10,11 @@ import {
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
   receiptLine,
+  scheduleTermsWaitingLine,
   splitBold,
   stripBold,
   TERMS,
   TERMS_SHA256,
-  TERMS_WAITING_LINE_MS,
   termsSectionHeading,
   termsVersionLabel,
 } from '@skating/core';
@@ -212,14 +212,14 @@ function Reader({
   const unlocked = state.end === 'recorded';
   const canRecord = unlocked && checked && !busy;
   // A reached end still waiting on the server after a while (its opening unanswered, or its stamp
-  // out — offline, say): a quiet line says why the box is still locked, as on the web.
+  // out — offline, say): a quiet line says it is still connecting, as on the web. The delay is core's
+  // `scheduleTermsWaitingLine`, tested there (and through the web's render); this glue is untested,
+  // as the phone has no render harness (B03 §9.7).
   const recording = state.end === 'recording';
   const [waiting, setWaiting] = useState(false);
   useEffect(() => {
     setWaiting(false);
-    if (!recording) return;
-    const timer = setTimeout(() => setWaiting(true), TERMS_WAITING_LINE_MS);
-    return () => clearTimeout(timer);
+    return scheduleTermsWaitingLine(recording, () => setWaiting(true));
   }, [recording]);
 
   async function onRecord() {

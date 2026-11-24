@@ -9,9 +9,9 @@ import {
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
   receiptLine,
+  scheduleTermsWaitingLine,
   TERMS,
   TERMS_SHA256,
-  TERMS_WAITING_LINE_MS,
   termsAcceptanceContext,
   termsOpenRetryDue,
 } from '@skating/core';
@@ -113,9 +113,7 @@ export function TermsFlow({
   const [waiting, setWaiting] = useState(false);
   useEffect(() => {
     setWaiting(false);
-    if (!reaching) return;
-    const timer = setTimeout(() => setWaiting(true), TERMS_WAITING_LINE_MS);
-    return () => clearTimeout(timer);
+    return scheduleTermsWaitingLine(reaching, () => setWaiting(true));
   }, [reaching]);
   // A failed stamp disarms the end until the marker has left the screen and come back (the phone's
   // rule): a persistent error is one toast, not a storm of retries while the end sits in view.

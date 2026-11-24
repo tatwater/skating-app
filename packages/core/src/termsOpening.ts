@@ -23,6 +23,17 @@ export const TERMS_OPEN_RETRY_GAP_MS = 5_000;
 export const TERMS_WAITING_LINE_MS = 3_000;
 
 /**
+ * The waiting line's timer, the rule both apps' effects run: while `waiting` (a reached end still
+ * waiting on the server), calls `show` once it has lasted `TERMS_WAITING_LINE_MS`. Returns the
+ * cancel, for the effect's cleanup (a no-op when not waiting).
+ */
+export function scheduleTermsWaitingLine(waiting: boolean, show: () => void): () => void {
+  if (!waiting) return () => {};
+  const timer = setTimeout(show, TERMS_WAITING_LINE_MS);
+  return () => clearTimeout(timer);
+}
+
+/**
  * Whether a failed opening may be tried again at `now`, its last try having started at `lastTryAt`
  * (`null`: never tried). A clock set back past the last try is due at once: waiting for it to pass
  * the last try again would stop the retries for as long as the step back.
