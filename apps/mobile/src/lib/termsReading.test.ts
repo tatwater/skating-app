@@ -1,3 +1,4 @@
+import { ConvexError } from 'convex/values';
 import { describe, expect, it, vi } from 'vitest';
 import {
   createTermsReading,
@@ -265,5 +266,47 @@ describe('createTermsReading', () => {
     reading.observe(at(1200), 2900);
     expect(reading.state().progress).toBe(0.5);
     expect(onChange).not.toHaveBeenCalled();
+  });
+});
+
+describe('an out-of-date build (client_outdated)', () => {
+  const OUTDATED = new ConvexError({ code: 'client_outdated', message: 'Out of date.' });
+
+  it('a refused opening is final: told once, and nothing opens or stamps again', async () => {
+    const open = vi.fn(() => Promise.reject(OUTDATED));
+    const reach = vi.fn(() => Promise.resolve(null));
+    const onRefusal = vi.fn();
+    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {} });
+    reading.start();
+    await flush();
+    expect(reading.state().end).toBe('outdated');
+    expect(onRefusal).toHaveBeenCalledOnce();
+    // The end on screen, off it and back, a rearm, a restart: nothing asks the server again.
+    reading.observe(at(2400), 2900);
+    reading.observe(at(0), 2900);
+    reading.observe(at(2400), 2900);
+    reading.rearm();
+    reading.restart();
+    await flush();
+    expect(open).toHaveBeenCalledOnce();
+    expect(reach).not.toHaveBeenCalled();
+    expect(onRefusal).toHaveBeenCalledOnce();
+    expect(reading.state().end).toBe('outdated');
+  });
+
+  it('a refused stamp is final too, where any other failure would retry on the way back', async () => {
+    const open = vi.fn(() => Promise.resolve(null));
+    const reach = vi.fn(() => Promise.reject(OUTDATED));
+    const onRefusal = vi.fn();
+    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {} });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(reading.state().end).toBe('outdated');
+    reading.observe(at(0), 2900);
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(reach).toHaveBeenCalledOnce();
+    expect(onRefusal).toHaveBeenCalledOnce();
   });
 });

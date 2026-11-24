@@ -3,8 +3,10 @@ import {
   ACCOUNT_REFUSAL_CODES,
   ADDRESS_FIELD_COPY,
   CONSENT_RECORD_RETENTION,
+  CONSENT_REFUSAL_ACTIONS,
   CONSENT_REFUSAL_FALLBACK,
   CONSENT_REFUSAL_MESSAGES,
+  consentRefusalAction,
   consentRefusalMessage,
   DATE_OF_BIRTH_MESSAGES,
   firstName,
@@ -180,5 +182,33 @@ describe('isAccountRefusal', () => {
     expect(isAccountRefusal(null)).toBe(false);
     expect(isAccountRefusal(undefined)).toBe(false);
     expect(isAccountRefusal('something_new')).toBe(false);
+  });
+});
+
+describe('consentRefusalAction', () => {
+  it('answers every code, and only says one it does not know', () => {
+    expect(Object.keys(CONSENT_REFUSAL_ACTIONS).sort()).toEqual(
+      Object.keys(CONSENT_REFUSAL_MESSAGES).sort(),
+    );
+    expect(consentRefusalAction('client_outdated')).toBe('outdated');
+    expect(consentRefusalAction('terms_not_opened')).toBe('reopen');
+    expect(consentRefusalAction('terms_not_read')).toBe('rearm');
+    expect(consentRefusalAction('deletion_pending')).toBe('say');
+    expect(consentRefusalAction('terms_changed')).toBe('say');
+    expect(consentRefusalAction('toString')).toBe('say');
+    expect(consentRefusalAction(null)).toBe('say');
+    expect(consentRefusalAction(undefined)).toBe('say');
+  });
+
+  it('never says an out-of-date build was handed new terms: a Privacy Notice change alone is one', () => {
+    const outdated = [
+      CONSENT_REFUSAL_MESSAGES.client_outdated,
+      ONBOARDING_COPY.outdated.heading,
+      ONBOARDING_COPY.outdated.web,
+      ONBOARDING_COPY.outdated.phone,
+    ];
+    for (const s of outdated) expect(s).not.toMatch(/terms|question|privacy/i);
+    expect(ONBOARDING_COPY.outdated.web).toMatch(/reload/i);
+    expect(ONBOARDING_COPY.outdated.phone).toMatch(/update/i);
   });
 });

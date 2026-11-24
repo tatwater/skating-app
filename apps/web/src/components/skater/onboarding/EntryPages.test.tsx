@@ -23,6 +23,7 @@ const m = vi.hoisted(() => ({
   toast: vi.fn(),
   signOut: vi.fn(async () => undefined),
   capture: vi.fn(),
+  reload: vi.fn(),
 }));
 vi.mock('convex/react', () => ({ ...convexReact, useAction: () => m.suggest }));
 vi.mock('../../kit/toast', async (original) => ({
@@ -35,6 +36,10 @@ vi.mock('@clerk/tanstack-react-start', () => ({
 }));
 vi.mock('@/lib/sheetOwner', () => ({ useSignOut: () => m.signOut }));
 vi.mock('@/lib/analytics', () => ({ useAnalytics: () => ({ capture: m.capture }) }));
+vi.mock('./OutdatedStep', async (original) => ({
+  ...(await original<typeof import('./OutdatedStep')>()),
+  reloadPage: m.reload,
+}));
 vi.mock('../settings/useProfilePhoto', () => ({
   useProfilePhoto: () => ({
     imageUrl: undefined,
@@ -133,6 +138,7 @@ beforeEach(() => {
   m.toast.mockClear();
   m.capture.mockClear();
   m.signOut.mockClear();
+  m.reload.mockClear();
   m.suggest.mockReset();
   m.suggest.mockImplementation(async () => ({
     status: 'ok',
@@ -421,24 +427,22 @@ describe('/know-before-you-go', () => {
     expect(m.signOut).toHaveBeenCalledOnce();
   });
 
-  it('starts again from the first question when the words changed under it', async () => {
+  it('stops on a blocking update screen when the server doesn’t know its words, and offers a reload', async () => {
     const user = userEvent.setup();
     fakes.queries.set('profiles:current', { ...LIVE, knowBeforeYouGoAt: undefined });
-    mutation('consent:completeKnowBeforeYouGo').mockRejectedValueOnce(
-      new ConvexError({ code: 'questions_changed', message: 'The questions were just updated.' }),
+    mutation('consent:completeKnowBeforeYouGo').mockRejectedValue(
+      new ConvexError({ code: 'client_outdated', message: 'This version of Gli is out of date.' }),
     );
     render(<KnowBeforeYouGoPage />);
     await answerAll(user);
     await user.click(screen.getByRole('button', { name: 'Continue' }));
-    await waitFor(() =>
-      expect(
-        screen.getByText(KNOW_BEFORE_YOU_GO.questions[0]?.prompt ?? 'missing'),
-      ).toBeInTheDocument(),
-    );
-    expect(m.toast).toHaveBeenCalledWith({
-      title: 'The questions were just updated.',
-      tone: 'bad',
-    });
+    expect(await screen.findByRole('heading', { name: 'Time for an update' })).toBeInTheDocument();
+    expect(m.toast).toHaveBeenCalledOnce();
+    // Never back to the first question: answering the same words again can't help.
+    expect(screen.queryByText(KNOW_BEFORE_YOU_GO.questions[0]?.prompt ?? 'missing')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Reload the page' }));
+    expect(m.reload).toHaveBeenCalledOnce();
+    expect(mutation('consent:completeKnowBeforeYouGo')).toHaveBeenCalledOnce();
   });
 
   it('opens on the first question, never the season card, straight from the receipt', async () => {
@@ -591,18 +595,72 @@ describe('useUsernameAvailability', () => {
 });
 
 describe('the reading’s start', () => {
-  it('says a refused open once, and starts again when the end is reached', async () => {
+  it('says a failed open once, and starts again when the end is reached', async () => {
     fakes.queries.set('profiles:current', LIVE);
-    mutation('consent:openTerms').mockRejectedValueOnce(
-      new ConvexError({ code: 'terms_changed', message: 'The terms were just updated.' }),
-    );
+    mutation('consent:openTerms').mockRejectedValueOnce(new Error('offline'));
     render(<TermsPage />);
     await waitFor(() =>
-      expect(m.toast).toHaveBeenCalledWith({ title: 'The terms were just updated.', tone: 'bad' }),
+      expect(m.toast).toHaveBeenCalledWith({
+        title: 'Something went wrong. Please try again.',
+        tone: 'bad',
+      }),
     );
     // The end was seen, but there was no reading to record it on: a new reading, no reach.
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
     expect(m.toast).toHaveBeenCalledOnce();
+  });
+});
+
+describe('an out-of-date tab (client_outdated)', () => {
+  const OUTDATED = new ConvexError({
+    code: 'client_outdated',
+    message: 'This version of Gli is out of date.',
+  });
+
+  it('stops on the update screen when the open is refused, and never opens again by itself', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:openTerms').mockRejectedValue(OUTDATED);
+    render(<TermsPage />);
+    expect(await screen.findByRole('heading', { name: 'Time for an update' })).toBeInTheDocument();
+    expect(screen.getByText(/Reload the page to get the latest version/)).toBeInTheDocument();
+    // Settled: no restart, no reach, one toast.
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutation('consent:openTerms')).toHaveBeenCalledOnce();
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+    expect(m.toast).toHaveBeenCalledOnce();
+    await user.click(screen.getByRole('button', { name: 'Reload the page' }));
+    expect(m.reload).toHaveBeenCalledOnce();
+  });
+
+  it('stops when the end is refused, without starting the reading again', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:reachTermsEnd').mockRejectedValue(OUTDATED);
+    render(<TermsPage />);
+    expect(await screen.findByRole('heading', { name: 'Time for an update' })).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(mutation('consent:openTerms')).toHaveBeenCalledOnce();
+    expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce();
+  });
+
+  it('stops when the acceptance is refused (the notice alone out of step), and lets the hold go', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', null);
+    carryAccount(FIELDS, ACCOUNT);
+    mutation('consent:acceptTerms').mockRejectedValue(OUTDATED);
+    const onStep = vi.fn();
+    render(<OnboardingPage step="terms" onStep={onStep} />);
+    await readAndRecord(user);
+    expect(await screen.findByRole('heading', { name: 'Time for an update' })).toBeInTheDocument();
+    expect(useEntryStore.getState().hold).toBeNull();
+    // Not an Account refusal, and never described as new terms (core's words hold that).
+    expect(onStep).not.toHaveBeenCalledWith('account');
+    expect(m.toast).toHaveBeenCalledWith({
+      title: 'This version of Gli is out of date.',
+      tone: 'bad',
+    });
+    expect(mutation('consent:acceptTerms')).toHaveBeenCalledOnce();
+    expect(mutation('consent:openTerms')).toHaveBeenCalledOnce();
   });
 });
 

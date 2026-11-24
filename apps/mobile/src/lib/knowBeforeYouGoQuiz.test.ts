@@ -93,12 +93,6 @@ describe('quizReducer', () => {
     expect(step(s, { type: 'start' })).toBe(s);
   });
 
-  it('restarts from the first question when the questions changed', () => {
-    let s = initialQuiz('never', false);
-    s = step(step(s, { type: 'pick', answer: slot(0, true) }), { type: 'next' });
-    expect(step(s, { type: 'restart' })).toEqual(initialQuiz('never', false));
-  });
-
   it('ignores a pick past the end of the data', () => {
     const lost: QuizState = { phase: 'question', index: 99, picked: null, outcome: 'none' };
     expect(step(lost, { type: 'pick', answer: 0 })).toBe(lost);

@@ -31,6 +31,22 @@ import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
 
+/**
+ * The questions' ledger as it will stand after a summer's edit: one older published version beside
+ * this build's, so the server's "any published version" rule is exercised against a real second line.
+ * Every other export is core's own.
+ */
+const LAST_YEAR = vi.hoisted(() => ({ version: '2025-11-01', hash: 'c'.repeat(64) }));
+vi.mock('@skating/core', async (importOriginal) => {
+  const core = await importOriginal<typeof import('@skating/core')>();
+  const ledger = { ...core.KNOW_BEFORE_YOU_GO_HASHES, [LAST_YEAR.version]: LAST_YEAR.hash };
+  return {
+    ...core,
+    isPublishedKnowBeforeYouGo: (claim: { version: string; hash: string }) =>
+      core.isPublishedKnowBeforeYouGo(claim, ledger),
+  };
+});
+
 /** Tuesday 24 November 2026, 15:00 UTC — the build's own day, pinned. */
 const T0 = Date.UTC(2026, 10, 24, 15, 0, 0);
 const DAY = 24 * 60 * 60 * 1000;
@@ -262,11 +278,11 @@ describe('the reading', () => {
         termsHash: TERMS_SHA256,
         surface: 'web',
       }),
-      'terms_changed',
+      'client_outdated',
     );
     await expectRefusal(
       as.mutation(api.consent.reachTermsEnd, { ...TERMS_CLAIM, termsHash: 'f00', via: 'inline' }),
-      'terms_changed',
+      'client_outdated',
     );
     await expectRefusal(
       as.mutation(api.consent.reachTermsEnd, { ...TERMS_CLAIM, via: 'inline' }),
@@ -400,8 +416,8 @@ describe('acceptTerms: a new account', () => {
     await as.mutation(api.consent.openTerms, { ...TERMS_CLAIM, surface: 'web' });
     await expectRefusal(accept(as, { account: ACCOUNT }), 'terms_not_read');
     await as.mutation(api.consent.reachTermsEnd, { ...TERMS_CLAIM, via: 'inline' });
-    await expectRefusal(accept(as, { account: ACCOUNT, termsHash: 'nope' }), 'terms_changed');
-    await expectRefusal(accept(as, { account: ACCOUNT, privacyHash: 'nope' }), 'terms_changed');
+    await expectRefusal(accept(as, { account: ACCOUNT, termsHash: 'nope' }), 'client_outdated');
+    await expectRefusal(accept(as, { account: ACCOUNT, privacyHash: 'nope' }), 'client_outdated');
     await expectRefusal(accept(as), 'account_required');
     await expectRefusal(
       accept(as, { account: { ...ACCOUNT, dateOfBirth: Date.UTC(2010, 0, 1) } }),
@@ -737,10 +753,10 @@ describe('completeKnowBeforeYouGo', () => {
     await t.run((ctx) => ctx.db.patch(beaId, { termsVersion: '2026-01-01' }));
     await expectRefusal(complete(bea), 'terms_first');
     const as = await accepted(t);
-    await expectRefusal(complete(as, { ...QUESTIONS_CLAIM, hash: 'beef' }), 'questions_changed');
+    await expectRefusal(complete(as, { ...QUESTIONS_CLAIM, hash: 'beef' }), 'client_outdated');
     await expectRefusal(
       complete(as, { ...QUESTIONS_CLAIM, version: '2020-01-01' }),
-      'questions_changed',
+      'client_outdated',
     );
     await existingProfile(t, 'user_leaving', {
       termsVersion: TERMS.version,
@@ -749,6 +765,27 @@ describe('completeKnowBeforeYouGo', () => {
     await expect(complete(caller(t, 'user_leaving'))).rejects.toThrow(/scheduled for deletion/i);
     expect(await complete(caller(t, 'user_nobody')).catch((e: Error) => e.message)).toMatch(
       /not authenticated/i,
+    );
+  });
+
+  test('an older build’s published questions count, and the record names the words answered', async () => {
+    const t = harness();
+    const as = await accepted(t);
+    // A phone built before the summer's edit: last year's words, by last year's hash.
+    expect(await complete(as, LAST_YEAR)).toEqual({ season: null });
+    const record = (await records(t)).find((r) => r.kind === 'questions');
+    expect(record).toMatchObject({ version: LAST_YEAR.version, contentHash: LAST_YEAR.hash });
+    expect((await as.query(api.profiles.current, {}))?.knowBeforeYouGoVersion).toBe(
+      LAST_YEAR.version,
+    );
+    // A published version under another version's hash, or a version nobody published: refused.
+    await expectRefusal(
+      complete(as, { version: LAST_YEAR.version, hash: KNOW_BEFORE_YOU_GO_SHA256 }),
+      'client_outdated',
+    );
+    await expectRefusal(
+      complete(as, { version: '2099-01-01', hash: 'unpublished' }),
+      'client_outdated',
     );
   });
 

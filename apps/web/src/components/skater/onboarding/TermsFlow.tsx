@@ -1,9 +1,10 @@
 import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import {
-  isAccountRefusal,
+  consentRefusalAction,
   knowBeforeYouGoDue,
   needsProfileSetup,
+  ONBOARDING_COPY,
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
   receiptLine,
@@ -26,6 +27,7 @@ import {
 } from '@/lib/entryHold';
 
 import { clientReport, toastRefusal } from './consentRefusal';
+import { OutdatedStep, reloadPage } from './OutdatedStep';
 import type { TermsReaderVia } from './TermsReader';
 import { ReceiptStep, TermsStep } from './TermsStep';
 
@@ -40,11 +42,14 @@ const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
  *    has answered, so a fast scroll can't reach the end of a reading the server hasn't started.
  *    Recorded, the box unlocks.
  * 3. *Record acceptance*: the hold first (`lib/entryHold` says why), then `acceptTerms`. Through,
- *    the receipt draws under the hold; refused, a toast, the hold let go, and — by code — the
- *    reading starts again (`terms_changed`), the end marker re-arms (`terms_not_read`), or a new
- *    account goes back to the Account step for any refusal of its fields (core's
- *    `isAccountRefusal`: the age, the name, the handle's shape, its being taken — marked — or
- *    its cooldown), as on the phone.
+ *    the receipt draws under the hold; refused, a toast, the hold let go, and — by core's
+ *    `consentRefusalAction` — the end marker re-arms (`terms_not_read`), or a new account goes
+ *    back to the Account step for any refusal of its fields (the age, the name, the handle's
+ *    shape, its being taken — marked — or its cooldown), as on the phone.
+ *
+ * Any of the three refused `client_outdated` — this tab's bundled terms or notice aren't the
+ * server's — stops the step on `OutdatedStep`, which offers a reload: reading the same text again
+ * can't fix it, so nothing here re-arms after it.
  * 4. The receipt's button lets go, and the gate takes it from there. *Start the questions* opens
  *    them on the first one: the receipt has just said what comes next.
  */
@@ -79,6 +84,13 @@ export function TermsFlow({
   const [reaching, setReaching] = useState(false);
   const [busy, setBusy] = useState(false);
   const [resetKey, setResetKey] = useState(0);
+  // `client_outdated`: the step stops for good (a ref too, for the answers already on their way).
+  const [outdated, setOutdated] = useState(false);
+  const stopped = useRef(false);
+  const stop = () => {
+    stopped.current = true;
+    setOutdated(true);
+  };
   // What the profile was before this acceptance, for the record's context in the event.
   const before = useRef(profile);
   if (!held) before.current = profile;
@@ -92,7 +104,10 @@ export function TermsFlow({
     const open: Promise<boolean> = openTerms({ ...TERMS_CLAIM, surface: 'web' }).then(
       () => true,
       (error: unknown) => {
-        if (opened.current === open) toastRefusal(error);
+        if (opened.current === open && !stopped.current) {
+          const { code } = toastRefusal(error);
+          if (consentRefusalAction(code) === 'outdated') stop();
+        }
         return false;
       },
     );
@@ -111,9 +126,10 @@ export function TermsFlow({
     inFlight.current = true;
     setReaching(true);
     try {
-      // A reading the server never started has no end to record: begin it again from the top.
+      // A reading the server never started has no end to record: begin it again from the top —
+      // unless it was refused as out of date, which no new reading can fix.
       if (!(await opened.current)) {
-        restart();
+        if (!stopped.current) restart();
         return;
       }
       await reachTermsEnd({ ...TERMS_CLAIM, via });
@@ -121,8 +137,24 @@ export function TermsFlow({
       analytics.capture('terms_read_to_end', { via });
     } catch (error) {
       const { code } = toastRefusal(error);
-      // Nothing to reach the end of: the reading starts again from the top.
-      if (code === 'terms_changed' || code === 'terms_not_opened') restart();
+      const action = consentRefusalAction(code);
+      switch (action) {
+        case 'outdated':
+          stop();
+          break;
+        case 'reopen':
+          // Nothing to reach the end of: the reading starts again from the top.
+          restart();
+          break;
+        case 'rearm':
+        case 'account':
+        case 'say':
+          break;
+        default: {
+          const unhandled: never = action;
+          throw new Error(`unhandled refusal action: ${String(unhandled)}`);
+        }
+      }
     } finally {
       inFlight.current = false;
       setReaching(false);
@@ -155,18 +187,47 @@ export function TermsFlow({
       if (context === 'first_run') analytics.capture('onboarding_completed');
     } catch (error) {
       const { code } = toastRefusal(error);
-      if (account !== null && isAccountRefusal(code)) {
+      const action = consentRefusalAction(code);
+      if (account !== null && action === 'account') {
         returnToAccount(code === 'username_taken' ? account.username : undefined);
         onBackToAccount();
-      } else {
-        releaseHold();
-        if (code === 'terms_changed') restart();
-        else if (code === 'terms_not_read') setRead(false);
+        return;
+      }
+      releaseHold();
+      switch (action) {
+        case 'outdated':
+          stop();
+          break;
+        case 'reopen':
+          restart();
+          break;
+        case 'rearm':
+          setRead(false);
+          break;
+        // An existing account has no Account step: its toast is all there is.
+        case 'account':
+        case 'say':
+          break;
+        default: {
+          const unhandled: never = action;
+          throw new Error(`unhandled refusal action: ${String(unhandled)}`);
+        }
       }
     } finally {
       setBusy(false);
     }
   };
+
+  if (outdated) {
+    return (
+      <OutdatedStep
+        kicker={ONBOARDING_COPY.terms.kicker}
+        email={email}
+        onReload={reloadPage}
+        onSignOut={onSignOut}
+      />
+    );
+  }
 
   if (held && recorded) {
     const due =

@@ -11,6 +11,9 @@
  * without a device.
  */
 
+import { consentRefusalAction } from '@skating/core';
+import { readRefusal } from './consentClient';
+
 /** What a `ScrollView`'s `onScroll` / `onLayout` / `onContentSizeChange` report, in dp. */
 export interface ScrollMetrics {
   /** `contentOffset.y`: how far the content has scrolled. */
@@ -45,9 +48,12 @@ export function endMarkerOnScreen(metrics: ScrollMetrics, markerY: number | null
  * - `recording` — it was, and the stamp is on its way;
  * - `recorded` — the server has it: the agree line unlocks;
  * - `failed` — the stamp was refused or lost; it is tried again when the marker comes back on
- *   screen, never on every scroll event while it stays there.
+ *   screen, never on every scroll event while it stays there;
+ * - `outdated` — the server refused this build's terms as out of date (`client_outdated`): no
+ *   re-reading fixes that, so it is final — nothing re-arms it, and the screen stops on its update
+ *   notice.
  */
-export type TermsEnd = 'unseen' | 'recording' | 'recorded' | 'failed';
+export type TermsEnd = 'unseen' | 'recording' | 'recorded' | 'failed' | 'outdated';
 
 export interface TermsReadingState {
   end: TermsEnd;
@@ -74,7 +80,7 @@ export interface TermsReading {
    * where the reader is — if the marker is still on screen, it is stamped once more.
    */
   rearm(): void;
-  /** `terms_changed`: the reading starts again from the top (the screen scrolls there). */
+  /** The reading starts again from the top (the screen scrolls there). */
   restart(): void;
   state(): TermsReadingState;
   /** The screen is gone: late answers change nothing. */
@@ -107,6 +113,9 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
     return opening;
   };
 
+  /** Whether a refusal says this build's words are out of date: final, never retried. */
+  const outdated = (error: unknown) => consentRefusalAction(readRefusal(error).code) === 'outdated';
+
   const record = () => {
     const mine = generation;
     set({ end: 'recording' });
@@ -118,7 +127,7 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
         },
         (error: unknown) => {
           if (mine !== generation || disposed) return;
-          set({ end: 'failed' });
+          set({ end: outdated(error) ? 'outdated' : 'failed' });
           deps.onRefusal(error);
         },
       );
@@ -133,7 +142,9 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
 
   const start = () => {
     ensureOpen().catch((error: unknown) => {
-      if (!disposed) deps.onRefusal(error);
+      if (disposed) return;
+      if (outdated(error)) set({ end: 'outdated' });
+      deps.onRefusal(error);
     });
   };
 
@@ -145,12 +156,14 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
       look();
     },
     rearm() {
+      if (state.end === 'outdated') return;
       generation++;
       opening = null;
       set({ end: 'unseen' });
       look();
     },
     restart() {
+      if (state.end === 'outdated') return;
       generation++;
       opening = null;
       last = null;

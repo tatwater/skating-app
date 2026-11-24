@@ -31,11 +31,7 @@ export interface QuizState {
   outcome: QuizOutcome;
 }
 
-export type QuizEvent =
-  | { type: 'start' }
-  | { type: 'pick'; answer: 0 | 1 }
-  | { type: 'next' }
-  | { type: 'restart' };
+export type QuizEvent = { type: 'start' } | { type: 'pick'; answer: 0 | 1 } | { type: 'next' };
 
 /**
  * Where the screen opens. A season check opens on its card, unless the skater has just come from
@@ -69,9 +65,6 @@ export function quizReducer(
       }
       return { phase: 'question', index: state.index + 1, picked: null, outcome: 'none' };
     }
-    case 'restart':
-      // `questions_changed`: start again from the first one.
-      return { phase: 'question', index: 0, picked: null, outcome: 'none' };
   }
 }
 

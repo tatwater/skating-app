@@ -1,8 +1,8 @@
 import { useAuth } from '@clerk/expo';
 import { api } from '@skating/convex/api';
 import {
+  consentRefusalAction,
   groupTermsBlocks,
-  isAccountRefusal,
   KNOW_BEFORE_YOU_GO_NAME,
   knowBeforeYouGoDue,
   ONBOARDING_COPY,
@@ -41,6 +41,7 @@ import { useSignOut } from '../../lib/useSignOut';
 import { useToast } from '../Toast';
 import { useEntrySession } from './EntrySession';
 import { Kicker, OnboardingFrame, PrimaryButton, StepHeader } from './OnboardingFrame';
+import { OutdatedScreen } from './OutdatedScreen';
 
 /** The Account step's fields, carried here in memory for the acceptance to create the row. */
 export interface AccountFields {
@@ -63,10 +64,11 @@ const USER_AGENT = appUserAgent(
  * screen *and the server has stamped it*; *Record acceptance* records it; then the receipt, under
  * the root's hold, with the *Next: Know Before You Go* block only when the questions are due.
  *
- * Refusals are toasts (D268). Some also act: a refusal about the Account fields (`username_taken`,
- * the cooldown, a name, username or date the server won't take) returns a new account to the
- * Account step, `terms_changed` starts the reading over from the top, and `terms_not_read` re-arms
- * the end marker.
+ * Refusals are toasts (D268). Some also act, by core's `consentRefusalAction`: a refusal about the
+ * Account fields (`username_taken`, the cooldown, a name, username or date the server won't take)
+ * returns a new account to the Account step, `terms_not_read` re-arms the end marker, and
+ * `client_outdated` — this build's terms or notice aren't the server's, which no re-reading fixes —
+ * stops the step on `OutdatedScreen`, asking for an update; nothing re-arms after it.
  */
 export function TermsStep({
   account,
@@ -82,7 +84,11 @@ export function TermsStep({
   onAccountRefused?: (code: string, username: string) => void;
 }) {
   const [recorded, setRecorded] = useState(false);
+  const [outdated, setOutdated] = useState(false);
   const signOut = useSignOut();
+  if (outdated) {
+    return <OutdatedScreen kicker={ONBOARDING_COPY.terms.kicker} onSignOut={signOut} />;
+  }
   return recorded ? (
     <Receipt showStep={showStep} onSignOut={signOut} />
   ) : (
@@ -91,6 +97,7 @@ export function TermsStep({
       showStep={showStep}
       heldOn={heldOn}
       onRecorded={() => setRecorded(true)}
+      onOutdated={() => setOutdated(true)}
       onSignOut={signOut}
       onAccountRefused={onAccountRefused}
     />
@@ -102,6 +109,7 @@ function Reader({
   showStep,
   heldOn,
   onRecorded,
+  onOutdated,
   onSignOut,
   onAccountRefused,
 }: {
@@ -109,6 +117,8 @@ function Reader({
   showStep: boolean;
   heldOn: ReceiptGroup;
   onRecorded: () => void;
+  /** `client_outdated`: the step stops on the update notice. */
+  onOutdated: () => void;
   onSignOut: () => void;
   onAccountRefused?: (code: string, username: string) => void;
 }) {
@@ -155,6 +165,12 @@ function Reader({
       readingRef.current = null;
     };
   }, []);
+
+  // The opening or the end refused as out of date: final, and the step stops.
+  const outdated = state.end === 'outdated';
+  useEffect(() => {
+    if (outdated) onOutdated();
+  }, [outdated, onOutdated]);
 
   const observe = () => readingRef.current?.observe(metrics.current, markerY.current);
   const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -203,16 +219,34 @@ function Reader({
       dispatch({ type: 'acceptFailed' });
       const refusal = readRefusal(error);
       toast(refusal.message);
-      if (account && onAccountRefused && isAccountRefusal(refusal.code)) {
+      const action = consentRefusalAction(refusal.code);
+      if (account && onAccountRefused && action === 'account') {
         onAccountRefused(refusal.code as string, account.username);
-      } else if (refusal.code === 'terms_changed') {
-        setChecked(false);
-        // The marker stays where it was laid out (the same text), so its position is kept.
-        scrollRef.current?.scrollTo({ y: 0, animated: false });
-        readingRef.current?.restart();
-      } else if (refusal.code === 'terms_not_read') {
-        setChecked(false);
-        readingRef.current?.rearm();
+        setBusy(false);
+        return;
+      }
+      switch (action) {
+        case 'outdated':
+          onOutdated();
+          return;
+        case 'reopen':
+          setChecked(false);
+          // The marker stays where it was laid out (the same text), so its position is kept.
+          scrollRef.current?.scrollTo({ y: 0, animated: false });
+          readingRef.current?.restart();
+          break;
+        case 'rearm':
+          setChecked(false);
+          readingRef.current?.rearm();
+          break;
+        // An existing account has no Account step: its toast is all there is.
+        case 'account':
+        case 'say':
+          break;
+        default: {
+          const unhandled: never = action;
+          throw new Error(`unhandled refusal action: ${String(unhandled)}`);
+        }
       }
       setBusy(false);
     }

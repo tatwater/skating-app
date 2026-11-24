@@ -160,6 +160,19 @@ export const ONBOARDING_COPY = {
     start: 'Start the questions',
     signOut: 'Not now — sign out',
   },
+  /**
+   * Draft (not drawn): the blocking screen a `client_outdated` refusal leaves — this build's bundled
+   * terms, Privacy Notice or questions aren't the ones the server knows, and reading them again
+   * can't fix it. Never says what changed: a Privacy-Notice-only change isn't "new terms".
+   */
+  outdated: {
+    heading: 'Time for an update',
+    /** The web: a reload fetches the new bundle. */
+    web: 'Gli has changed since this page loaded. Reload the page to get the latest version.',
+    reload: 'Reload the page',
+    /** The phone: only a new build carries the new words. */
+    phone: 'This version of the app is out of date. Update Gli to keep going.',
+  },
   /** The card's foot on every step but the season card. */
   foot: { signedInAs: 'Signed in as', signOut: 'Sign out' },
 } as const;
@@ -223,24 +236,6 @@ export function questionsLastAnswered(lastAt: number, timeZone: string): string 
   return `Last answered ${formatCardDay(lastAt, timeZone)}`;
 }
 
-/**
- * The acceptance's refusals that are about the Account step's fields, not the terms: on either app
- * a new or re-introduced account is sent back to the Account step, with the toast, to fix them.
- */
-export const ACCOUNT_REFUSAL_CODES: ReadonlySet<ConsentRefusalCode> = new Set<ConsentRefusalCode>([
-  'account_required',
-  'underage',
-  'name_invalid',
-  'username_invalid',
-  'username_taken',
-  'username_cooldown',
-]);
-
-/** Whether a refusal code sends a new account back to the Account step. */
-export function isAccountRefusal(code: string | null | undefined): boolean {
-  return code != null && (ACCOUNT_REFUSAL_CODES as ReadonlySet<string>).has(code);
-}
-
 /** What the receipt knows about the emailed copy (`consent.latestTermsReceipt`). */
 export type ReceiptCopy = 'pending' | 'sent' | 'not_sent';
 
@@ -271,7 +266,7 @@ export const DATE_OF_BIRTH_MESSAGES = {
  * besides the profile gate's own.
  */
 export type ConsentRefusalCode =
-  | 'terms_changed'
+  | 'client_outdated'
   | 'terms_not_opened'
   | 'terms_not_read'
   | 'account_required'
@@ -282,15 +277,14 @@ export type ConsentRefusalCode =
   | 'username_taken'
   | 'username_cooldown'
   | 'deletion_pending'
-  | 'terms_first'
-  | 'questions_changed';
+  | 'terms_first';
 
 /**
  * A toast's words for each refusal, when the error carries none of its own (or a client wants the
  * same words offline). Drafts for the founder's copy pass; the server may send these same strings.
  */
 export const CONSENT_REFUSAL_MESSAGES: Readonly<Record<ConsentRefusalCode, string>> = {
-  terms_changed: 'The terms were just updated. Please read the new version from the top.',
+  client_outdated: 'This version of Gli is out of date.',
   terms_not_opened: 'Something went wrong loading the terms. Please read them again from the top.',
   terms_not_read: 'Please read the terms to the end before you accept them.',
   account_required: 'We need your name, username, and date of birth first.',
@@ -303,7 +297,6 @@ export const CONSENT_REFUSAL_MESSAGES: Readonly<Record<ConsentRefusalCode, strin
   deletion_pending:
     'Your account is set to be deleted. To keep it, cancel the deletion in Settings first.',
   terms_first: 'Please accept the terms first.',
-  questions_changed: 'The questions were just updated. Please start again from the first one.',
 };
 
 /** When nothing better is known. */
@@ -315,4 +308,56 @@ export function consentRefusalMessage(code: string | undefined): string {
     return CONSENT_REFUSAL_MESSAGES[code as ConsentRefusalCode];
   }
   return CONSENT_REFUSAL_FALLBACK;
+}
+
+/**
+ * What a client does about a refusal, beyond its toast — the one table both apps branch on, so a
+ * new code is a type error here until it has an answer, and each app's `switch` over the actions is
+ * exhaustive:
+ *
+ * - `account` — the Account step's fields: a new or re-introduced account goes back to fix them;
+ * - `reopen` — the server has no reading (`terms_not_opened`): start it again from the top;
+ * - `rearm` — the end isn't recorded (`terms_not_read`): look for the end marker again;
+ * - `outdated` — this build's bundled words aren't the server's (`client_outdated`): re-reading the
+ *   same text can't fix it, so the step stops on a blocking screen (the web offers a reload, the
+ *   phone asks for an update) and nothing re-arms by itself;
+ * - `say` — the toast is all there is to it.
+ */
+export type ConsentRefusalAction = 'account' | 'reopen' | 'rearm' | 'outdated' | 'say';
+
+export const CONSENT_REFUSAL_ACTIONS: Readonly<Record<ConsentRefusalCode, ConsentRefusalAction>> = {
+  client_outdated: 'outdated',
+  terms_not_opened: 'reopen',
+  terms_not_read: 'rearm',
+  account_required: 'account',
+  account_unexpected: 'say',
+  underage: 'account',
+  name_invalid: 'account',
+  username_invalid: 'account',
+  username_taken: 'account',
+  username_cooldown: 'account',
+  deletion_pending: 'say',
+  terms_first: 'say',
+};
+
+/** The action for a refusal code; a code this build doesn't know (or none) is only said. */
+export function consentRefusalAction(code: string | null | undefined): ConsentRefusalAction {
+  return code != null && Object.hasOwn(CONSENT_REFUSAL_ACTIONS, code)
+    ? CONSENT_REFUSAL_ACTIONS[code as ConsentRefusalCode]
+    : 'say';
+}
+
+/**
+ * The acceptance's refusals that are about the Account step's fields, not the terms: on either app
+ * a new or re-introduced account is sent back to the Account step, with the toast, to fix them.
+ */
+export const ACCOUNT_REFUSAL_CODES: ReadonlySet<ConsentRefusalCode> = new Set(
+  (Object.keys(CONSENT_REFUSAL_ACTIONS) as ConsentRefusalCode[]).filter(
+    (code) => CONSENT_REFUSAL_ACTIONS[code] === 'account',
+  ),
+);
+
+/** Whether a refusal code sends a new account back to the Account step. */
+export function isAccountRefusal(code: string | null | undefined): boolean {
+  return consentRefusalAction(code) === 'account';
 }

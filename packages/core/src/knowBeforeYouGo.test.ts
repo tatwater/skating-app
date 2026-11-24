@@ -1,13 +1,14 @@
 import { createHash } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import {
-  isCurrentKnowBeforeYouGo,
+  isPublishedKnowBeforeYouGo,
   KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_HASHES,
   KNOW_BEFORE_YOU_GO_SHA256,
   knowBeforeYouGoAnswers,
   knowBeforeYouGoHashInput,
 } from './knowBeforeYouGo';
+import { UNPUBLISHED_HASH } from './legal/hashLedger';
 
 const sha256 = (text: string) => createHash('sha256').update(text, 'utf8').digest('hex');
 const { questions } = KNOW_BEFORE_YOU_GO;
@@ -68,13 +69,32 @@ describe('the committed hash', () => {
     expect(knowBeforeYouGoHashInput(reordered)).toBe(base);
   });
 
-  it('names the current questions, and nothing else, as current', () => {
+  it('accepts the current questions, and every published version, by its own hash', () => {
     const version = KNOW_BEFORE_YOU_GO.version;
-    expect(isCurrentKnowBeforeYouGo({ version, hash: KNOW_BEFORE_YOU_GO_SHA256 })).toBe(true);
+    expect(isPublishedKnowBeforeYouGo({ version, hash: KNOW_BEFORE_YOU_GO_SHA256 })).toBe(true);
+    for (const [v, hash] of Object.entries(KNOW_BEFORE_YOU_GO_HASHES)) {
+      expect(isPublishedKnowBeforeYouGo({ version: v, hash })).toBe(true);
+    }
+    // After next summer's edit: last year's words, answered on a phone built before it, still count.
+    const ledger = { '2026-11-24': 'a'.repeat(64), '2027-06-01': 'b'.repeat(64) };
     expect(
-      isCurrentKnowBeforeYouGo({ version: '2020-01-01', hash: KNOW_BEFORE_YOU_GO_SHA256 }),
+      isPublishedKnowBeforeYouGo({ version: '2026-11-24', hash: 'a'.repeat(64) }, ledger),
+    ).toBe(true);
+    expect(
+      isPublishedKnowBeforeYouGo({ version: '2027-06-01', hash: 'b'.repeat(64) }, ledger),
+    ).toBe(true);
+    // Another version's hash, a version nobody published, the sentinel: refused.
+    expect(
+      isPublishedKnowBeforeYouGo({ version: '2026-11-24', hash: 'b'.repeat(64) }, ledger),
     ).toBe(false);
-    expect(isCurrentKnowBeforeYouGo({ version, hash: '0'.repeat(64) })).toBe(false);
+    expect(
+      isPublishedKnowBeforeYouGo({ version: '2020-01-01', hash: KNOW_BEFORE_YOU_GO_SHA256 }),
+    ).toBe(false);
+    expect(isPublishedKnowBeforeYouGo({ version, hash: '0'.repeat(64) })).toBe(false);
+    expect(isPublishedKnowBeforeYouGo({ version: '2099-01-01', hash: UNPUBLISHED_HASH })).toBe(
+      false,
+    );
+    expect(isPublishedKnowBeforeYouGo({ version: 'toString', hash: UNPUBLISHED_HASH })).toBe(false);
   });
 });
 

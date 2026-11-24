@@ -20,6 +20,7 @@ import {
   type KnowBeforeYouGoPosition,
   type SeasonFacts,
 } from './KnowBeforeYouGoFlow';
+import { OutdatedStep } from './OutdatedStep';
 import type { TermsReaderVia } from './TermsReader';
 import { ReceiptStep, TermsStep } from './TermsStep';
 import { AddPhotoLabel, HomeStep, type ProfileDraft, ProfileStep } from './WelcomeSteps';
@@ -459,6 +460,47 @@ export const TermsRecordedNoCopy: Story = {
 
 /** 11.5 — recorded, on a phone. */
 export const TermsRecordedPhone: Story = { ...phone, render: () => <Receipt phone /> };
+
+const onReload = fn();
+
+function Outdated({ phone: onPhone = false }: { phone?: boolean }) {
+  return (
+    <Board phone={onPhone}>
+      <OutdatedStep
+        className={FILL}
+        kicker={ONBOARDING_COPY.terms.kicker}
+        email={EMAIL}
+        onReload={onReload}
+        onSignOut={noop}
+      />
+    </Board>
+  );
+}
+
+/**
+ * Not drawn — the server refused this tab's words as out of date (`client_outdated`): the step
+ * stops here, and its one button reloads the page for the new bundle.
+ */
+export const TermsOutdated: Story = {
+  ...desk(),
+  render: () => <Outdated />,
+  play: async ({ canvasElement }) => {
+    onReload.mockClear();
+    const c = within(canvasElement);
+    await expect(c.getByRole('heading', { name: ONBOARDING_COPY.outdated.heading })).toBeVisible();
+    await expect(c.getByText(ONBOARDING_COPY.outdated.web)).toBeVisible();
+    await waitFor(() =>
+      expect(c.getByRole('button', { name: ONBOARDING_COPY.outdated.reload })).toHaveFocus(),
+    );
+    await userEvent.keyboard('{Enter}');
+    await expect(onReload).toHaveBeenCalledOnce();
+  },
+};
+
+export const TermsOutdatedLight: Story = { ...TermsOutdated, ...desk('light') };
+
+/** Not drawn — out of date, on a phone. */
+export const TermsOutdatedPhone: Story = { ...phone, render: () => <Outdated phone /> };
 
 // ── Know Before You Go (10.6–10.9, 10.13, 11.6–11.9, 11.13) ────────────────────────────────
 

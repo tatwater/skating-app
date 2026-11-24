@@ -159,7 +159,7 @@ describe('onboarding through consent.acceptTerms (the guarantees upsertFromClerk
       surface: 'web',
       account: { displayName: 'Ada', username: 'ada', dateOfBirth: ADULT },
     });
-    expect(await refusedWith(stale)).toBe('terms_changed');
+    expect(await refusedWith(stale)).toBe('client_outdated');
     expect(await asAda.query(api.profiles.current, {})).toBeNull();
   });
 

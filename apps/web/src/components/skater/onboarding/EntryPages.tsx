@@ -1,6 +1,7 @@
 import { useAuth, useUser } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import {
+  consentRefusalAction,
   KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_NAME,
   KNOW_BEFORE_YOU_GO_SHA256,
@@ -30,6 +31,7 @@ import { AccountStep, type UsernameAvailability } from './AccountStep';
 import { clientReport, toastRefusal } from './consentRefusal';
 import { type OnboardingStep, onboardingStepShown, welcomeStepShown } from './entrySearch';
 import { KnowBeforeYouGoFlow } from './KnowBeforeYouGoFlow';
+import { OutdatedStep, reloadPage } from './OutdatedStep';
 import { TermsFlow } from './TermsFlow';
 import { AddPhotoLabel, HomeStep, type ProfileDraft, ProfileStep } from './WelcomeSteps';
 
@@ -140,7 +142,9 @@ function localZone(): string {
 /**
  * `/know-before-you-go` (boards 10.6–10.9, 10.13, 11.6–11.9, 11.13): the questions, in the flavor
  * the season rule gives — `never` straight on the first question, `season` on the season card.
- * *Continue* on all seven writes the completion; the gate moves on when the profile says so.
+ * *Continue* on all seven writes the completion; the gate moves on when the profile says so. The
+ * server takes any published version of the questions, so only a tab whose words it doesn't know
+ * at all is refused (`client_outdated`), and that stops on `OutdatedStep`, offering a reload.
  */
 export function KnowBeforeYouGoPage() {
   const email = useEmail();
@@ -152,7 +156,7 @@ export function KnowBeforeYouGoPage() {
   const complete = useMutation(api.consent.completeKnowBeforeYouGo);
   const fromReceipt = useEntryStore((s) => s.questionsFromReceipt);
   const [busy, setBusy] = useState(false);
-  const [attempt, setAttempt] = useState(0);
+  const [outdated, setOutdated] = useState(false);
 
   const due: KnowBeforeYouGoDue | null | undefined =
     profile === undefined || watch === undefined || profile === null
@@ -166,6 +170,16 @@ export function KnowBeforeYouGoPage() {
   const [flavor, setFlavor] = useState<KnowBeforeYouGoDue | null>(null);
   if (flavor === null && due) setFlavor(due);
 
+  if (outdated) {
+    return (
+      <OutdatedStep
+        kicker={KNOW_BEFORE_YOU_GO_NAME}
+        email={email}
+        onReload={reloadPage}
+        onSignOut={() => void signOut()}
+      />
+    );
+  }
   if (flavor === null || !profile) return null;
 
   const onComplete = async () => {
@@ -184,17 +198,30 @@ export function KnowBeforeYouGoPage() {
     } catch (error) {
       setBusy(false);
       const { code } = toastRefusal(error);
-      // New words: the questions start again from the first one.
-      if (code === 'questions_changed') setAttempt((n) => n + 1);
+      const action = consentRefusalAction(code);
+      switch (action) {
+        case 'outdated':
+          // Words the server doesn't know: answering them again can't help. Stop, offer a reload.
+          setOutdated(true);
+          break;
+        case 'reopen':
+        case 'rearm':
+        case 'account':
+        case 'say':
+          break;
+        default: {
+          const unhandled: never = action;
+          throw new Error(`unhandled refusal action: ${String(unhandled)}`);
+        }
+      }
     }
   };
 
   return (
     <KnowBeforeYouGoFlow
-      key={attempt}
       step={profile.welcomeStep !== undefined ? ONBOARDING_COPY.questions.step : null}
-      // Straight from the receipt, or starting over: the first question, never the season card.
-      flavor={attempt > 0 || fromReceipt ? 'never' : flavor}
+      // Straight from the receipt: the first question, never the season card.
+      flavor={fromReceipt ? 'never' : flavor}
       season={
         profile.knowBeforeYouGoAt !== undefined
           ? {

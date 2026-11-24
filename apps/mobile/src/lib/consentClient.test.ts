@@ -29,8 +29,8 @@ describe('readRefusal', () => {
       code: 'terms_not_read',
       message: CONSENT_REFUSAL_MESSAGES.terms_not_read,
     });
-    expect(readRefusal(new ConvexError({ code: 'terms_changed', message: ' ' })).message).toBe(
-      CONSENT_REFUSAL_MESSAGES.terms_changed,
+    expect(readRefusal(new ConvexError({ code: 'client_outdated', message: ' ' })).message).toBe(
+      CONSENT_REFUSAL_MESSAGES.client_outdated,
     );
     expect(readRefusal(new ConvexError({ code: 'brand_new_code' })).message).toBe(
       CONSENT_REFUSAL_FALLBACK,

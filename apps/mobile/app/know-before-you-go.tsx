@@ -3,8 +3,10 @@ import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faCheck, faXmark } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import {
+  consentRefusalAction,
   deviceTimeZone,
   KNOW_BEFORE_YOU_GO,
+  KNOW_BEFORE_YOU_GO_NAME,
   KNOW_BEFORE_YOU_GO_SHA256,
   knowBeforeYouGoAnswers,
   knowBeforeYouGoDue,
@@ -26,6 +28,7 @@ import {
   SecondaryButton,
   StepHeader,
 } from '../src/components/onboarding/OnboardingFrame';
+import { OutdatedScreen } from '../src/components/onboarding/OutdatedScreen';
 import { useToast } from '../src/components/Toast';
 import { appUserAgent, consentSurface, readRefusal } from '../src/lib/consentClient';
 import {
@@ -56,13 +59,16 @@ const USER_AGENT = appUserAgent(
  *
  * A skater answering again for a new season opens on *A new season on the ice*, with *Not now —
  * sign out* as the way out (no bar on that card). Reached when the gate says `questions`; the gate
- * moves on by itself once the completion lands.
+ * moves on by itself once the completion lands. The server takes any published version of the
+ * questions, so an older build keeps working after the yearly edit; only words it doesn't know at
+ * all are refused (`client_outdated`), and the screen stops on `OutdatedScreen`, asking for an update.
  */
 export default function KnowBeforeYouGoScreen() {
   const { session } = useEntrySession();
   const profile = useQuery(api.profiles.current, {});
   const anchor = useQuery(api.consent.watchAnchor, {});
   const signOut = useSignOut();
+  const [outdated, setOutdated] = useState(false);
 
   // The gate only routes here once both have loaded, so the opening is decided once, on arrival.
   const [quiz, send] = useReducer(
@@ -80,6 +86,9 @@ export default function KnowBeforeYouGoScreen() {
       ),
   );
 
+  if (outdated) {
+    return <OutdatedScreen kicker={KNOW_BEFORE_YOU_GO_NAME} onSignOut={() => void signOut()} />;
+  }
   if (quiz.phase === 'season') {
     return (
       <SeasonCard
@@ -96,7 +105,7 @@ export default function KnowBeforeYouGoScreen() {
       <AllSeven
         showStep={session.accountSeen}
         onSignOut={() => void signOut()}
-        onRestart={() => send({ type: 'restart' })}
+        onOutdated={() => setOutdated(true)}
       />
     );
   }
@@ -288,11 +297,12 @@ function Question({
 function AllSeven({
   showStep,
   onSignOut,
-  onRestart,
+  onOutdated,
 }: {
   showStep: boolean;
   onSignOut: () => void;
-  onRestart: () => void;
+  /** `client_outdated`: words the server doesn't know; answering them again can't help. */
+  onOutdated: () => void;
 }) {
   const { sessionId } = useAuth();
   const theme = useTheme();
@@ -316,8 +326,22 @@ function AllSeven({
     } catch (error) {
       const refusal = readRefusal(error);
       toast(refusal.message);
-      if (refusal.code === 'questions_changed') onRestart();
       setBusy(false);
+      const action = consentRefusalAction(refusal.code);
+      switch (action) {
+        case 'outdated':
+          onOutdated();
+          break;
+        case 'reopen':
+        case 'rearm':
+        case 'account':
+        case 'say':
+          break;
+        default: {
+          const unhandled: never = action;
+          throw new Error(`unhandled refusal action: ${String(unhandled)}`);
+        }
+      }
     }
   }
 

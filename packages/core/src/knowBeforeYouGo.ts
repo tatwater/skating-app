@@ -17,8 +17,10 @@
  *    below. Never edit an old line: each is a version skaters answered, and their records name it.
  *
  * A new version never re-asks anyone mid-season: whoever answered this season stays answered, and
- * the next season's asking uses the new words. There are always seven questions with two answers
- * each; the test holds that too.
+ * the next season's asking uses the new words. Every published line stays answerable: a phone built
+ * before the edit still asks the old words, and its completion counts and names them
+ * (`isPublishedKnowBeforeYouGo`). There are always seven questions with two answers each; the test
+ * holds that too.
  */
 
 import { claimMatches, ledgerHash } from './legal/hashLedger';
@@ -140,14 +142,18 @@ export function knowBeforeYouGoHashInput(set: KnowBeforeYouGo): string {
 }
 
 /**
- * Whether a client's `{ version, hash }` names the questions this build asks — never while this
- * build's version is missing from `KNOW_BEFORE_YOU_GO_HASHES` (`claimMatches`).
+ * Whether a client's `{ version, hash }` names a published version of the questions — any line of
+ * `KNOW_BEFORE_YOU_GO_HASHES`, not only this build's. A phone built before the summer's edit still
+ * asks last year's words, and its skater answered those: the completion records the version they
+ * answered, and it counts (a new version never re-asks anyone mid-season). An unknown version, a
+ * wrong hash, or the unpublished sentinel is refused (`claimMatches`). `ledger` is for tests that
+ * need a ledger with more than one line.
  */
-export function isCurrentKnowBeforeYouGo(claim: { version: string; hash: string }): boolean {
-  return claimMatches(
-    { version: KNOW_BEFORE_YOU_GO.version, hash: KNOW_BEFORE_YOU_GO_SHA256 },
-    claim,
-  );
+export function isPublishedKnowBeforeYouGo(
+  claim: { version: string; hash: string },
+  ledger: Readonly<Record<string, string>> = KNOW_BEFORE_YOU_GO_HASHES,
+): boolean {
+  return claimMatches({ version: claim.version, hash: ledgerHash(ledger, claim.version) }, claim);
 }
 
 /** A question's two answers in the order they are drawn: the first is key 1, the second key 2. */

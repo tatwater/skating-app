@@ -11,9 +11,11 @@
  * end was reached, then copies its stamps into the record and deletes it. What the client sends about
  * itself — which surface, its user agent — is stored labeled `client_reported` and capped. The words
  * accepted are named by core's committed version and SHA-256 (`isCurrentTerms`,
- * `isCurrentPrivacyNotice`, `isCurrentKnowBeforeYouGo`): a client showing other words is refused
- * (`terms_changed`, `questions_changed`), and the record stores the server's constants, never the
- * client's.
+ * `isCurrentPrivacyNotice`): a client bundling other terms or another notice is refused
+ * `client_outdated` — re-reading the same bundled text can't fix it, so the clients stop on a
+ * blocking screen (a reload, an update) — and the record stores the server's constants. The
+ * questions accept any published version (`isPublishedKnowBeforeYouGo`), so an older phone keeps
+ * working after the yearly edit, and the record names the version actually answered.
  *
  * **2. The record is sealed** (D297). One `consentRecords` row per acceptance and per completion, with
  * the identity as attested. After the insert only named fill-once fields change — the IP
@@ -35,14 +37,12 @@ import {
   CONSENT_REFUSAL_MESSAGES,
   type ConsentRefusalCode,
   capClientReported,
-  isCurrentKnowBeforeYouGo,
   isCurrentPrivacyNotice,
   isCurrentTerms,
   isMinor,
+  isPublishedKnowBeforeYouGo,
   isValidDisplayName,
-  KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_REPEAT_MS,
-  KNOW_BEFORE_YOU_GO_SHA256,
   meetsMinimumAge,
   needsProfileSetup,
   normalizeDisplayName,
@@ -195,6 +195,11 @@ export const watchAnchor = query({
 // Reading the terms
 // ─────────────────────────────────────────────────────────────────────────────
 
+/** A client whose bundled terms aren't this server's: no re-reading fixes that, only a new build. */
+function requireCurrentTerms(claim: { version: string; hash: string }): void {
+  if (!isCurrentTerms(claim)) refuse('client_outdated');
+}
+
 /**
  * The reader opened (board 10.3): the reading row, stamped now, or the one already open — its first
  * `openedAt` is kept, so reopening the page never moves it. Refuses words other than this build's.
@@ -203,9 +208,7 @@ export const openTerms = mutation({
   args: { termsVersion: v.string(), termsHash: v.string(), surface: consentSurface },
   handler: async (ctx, args): Promise<null> => {
     const identity = await requireReader(ctx);
-    if (!isCurrentTerms({ version: args.termsVersion, hash: args.termsHash })) {
-      refuse('terms_changed');
-    }
+    requireCurrentTerms({ version: args.termsVersion, hash: args.termsHash });
     if ((await currentReading(ctx, identity.subject)) !== null) return null;
     await ctx.db.insert('termsReadings', {
       clerkUserId: identity.subject,
@@ -225,9 +228,7 @@ export const reachTermsEnd = mutation({
   args: { termsVersion: v.string(), termsHash: v.string(), via: termsReaderVia },
   handler: async (ctx, args): Promise<null> => {
     const identity = await requireReader(ctx);
-    if (!isCurrentTerms({ version: args.termsVersion, hash: args.termsHash })) {
-      refuse('terms_changed');
-    }
+    requireCurrentTerms({ version: args.termsVersion, hash: args.termsHash });
     const reading = await currentReading(ctx, identity.subject);
     if (reading === null) refuse('terms_not_opened');
     if (reading.reachedEndAt !== undefined) return null;
@@ -297,11 +298,10 @@ export const acceptTerms = mutation({
   handler: async (ctx, args): Promise<{ recordId: Id<'consentRecords'> }> => {
     const identity = await requireIdentity(ctx);
     const subject = identity.subject;
-    if (
-      !isCurrentTerms({ version: args.termsVersion, hash: args.termsHash }) ||
-      !isCurrentPrivacyNotice({ version: args.privacyVersion, hash: args.privacyHash })
-    ) {
-      refuse('terms_changed');
+    requireCurrentTerms({ version: args.termsVersion, hash: args.termsHash });
+    // The notice alone out of step is the same refusal: the build is old, not the terms new.
+    if (!isCurrentPrivacyNotice({ version: args.privacyVersion, hash: args.privacyHash })) {
+      refuse('client_outdated');
     }
     const reading = await currentReading(ctx, subject);
     if (reading?.reachedEndAt === undefined) refuse('terms_not_read');
@@ -462,8 +462,9 @@ export const completeKnowBeforeYouGo = mutation({
   handler: async (ctx, args): Promise<{ season: string | null }> => {
     const profile = await requireContributor(ctx);
     if (profile.termsVersion !== TERMS.version) refuse('terms_first');
-    if (!isCurrentKnowBeforeYouGo({ version: args.version, hash: args.hash })) {
-      refuse('questions_changed');
+    // Any published version: an older build's words count, and are the ones recorded.
+    if (!isPublishedKnowBeforeYouGo({ version: args.version, hash: args.hash })) {
+      refuse('client_outdated');
     }
     const now = Date.now();
     if (
@@ -488,8 +489,9 @@ export const completeKnowBeforeYouGo = mutation({
         ...(email !== undefined ? { email } : {}),
         dateOfBirth: profile.dateOfBirth,
       },
-      version: KNOW_BEFORE_YOU_GO.version,
-      contentHash: KNOW_BEFORE_YOU_GO_SHA256,
+      // The words this skater answered — checked against the ledger above, so never a client's guess.
+      version: args.version,
+      contentHash: args.hash,
       context: profile.knowBeforeYouGoAt === undefined ? 'first_run' : 'season',
       recordedAt: now,
       season,
@@ -499,7 +501,7 @@ export const completeKnowBeforeYouGo = mutation({
     });
     await ctx.db.patch(profile._id, {
       knowBeforeYouGoAt: now,
-      knowBeforeYouGoVersion: KNOW_BEFORE_YOU_GO.version,
+      knowBeforeYouGoVersion: args.version,
     });
     await scheduleIp(ctx, recordId, identity, args.clientSessionId);
     return { season };
