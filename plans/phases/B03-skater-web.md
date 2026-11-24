@@ -1514,17 +1514,19 @@ stamp is said once and tried again only after the marker has left the screen and
 failed opening is said once and tried again quietly as the skater scrolls, no more often than core's
 `TERMS_OPEN_RETRY_GAP_MS` (five seconds, and due at once if the device clock was set back past the last try; a retry, like
 a restarted reading's opening, speaks only when it is out of date, which stops the step), so the server normally has the
-reading by the end. The end never waits on an opening: an end reached while one is out (the first, or a retry) never counts
-on it, and once it has answered the marker must leave the screen and come back before the end is stamped, on both apps. A
-reading the server doesn't have at the end — no opening ever succeeded, said then in `terms_not_opened`'s words, or
-`terms_not_opened` itself — is opened anew from the top of whichever
+reading by the end. An end reached while an opening is out waits for its answer, never silent, on both apps: on the
+reading's first opening (a slow connection; a text that fits the screen, which then counts once its opening answers), a
+success stamps the end then and a failure is said once — `terms_not_opened`'s words, or the server's own for a can't-act
+refusal — and the reading starts again; on a retried one (an earlier opening of this reading failed, so most of the text
+was read with no reading on the server), whatever it answers, the end says why once and the reading starts again. A
+reading the server doesn't have at the end — no opening ever succeeded, said then in `terms_not_opened`'s words (or the
+server's for a can't-act refusal), or `terms_not_opened` itself — is opened anew from the top of whichever
 reader is open (the web's full-screen reader scrolls to its top too), and its end counts only once the marker has left the
 screen and been reached again, on both apps: never re-stamped in the same breath as the new opening (the record would say
 the terms were opened and finished in one instant), never a loop against a server that keeps refusing. `terms_first` is
 `say`: the gate takes the skater to the terms once its profile catches up. `terms_not_read` re-arms the end on the opening
-the reading already has, on both apps, never a new one. An end with no opening because the last one was refused as the
-account can't act says the server's words instead, once, and only disarms: no `terms_not_opened`, no restart, no new
-opening; a quiet retry opens the reading once the suspension really ends. The profile gate's can't-act refusals on any
+the reading already has, on both apps, never a new one. Only a failed end stamp disarms the end until the marker has left
+and come back; quiet retries of a failed opening are never paused, a restarted reading's included. The profile gate's can't-act refusals on any
 way-in step are a toast in the server's words and route nothing (§9.3) — the Home and Profile steps' own saves too, which
 say the server's words for it and the step's *wasn't saved* line for anything else. The web counts `terms_accepted`, `onboarding_completed` and
 `know_before_you_go_completed` only when the call says it recorded something (`repeat: false`). On the Home step, *Save and
@@ -1533,11 +1535,16 @@ step and Settings' home, the phone's Home step and its You tab — runs through 
 looking busy after `LOCATE_GIVE_UP_MS` (30 seconds) even if a permission prompt is never answered, but the read stays live,
 and a fix is taken only when nothing superseded it (a typed or picked address, a save, a skip, a clear, leaving the edit or
 the step by any way — Settings' home form is keyed by its view, so the browser's Back drops a read as Cancel does — another
-locate) — a slowly answered prompt still sets the home; a late fix never replaces one chosen since. The button waits while
-a save or a skip is out, on both apps. Leaving Settings' home edit forgets what it held, a failed location's line included.
-A skip or a location save takes the picked address off the field with its town, on both apps (the phone's field and choice
-are one reducer, `homeFieldReducer`), and a field emptied or set from outside closes its suggestions and forgets the old
-query (the web derives its lookup from the value; the phone's controller takes it, `setValue`).
+locate) — a slowly answered prompt still sets the home; a late fix never replaces one chosen since. The phone's You tab,
+mounted all session, drops its read at the give-up and whenever the tab loses focus (`dropAtGiveUp`). The button waits
+while a save or a skip is out, on both apps; the You tab's says *Saving…*, and its failed save or Clear is a toast (the
+server's words for a refusal, else the *wasn't saved* line), as Settings' failed Clear is. A Settings home save answered
+after the skater left neither navigates back nor writes the gone form (a late failure is a toast). Leaving Settings' home
+edit forgets what it held, a failed location's line included; the address provider's answer is learned once a session,
+so the remounted form draws its field on its first frame. A skip or a location save takes the picked address off the
+field with its town, on both apps (the phone's field and choice are one reducer, `homeFieldReducer`), and a field emptied
+or set from outside closes its suggestions and forgets the old query (the web derives its lookup from the value; the
+phone's screen bumps a `reset` counter on a pick, the location and a skip, never on typing).
 
 ### 9.7 Mobile: the same screens on the existing tokens
 
@@ -1830,3 +1837,20 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   next Edit (the form is now keyed by its view). The phone's Home step let the location button be
   pressed mid-save and kept a failed skip's old suggestions listed; its You tab hung on a read
   nobody answered (now core's rule). The phone reading's doc comment was put back on its function.
+  (The end's leave-and-come-back rule and the can't-act end's disarm were replaced in the fifth
+  round, below.)
+- **The fifth review's nine (2026-11-24).** The fourth round's rule for an end reached while an
+  opening was out — it never counted, and the marker had to leave and come back — left the agree box
+  locked with nothing said on a slow first opening, and a text that fits the screen could never
+  count. As ruled, the end now waits for that opening's answer: the reading's first opening, answered,
+  stamps it; refused, it is said once and the reading starts again; a retried one's answer, either
+  way, starts the reading again with one toast (§9.6). The leave-and-come-back disarm is back to
+  only a failed end stamp, so a can't-act end now restarts like any unopened end, in the server's
+  words, and quiet retries are never paused. The web's step said a late opening failure on another
+  screen (it now goes quiet when unmounted). Settings' home painted *Change home* without its address
+  field, which popped in a round trip later (the provider's `on` is now learned once a session),
+  pulled the skater back to the home when a save answered after they left, and said nothing for a
+  failed Clear. The phone's You tab kept a read armed past its give-up and across tab changes (now
+  dropped), failed Clear silently and said a refused save as a location failure with no busy label.
+  The phone's address field could mistake an effect for an older value for an outside change and drop
+  the live query (an explicit `reset` counter now).
