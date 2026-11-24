@@ -14,7 +14,7 @@ function reads() {
   return { read, out };
 }
 
-function setup(giveUpMs?: number) {
+function setup(giveUpMs?: number, dropAtGiveUp?: boolean) {
   const { read, out } = reads();
   const states: LocateReadState[] = [];
   const onFix = vi.fn();
@@ -23,6 +23,7 @@ function setup(giveUpMs?: number) {
     onState: (s) => states.push(s),
     onFix,
     ...(giveUpMs !== undefined ? { giveUpMs } : {}),
+    ...(dropAtGiveUp !== undefined ? { dropAtGiveUp } : {}),
   });
   return { locate, read, out, states, onFix };
 }
@@ -88,6 +89,27 @@ describe('createLocateRead', () => {
     await vi.advanceTimersByTimeAsync(0);
     expect(onFix).toHaveBeenCalledWith('late');
     expect(states).toEqual(['locating', 'idle']);
+  });
+
+  it('with `dropAtGiveUp`, takes nothing after the give-up, fix or failure', async () => {
+    const { locate, out, states, onFix } = setup(undefined, true);
+    locate.start();
+    await vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS);
+    expect(states).toEqual(['locating', 'idle']);
+    out[0]?.resolve('somewhere else, hours later');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onFix).not.toHaveBeenCalled();
+    locate.start();
+    await vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS);
+    out[1]?.reject(new Error('denied'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(states).toEqual(['locating', 'idle', 'locating', 'idle']);
+    // A read answered inside the give-up still counts.
+    locate.start();
+    await vi.advanceTimersByTimeAsync(0);
+    out[2]?.resolve('here');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onFix).toHaveBeenCalledExactlyOnceWith('here');
   });
 
   it('says a slow failure after the give-up', async () => {

@@ -9,7 +9,9 @@
  * - **The busy state is bounded, the read is not.** After `LOCATE_GIVE_UP_MS` with no answer the
  *   button stops looking busy (`idle`), so it can always be pressed again — a permission prompt
  *   nobody answers would otherwise hold it for good. The read itself stays live: a prompt answered
- *   slowly still delivers its fix, as long as nothing superseded it in the meantime.
+ *   slowly still delivers its fix, as long as nothing superseded it in the meantime — except on a
+ *   screen that asks for `dropAtGiveUp` (the phone's You tab, mounted all session, where a fix
+ *   landing long after, with nothing on screen, could replace the home from somewhere else).
  *
  * Plain timers over an injected read, so the rule is tested without a browser or a device.
  */
@@ -31,6 +33,8 @@ export interface LocateReadDeps<T> {
   /** The newest unsuperseded read's fix. */
   onFix: (fix: T) => void;
   giveUpMs?: number;
+  /** The give-up drops the read too, not just the busy state: no fix is taken after it. */
+  dropAtGiveUp?: boolean;
 }
 
 export interface LocateRead {
@@ -47,6 +51,7 @@ export function createLocateRead<T>({
   onState,
   onFix,
   giveUpMs = LOCATE_GIVE_UP_MS,
+  dropAtGiveUp = false,
 }: LocateReadDeps<T>): LocateRead {
   let state: LocateReadState = 'idle';
   let token = 0;
@@ -72,7 +77,9 @@ export function createLocateRead<T>({
       // Only the busy state gives up: the read stays live, and its fix still counts if it is newest.
       giveUp = setTimeout(() => {
         giveUp = null;
-        if (mine === token && state === 'locating') set('idle');
+        if (mine !== token || state !== 'locating') return;
+        if (dropAtGiveUp) token++;
+        set('idle');
       }, giveUpMs);
       Promise.resolve()
         .then(read)

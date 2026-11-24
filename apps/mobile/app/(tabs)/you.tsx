@@ -13,6 +13,7 @@ import {
   NOTIFICATION_PREF_LABELS,
   NOTIFICATION_PREF_ORDER,
   type NotificationPrefKey,
+  ONBOARDING_COPY,
   resolveShowPutInDefault,
   SHOW_PUT_IN_HEADING,
   SHOW_PUT_IN_LABEL,
@@ -20,8 +21,8 @@ import {
 } from '@skating/core';
 import { THEME_PREFERENCES, type ThemePreference } from '@skating/design';
 import { useMutation, useQuery } from 'convex/react';
-import { Link, useRouter } from 'expo-router';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { Link, useFocusEffect, useRouter } from 'expo-router';
+import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import { ScrollView } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Button, H1, Paragraph, Separator, Text, useTheme, XStack, YStack } from 'tamagui';
@@ -30,8 +31,10 @@ import { ChangeEmail } from '../../src/components/ChangeEmail';
 import { ProfileEdit } from '../../src/components/ProfileEdit';
 import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
+import { useToast } from '../../src/components/Toast';
 import { TrackHistory } from '../../src/components/TrackHistory';
 import { UnreportedSkates } from '../../src/components/UnreportedSkates';
+import { readSaveRefusal } from '../../src/lib/consentClient';
 import {
   disablePushOnThisDevice,
   enablePushOnThisDevice,
@@ -176,20 +179,28 @@ export default function YouScreen() {
 function HomeLocation() {
   const profile = useQuery(api.profiles.current, {});
   const setHome = useMutation(api.profiles.setHome);
+  const toast = useToast();
   const [saving, setSaving] = useState(false);
-  const [saveFailed, setSaveFailed] = useState(false);
   const hasHome = profile?.homeCoord !== undefined;
 
   // The Home step's rule (core's `createLocateRead`): the button stops looking busy after a while
-  // even if the read is never answered, and only the newest read nobody superseded is saved.
-  const { locate, start, supersede } = useLocateRead((homeCoord) => void save(homeCoord));
+  // even if the read is never answered, and only the newest read nobody superseded is saved. This
+  // tab stays mounted all session, so here the read is also dropped at the give-up and whenever the
+  // tab loses focus: a fix landing later, with nothing on screen, never replaces the home.
+  const { locate, start, supersede } = useLocateRead((homeCoord) => void save(homeCoord), {
+    dropAtGiveUp: true,
+  });
+  useFocusEffect(useCallback(() => supersede, [supersede]));
+  // A save or a clear the server didn't take: its words for a refusal (the tabs hold suspended,
+  // read-only accounts), else the not-saved line — a toast, as every refusal is.
+  const refused = (error: unknown) =>
+    toast(readSaveRefusal(error, ONBOARDING_COPY.home.notSaved).message);
   async function save(homeCoord: { lat: number; lng: number }) {
     setSaving(true);
-    setSaveFailed(false);
     try {
       await setHome({ homeCoord });
-    } catch {
-      setSaveFailed(true);
+    } catch (error) {
+      refused(error);
     } finally {
       setSaving(false);
     }
@@ -208,13 +219,14 @@ function HomeLocation() {
         <Button
           size="md"
           hitSlop={tapTargetSlop('$3')}
-          onPress={() => {
-            setSaveFailed(false);
-            start();
-          }}
+          onPress={start}
           disabled={locate === 'locating' || saving}
         >
-          {hasHome ? 'Update home' : 'Set home from location'}
+          {saving
+            ? ONBOARDING_COPY.home.saving
+            : hasHome
+              ? 'Update home'
+              : 'Set home from location'}
         </Button>
         {hasHome ? (
           <Button
@@ -224,7 +236,7 @@ function HomeLocation() {
             onPress={() => {
               // Cleared: a location still being read never sets it back.
               supersede();
-              void setHome({});
+              void setHome({}).catch(refused);
             }}
           >
             Clear
@@ -235,7 +247,7 @@ function HomeLocation() {
         <Text color="foregroundMuted" fontSize={13}>
           Locating…
         </Text>
-      ) : locate === 'failed' || saveFailed ? (
+      ) : locate === 'failed' ? (
         <Text color="danger" fontSize={13}>
           Couldn't get your location.
         </Text>
