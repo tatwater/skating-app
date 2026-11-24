@@ -67,7 +67,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { getCurrentProfile, requireContributor, requireProfile } from './lib/auth';
+import { getCurrentProfile, isLockedOut, requireContributor, requireProfile } from './lib/auth';
 import { clerkEmailLookup } from './lib/clerkEmail';
 import { sessionIpFor } from './lib/clerkSessions';
 import {
@@ -101,6 +101,23 @@ function refuse(code: ConsentRefusalCode): never {
 async function requireIdentity(ctx: QueryCtx) {
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) throw new ConvexError('Not authenticated');
+  return identity;
+}
+
+/**
+ * The caller's identity for a reading's write, refused — as `requireProfile` refuses every call —
+ * when their profile is banned, being finalized or gone. A reading needs no profile (a new account
+ * has none yet), but one that has started finalizing must not gain a row: the `erase` stage may
+ * already have drained the subject's readings, and one written after it would outlive the deletion.
+ * Reading the profile here also puts the lock's write in this transaction's read set (OCC).
+ */
+async function requireReader(ctx: QueryCtx) {
+  const identity = await requireIdentity(ctx);
+  const profile = await ctx.db
+    .query('profiles')
+    .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
+    .unique();
+  if (profile !== null && isLockedOut(profile)) throw new ConvexError('Account is not active');
   return identity;
 }
 
@@ -185,7 +202,7 @@ export const watchAnchor = query({
 export const openTerms = mutation({
   args: { termsVersion: v.string(), termsHash: v.string(), surface: consentSurface },
   handler: async (ctx, args): Promise<null> => {
-    const identity = await requireIdentity(ctx);
+    const identity = await requireReader(ctx);
     if (!isCurrentTerms({ version: args.termsVersion, hash: args.termsHash })) {
       refuse('terms_changed');
     }
@@ -207,7 +224,7 @@ export const openTerms = mutation({
 export const reachTermsEnd = mutation({
   args: { termsVersion: v.string(), termsHash: v.string(), via: termsReaderVia },
   handler: async (ctx, args): Promise<null> => {
-    const identity = await requireIdentity(ctx);
+    const identity = await requireReader(ctx);
     if (!isCurrentTerms({ version: args.termsVersion, hash: args.termsHash })) {
       refuse('terms_changed');
     }
@@ -725,7 +742,9 @@ export const purgeDue = internalMutation({
       await ctx.db.delete(record._id);
       deleted++;
     }
-    if (rows.length >= CONSENT_SWEEP_PAGE) {
+    // Again at once only when a full page made progress: a page the re-check skipped whole would
+    // otherwise re-read itself in a loop that never ends. Whatever it skipped waits for a person.
+    if (rows.length >= CONSENT_SWEEP_PAGE && deleted > 0) {
       await ctx.scheduler.runAfter(0, internal.consent.purgeDue, {});
     }
     return { deleted };

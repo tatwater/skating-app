@@ -226,6 +226,33 @@ describe('the reading', () => {
     ]);
   });
 
+  test('a banned or finalizing account gains no reading: one written after `erase` would outlive it', async () => {
+    const t = harness();
+    for (const status of ['banned', 'deleting'] as const) {
+      const subject = `user_${status}`;
+      await existingProfile(t, subject, { status });
+      const as = caller(t, subject);
+      await expect(
+        as.mutation(api.consent.openTerms, { ...TERMS_CLAIM, surface: 'web' }),
+      ).rejects.toThrow(/not active/i);
+      await t.run((ctx) =>
+        ctx.db.insert('termsReadings', {
+          clerkUserId: subject,
+          termsVersion: TERMS.version,
+          openedAt: T0 - 60_000,
+          surface: 'web',
+        }),
+      );
+      await expect(
+        as.mutation(api.consent.reachTermsEnd, { ...TERMS_CLAIM, via: 'inline' }),
+      ).rejects.toThrow(/not active/i);
+    }
+    expect((await readings(t)).every((r) => r.reachedEndAt === undefined)).toBe(true);
+    // Suspended and pending-deletion accounts still read (their acceptance refuses on its own).
+    await existingProfile(t, 'user_susp', { status: 'suspended', suspendedUntil: T0 + DAY });
+    await readToEnd(caller(t, 'user_susp'));
+  });
+
   test('other words are refused, and the end needs an opening', async () => {
     const t = harness();
     const as = caller(t);
@@ -508,7 +535,17 @@ describe('acceptTerms: an existing row', () => {
     for (const [subject, extra, expected] of cases) {
       await existingProfile(t, subject, extra);
       const as = caller(t, subject);
-      await readToEnd(as);
+      // A reading as one left from before the gate closed (a locked-out caller can't open one now).
+      await t.run((ctx) =>
+        ctx.db.insert('termsReadings', {
+          clerkUserId: subject,
+          termsVersion: TERMS.version,
+          openedAt: T0 - 60_000,
+          reachedEndAt: T0 - 30_000,
+          reachedEndVia: 'inline',
+          surface: 'web',
+        }),
+      );
       if (typeof expected === 'string') await expectRefusal(accept(as), expected);
       else await expect(accept(as)).rejects.toThrow(expected);
     }
@@ -877,6 +914,20 @@ describe('the retention sweeps', () => {
     expect(await t.mutation(internal.consent.purgeDue, {})).toEqual({ deleted: 2 });
     const left = (await records(t)).map((r) => r._id).sort();
     expect(left).toEqual([ids.live, ids.later].sort());
+  });
+
+  test('purgeDue never loops on a full page its re-check skips whole', async () => {
+    const t = harness();
+    await t.run(async (ctx) => {
+      // Dated but never severed: no writer makes one (the guard), and the re-check keeps it.
+      for (let i = 0; i < CONSENT_SWEEP_PAGE; i++) {
+        const { severedAt: _s, ...unsevered } = recordFixture(T0 - 1 - i);
+        await ctx.db.insert('consentRecords', unsevered);
+      }
+    });
+    expect(await t.mutation(internal.consent.purgeDue, {})).toEqual({ deleted: 0 });
+    expect((await scheduled(t)).map((j) => j.name)).not.toContain('consent:purgeDue');
+    expect(await records(t)).toHaveLength(CONSENT_SWEEP_PAGE);
   });
 
   test('purgeDue is bounded, and goes again at once when its page was full', async () => {
