@@ -1,4 +1,9 @@
-import type { DateOfBirthFields, EntryHold } from '@skating/core';
+import {
+  type DateOfBirthFields,
+  type EntryHold,
+  type EntryStanding,
+  entryStanding,
+} from '@skating/core';
 import { create } from 'zustand';
 
 import { accountScoped } from './accountScoped';
@@ -6,7 +11,7 @@ import { accountScoped } from './accountScoped';
 /**
  * **What the way in keeps in the browser's memory, and nowhere else** (B03 §9.3, D298): the
  * Account step's fields on their way to the Terms step, the receipt hold, the Home step's town
- * on its way to the Profile step, and when the server last said this account can't act.
+ * on its way to the Profile step, and the standing the server last refused as unable to act.
  *
  * - **The Account step writes nothing.** Its fields ride here to *Record acceptance*, which is
  *   where a profile is born (the governor's R1). A reload loses them and the Terms step falls back
@@ -59,12 +64,13 @@ interface EntryState {
    */
   questionsFromReceipt: boolean;
   /**
-   * When (this browser's clock) the server last refused this account as unable to act right now —
-   * the profile gate's "Account is suspended" or "Account is not active" (core's
-   * `isCannotActRefusal`). For a few minutes after it, the gate sends the skater to the app rather
-   * than leave them on a step whose every press is refused (`resolveEntryRoute`'s `cannotActAt`).
+   * The profile's standing (`status`, `suspendedUntil`) when the server last refused this account
+   * as unable to act right now — the profile gate's "Account is suspended" or "Account is not
+   * active" (core's `isCannotActRefusal`). While the profile still stands so, the gate sends the
+   * skater to the app rather than leave them on a step whose every press is refused
+   * (`resolveEntryRoute`'s `cannotAct`); a change of either field, or a reload, ends it.
    */
-  cannotActAt: number | null;
+  cannotAct: EntryStanding | null;
 }
 
 const EMPTY: EntryState = {
@@ -75,7 +81,7 @@ const EMPTY: EntryState = {
   taken: null,
   homeTown: null,
   questionsFromReceipt: false,
-  cannotActAt: null,
+  cannotAct: null,
 };
 
 export const useEntryStore = create<EntryState>(() => ({ ...EMPTY }));
@@ -109,7 +115,7 @@ export function finishReceipt(startQuestions: boolean): void {
   useEntryStore.setState((s) => ({
     ...EMPTY,
     questionsFromReceipt: startQuestions,
-    cannotActAt: s.cannotActAt,
+    cannotAct: s.cannotAct,
   }));
 }
 
@@ -132,9 +138,14 @@ export function carryHomeTown(town: string | null): void {
   useEntryStore.setState({ homeTown: town });
 }
 
-/** The server refused this account as unable to act right now: the gate sends it to the app. */
-export function markCannotAct(at: number = Date.now()): void {
-  useEntryStore.setState({ cannotActAt: at });
+/**
+ * The server refused this account as unable to act right now: the gate sends it to the app while
+ * `profile` (as the refusing screen saw it) still stands so. No profile, nothing to hold: the rule
+ * never reads the hold for a caller without a row.
+ */
+export function markCannotAct(profile: EntryStanding | null | undefined): void {
+  if (!profile) return;
+  useEntryStore.setState({ cannotAct: entryStanding(profile) });
 }
 
 /** Everything forgotten: a sign-out, a change of person, a test. */

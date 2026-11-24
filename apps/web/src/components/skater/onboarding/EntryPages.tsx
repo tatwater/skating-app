@@ -19,7 +19,6 @@ import { useAnalytics } from '@/lib/analytics';
 import { carryAccount, carryHomeTown, useEntryStore } from '@/lib/entryHold';
 import { useSignOut } from '@/lib/sheetOwner';
 
-import { toast } from '../../kit/toast';
 import { currentPosition } from '../settings/currentPosition';
 import {
   type AddressSuggestion,
@@ -30,7 +29,7 @@ import type { LocateState } from '../settings/HomeSection';
 import { ProfilePhoto } from '../settings/ProfilePhoto';
 import { useProfilePhoto } from '../settings/useProfilePhoto';
 import { AccountStep, type UsernameAvailability } from './AccountStep';
-import { clientReport, toastRefusal } from './consentRefusal';
+import { clientReport, toastRefusal, toastSaveRefusal, useProfileNow } from './consentRefusal';
 import { type OnboardingStep, onboardingStepShown, welcomeStepShown } from './entrySearch';
 import { KnowBeforeYouGoFlow } from './KnowBeforeYouGoFlow';
 import { OutdatedStep, reloadPage } from './OutdatedStep';
@@ -160,6 +159,7 @@ export function KnowBeforeYouGoPage() {
   const profile = useQuery(api.profiles.current, {});
   const watch = useQuery(api.consent.watchAnchor, {});
   const complete = useMutation(api.consent.completeKnowBeforeYouGo);
+  const profileNow = useProfileNow();
   const fromReceipt = useEntryStore((s) => s.questionsFromReceipt);
   const [busy, setBusy] = useState(false);
   const [outdated, setOutdated] = useState(false);
@@ -210,7 +210,7 @@ export function KnowBeforeYouGoPage() {
       // Busy until the gate takes the skater on.
     } catch (error) {
       setBusy(false);
-      const { code } = toastRefusal(error);
+      const { code } = toastRefusal(error, profileNow.current);
       const action = consentRefusalAction(code);
       switch (action) {
         case 'outdated':
@@ -304,6 +304,7 @@ function WelcomeHome() {
   const email = useEmail();
   const signOut = useSignOut();
   const analytics = useAnalytics();
+  const profileNow = useProfileNow();
   const setHome = useMutation(api.profiles.setHome);
   const advance = useMutation(api.consent.advanceWelcome);
   const suggest = useAction(api.geocode.suggest) as unknown as SuggestFn;
@@ -342,17 +343,18 @@ function WelcomeHome() {
     setSaving(true);
     try {
       await setHome({ homeCoord: coord });
-    } catch {
+    } catch (error) {
       busy.current = false;
       setSaving(false);
-      toast({ title: ONBOARDING_COPY.home.notSaved, tone: 'bad' });
+      // The server's own "can't act" is said as such (and sends the skater to the app).
+      toastSaveRefusal(error, profileNow.current, ONBOARDING_COPY.home.notSaved);
       return;
     }
     try {
       await advance({ from: 'home' });
       analytics.capture('welcome_step_finished', { step: 'home', outcome: 'saved' });
     } catch (error) {
-      toastRefusal(error);
+      toastRefusal(error, profileNow.current);
     } finally {
       busy.current = false;
       setSaving(false);
@@ -414,7 +416,7 @@ function WelcomeHome() {
           await advance({ from: 'home' });
           analytics.capture('welcome_step_finished', { step: 'home', outcome: 'skipped' });
         } catch (error) {
-          toastRefusal(error);
+          toastRefusal(error, profileNow.current);
         } finally {
           busy.current = false;
           setSkipping(false);
@@ -458,6 +460,7 @@ function WelcomeProfile({
   const email = useEmail();
   const signOut = useSignOut();
   const analytics = useAnalytics();
+  const profileNow = useProfileNow();
   const update = useMutation(api.profiles.updateProfile);
   const advance = useMutation(api.consent.advanceWelcome);
   const photo = useProfilePhoto();
@@ -482,15 +485,16 @@ function WelcomeProfile({
       if (Object.keys(patch).length > 0) {
         try {
           await update(patch);
-        } catch {
-          toast({ title: ONBOARDING_COPY.profile.notSaved, tone: 'bad' });
+        } catch (error) {
+          // The server's own "can't act" is said as such (and sends the skater to the app).
+          toastSaveRefusal(error, profileNow.current, ONBOARDING_COPY.profile.notSaved);
           return;
         }
       }
       await advance({ from: 'profile' });
       analytics.capture('welcome_step_finished', { step: 'profile', outcome });
     } catch (error) {
-      toastRefusal(error);
+      toastRefusal(error, profileNow.current);
     } finally {
       set(false);
     }

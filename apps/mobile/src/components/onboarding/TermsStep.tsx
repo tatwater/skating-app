@@ -39,7 +39,7 @@ import {
 } from '../../lib/termsReading';
 import { useSignOut } from '../../lib/useSignOut';
 import { useToast } from '../Toast';
-import { useEntrySession } from './EntrySession';
+import { useEntrySession, useProfileNow } from './EntrySession';
 import { Kicker, OnboardingFrame, PrimaryButton, StepHeader } from './OnboardingFrame';
 import { OutdatedScreen } from './OutdatedScreen';
 
@@ -126,6 +126,7 @@ function Reader({
 }) {
   const { sessionId } = useAuth();
   const { dispatch } = useEntrySession();
+  const profileNow = useProfileNow();
   const toast = useToast();
   const openTerms = useMutation(api.consent.openTerms);
   const reachTermsEnd = useMutation(api.consent.reachTermsEnd);
@@ -140,8 +141,8 @@ function Reader({
 
   // The calls change identity only with the client. The controller is made in the effect (not a
   // memo) so a remount always gets a live one.
-  const calls = useRef({ openTerms, reachTermsEnd, toast, dispatch });
-  calls.current = { openTerms, reachTermsEnd, toast, dispatch };
+  const calls = useRef({ openTerms, reachTermsEnd, toast, dispatch, profileNow });
+  calls.current = { openTerms, reachTermsEnd, toast, dispatch, profileNow };
   const readingRef = useRef<TermsReading | null>(null);
   useEffect(() => {
     const reading = createTermsReading({
@@ -161,7 +162,9 @@ function Reader({
         const refusal = readRefusal(error);
         calls.current.toast(refusal.message);
         // The account can't act right now: the gate sends the skater to the tabs.
-        if (refusal.cannotAct) calls.current.dispatch({ type: 'cannotAct', at: Date.now() });
+        if (refusal.cannotAct) {
+          calls.current.dispatch({ type: 'cannotAct', profile: calls.current.profileNow.current });
+        }
       },
       onChange: setState,
       // A reading started again is read from the top. The marker stays where it was laid out (the
@@ -231,7 +234,7 @@ function Reader({
       toast(refusal.message);
       // The account can't act right now (a device clock ahead of the server's sent a suspended
       // account here early): the gate sends the skater to the tabs.
-      if (refusal.cannotAct) dispatch({ type: 'cannotAct', at: Date.now() });
+      if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
       const action = consentRefusalAction(refusal.code);
       if (account && onAccountRefused && action === 'account') {
         onAccountRefused(refusal.code as string, account.username);

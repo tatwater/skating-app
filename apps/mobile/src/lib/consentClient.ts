@@ -71,3 +71,13 @@ export function readRefusal(error: unknown): Refusal {
   }
   return { code: null, message: CONSENT_REFUSAL_FALLBACK };
 }
+
+/**
+ * A welcome step's own write failed (`setHome`, `updateProfile`): the profile gate's can't-act
+ * refusal keeps the server's words and its `cannotAct` (the screen tells the gate), as from any
+ * way-in call; anything else is the step's `notSaved` line.
+ */
+export function readSaveRefusal(error: unknown, notSaved: string): Refusal {
+  const refusal = readRefusal(error);
+  return refusal.cannotAct ? refusal : { code: null, message: notSaved };
+}

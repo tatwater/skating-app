@@ -356,12 +356,13 @@ describe('/terms', () => {
         tone: 'bad',
       }),
     );
-    expect(useEntryStore.getState().cannotActAt).toBeNull();
+    expect(useEntryStore.getState().cannotAct).toBeNull();
   });
 
   it('says the profile gate’s own plain-string refusal as it is, as the phone does', async () => {
     const user = userEvent.setup();
-    fakes.queries.set('profiles:current', LIVE);
+    // Lapsed by this tab's clock, which runs ahead of the server's.
+    fakes.queries.set('profiles:current', { ...LIVE, status: 'suspended', suspendedUntil: 1 });
     mutation('consent:acceptTerms').mockRejectedValueOnce(new ConvexError('Account is suspended'));
     render(<TermsPage />);
     await readAndRecord(user);
@@ -369,9 +370,9 @@ describe('/terms', () => {
       expect(m.toast).toHaveBeenCalledWith({ title: 'Account is suspended', tone: 'bad' }),
     );
     expect(useEntryStore.getState().hold).toBeNull();
-    // And it tells the gate, which sends the skater to the app (a device clock ahead of the
-    // server's routed a still-suspended account here).
-    expect(useEntryStore.getState().cannotActAt).toEqual(expect.any(Number));
+    // And it tells the gate, with the standing it was heard at: the app while the profile stands so
+    // (a device clock ahead of the server's routed a still-suspended account here).
+    expect(useEntryStore.getState().cannotAct).toEqual({ status: 'suspended', suspendedUntil: 1 });
   });
 
   it('draws the receipt with Continue when no questions are due, and lets go on it', async () => {
@@ -459,7 +460,7 @@ describe('/know-before-you-go', () => {
     await waitFor(() =>
       expect(m.toast).toHaveBeenCalledWith({ title: 'Account is not active', tone: 'bad' }),
     );
-    expect(useEntryStore.getState().cannotActAt).toEqual(expect.any(Number));
+    expect(useEntryStore.getState().cannotAct).toEqual({});
   });
 
   it('opens a season’s asking on its card; Not now signs out and counts it', async () => {
@@ -602,6 +603,30 @@ describe('/welcome', () => {
         tone: 'bad',
       }),
     );
+    expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
+  });
+
+  it('says the server’s own can’t-act refusal of a home as it is, and tells the gate', async () => {
+    // Lapsed by this tab's clock, which runs ahead of the server's.
+    const standing = { status: 'suspended', suspendedUntil: 1 };
+    fakes.queries.set('profiles:current', { ...LIVE, ...standing, welcomeStep: 'home' });
+    mutation('profiles:setHome').mockRejectedValueOnce(new ConvexError('Account is suspended'));
+    vi.stubGlobal('navigator', {
+      ...navigator,
+      geolocation: {
+        getCurrentPosition: (ok: (p: unknown) => void) =>
+          ok({ coords: { latitude: 43.7, longitude: -72.29 } }),
+      },
+    });
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await act(async () => {
+      screen.getByRole('button', { name: 'Use my current location' }).click();
+    });
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({ title: 'Account is suspended', tone: 'bad' }),
+    );
+    expect(m.toast).toHaveBeenCalledOnce();
+    expect(useEntryStore.getState().cannotAct).toEqual(standing);
     expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
   });
 
@@ -1165,6 +1190,23 @@ describe('Profile’s visibility', () => {
 });
 
 describe('Profile’s save', () => {
+  it('says the server’s own can’t-act refusal as it is, and tells the gate', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, status: 'banned', welcomeStep: 'profile' });
+    mutation('profiles:updateProfile').mockRejectedValueOnce(
+      new ConvexError('Account is not active'),
+    );
+    render(<WelcomePage step="profile" onStep={vi.fn()} />);
+    await user.type(screen.getByRole('textbox', { name: 'Bio' }), 'Hi');
+    await user.click(screen.getByRole('button', { name: 'Open the map' }));
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({ title: 'Account is not active', tone: 'bad' }),
+    );
+    expect(m.toast).toHaveBeenCalledOnce();
+    expect(useEntryStore.getState().cannotAct).toEqual({ status: 'banned' });
+    expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
+  });
+
   it('says a profile the server didn’t take as a toast, and doesn’t advance', async () => {
     const user = userEvent.setup();
     fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'profile' });

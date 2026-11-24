@@ -1,7 +1,7 @@
 import { CONSENT_REFUSAL_FALLBACK, CONSENT_REFUSAL_MESSAGES } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { describe, expect, it } from 'vitest';
-import { appUserAgent, consentSurface, readRefusal } from './consentClient';
+import { appUserAgent, consentSurface, readRefusal, readSaveRefusal } from './consentClient';
 
 describe('consentSurface', () => {
   it('names the two phones', () => {
@@ -81,5 +81,31 @@ describe('readRefusal', () => {
     expect(readRefusal(new ConvexError(null as unknown as string)).message).toBe(
       CONSENT_REFUSAL_FALLBACK,
     );
+  });
+});
+
+describe('readSaveRefusal', () => {
+  const NOT_SAVED = 'Your home wasn’t saved. Try again.';
+
+  it('says the profile gate’s can’t-act refusal in its own words, marked for the gate', () => {
+    expect(readSaveRefusal(new ConvexError('Account is suspended'), NOT_SAVED)).toEqual({
+      code: null,
+      message: 'Account is suspended',
+      cannotAct: true,
+    });
+    expect(readSaveRefusal(new ConvexError('Account is not active'), NOT_SAVED).cannotAct).toBe(
+      true,
+    );
+  });
+
+  it('says anything else as the step’s not-saved line', () => {
+    for (const error of [
+      new Error('fetch failed'),
+      new ConvexError('Not authenticated'),
+      new ConvexError({ code: 'name_invalid', message: 'That name won’t work.' }),
+      undefined,
+    ]) {
+      expect(readSaveRefusal(error, NOT_SAVED)).toEqual({ code: null, message: NOT_SAVED });
+    }
   });
 });

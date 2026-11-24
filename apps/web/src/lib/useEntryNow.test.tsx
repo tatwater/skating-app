@@ -1,4 +1,3 @@
-import { SUSPENSION_CLOCK_MARGIN_MS } from '@skating/core';
 import { renderHook } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -18,10 +17,10 @@ afterEach(() => {
 });
 
 describe('useEntryNow', () => {
-  // A suspension ending a minute from now lapses, for the gate, a margin later (core's rule).
-  const END = 60_000 + SUSPENSION_CLOCK_MARGIN_MS;
+  // A suspension ending a minute from now lapses then, exactly (core's rule, as the server's).
+  const END = 60_000;
 
-  it('reads the clock again just past a suspension’s end and its margin, and not before', () => {
+  it('reads the clock again just past a suspension’s end, and not before', () => {
     const profile = { status: 'suspended' as const, suspendedUntil: T0 + 60_000 };
     const { result } = renderHook(() => useEntryNow(profile));
     expect(result.current).toBe(T0);
@@ -33,19 +32,6 @@ describe('useEntryNow', () => {
       vi.advanceTimersByTime(1);
     });
     expect(result.current).toBe(T0 + END + 1);
-  });
-
-  it('reads the clock again when a can’t-act refusal stops holding', () => {
-    const { result } = renderHook(() => useEntryNow({ status: 'active' }, T0 - 1_000));
-    act(() => {
-      vi.advanceTimersByTime(SUSPENSION_CLOCK_MARGIN_MS - 1_001);
-    });
-    expect(result.current).toBe(T0);
-    act(() => {
-      vi.advanceTimersByTime(1);
-    });
-    expect(result.current).toBe(T0 + SUSPENSION_CLOCK_MARGIN_MS - 1_000);
-    expect(vi.getTimerCount()).toBe(0);
   });
 
   it('sets its timer again when one fires a hair early, so the end is never missed', () => {

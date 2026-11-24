@@ -26,7 +26,7 @@ import {
   useEntryStore,
 } from '@/lib/entryHold';
 
-import { clientReport, toastRefusal } from './consentRefusal';
+import { clientReport, toastRefusal, useProfileNow } from './consentRefusal';
 import { OutdatedStep, reloadPage } from './OutdatedStep';
 import type { TermsReaderVia } from './TermsReader';
 import { ReceiptStep, TermsStep } from './TermsStep';
@@ -79,6 +79,8 @@ export function TermsFlow({
   const reachTermsEnd = useMutation(api.consent.reachTermsEnd);
   const acceptTerms = useMutation(api.consent.acceptTerms);
   const profile = useQuery(api.profiles.current, {});
+  // The profile as it stands when a refusal is heard (the gate's can't-act hold records it).
+  const profileNow = useProfileNow();
   const watch = useQuery(api.consent.watchAnchor, {});
   const held = useEntryStore((s) => s.hold === 'receipt');
   const recorded = useEntryStore((s) => s.recorded);
@@ -112,7 +114,7 @@ export function TermsFlow({
       () => true,
       (error: unknown) => {
         if (opened.current === open && !stopped.current) {
-          const { code } = toastRefusal(error);
+          const { code } = toastRefusal(error, profileNow.current);
           if (consentRefusalAction(code) === 'outdated') stop();
         }
         return false;
@@ -148,7 +150,7 @@ export function TermsFlow({
       setRead(true);
       analytics.capture('terms_read_to_end', { via });
     } catch (error) {
-      const { code } = toastRefusal(error);
+      const { code } = toastRefusal(error, profileNow.current);
       const action = consentRefusalAction(code);
       switch (action) {
         case 'outdated':
@@ -203,7 +205,7 @@ export function TermsFlow({
       analytics.capture('terms_accepted', { context });
       if (context === 'first_run') analytics.capture('onboarding_completed');
     } catch (error) {
-      const { code } = toastRefusal(error);
+      const { code } = toastRefusal(error, profileNow.current);
       const action = consentRefusalAction(code);
       if (account !== null && action === 'account') {
         returnToAccount(code === 'username_taken' ? account.username : undefined);

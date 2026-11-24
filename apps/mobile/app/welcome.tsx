@@ -7,7 +7,7 @@ import * as Location from 'expo-location';
 import { type ReactNode, useState } from 'react';
 import { Button, Paragraph, Separator, Switch, Text, useTheme, XStack, YStack } from 'tamagui';
 import { AddressField } from '../src/components/onboarding/AddressField';
-import { useEntrySession } from '../src/components/onboarding/EntrySession';
+import { useEntrySession, useProfileNow } from '../src/components/onboarding/EntrySession';
 import {
   FieldHint,
   FieldLabel,
@@ -19,7 +19,7 @@ import {
 } from '../src/components/onboarding/OnboardingFrame';
 import { Input, TextArea } from '../src/components/ThemedInputs';
 import { useToast } from '../src/components/Toast';
-import { readRefusal } from '../src/lib/consentClient';
+import { readRefusal, readSaveRefusal } from '../src/lib/consentClient';
 import { ensureForegroundPermission } from '../src/lib/location';
 import { useSignOut } from '../src/lib/useSignOut';
 import {
@@ -72,6 +72,7 @@ function HomeStep({
 }) {
   const toast = useToast();
   const { dispatch } = useEntrySession();
+  const profileNow = useProfileNow();
   const setHome = useMutation(api.profiles.setHome);
   const advance = useMutation(api.consent.advanceWelcome);
   const [text, setText] = useState(choice?.kind === 'address' ? choice.suggestion.label : '');
@@ -81,6 +82,12 @@ function HomeStep({
   // While the suggestions are open, "or" and the location button step aside (board 11.10).
   const [listOpen, setListOpen] = useState(false);
   const copy = ONBOARDING_COPY.home;
+
+  // The account can't act right now: the gate sends the skater to the tabs.
+  const told = (refusal: { message: string; cannotAct?: true }) => {
+    toast(refusal.message);
+    if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
+  };
 
   async function takeLocation() {
     setLocating(true);
@@ -108,8 +115,9 @@ function HomeStep({
       if (save && homeCoord !== null) {
         try {
           await setHome({ homeCoord });
-        } catch {
-          toast(copy.notSaved);
+        } catch (error) {
+          // The server's own "can't act" is said as such; anything else is the not-saved line.
+          told(readSaveRefusal(error, copy.notSaved));
           setBusy(false);
           return;
         }
@@ -119,10 +127,7 @@ function HomeStep({
       if (!save) onChoice(null);
       await advance({ from: 'home' });
     } catch (error) {
-      const refusal = readRefusal(error);
-      toast(refusal.message);
-      // The account can't act right now: the gate sends the skater to the tabs.
-      if (refusal.cannotAct) dispatch({ type: 'cannotAct', at: Date.now() });
+      told(readRefusal(error));
       setBusy(false);
     }
   }
@@ -231,11 +236,18 @@ function ProfileStep({
 }) {
   const toast = useToast();
   const { dispatch } = useEntrySession();
+  const profileNow = useProfileNow();
   const updateProfile = useMutation(api.profiles.updateProfile);
   const advance = useMutation(api.consent.advanceWelcome);
   const [draft, setDraft] = useState<ProfileDraft>(() => initialProfileDraft(choice, visibility));
   const [busy, setBusy] = useState(false);
   const copy = ONBOARDING_COPY.profile;
+
+  // The account can't act right now: the gate sends the skater to the tabs.
+  const told = (refusal: { message: string; cannotAct?: true }) => {
+    toast(refusal.message);
+    if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
+  };
 
   async function finish(save: boolean) {
     if (busy) return;
@@ -245,18 +257,16 @@ function ProfileStep({
       if (patch !== null) {
         try {
           await updateProfile(patch);
-        } catch {
-          toast(copy.notSaved);
+        } catch (error) {
+          // The server's own "can't act" is said as such; anything else is the not-saved line.
+          told(readSaveRefusal(error, copy.notSaved));
           setBusy(false);
           return;
         }
       }
       await advance({ from: 'profile' });
     } catch (error) {
-      const refusal = readRefusal(error);
-      toast(refusal.message);
-      // The account can't act right now: the gate sends the skater to the tabs.
-      if (refusal.cannotAct) dispatch({ type: 'cannotAct', at: Date.now() });
+      told(readRefusal(error));
       setBusy(false);
     }
   }

@@ -1,9 +1,4 @@
-import {
-  type EntryProfile,
-  resolveEntryRoute,
-  SUSPENSION_CLOCK_MARGIN_MS,
-  TERMS,
-} from '@skating/core';
+import { type EntryProfile, resolveEntryRoute, TERMS } from '@skating/core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EMPTY_ENTRY_SESSION,
@@ -118,12 +113,19 @@ describe('entrySessionReducer', () => {
     expect(entrySessionReducer(seen, { type: 'acceptFailed' })).toBe(seen);
   });
 
-  it('remembers the server’s last can’t-act refusal, until sign-out', () => {
-    const refused = entrySessionReducer(EMPTY_ENTRY_SESSION, { type: 'cannotAct', at: NOW });
-    expect(refused.cannotActAt).toBe(NOW);
-    expect(entrySessionReducer(refused, { type: 'cannotAct', at: NOW + 1 }).cannotActAt).toBe(
-      NOW + 1,
-    );
+  it('remembers the standing the server last refused as unable to act, until sign-out', () => {
+    const profile: EntryProfile = { ...CURRENT, status: 'suspended', suspendedUntil: NOW };
+    const refused = entrySessionReducer(EMPTY_ENTRY_SESSION, { type: 'cannotAct', profile });
+    // Its two fields alone: nothing else of the profile is kept.
+    expect(refused.cannotAct).toEqual({ status: 'suspended', suspendedUntil: NOW });
+    const again = entrySessionReducer(refused, {
+      type: 'cannotAct',
+      profile: { ...profile, suspendedUntil: NOW + 1 },
+    });
+    expect(again.cannotAct).toEqual({ status: 'suspended', suspendedUntil: NOW + 1 });
+    // No profile on screen: nothing to hold (the rule never reads it without a row).
+    expect(entrySessionReducer(refused, { type: 'cannotAct', profile: null })).toBe(refused);
+    expect(entrySessionReducer(refused, { type: 'cannotAct', profile: undefined })).toBe(refused);
     expect(entrySessionReducer(refused, { type: 'signedOut' })).toBe(EMPTY_ENTRY_SESSION);
   });
 
@@ -147,7 +149,7 @@ describe('scheduleEntryRecheck', () => {
     vi.useRealTimers();
   });
 
-  it('wakes the gate just past a suspension’s end and its margin, where the route moves to the terms', () => {
+  it('wakes the gate just past a suspension’s end, where the route moves to the terms', () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
     const suspended: EntryProfile = {
@@ -166,40 +168,43 @@ describe('scheduleEntryRecheck', () => {
     expect(routeAt(NOW)).toBe('app');
     const wake = vi.fn();
     scheduleEntryRecheck(suspended, NOW, wake);
-    vi.advanceTimersByTime(60_000 + SUSPENSION_CLOCK_MARGIN_MS);
+    vi.advanceTimersByTime(60_000);
     expect(wake).not.toHaveBeenCalled();
     vi.advanceTimersByTime(1);
     expect(wake).toHaveBeenCalledOnce();
     expect(routeAt(Date.now())).toBe('terms');
   });
 
-  it('keeps a skater the server just refused in the tabs, and wakes the gate when that ends', () => {
+  it('keeps a skater the server refused in the tabs while the standing holds, with no timer', () => {
     vi.useFakeTimers();
     vi.setSystemTime(NOW);
-    // By this device's clock the suspension lapsed long ago; the server disagreed a moment ago.
+    // By this device's clock the suspension lapsed long ago; the server disagreed.
     const lapsed: EntryProfile = {
       displayName: 'Kate Donovan',
       status: 'suspended',
-      suspendedUntil: 0,
+      suspendedUntil: 1,
     };
-    const session = entrySessionReducer(EMPTY_ENTRY_SESSION, { type: 'cannotAct', at: NOW });
-    const routeAt = (now: number) =>
+    const session = entrySessionReducer(EMPTY_ENTRY_SESSION, {
+      type: 'cannotAct',
+      profile: lapsed,
+    });
+    const routeAt = (now: number, profile: EntryProfile) =>
       resolveEntryRoute({
         isLoaded: true,
         isSignedIn: true,
-        profile: lapsed,
+        profile,
         watch: WATCH,
         now,
-        cannotActAt: session.cannotActAt,
+        cannotAct: session.cannotAct,
       });
-    expect(entryGroup(routeAt(NOW), null)).toBe('app');
+    expect(entryGroup(routeAt(NOW, lapsed), null)).toBe('app');
+    // Nothing to wake for: the hold has no end in time, so no bounce back to a refused step.
     const wake = vi.fn();
-    scheduleEntryRecheck(lapsed, NOW, wake, session.cannotActAt);
-    vi.advanceTimersByTime(SUSPENSION_CLOCK_MARGIN_MS - 1);
-    expect(wake).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(wake).toHaveBeenCalledOnce();
-    expect(entryGroup(routeAt(Date.now()), null)).toBe('terms');
+    scheduleEntryRecheck(lapsed, NOW, wake);
+    expect(vi.getTimerCount()).toBe(0);
+    expect(entryGroup(routeAt(NOW + 24 * 60 * 60 * 1000, lapsed), null)).toBe('app');
+    // Lifted: the standing changed, and the consent comes first.
+    expect(entryGroup(routeAt(NOW, { ...lapsed, status: 'active' }), null)).toBe('terms');
   });
 
   it('schedules nothing when nothing moves with the clock, and cancels what it scheduled', () => {

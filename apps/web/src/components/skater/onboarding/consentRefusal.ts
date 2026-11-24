@@ -1,5 +1,8 @@
-import { consentRefusalMessage, isCannotActRefusal } from '@skating/core';
+import { api } from '@skating/convex/api';
+import { consentRefusalMessage, type EntryStanding, isCannotActRefusal } from '@skating/core';
+import { useQuery } from 'convex/react';
 import { ConvexError } from 'convex/values';
+import { useRef } from 'react';
 
 import { markCannotAct } from '@/lib/entryHold';
 
@@ -54,15 +57,47 @@ export function readConsentRefusal(error: unknown): ConsentRefusal {
 /**
  * Says a refusal the one way the skater app says one (D268): a toast, never a line on the form.
  * Returns what it read, so the caller can act on the code. The profile gate's own refusal — the
- * account can't act right now — also tells the gate (`markCannotAct`), which sends the skater to the
- * app instead of leaving them on a step every press of which is refused: a device clock ahead of
- * the server's can route a still-suspended account to the way in early.
+ * account can't act right now — also tells the gate (`markCannotAct`, with `profile` as the screen
+ * sees it), which sends the skater to the app while the profile stands so, instead of leaving them
+ * on a step every press of which is refused: a device clock ahead of the server's can route a
+ * still-suspended account to the way in early.
  */
-export function toastRefusal(error: unknown): ConsentRefusal {
+export function toastRefusal(
+  error: unknown,
+  profile: EntryStanding | null | undefined,
+): ConsentRefusal {
   const refusal = readConsentRefusal(error);
   toast({ title: refusal.message, tone: 'bad' });
-  if (refusal.cannotAct) markCannotAct();
+  if (refusal.cannotAct) markCannotAct(profile);
   return refusal;
+}
+
+/**
+ * A welcome step's own write failed (`setHome`, `updateProfile`): the profile gate's can't-act
+ * refusal is said in the server's words and tells the gate (`toastRefusal`), as from any way-in
+ * call; anything else is the step's `notSaved` line.
+ */
+export function toastSaveRefusal(
+  error: unknown,
+  profile: EntryStanding | null | undefined,
+  notSaved: string,
+): void {
+  if (readConsentRefusal(error).cannotAct) {
+    toastRefusal(error, profile);
+    return;
+  }
+  toast({ title: notSaved, tone: 'bad' });
+}
+
+/**
+ * The profile as this screen sees it right now, by ref: a refusal heard after an `await` records
+ * the standing the profile has then (`toastRefusal`'s `profile`), not one a render closed over.
+ */
+export function useProfileNow(): { readonly current: EntryStanding | null | undefined } {
+  const profile = useQuery(api.profiles.current, {});
+  const now = useRef<EntryStanding | null | undefined>(profile);
+  now.current = profile;
+  return now;
 }
 
 /** What a consent write reports about the browser it came from (stored labeled client-reported). */

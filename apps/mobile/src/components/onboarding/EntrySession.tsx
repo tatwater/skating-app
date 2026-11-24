@@ -1,4 +1,7 @@
-import { createContext, useContext } from 'react';
+import { api } from '@skating/convex/api';
+import type { EntryStanding } from '@skating/core';
+import { useQuery } from 'convex/react';
+import { createContext, useContext, useRef } from 'react';
 import {
   EMPTY_ENTRY_SESSION,
   type EntrySession,
@@ -23,4 +26,15 @@ export const EntrySessionContext = createContext<EntrySessionApi>({
 
 export function useEntrySession(): EntrySessionApi {
   return useContext(EntrySessionContext);
+}
+
+/**
+ * The profile as this screen sees it right now, by ref: a refusal heard after an `await` records the
+ * standing the profile has then (`{ type: 'cannotAct', profile }`), not the one a render closed over.
+ */
+export function useProfileNow(): { readonly current: EntryStanding | null | undefined } {
+  const profile = useQuery(api.profiles.current, {});
+  const now = useRef<EntryStanding | null | undefined>(profile);
+  now.current = profile;
+  return now;
 }

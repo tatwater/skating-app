@@ -1,9 +1,4 @@
-import {
-  DELETED_DISPLAY_NAME,
-  KNOW_BEFORE_YOU_GO_EARLY_MS,
-  SUSPENSION_CLOCK_MARGIN_MS,
-  TERMS,
-} from '@skating/core';
+import { DELETED_DISPLAY_NAME, KNOW_BEFORE_YOU_GO_EARLY_MS, TERMS } from '@skating/core';
 import { act, render, screen } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import type { ReactNode } from 'react';
@@ -397,29 +392,45 @@ describe('the way in', () => {
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
-  it('lets an account the server just refused as unable to act into the app, then tries the terms again', () => {
+  it('keeps an account the server refused as unable to act in the app while its standing holds', () => {
     // A device clock far ahead: by it the suspension lapsed long ago, so the rule alone would say
-    // the terms. The server's refusal there, a second ago, holds the skater in the app a while.
+    // the terms. The server refused it there: the app, for as long as the profile stands so — an
+    // hour on, still the app (no timed bounce back to a refused step); lifted, the terms.
     vi.useFakeTimers();
     vi.setSystemTime(OPENED_AT);
     try {
-      mocks.profile = {
+      const refused = {
         displayName: 'Skater',
-        status: 'suspended',
+        status: 'suspended' as const,
         suspendedUntil: Date.UTC(2000, 0, 1),
       };
+      mocks.profile = refused;
       mocks.pathname = '/settings/data';
-      markCannotAct(OPENED_AT - 1_000);
-      render(<AuthGate>page</AuthGate>);
+      markCannotAct(refused);
+      const { rerender } = render(<AuthGate>page</AuthGate>);
       expect(screen.getByText('page')).toBeInTheDocument();
-      expect(mocks.push).not.toHaveBeenCalled();
       act(() => {
-        vi.advanceTimersByTime(SUSPENSION_CLOCK_MARGIN_MS - 1_000);
+        vi.advanceTimersByTime(60 * 60 * 1000);
       });
+      rerender(<AuthGate>page</AuthGate>);
+      expect(mocks.push).not.toHaveBeenCalled();
+      expect(vi.getTimerCount()).toBe(0);
+      // A moderator lifts it: the standing changed, the hold is over, and the consent comes first.
+      mocks.profile = { ...refused, status: 'active' };
+      rerender(<AuthGate>page</AuthGate>);
       expect(mocks.push).toHaveBeenCalledWith('/terms');
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('forgets a can’t-act hold with everything else: a new session starts unheld', () => {
+    const refused = { displayName: 'Skater', status: 'suspended' as const, suspendedUntil: 1 };
+    markCannotAct(refused);
+    forgetEntry();
+    mocks.profile = refused;
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/terms');
   });
 
   it('sends a lapsed suspension through the terms again', () => {

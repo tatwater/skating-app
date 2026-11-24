@@ -267,7 +267,7 @@ export const ACCOUNT_SUSPENDED_MESSAGE = 'Account is suspended';
 /**
  * Whether a refusal is the profile gate's own "this account can't act right now" — a plain-string
  * `ConvexError` whose `data` is one of the two messages above. The way in reads it to send a skater
- * the server just refused back to the app (`resolveEntryRoute`'s `cannotActAt`) rather than leave
+ * the server just refused back to the app (`resolveEntryRoute`'s `cannotAct` hold) rather than leave
  * them on a step whose every press is refused.
  */
 export function isCannotActRefusal(data: unknown): boolean {
