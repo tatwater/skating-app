@@ -5,7 +5,6 @@ import {
   CONSENT_RETENTION_YEARS,
   capClientReported,
   consentPurgeAt,
-  KNOW_BEFORE_YOU_GO_REPEAT_MS,
   termsAcceptanceContext,
 } from './consentRecord';
 
@@ -50,8 +49,4 @@ describe('capClientReported', () => {
     expect(capClientReported('  Mozilla/5.0  ')).toBe('Mozilla/5.0');
     expect(capClientReported('x'.repeat(600))).toHaveLength(CLIENT_REPORTED_MAX_LENGTH);
   });
-});
-
-it('repeats within a minute are the same completion', () => {
-  expect(KNOW_BEFORE_YOU_GO_REPEAT_MS).toBe(60_000);
 });

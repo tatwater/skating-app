@@ -65,6 +65,3 @@ export const CLIENT_REPORTED_MAX_LENGTH = 512;
 export function capClientReported(value: string): string {
   return value.trim().slice(0, CLIENT_REPORTED_MAX_LENGTH);
 }
-
-/** A second completion within this long of the first returns the first's answer and writes nothing. */
-export const KNOW_BEFORE_YOU_GO_REPEAT_MS = 60 * 1000;

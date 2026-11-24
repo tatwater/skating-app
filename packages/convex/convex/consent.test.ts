@@ -10,7 +10,6 @@ import {
   DELETED_DISPLAY_NAME,
   KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_EARLY_MS,
-  KNOW_BEFORE_YOU_GO_REPEAT_MS,
   KNOW_BEFORE_YOU_GO_SHA256,
   knowBeforeYouGoDue,
   meetsMinimumAge,
@@ -532,6 +531,28 @@ describe('acceptTerms: an existing row', () => {
     expect((await t.run((ctx) => ctx.db.get(recordId)))?.context).toBe('version_change');
   });
 
+  test('an acceptance of the version already accepted returns it: no second record, email or lookup', async () => {
+    const t = harness();
+    const id = await existingProfile(t, 'user_bea');
+    const as = caller(t, 'user_bea');
+    await readToEnd(as);
+    const first = await accept(as);
+    const jobs = (await scheduled(t)).length;
+    const acceptedAt = (await t.run((ctx) => ctx.db.get(id)))?.termsAcceptedAt;
+    // A retry after a lost answer (the reading already consumed), and a second tab that read again.
+    vi.setSystemTime(T0 + 30_000);
+    expect(await accept(as)).toEqual(first);
+    await readToEnd(as);
+    vi.setSystemTime(T0 + 60_000);
+    expect(await accept(as)).toEqual(first);
+    expect((await records(t)).map((r) => r._id)).toEqual([first.recordId]);
+    // Nothing scheduled: no second copy sent, no second IP lookup.
+    expect((await scheduled(t)).length).toBe(jobs);
+    expect((await t.run((ctx) => ctx.db.get(id)))?.termsAcceptedAt).toBe(acceptedAt);
+    // Account fields are still refused for a live row.
+    await expectRefusal(accept(as, { account: ACCOUNT }), 'account_unexpected');
+  });
+
   test('account fields for a live row are refused', async () => {
     const t = harness();
     await existingProfile(t, 'user_bea');
@@ -701,8 +722,12 @@ describe('completeKnowBeforeYouGo', () => {
     );
     const as = await accepted(t);
     expect(await complete(as)).toEqual({ season: 'winter-2026-27' });
+    // The next winter opens; this skater's answers are last season's, so they are due again.
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2027-28', T0 + 360 * DAY)),
+    );
     vi.setSystemTime(T0 + 400 * DAY);
-    expect(await complete(as)).toEqual({ season: 'winter-2026-27' });
+    expect(await complete(as)).toEqual({ season: 'winter-2027-28' });
     const contexts = (await records(t)).filter((r) => r.kind === 'questions').map((r) => r.context);
     expect(contexts).toEqual(['first_run', 'season']);
   });
@@ -722,7 +747,7 @@ describe('completeKnowBeforeYouGo', () => {
     expect(await complete(as)).toEqual({ season: 'winter-2025-26' });
   });
 
-  test('a second call within 60 s returns the first answer and writes nothing', async () => {
+  test('a repeat while the questions aren’t due returns the last answer and writes nothing', async () => {
     const t = harness();
     await t.run((ctx) =>
       ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2026-27', T0 - DAY)),
@@ -731,18 +756,43 @@ describe('completeKnowBeforeYouGo', () => {
     const first = T0 + 10_000;
     vi.setSystemTime(first);
     await complete(as);
-    // The season changes under it — the repeat still answers what the first call recorded.
+    const questions = async () => (await records(t)).filter((r) => r.kind === 'questions');
+    const scheduledIps = async () =>
+      (await scheduled(t)).filter((j) => j.name === 'consent:captureIp').length;
+    const ips = await scheduledIps();
+    // A double tap, and a season row that lands under it: the answers still count toward it (they
+    // are inside its 30 days), so the repeat answers what was recorded and writes nothing.
     await t.run((ctx) =>
       ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2027-28', first + 1)),
     );
-    vi.setSystemTime(first + KNOW_BEFORE_YOU_GO_REPEAT_MS - 1);
+    vi.setSystemTime(first + 1_000);
     expect(await complete(as)).toEqual({ season: 'winter-2026-27' });
-    expect((await records(t)).filter((r) => r.kind === 'questions')).toHaveLength(1);
+    // A minute on, an hour on, a month on — still not due, still nothing written.
+    for (const later of [60_000, 60 * 60_000, 29 * DAY]) {
+      vi.setSystemTime(first + later);
+      expect(await complete(as)).toEqual({ season: 'winter-2026-27' });
+    }
+    expect(await questions()).toHaveLength(1);
+    expect(await scheduledIps()).toBe(ips);
     expect((await as.query(api.profiles.current, {}))?.knowBeforeYouGoAt).toBe(first);
-    // At 60 s it is a new completion.
-    vi.setSystemTime(first + KNOW_BEFORE_YOU_GO_REPEAT_MS);
-    expect(await complete(as)).toEqual({ season: 'winter-2027-28' });
-    expect((await records(t)).filter((r) => r.kind === 'questions')).toHaveLength(2);
+    // Due again only when the season rule says so: a season opening past the 30 days.
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2028-29', first + 300 * DAY)),
+    );
+    vi.setSystemTime(first + 301 * DAY);
+    expect(await complete(as)).toEqual({ season: 'winter-2028-29' });
+    expect(await questions()).toHaveLength(2);
+  });
+
+  test('a canceled deletion’s emptied row is refused until it is re-introduced', async () => {
+    const t = harness();
+    await existingProfile(t, 'user_back', {
+      displayName: DELETED_DISPLAY_NAME,
+      termsVersion: TERMS.version,
+      termsAcceptedAt: T0 - DAY,
+    });
+    await expectRefusal(complete(caller(t, 'user_back')), 'account_required');
+    expect(await records(t)).toEqual([]);
   });
 
   test('the terms first, the current questions, and the contributor gate', async () => {

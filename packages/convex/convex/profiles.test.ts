@@ -175,14 +175,17 @@ describe('onboarding through consent.acceptTerms (the guarantees upsertFromClerk
       ),
     ).toBe('account_unexpected');
     vi.setSystemTime(T0 + 60_000);
+    const before = await t.run((ctx) => ctx.db.get(id));
     await acceptTerms(asAda);
     const rows = await t.run((ctx) => ctx.db.query('profiles').collect());
     expect(rows.map((r) => r._id)).toEqual([id]);
-    expect(rows[0]).toMatchObject({ displayName: 'Ada', termsAcceptedAt: T0 + 60_000 });
+    // The version is already accepted: the first acceptance stands, and nothing moves.
+    expect(rows[0]).toMatchObject({
+      displayName: 'Ada',
+      termsAcceptedAt: before?.termsAcceptedAt,
+    });
     const records = await t.run((ctx) => ctx.db.query('consentRecords').collect());
-    expect(records.map((r) => r.context)).toEqual(['first_run', 'version_change']);
-    expect(records[1]?.recordedAt).toBe(T0 + 60_000);
-    // The first record's stamp is its own, untouched by the second (each acceptance is a record).
+    expect(records.map((r) => r.context)).toEqual(['first_run']);
     expect(records[0]?.recordedAt).toBeLessThan(T0 + 60_000);
   });
 

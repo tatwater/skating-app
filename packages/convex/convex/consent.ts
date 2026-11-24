@@ -42,7 +42,7 @@ import {
   isMinor,
   isPublishedKnowBeforeYouGo,
   isValidDisplayName,
-  KNOW_BEFORE_YOU_GO_REPEAT_MS,
+  knowBeforeYouGoDue,
   meetsMinimumAge,
   needsProfileSetup,
   normalizeDisplayName,
@@ -280,7 +280,8 @@ async function checkAccount(
  *   were; this adds one.
  * - **Any other row:** `account` must be absent; only the terms fields change. Inactive or suspended
  *   accounts get `requireProfile`'s refusals, and a pending deletion `deletion_pending` (its way back
- *   is the cancel in Settings).
+ *   is the cancel in Settings). A row that has already accepted this version gets its newest
+ *   acceptance back and nothing is written: a sealed record is one per acceptance, not per tap.
  *
  * Every time is the server's. The client's `surface` and `userAgent` are stored as client-reported.
  */
@@ -303,9 +304,6 @@ export const acceptTerms = mutation({
     if (!isCurrentPrivacyNotice({ version: args.privacyVersion, hash: args.privacyHash })) {
       refuse('client_outdated');
     }
-    const reading = await currentReading(ctx, subject);
-    if (reading?.reachedEndAt === undefined) refuse('terms_not_read');
-
     const now = Date.now();
     const existing = await ctx.db
       .query('profiles')
@@ -316,6 +314,19 @@ export const acceptTerms = mutation({
     if (existing?.deletionRequestedAt !== undefined) refuse('deletion_pending');
     // Live: a row that is neither new nor a canceled deletion's emptied one.
     const live = existing !== null && !needsProfileSetup(existing) ? existing : null;
+
+    // Already accepted at this version: the acceptance there is, unchanged — no second sealed
+    // record, no second email, no Clerk lookup. A double tap, a retry after a lost answer, a second
+    // tab: each gets the first answer, before the reading is even asked for (the first consumed it).
+    if (live !== null && live.termsVersion === TERMS.version) {
+      if (args.account !== undefined) refuse('account_unexpected');
+      const accepted = await newestRecord(ctx, live._id, 'terms');
+      if (accepted !== null && accepted.version === TERMS.version)
+        return { recordId: accepted._id };
+    }
+
+    const reading = await currentReading(ctx, subject);
+    if (reading?.reachedEndAt === undefined) refuse('terms_not_read');
 
     let profileId: Id<'profiles'>;
     let attested: { fullName: string; email?: string; dateOfBirth: number };
@@ -447,9 +458,15 @@ function newestRecord(ctx: QueryCtx, profileId: Id<'profiles'>, kind: 'terms' | 
  * current at that instant — and the profile's two fields, then the IP. The answers themselves are not
  * an argument: the client holds them, and a wrong pick has no field anywhere.
  *
- * The terms come first (`terms_first`): the questions are answered under the current terms. A second
- * call within 60 s of the first (a double tap, a retry after a lost answer) returns the first's answer
- * and writes nothing.
+ * The account must be set up (a canceled deletion's emptied row is re-introduced first:
+ * `account_required`), and the terms come first (`terms_first`): the questions are answered under
+ * the current terms, by a named person. Any published version of the questions is taken, and the
+ * record names the one answered (`client_outdated` for words nobody published).
+ *
+ * **One completion per asking.** When the questions aren't due — by `knowBeforeYouGoDue`, the season
+ * rule the gate routes by, read here off the same profile and watch — the call returns the newest
+ * completion's season and writes nothing: a double tap, a retry after a lost answer, a second tab,
+ * or a stale screen never seals a second record.
  */
 export const completeKnowBeforeYouGo = mutation({
   args: {
@@ -461,22 +478,25 @@ export const completeKnowBeforeYouGo = mutation({
   },
   handler: async (ctx, args): Promise<{ season: string | null }> => {
     const profile = await requireContributor(ctx);
+    // A canceled deletion's emptied row holds the scrubbed placeholder, not a person to attest.
+    if (needsProfileSetup(profile)) refuse('account_required');
     if (profile.termsVersion !== TERMS.version) refuse('terms_first');
     // Any published version: an older build's words count, and are the ones recorded.
     if (!isPublishedKnowBeforeYouGo({ version: args.version, hash: args.hash })) {
       refuse('client_outdated');
     }
-    const now = Date.now();
-    if (
-      profile.knowBeforeYouGoAt !== undefined &&
-      now - profile.knowBeforeYouGoAt < KNOW_BEFORE_YOU_GO_REPEAT_MS
-    ) {
-      const first = await newestRecord(ctx, profile._id, 'questions');
-      return { season: first?.season ?? null };
+    const watch = await newestWatch(ctx);
+    const due = knowBeforeYouGoDue(
+      profile.knowBeforeYouGoAt,
+      watch === null ? null : { openedAt: watch.openedAt },
+    );
+    if (due === null) {
+      const last = await newestRecord(ctx, profile._id, 'questions');
+      return { season: last?.season ?? null };
     }
 
+    const now = Date.now();
     const identity = await requireIdentity(ctx);
-    const watch = await newestWatch(ctx);
     const season = watch?.season ?? null;
     const email = identity.email ?? profile.email;
     const userAgent = reported(args.userAgent);
