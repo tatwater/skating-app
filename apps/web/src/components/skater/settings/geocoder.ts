@@ -103,8 +103,9 @@ export function useAddressSuggestions(text: string, suggest: SuggestFn): Address
     suggestRef
       .current({ text: '' })
       .then((result) => {
-        if (live)
-          setLookup((now) => (now.state === 'unknown' ? settle(result, '', attribution) : now));
+        // What the probe learned is the session's, whether or not this field is still here.
+        const learned = settle(result, '', attribution);
+        if (live) setLookup((now) => (now.state === 'unknown' ? learned : now));
       })
       .catch(() => {
         if (live) setLookup({ state: 'error', attribution: null });
