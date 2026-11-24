@@ -8947,7 +8947,9 @@ becoming a permanent file on someone who left.
   account's Home and Profile pending → those; otherwise the app. A pending deletion is never routed
   through any of it (the governor's ruling), nor is an account the server refuses right now —
   banned, being finalized, or suspended — which goes to the read-only app and its support screen
-  until it can act again (the governor's ruling, 2026-11-24). Stale terms and questions are client-routed, as the
+  until it can act again (the governor's ruling, 2026-11-24; a suspension's end is judged five
+  minutes late for a device clock running ahead, and a way-in call the server refuses as one keeps
+  the skater in the app for those five minutes, B03 §9.3). Stale terms and questions are client-routed, as the
   acknowledgment was.
 - **Existing accounts** see the terms and the questions at their next sign-in, and never the Home and
   Profile steps.
