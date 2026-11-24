@@ -45,13 +45,13 @@ const PRIVACY_CLAIM = {
 const QUESTIONS_CLAIM = { version: KNOW_BEFORE_YOU_GO.version, hash: KNOW_BEFORE_YOU_GO_SHA256 };
 const ACCOUNT = { displayName: '  Ada   Lovelace ', username: 'Ada_L', dateOfBirth: ADULT_DOB };
 
-type T = ReturnType<typeof convexTest>;
-
-function harness(now = T0): T {
+function harness(now = T0) {
   vi.useFakeTimers();
   vi.setSystemTime(now);
   return convexTest(schema, modules);
 }
+
+type T = ReturnType<typeof harness>;
 
 beforeEach(() => {
   // The two actions the acceptance schedules run in the teardown drain: keep them offline.
@@ -692,16 +692,10 @@ describe('completeKnowBeforeYouGo', () => {
 
   test('the terms first, the current questions, and the contributor gate', async () => {
     const t = harness();
-    await existingProfile(t, 'user_bea');
+    const beaId = await existingProfile(t, 'user_bea');
     const bea = caller(t, 'user_bea');
     await expectRefusal(complete(bea), 'terms_first');
-    await t.run(async (ctx) => {
-      const row = await ctx.db
-        .query('profiles')
-        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', 'user_bea'))
-        .unique();
-      await ctx.db.patch(row?._id as Id<'profiles'>, { termsVersion: '2026-01-01' });
-    });
+    await t.run((ctx) => ctx.db.patch(beaId, { termsVersion: '2026-01-01' }));
     await expectRefusal(complete(bea), 'terms_first');
     const as = await accepted(t);
     await expectRefusal(complete(as, { ...QUESTIONS_CLAIM, hash: 'beef' }), 'questions_changed');

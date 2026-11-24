@@ -216,11 +216,12 @@ describe('captureIp', () => {
   });
 
   test('an error from Clerk is an error, never a guess — and never a throw', async () => {
-    for (const routes of [
+    const cases: Record<string, Reply>[] = [
       { '/v1/sessions/sess_1': { status: 500 } },
-      { '/v1/sessions/sess_1': 'throw' as const },
+      { '/v1/sessions/sess_1': 'throw' },
       { '/v1/sessions?': { status: 401 } },
-    ]) {
+    ];
+    for (const routes of cases) {
       stubFetch(routes);
       const { t, recordId, record } = await world();
       await expect(
