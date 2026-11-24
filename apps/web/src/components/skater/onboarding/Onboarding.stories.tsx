@@ -300,14 +300,16 @@ export const TermsWaiting: Story = {
   render: () => <Terms waiting />,
   play: async ({ canvasElement }) => {
     const c = within(canvasElement);
-    await expect(c.getByRole('status')).toHaveTextContent(
-      ONBOARDING_COPY.terms.stillConnecting,
-    );
+    await expect(c.getByRole('status')).toHaveTextContent(ONBOARDING_COPY.terms.stillConnecting);
     await expect(c.getByRole('checkbox')).toHaveAttribute('aria-disabled', 'true');
   },
 };
 
-export const TermsWaitingPhone: Story = { ...TermsWaiting, ...phone, render: () => <Terms phone waiting /> };
+export const TermsWaitingPhone: Story = {
+  ...TermsWaiting,
+  ...phone,
+  render: () => <Terms phone waiting />,
+};
 
 /**
  * 10.3 → 10.4 — read to the end: the end marker scrolled into the window unlocks the box, the meta

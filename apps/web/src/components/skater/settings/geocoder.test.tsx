@@ -153,17 +153,20 @@ describe('useAddressSuggestions', () => {
   it.each([
     ['on', ok(), { state: 'idle', attribution: ATTR }],
     ['off', off, { state: 'off' }],
-  ] as const)('a probe answered after its field unmounted still teaches the session "%s"', async (_, answer, drawn) => {
-    let resolve: (r: SuggestResult) => void = () => {};
-    const suggest = vi.fn<SuggestFn>(() => new Promise((r) => (resolve = r)));
-    const { result, unmount } = hook(suggest);
-    unmount();
-    await act(async () => resolve(answer));
-    // The gone field draws nothing new; the next one draws what was learned, asking nothing.
-    expect(result.current).toEqual({ state: 'unknown' });
-    const again = hook(suggest);
-    expect(again.result.current).toEqual(drawn);
-    await settle();
-    expect(suggest).toHaveBeenCalledOnce();
-  });
+  ] as const)(
+    'a probe answered after its field unmounted still teaches the session "%s"',
+    async (_, answer, drawn) => {
+      let resolve: (r: SuggestResult) => void = () => {};
+      const suggest = vi.fn<SuggestFn>(() => new Promise((r) => (resolve = r)));
+      const { result, unmount } = hook(suggest);
+      unmount();
+      await act(async () => resolve(answer));
+      // The gone field draws nothing new; the next one draws what was learned, asking nothing.
+      expect(result.current).toEqual({ state: 'unknown' });
+      const again = hook(suggest);
+      expect(again.result.current).toEqual(drawn);
+      await settle();
+      expect(suggest).toHaveBeenCalledOnce();
+    },
+  );
 });
