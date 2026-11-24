@@ -162,6 +162,7 @@ function HomeStep({
         <OtherWayIn
           located={choice?.kind === 'location'}
           locating={locate === 'locating'}
+          busy={busy}
           failed={locate === 'failed'}
           onLocate={startLocate}
         />
@@ -170,15 +171,21 @@ function HomeStep({
   );
 }
 
-/** "or", then *Use my current location* and its problem line: the Home step's other way in. */
+/**
+ * "or", then *Use my current location* and its problem line: the Home step's other way in. The
+ * button waits while a save or a skip is out (`busy`), as the web's does: a read begun then would
+ * outlive the save that superseded the ones before it.
+ */
 function OtherWayIn({
   located,
   locating,
+  busy,
   failed,
   onLocate,
 }: {
   located: boolean;
   locating: boolean;
+  busy: boolean;
   failed: boolean;
   onLocate: () => void;
 }) {
@@ -197,8 +204,8 @@ function OtherWayIn({
         variant="outlined"
         borderColor={located ? 'foreground' : 'border'}
         color="foreground"
-        disabled={locating}
-        opacity={locating ? 0.45 : 1}
+        disabled={locating || busy}
+        opacity={locating || busy ? 0.45 : 1}
         icon={
           <FontAwesomeIcon icon={faLocationCrosshairs} size={15} color={theme.foreground?.val} />
         }

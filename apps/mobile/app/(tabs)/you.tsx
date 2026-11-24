@@ -20,7 +20,6 @@ import {
 } from '@skating/core';
 import { THEME_PREFERENCES, type ThemePreference } from '@skating/design';
 import { useMutation, useQuery } from 'convex/react';
-import * as Location from 'expo-location';
 import { Link, useRouter } from 'expo-router';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { ScrollView } from 'react-native';
@@ -41,6 +40,7 @@ import {
 } from '../../src/lib/pushRegistration';
 import { tapTargetSlop } from '../../src/lib/tapTarget';
 import { THEME_PREFERENCE_LABELS } from '../../src/lib/themePreference';
+import { useLocateRead } from '../../src/lib/useLocateRead';
 import { useSignOut } from '../../src/lib/useSignOut';
 import { useThemePreference } from '../../src/providers/ThemeProvider';
 
@@ -176,22 +176,22 @@ export default function YouScreen() {
 function HomeLocation() {
   const profile = useQuery(api.profiles.current, {});
   const setHome = useMutation(api.profiles.setHome);
-  const [status, setStatus] = useState<'idle' | 'locating' | 'error'>('idle');
+  const [saving, setSaving] = useState(false);
+  const [saveFailed, setSaveFailed] = useState(false);
   const hasHome = profile?.homeCoord !== undefined;
 
-  async function useCurrentLocation() {
-    setStatus('locating');
+  // The Home step's rule (core's `createLocateRead`): the button stops looking busy after a while
+  // even if the read is never answered, and only the newest read nobody superseded is saved.
+  const { locate, start, supersede } = useLocateRead((homeCoord) => void save(homeCoord));
+  async function save(homeCoord: { lat: number; lng: number }) {
+    setSaving(true);
+    setSaveFailed(false);
     try {
-      const perm = await Location.requestForegroundPermissionsAsync();
-      if (!perm.granted) {
-        setStatus('error');
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({});
-      await setHome({ homeCoord: { lat: pos.coords.latitude, lng: pos.coords.longitude } });
-      setStatus('idle');
+      await setHome({ homeCoord });
     } catch {
-      setStatus('error');
+      setSaveFailed(true);
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -208,8 +208,11 @@ function HomeLocation() {
         <Button
           size="md"
           hitSlop={tapTargetSlop('$3')}
-          onPress={useCurrentLocation}
-          disabled={status === 'locating'}
+          onPress={() => {
+            setSaveFailed(false);
+            start();
+          }}
+          disabled={locate === 'locating' || saving}
         >
           {hasHome ? 'Update home' : 'Set home from location'}
         </Button>
@@ -218,17 +221,21 @@ function HomeLocation() {
             size="md"
             hitSlop={tapTargetSlop('$3')}
             variant="quiet"
-            onPress={() => void setHome({})}
+            onPress={() => {
+              // Cleared: a location still being read never sets it back.
+              supersede();
+              void setHome({});
+            }}
           >
             Clear
           </Button>
         ) : null}
       </XStack>
-      {status === 'locating' ? (
+      {locate === 'locating' ? (
         <Text color="foregroundMuted" fontSize={13}>
           Locating…
         </Text>
-      ) : status === 'error' ? (
+      ) : locate === 'failed' || saveFailed ? (
         <Text color="danger" fontSize={13}>
           Couldn't get your location.
         </Text>
