@@ -1729,9 +1729,12 @@ change does not re-ask; (4) "Last answered" stays. Counsel's view on (3) is stil
 
 5. **The Code of Conduct the terms named** (asked after merge). Option (b) above had put it back; it was
    the repo's `CODE_OF_CONDUCT.md`, the contributors' covenant, which no app reaches and the record's
-   hash doesn't cover. **The founder's call (2026-11-24):** drop both references, so everything a skater
-   agrees to is in the text they read, and correct version 2026-11-24 in place as a one-time,
-   pre-launch exception to the append-only ledger (D295's amendment; §9.17).
+   hash doesn't cover. **The founder's call (2026-11-24):** drop both references and write the conduct
+   rules they stood for into the terms — the content not to post (sexual, hateful, violent, or
+   otherwise inappropriate) in *Your account and conduct*, and the operator's discretion over content
+   and accounts it believes harmful to other skaters in *Your content* — so everything a skater agrees
+   to is in the text they read; version 2026-11-24 corrected in place as a one-time, pre-launch
+   exception to the append-only ledger (D295's amendment; §9.17).
 
 ### 9.16 Owed after merge
 
@@ -1750,6 +1753,11 @@ change does not re-ask; (4) "Last answered" stays. Counsel's view on (3) is stil
   list, the refusal toasts, the delete sentence, the copy email's intro).
 - Counsel's questions (L1, L3): agreeing to a privacy notice in the terms' line, the six years and tolling,
   IP as evidence, keeping the record through a deletion request.
+- **After the Code of Conduct correction merges (§9.15 item 5):** push dev (`convex dev --once`) before
+  any other acceptance happens on dev. Until then a web build from main carries the new hash while the
+  server holds the earlier one, and its Terms step is refused as out of date. The Android `preview`
+  build for the device pass must be built after that merge: a build from #180 bundles the earlier
+  words and cannot accept.
 
 ### 9.17 What the build found
 
@@ -1904,11 +1912,22 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   a test swaps the server's terms between an acceptance and its send.
 - **The terms named a document no skater could read (after #180, 2026-11-24).** §9.15's option (b) had
   put the Code of Conduct back (§9.1 item 9), but the only one is the repo's contributors' covenant:
-  linked from neither app and outside the hash a record holds. Both references are removed (§9.15
-  item 5), and a core test holds that the terms never name a Code of Conduct. The words changed under
-  version 2026-11-24 and its ledger line was re-hashed in place — the one exception, recorded on the
-  line and in D295's amendment. The founder's dev acceptance keeps the earlier hash and is not asked
-  again: the route, the questions' refusal and the repeat acceptance all compare the version, and
-  nothing compares a stored hash (a convex test holds that account through the route, the questions,
-  a repeat acceptance, the receipt and the export). Such an account can't record the corrected
-  words short of a new version.
+  linked from neither app and outside the hash a record holds. Both references are removed and the
+  rules they stood for are written into the terms (§9.15 item 5): the content not to post in the
+  conduct section, the operator's discretion in the content section. Core's tests hold both clauses
+  and that the terms never name a Code of Conduct. The words changed under version 2026-11-24 and its
+  ledger line was re-hashed in place — the one exception, recorded on the line and in D295's
+  amendment. The founder's dev acceptance keeps the earlier hash and is not asked again: the route,
+  the questions' refusal and the repeat acceptance all compare the version, and nothing compares a
+  stored hash (a convex test holds that rule through the route, the questions, a repeat acceptance,
+  the receipt and the export). Such an account can't record the corrected words short of a new
+  version.
+- **A reading could outlive its acceptance (the same review; from #180).** A repeat acceptance
+  returned before it looked at the reading, and the reader wrote one for an account that had already
+  accepted (a second tab or device still on the step), so a row could wait — only an acceptance, the
+  30-day prune and the finalize stage delete one — for a canceled deletion's re-introduction, which
+  sealed a record with the earlier visit's stamps and no fresh reading (reproduced in a convex test
+  first). The reader now writes nothing for an account whose acceptance at this version is on record,
+  and a repeat acceptance discards any reading it finds. A row written before this fix stays until
+  the prune: dev holds one, so a canceled deletion tried on that account within its 30 days would
+  still use it.

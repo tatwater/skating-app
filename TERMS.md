@@ -37,7 +37,7 @@ Keep your login secure. You’re responsible for what happens on your account.
 
 Post honestly. A knowingly false ice report, especially a dangerously false “the ice is great” report, is a safety violation, not a prank, and may result in removal and a ban.
 
-Don’t harass, impersonate, spam, or post anyone’s private information.
+Don’t harass, impersonate, spam, or post anyone’s private information. Don’t post sexual, hateful, violent, or otherwise inappropriate content.
 
 Don’t post anything you don’t have the right to share, and don’t misuse the app’s data or interfere with how it runs.
 
@@ -47,7 +47,7 @@ You keep ownership of what you post. You grant the operator a license to store, 
 
 You’re responsible for what you post, including photos, and you confirm you have the right to post it.
 
-The operator may remove content, and suspend or ban accounts, that break these terms.
+The operator may remove content, and suspend or ban accounts, that break these terms or that the operator believes are harmful to other skaters.
 
 ## 6. Third-party services
 

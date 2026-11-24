@@ -4,12 +4,14 @@
  * `renderTermsMarkdown(TERMS)` exactly, held there by `packages/guards/src/termsDocument.test.ts`.
  *
  * **To change the terms:** edit the words below, set `version` to today's date (`YYYY-MM-DD`; the
- * season card reads it as "Unchanged since …"), then run core's tests. `terms.test.ts` fails and
- * prints one line, `'<version>': '<sha256>'` — add it to `TERMS_HASHES` (never edit an old line;
- * each is a version that skaters accepted, and the records name it). Then regenerate `TERMS.md`'s
- * body: the guard's failure shows the text to paste between the markers. **Every new version asks
- * every skater to read and accept the terms again at their next sign-in** (section 9 says so), so
- * a typo fix is a new version too: the hash is what a record proves was accepted.
+ * season card reads it as "Unchanged since …"), then run core's tests. If a version was already
+ * published today, the new one takes the next free date instead: a version names one text, and is
+ * never reused. `terms.test.ts` fails and prints one line, `'<version>': '<sha256>'` — add it to
+ * `TERMS_HASHES` (never edit an old line; each is a version that skaters accepted, and the records
+ * name it — the one exception, made before launch, is recorded at the ledger). Then regenerate
+ * `TERMS.md`'s body: the guard's failure shows the text to paste between the markers. **Every new
+ * version asks every skater to read and accept the terms again at their next sign-in** (section 9
+ * says so), so a typo fix is a new version too: the hash is what a record proves was accepted.
  *
  * Inline markup is `**bold**` and nothing else — the email renderer's convention
  * (`packages/convex/convex/lib/emailBlocks.ts`), so the same text renders in an app, an email and a
@@ -82,7 +84,9 @@ export const TERMS: TermsDocument = {
         p(
           'Post honestly. A knowingly false ice report, especially a dangerously false “the ice is great” report, is a safety violation, not a prank, and may result in removal and a ban.',
         ),
-        p('Don’t harass, impersonate, spam, or post anyone’s private information.'),
+        p(
+          'Don’t harass, impersonate, spam, or post anyone’s private information. Don’t post sexual, hateful, violent, or otherwise inappropriate content.',
+        ),
         p(
           'Don’t post anything you don’t have the right to share, and don’t misuse the app’s data or interfere with how it runs.',
         ),
@@ -97,7 +101,9 @@ export const TERMS: TermsDocument = {
         p(
           'You’re responsible for what you post, including photos, and you confirm you have the right to post it.',
         ),
-        p('The operator may remove content, and suspend or ban accounts, that break these terms.'),
+        p(
+          'The operator may remove content, and suspend or ban accounts, that break these terms or that the operator believes are harmful to other skaters.',
+        ),
       ],
     },
     {
@@ -168,12 +174,14 @@ export const TERMS: TermsDocument = {
  */
 export const TERMS_HASHES: Readonly<Record<string, string>> = {
   // The one edited line, and not a precedent: the text first published on 2026-11-24 was corrected
-  // the same day, before launch (production had never been initialized), to drop its references to
-  // a Code of Conduct (D295). The only acceptance of the earlier words was the founder's own test
-  // account on the dev deployment. The earlier text's hash was
-  // dba06b83fd70e1b8376fc420df5b3a623d4bd9c6dc6f9dbd990f3e9e420e3010, so a dev record holding that
-  // hash is that test acceptance. The append-only rule above applies to every line after this one.
-  '2026-11-24': 'a889ff74b2bfc8354da4e3591a98636fd5d3b10ec74841501b5c277bd55edd70',
+  // the same day, before launch (production had never been initialized): its references to a Code
+  // of Conduct gave way to conduct rules written into the terms themselves (D295). The only
+  // acceptance of the earlier words was the founder's own test account on the dev deployment. The
+  // earlier text's hash was dba06b83fd70e1b8376fc420df5b3a623d4bd9c6dc6f9dbd990f3e9e420e3010, so a
+  // dev record holding that hash is that test acceptance; the earlier words are `TERMS.md` as merged
+  // in commit 3259ff49e (`git show 3259ff49e:TERMS.md`), whose body between the markers hashes to
+  // it. The append-only rule above applies to every line after this one.
+  '2026-11-24': 'bf27d966264c1d1aff62c1dc6fa0c19fced9d76749270e2d9eaccb34ea20eae3',
 };
 
 /**

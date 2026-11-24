@@ -979,16 +979,18 @@ describe('latestTermsReceipt', () => {
   });
 });
 
-describe('an acceptance whose hash has left the ledger', () => {
+describe('a record whose hash is not in the ledger', () => {
   /**
-   * The 2026-11-24 terms were corrected in place, before launch, and their ledger line re-hashed
-   * (the one exception `TERMS_HASHES` records). The founder's dev account accepted the earlier
-   * words: its profile holds the current version, its record the earlier hash, which no ledger line
-   * names any more. Nothing routes or refuses by a stored hash, so that account goes on as accepted.
+   * The general rule: routing, the questions, the receipt and the export never read a record's stored
+   * hash — the route and the questions compare versions, and the record is shown and exported as it
+   * was sealed — so a record whose hash no ledger line names changes nothing for its account. What
+   * prompted it: the 2026-11-24 terms were corrected in place before launch (the one exception
+   * `TERMS_HASHES` records), and the founder's dev acceptance kept the earlier text's hash. The
+   * fixture borrows that hash and today's version; the rule doesn't depend on either.
    */
   const EARLIER_HASH = 'dba06b83fd70e1b8376fc420df5b3a623d4bd9c6dc6f9dbd990f3e9e420e3010';
 
-  test('routes past the terms, answers the questions, and keeps the record it has', async () => {
+  test('routes past the terms, answers the questions, and keeps the record as sealed', async () => {
     const t = harness();
     expect(Object.values(TERMS_HASHES)).not.toContain(EARLIER_HASH);
     const id = await existingProfile(t, 'user_founder', {
@@ -1048,6 +1050,8 @@ describe('an acceptance whose hash has left the ledger', () => {
     expect(await accept(as)).toEqual({ recordId, repeat: true });
     expect((await records(t)).length).toBe(before);
     expect((await t.run((ctx) => ctx.db.get(recordId)))?.contentHash).toBe(EARLIER_HASH);
+    // And no reading is left behind for a later acceptance to find.
+    expect(await readings(t)).toEqual([]);
 
     // The export carries the record with the hash it was sealed with.
     const bundle = await t.query(internal.dataExport.collect, { userId: id });
@@ -1067,6 +1071,127 @@ describe('an acceptance whose hash has left the ledger', () => {
       surface: 'web',
     });
   }
+});
+
+describe('a reading never outlives an acceptance at its version', () => {
+  /**
+   * A reading is the evidence for one acceptance. An account that has already accepted this version
+   * has nothing for a reading to become, so none is written for it, and a repeat acceptance discards
+   * any it finds. Otherwise a leftover row would wait — the 30-day prune, or the finalize stage, the
+   * only other deletes — for the next acceptance that needs one: a canceled deletion's
+   * re-introduction, which would seal a record with an earlier visit's stamps and no fresh reading.
+   */
+  async function acceptedAccount(t: T) {
+    const as = caller(t);
+    await readToEnd(as);
+    const { recordId } = await accept(as, { account: ACCOUNT });
+    return { as, recordId };
+  }
+
+  async function deleteAndCancel(as: ReturnType<T['withIdentity']>, at: number) {
+    vi.setSystemTime(at);
+    await as.mutation(api.accountDeletion.requestDeletion, {});
+    vi.setSystemTime(at + DAY);
+    await as.mutation(api.accountDeletion.cancelDeletion, {});
+  }
+
+  const REINTRODUCED = { displayName: 'Ada Again', username: 'Ada_L', dateOfBirth: ADULT_DOB };
+
+  test('a canceled deletion re-accepts only on a fresh reading, stamped by the new visit', async () => {
+    const t = harness();
+    const { as, recordId } = await acceptedAccount(t);
+    // A second tab reads the terms again and presses the button: the first acceptance comes back.
+    vi.setSystemTime(T0 + 60_000);
+    await readToEnd(as);
+    expect(await accept(as)).toEqual({ recordId, repeat: true });
+
+    await deleteAndCancel(as, T0 + 2 * DAY);
+    const profile = await as.query(api.profiles.current, {});
+    expect(profile?.termsVersion).toBe(TERMS.version);
+    expect(
+      resolveEntryRoute({ isLoaded: true, isSignedIn: true, profile, watch: null, now: T0 }),
+    ).toBe('account');
+
+    // The re-introduction finds no reading from the earlier visit: it must read the terms again.
+    vi.setSystemTime(T0 + 5 * DAY);
+    await expectRefusal(accept(as, { account: REINTRODUCED }), 'terms_not_read');
+    await readToEnd(as);
+    vi.setSystemTime(T0 + 5 * DAY + 30_000);
+    const again = await accept(as, { account: REINTRODUCED });
+    expect(again.repeat).toBe(false);
+    expect(await t.run((ctx) => ctx.db.get(again.recordId))).toMatchObject({
+      context: 'reintroduced',
+      openedAt: T0 + 5 * DAY,
+      reachedEndAt: T0 + 5 * DAY,
+      recordedAt: T0 + 5 * DAY + 30_000,
+    });
+    expect(await readings(t)).toEqual([]);
+  });
+
+  test('an accepted account’s open and end write no reading, and answer as they do today', async () => {
+    const t = harness();
+    const { as } = await acceptedAccount(t);
+    expect(await readings(t)).toEqual([]);
+    vi.setSystemTime(T0 + 60_000);
+    expect(await as.mutation(api.consent.openTerms, { ...TERMS_CLAIM, surface: 'web' })).toBeNull();
+    expect(
+      await as.mutation(api.consent.reachTermsEnd, { ...TERMS_CLAIM, via: 'fullscreen' }),
+    ).toBeNull();
+    expect(await readings(t)).toEqual([]);
+    // Words other than the server's are still refused first: the build is out of date either way.
+    await expectRefusal(
+      as.mutation(api.consent.openTerms, { ...TERMS_CLAIM, termsHash: 'beef', surface: 'web' }),
+      'client_outdated',
+    );
+    // A pending deletion at this version is accepted too: nothing is written while it waits.
+    await as.mutation(api.accountDeletion.requestDeletion, {});
+    await as.mutation(api.consent.openTerms, { ...TERMS_CLAIM, surface: 'web' });
+    expect(await readings(t)).toEqual([]);
+    // Canceled, the emptied row has to accept again, so its reading is written as for anyone.
+    await as.mutation(api.accountDeletion.cancelDeletion, {});
+    await as.mutation(api.consent.openTerms, { ...TERMS_CLAIM, surface: 'web' });
+    expect(await readings(t)).toHaveLength(1);
+  });
+
+  test('a row at this version with no acceptance on record still reads, and accepts', async () => {
+    // The inbox seed's people are born routed, with a version and no record: nothing here is a
+    // repeat, so their readings and acceptances work as for an account from before the terms.
+    const t = harness();
+    await existingProfile(t, 'user_bea', { termsVersion: TERMS.version });
+    const as = caller(t, 'user_bea');
+    await readToEnd(as);
+    expect(await readings(t)).toHaveLength(1);
+    expect((await accept(as)).repeat).toBe(false);
+    expect(await readings(t)).toEqual([]);
+  });
+
+  test('a leftover reading is discarded by a repeat acceptance', async () => {
+    const t = harness();
+    const { as, recordId } = await acceptedAccount(t);
+    // A row written before this rule, as dev holds one: opened and read to the end after the
+    // acceptance.
+    await t.run((ctx) =>
+      ctx.db.insert('termsReadings', {
+        clerkUserId: 'user_ada',
+        termsVersion: TERMS.version,
+        openedAt: T0 + 60_000,
+        reachedEndAt: T0 + 90_000,
+        reachedEndVia: 'inline',
+        surface: 'web',
+      }),
+    );
+    // Another account's reading is not this caller's to discard.
+    await t.run((ctx) =>
+      ctx.db.insert('termsReadings', {
+        clerkUserId: 'user_other',
+        termsVersion: TERMS.version,
+        openedAt: T0 + 60_000,
+        surface: 'web',
+      }),
+    );
+    expect(await accept(as)).toEqual({ recordId, repeat: true });
+    expect((await readings(t)).map((r) => r.clerkUserId)).toEqual(['user_other']);
+  });
 });
 
 describe('the retention sweeps', () => {

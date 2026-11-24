@@ -80,17 +80,21 @@ describe('the text', () => {
       'OpenStreetMap',
       'Clerk',
       'desk@teaganatwater.com',
+      // The conduct rules the dropped Code of Conduct reference stood for, written in (D295).
+      'otherwise inappropriate content',
+      'harmful to other skaters',
     ]) {
       expect(all).toContain(clause);
     }
   });
 
-  it('never refers to a Code of Conduct', () => {
-    // Everything a skater agrees to must be in the text the consent record hashes. No conduct
-    // document is versioned with the terms or reachable in either app (the repo's
-    // CODE_OF_CONDUCT.md is the contributors' covenant), so the conduct rules live here, in full.
+  it('never names a Code of Conduct', () => {
+    // The only one is the repo's CODE_OF_CONDUCT.md, the contributors' covenant: neither app links
+    // to it and no record's hash covers it, so the terms must not name it (D295's amendment). Bold
+    // marks are stripped first, so `Code of **Conduct**` can't slip past.
     const all = TERMS.sections
       .flatMap((s) => [s.heading, ...s.blocks.map((b) => b.text)])
+      .map(stripBold)
       .join(' ');
     expect(all).not.toMatch(/code\s+of\s+conduct/i);
   });

@@ -53,6 +53,10 @@ interface Touch {
 const TOUCHES: Record<string, Touch> = {
   'consent.ts:currentReading': { why: 'the caller’s reading of the current terms' },
   'consent.ts:openTerms': { why: 'the reading opened', inserts: ['termsReadings'] },
+  'consent.ts:discardReadings': {
+    why: 'a repeat acceptance’s leftover reading, which no acceptance will consume',
+    deletes: ['row._id'],
+  },
   'consent.ts:acceptTerms': {
     why: 'the acceptance: the profile, the record, the reading consumed',
     inserts: ['consentRecords'],
