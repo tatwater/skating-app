@@ -930,6 +930,33 @@ describe('a failing end', () => {
     expect(m.toast).not.toHaveBeenCalled();
   });
 
+  it('an end stamp refused after the step is gone says nothing', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    const reach = heldOpening();
+    mutation('consent:reachTermsEnd').mockImplementationOnce(reach.next);
+    const { unmount } = render(<TermsPage />);
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+    unmount();
+    await act(async () => reach.refuse(new Error('offline')));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.toast).not.toHaveBeenCalled();
+  });
+
+  it('an awaited opening answered after the step is gone stamps nothing', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    const opening = heldOpening();
+    mutation('consent:openTerms').mockImplementationOnce(opening.next);
+    // The end is in view at once, so it waits on the opening.
+    const { unmount } = render(<TermsPage />);
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledOnce());
+    await new Promise((r) => setTimeout(r, 20));
+    unmount();
+    await act(async () => opening.answer(null));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+    expect(m.toast).not.toHaveBeenCalled();
+  });
+
   it('a lost reading, reached in full-screen, is read again from its top before the end counts', async () => {
     const user = userEvent.setup();
     const scrollTo = spyOnScrollTo();
