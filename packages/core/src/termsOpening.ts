@@ -15,10 +15,11 @@ export const TERMS_OPEN_RETRY_GAP_MS = 5_000;
 
 /**
  * Whether a failed opening may be tried again at `now`, its last try having started at `lastTryAt`
- * (`null`: never tried). A clock stepped back past the last try waits out the gap again.
+ * (`null`: never tried). A clock set back past the last try is due at once: waiting for it to pass
+ * the last try again would stop the retries for as long as the step back.
  */
 export function termsOpenRetryDue(lastTryAt: number | null, now: number): boolean {
   if (lastTryAt === null) return true;
   const since = now - lastTryAt;
-  return since >= TERMS_OPEN_RETRY_GAP_MS;
+  return since < 0 || since >= TERMS_OPEN_RETRY_GAP_MS;
 }

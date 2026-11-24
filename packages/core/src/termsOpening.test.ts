@@ -13,8 +13,10 @@ describe('termsOpenRetryDue', () => {
     expect(termsOpenRetryDue(T0, T0 + TERMS_OPEN_RETRY_GAP_MS)).toBe(true);
   });
 
-  it('tries at once when nothing was tried, and waits after a clock stepped back', () => {
+  it('tries at once when nothing was tried, or when the clock was set back past the last try', () => {
     expect(termsOpenRetryDue(null, T0)).toBe(true);
-    expect(termsOpenRetryDue(T0, T0 - 60_000)).toBe(false);
+    // Set back an hour: due now, not an hour and five seconds from now.
+    expect(termsOpenRetryDue(T0, T0 - 60 * 60 * 1000)).toBe(true);
+    expect(termsOpenRetryDue(T0, T0 - 1)).toBe(true);
   });
 });
