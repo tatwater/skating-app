@@ -75,6 +75,7 @@ export function TermsStep({
   resetKey,
   email,
   onEnd,
+  onScrollActivity,
   onRecord,
   onSignOut,
   initialChecked = false,
@@ -92,6 +93,8 @@ export function TermsStep({
   resetKey?: number;
   email: string | null;
   onEnd: (via: TermsReaderVia) => void;
+  /** The skater scrolled a reader (a failed opening is tried again on it). */
+  onScrollActivity?: () => void;
   onRecord: () => void;
   onSignOut: () => void;
   /** A board's ticked box. */
@@ -144,6 +147,7 @@ export function TermsStep({
         onEndGone={onEndGone}
         resetKey={resetKey}
         onEnd={onEnd}
+        onScrollActivity={onScrollActivity}
         onProgress={setProgress}
       />
     </EntryScreen>

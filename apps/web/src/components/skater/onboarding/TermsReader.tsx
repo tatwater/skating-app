@@ -127,6 +127,7 @@ export function TermsReader({
   onEndGone,
   resetKey = 0,
   onEnd,
+  onScrollActivity,
   onProgress,
 }: {
   /** The end has been reached and recorded: the meta line says so. */
@@ -138,6 +139,8 @@ export function TermsReader({
   onEndGone?: () => void;
   resetKey?: number;
   onEnd: (via: TermsReaderVia) => void;
+  /** Any scroll in either reader: the skater is reading. */
+  onScrollActivity?: () => void;
   onProgress?: (fraction: number) => void;
 }) {
   const copy = ONBOARDING_COPY.terms;
@@ -196,6 +199,19 @@ export function TermsReader({
     progress.current?.(0);
   }, [resetKey]);
 
+  // The skater is reading, in whichever reader scrolls: the window, the page, or the full screen.
+  const activity = useRef(onScrollActivity);
+  activity.current = onScrollActivity;
+  const fullRoot = fullEnd?.closest<HTMLElement>('[data-slot="dialog-body"]') ?? null;
+  useEffect(() => {
+    const boxes = [viewport(), scroller, fullRoot].filter((b): b is HTMLElement => b !== null);
+    const tell = () => activity.current?.();
+    for (const b of boxes) b.addEventListener('scroll', tell, { passive: true });
+    return () => {
+      for (const b of boxes) b.removeEventListener('scroll', tell);
+    };
+  }, [viewport, scroller, fullRoot]);
+
   useSeenOnScreen(
     end,
     inlineRoot,
@@ -203,7 +219,6 @@ export function TermsReader({
     () => onEnd('inline'),
     () => readingRoot(viewport(), scroller) === inlineRoot,
   );
-  const fullRoot = fullEnd?.closest<HTMLElement>('[data-slot="dialog-body"]') ?? null;
   useSeenOnScreen(fullEnd, fullRoot, armed && full, () => onEnd('fullscreen'));
   // Disarmed: the marker in whichever reader is open has to leave before it can count again.
   useGoneFromScreen(full ? fullEnd : end, full ? fullRoot : inlineRoot, disarmed, () =>

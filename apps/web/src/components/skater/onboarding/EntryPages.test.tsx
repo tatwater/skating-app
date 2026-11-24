@@ -1,13 +1,15 @@
 import {
+  CONSENT_REFUSAL_MESSAGES,
   KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_SHA256,
   LOCATE_GIVE_UP_MS,
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
   TERMS,
+  TERMS_OPEN_RETRY_GAP_MS,
   TERMS_SHA256,
 } from '@skating/core';
-import { act, render, renderHook, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -672,7 +674,7 @@ describe('useUsernameAvailability', () => {
 });
 
 describe('the reading’s start', () => {
-  it('says a failed open once, and starts again when the end is reached', async () => {
+  it('says a failed open once, and, reaching the end with none, says why and starts again', async () => {
     fakes.queries.set('profiles:current', LIVE);
     mutation('consent:openTerms').mockRejectedValueOnce(new Error('offline'));
     render(<TermsPage />);
@@ -682,9 +684,15 @@ describe('the reading’s start', () => {
         tone: 'bad',
       }),
     );
-    // The end was seen, but there was no reading to record it on: a new reading, no reach.
+    // The end was seen, but there was no reading to record it on: why, then a new reading, no
+    // reach — never a silent jump back to the top.
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
-    expect(m.toast).toHaveBeenCalledOnce();
+    expect(m.toast).toHaveBeenLastCalledWith({
+      title: CONSENT_REFUSAL_MESSAGES.terms_not_opened,
+      tone: 'bad',
+    });
+    expect(m.toast).toHaveBeenCalledTimes(2);
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
   });
 });
 
@@ -733,10 +741,20 @@ class Visibility {
 }
 
 describe('a failing end', () => {
+  // Restored here, not on a test's last line: a failing assertion must not leak the spy.
+  const spies: Array<{ mockRestore: () => void }> = [];
+  const spyOnScrollTo = () => {
+    const spy = vi.spyOn(Element.prototype, 'scrollTo');
+    spies.push(spy);
+    return spy;
+  };
   beforeEach(() => {
     Visibility.visible = true;
     Visibility.all = [];
     vi.stubGlobal('IntersectionObserver', Visibility);
+  });
+  afterEach(() => {
+    for (const spy of spies.splice(0)) spy.mockRestore();
   });
 
   it('is said once while the end sits on screen, and tried again only after it leaves and comes back', async () => {
@@ -778,33 +796,46 @@ describe('a failing end', () => {
 
   it('a failing open, reached in full-screen, starts again from its top once, not in a loop', async () => {
     const user = userEvent.setup();
-    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo');
+    const scrollTo = spyOnScrollTo();
     Visibility.visible = false;
     fakes.queries.set('profiles:current', LIVE);
-    // Each open is refused after a slow round trip, and the end is reached while the first is
-    // still out: the end waits on it, and on each new one the restart sends.
-    mutation('consent:openTerms').mockImplementation(() => later(new Error('offline'), 100));
+    // The first open is still out when the end is reached, then refused: the end waits on it. Every
+    // open after it is refused after a round trip.
+    let refuseFirst: (e: Error) => void = () => {};
+    mutation('consent:openTerms')
+      .mockImplementationOnce(
+        () =>
+          new Promise((_resolve, reject) => {
+            refuseFirst = reject;
+          }),
+      )
+      .mockImplementation(() => later(new Error('offline'), 100));
     render(<TermsPage />);
     await readInFullScreen(user);
+    await act(async () => refuseFirst(new Error('offline')));
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
-    // Settled: the end still sits in view, and nothing opens again by itself.
+    // Settled: the end still sits in view, nothing opens again by itself, and the one thing said is
+    // why the reading starts again — the new reading's own failed opening is quiet.
     await new Promise((r) => setTimeout(r, 350));
     expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
-    expect(m.toast).toHaveBeenCalledTimes(2);
+    expect(m.toast).toHaveBeenCalledExactlyOnceWith({
+      title: CONSENT_REFUSAL_MESSAGES.terms_not_opened,
+      tone: 'bad',
+    });
     expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
     expect(fullScreenToTop(scrollTo)).toBe(true);
-    // Read down to the end again: one more try.
+    // Read down to the end again, still unopened: said once more, and one more try.
     await act(async () => Visibility.scroll(false));
     await act(async () => Visibility.scroll(true));
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
     await new Promise((r) => setTimeout(r, 350));
     expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3);
-    scrollTo.mockRestore();
+    expect(m.toast).toHaveBeenCalledTimes(2);
   });
 
   it('a lost reading, reached in full-screen, is read again from its top before the end counts', async () => {
     const user = userEvent.setup();
-    const scrollTo = vi.spyOn(Element.prototype, 'scrollTo');
+    const scrollTo = spyOnScrollTo();
     Visibility.visible = false;
     fakes.queries.set('profiles:current', LIVE);
     mutation('consent:reachTermsEnd').mockImplementationOnce(() =>
@@ -827,7 +858,95 @@ describe('a failing end', () => {
       termsHash: TERMS_SHA256,
       via: 'fullscreen',
     });
-    scrollTo.mockRestore();
+  });
+
+  it('tries a failed open again as the skater scrolls, quietly, so the end finds a reading', async () => {
+    // The clock the retries are spaced on, pinned (D243) and moved by hand.
+    let clock = Date.UTC(2026, 10, 24, 15);
+    spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
+    Visibility.visible = false;
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:openTerms').mockRejectedValueOnce(new Error('offline'));
+    const { container } = render(<TermsPage />);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
+    const reader = () =>
+      container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    // Scrolling inside the gap: no new try.
+    clock += TERMS_OPEN_RETRY_GAP_MS - 1;
+    fireEvent.scroll(reader());
+    expect(mutation('consent:openTerms')).toHaveBeenCalledOnce();
+    // Past it: one quiet try, which opens the reading.
+    clock += 1;
+    fireEvent.scroll(reader());
+    fireEvent.scroll(reader());
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    // The end, reached later, is stamped on that reading: no restart, nothing more said.
+    clock += 60_000;
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByRole('checkbox')).not.toHaveAttribute('aria-disabled'));
+    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
+    expect(m.toast).toHaveBeenCalledOnce();
+  });
+
+  it('a retry that fails too says nothing; the end, still unopened, says why', async () => {
+    let clock = Date.UTC(2026, 10, 24, 15);
+    spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
+    Visibility.visible = false;
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:openTerms')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'));
+    const { container } = render(<TermsPage />);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
+    clock += TERMS_OPEN_RETRY_GAP_MS;
+    fireEvent.scroll(
+      container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') as HTMLElement,
+    );
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.toast).toHaveBeenCalledOnce();
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
+    expect(m.toast).toHaveBeenLastCalledWith({
+      title: CONSENT_REFUSAL_MESSAGES.terms_not_opened,
+      tone: 'bad',
+    });
+    expect(m.toast).toHaveBeenCalledTimes(2);
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+  });
+
+  it('a retry whose answer changes where the skater goes is said: out of date, or can’t act', async () => {
+    let clock = Date.UTC(2026, 10, 24, 15);
+    spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
+    Visibility.visible = false;
+    fakes.queries.set('profiles:current', { ...LIVE, status: 'suspended', suspendedUntil: 1 });
+    mutation('consent:openTerms')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new ConvexError('Account is suspended'))
+      .mockRejectedValueOnce(
+        new ConvexError({
+          code: 'client_outdated',
+          message: 'This version of Gli is out of date.',
+        }),
+      );
+    const { container } = render(<TermsPage />);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
+    const scroll = () =>
+      fireEvent.scroll(
+        container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') as HTMLElement,
+      );
+    clock += TERMS_OPEN_RETRY_GAP_MS;
+    scroll();
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenLastCalledWith({ title: 'Account is suspended', tone: 'bad' }),
+    );
+    expect(useEntryStore.getState().cannotAct).toEqual({ status: 'suspended', suspendedUntil: 1 });
+    clock += TERMS_OPEN_RETRY_GAP_MS;
+    scroll();
+    expect(await screen.findByRole('heading', { name: 'Time for an update' })).toBeInTheDocument();
+    expect(m.toast).toHaveBeenCalledTimes(3);
+    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3);
   });
 
   it('records on the way back once the server answers', async () => {

@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/expo';
 import { api } from '@skating/convex/api';
 import {
   consentRefusalAction,
+  consentRefusalMessage,
   groupTermsBlocks,
   KNOW_BEFORE_YOU_GO_NAME,
   knowBeforeYouGoDue,
@@ -66,9 +67,11 @@ const USER_AGENT = appUserAgent(
  *
  * Refusals are toasts (D268). Some also act, by core's `consentRefusalAction`: a refusal about the
  * Account fields (`username_taken`, the cooldown, a name, username or date the server won't take)
- * returns a new account to the Account step, `terms_not_read` re-arms the end marker, a reading the
- * server doesn't have (`terms_not_opened`, or a failed opening) starts again from the top and its end
- * counts only once reached again (`lib/termsReading`, as on the web), and
+ * returns a new account to the Account step, `terms_not_read` re-arms the end marker (on the opening
+ * it has), a failed opening is tried again quietly as the skater scrolls, a reading the server
+ * doesn't have at the end (`terms_not_opened`, or an opening that never succeeded — said in
+ * `terms_not_opened`'s words) starts again from the top and its end counts only once reached again
+ * (`lib/termsReading`, as on the web), and
  * `client_outdated` — this build's terms or notice aren't the server's, which no re-reading fixes —
  * stops the step on `OutdatedScreen`, asking for an update; nothing re-arms after it.
  */
@@ -166,6 +169,8 @@ function Reader({
           calls.current.dispatch({ type: 'cannotAct', profile: calls.current.profileNow.current });
         }
       },
+      // The end reached with no opening on the server (each retry failed too): why, then the top.
+      onUnopened: () => calls.current.toast(consentRefusalMessage('terms_not_opened')),
       onChange: setState,
       // A reading started again is read from the top. The marker stays where it was laid out (the
       // same text), so its position is kept.

@@ -1,3 +1,4 @@
+import { TERMS_OPEN_RETRY_GAP_MS } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { describe, expect, it, vi } from 'vitest';
 import {
@@ -26,6 +27,17 @@ function deferred() {
 }
 
 const flush = () => new Promise((r) => setTimeout(r, 0));
+
+/** A pinned clock (D243) the test moves by hand: the retries' spacing reads it. */
+function clock() {
+  let at = Date.UTC(2026, 10, 24, 15);
+  return {
+    now: () => at,
+    pass: (ms: number) => {
+      at += ms;
+    },
+  };
+}
 
 describe('readingProgress', () => {
   it('runs from 0 at the top to 1 at the bottom, clamped', () => {
@@ -63,19 +75,23 @@ describe('endMarkerOnScreen', () => {
 
 describe('createTermsReading', () => {
   function setup() {
-    const open = vi.fn(() => Promise.resolve(null));
-    const reach = vi.fn(() => Promise.resolve(null));
+    const open = vi.fn<() => Promise<unknown>>(() => Promise.resolve(null));
+    const reach = vi.fn<() => Promise<unknown>>(() => Promise.resolve(null));
     const onRefusal = vi.fn();
+    const onUnopened = vi.fn();
     const toTop = vi.fn();
+    const time = clock();
     const states: TermsReadingState[] = [];
     const reading = createTermsReading({
       open: () => open(),
       reach: () => reach(),
       onRefusal,
+      onUnopened,
       onChange: (s) => states.push(s),
       toTop,
+      now: time.now,
     });
-    return { reading, open, reach, onRefusal, toTop, states };
+    return { reading, open, reach, onRefusal, onUnopened, toTop, states, time };
   }
 
   it('opens, fills the hairline, and records the end once', async () => {
@@ -139,15 +155,17 @@ describe('createTermsReading', () => {
     expect(reading.state().end).toBe('recorded');
   });
 
-  it('a failed opening is toasted once; its end starts the reading again from the top', async () => {
-    const { reading, open, reach, onRefusal, toTop } = setup();
+  it('a failed opening is toasted once; its end, still unopened, says why and starts again from the top', async () => {
+    const { reading, open, reach, onRefusal, onUnopened, toTop } = setup();
     open.mockImplementationOnce(() => Promise.reject(new Error('offline')));
     reading.start();
     await flush();
     expect(onRefusal).toHaveBeenCalledTimes(1);
     reading.observe(at(2400), 2900);
     await flush();
-    // No reading on the server: opened anew, from the top, and nothing stamped in the same breath.
+    // No reading on the server: said (`terms_not_opened`'s words), opened anew, from the top, and
+    // nothing stamped in the same breath.
+    expect(onUnopened).toHaveBeenCalledOnce();
     expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);
     expect(reach).not.toHaveBeenCalled();
@@ -164,26 +182,36 @@ describe('createTermsReading', () => {
     expect(onRefusal).toHaveBeenCalledTimes(1);
   });
 
-  it('an opening that fails while the end waits on it starts the reading again too', async () => {
+  it('an opening that fails while the end waits on it says why once, and starts again too', async () => {
     const opened = deferred();
     const open = vi.fn().mockReturnValueOnce(opened.promise).mockResolvedValue(null);
     const reach = vi.fn(() => Promise.resolve(null));
     const toTop = vi.fn();
     const onRefusal = vi.fn();
-    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {}, toTop });
+    const onUnopened = vi.fn();
+    const reading = createTermsReading({
+      open,
+      reach,
+      onRefusal,
+      onUnopened,
+      onChange: () => {},
+      toTop,
+    });
     reading.start();
     reading.observe(at(2400), 2900);
     expect(reading.state().end).toBe('recording');
     opened.reject(new Error('offline'));
     await flush();
-    expect(onRefusal).toHaveBeenCalledOnce();
+    // One toast, the end's own: the opening's failure isn't said a second time on top of it.
+    expect(onUnopened).toHaveBeenCalledOnce();
+    expect(onRefusal).not.toHaveBeenCalled();
     expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);
     expect(reach).not.toHaveBeenCalled();
     expect(reading.state().end).toBe('unseen');
   });
 
-  it('rearm stamps again at once if the end is still on screen, opening anew', async () => {
+  it('rearm stamps again at once if the end is still on screen, on the opening it has', async () => {
     const { reading, open, reach } = setup();
     reading.start();
     reading.observe(at(2400), 2900);
@@ -192,9 +220,28 @@ describe('createTermsReading', () => {
     reading.rearm();
     expect(reading.state().end).toBe('recording');
     await flush();
-    expect(open).toHaveBeenCalledTimes(2);
+    // Never a new opening stamped in the same breath as its end: the opening is the reading's.
+    expect(open).toHaveBeenCalledOnce();
     expect(reach).toHaveBeenCalledTimes(2);
     expect(reading.state().end).toBe('recorded');
+  });
+
+  it('rearm on a reading the server lost: terms_not_opened, said, and read again from the top', async () => {
+    const { reading, open, reach, onRefusal, toTop } = setup();
+    reading.start();
+    reading.observe(at(2400), 2900);
+    await flush();
+    reach.mockImplementationOnce(() =>
+      Promise.reject(new ConvexError({ code: 'terms_not_opened', message: 'Not opened.' })),
+    );
+    reading.rearm();
+    await flush();
+    expect(onRefusal).toHaveBeenCalledOnce();
+    expect(toTop).toHaveBeenCalledOnce();
+    // The second opening is the new reading's, and its end waits for the marker to come back.
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(reach).toHaveBeenCalledTimes(2);
+    expect(reading.state().end).toBe('unseen');
   });
 
   it('rearm away from the end waits for the scroll', async () => {
@@ -271,21 +318,51 @@ describe('createTermsReading', () => {
     expect(reach).not.toHaveBeenCalled();
   });
 
-  it('an opening that fails after a newer one began does not forget the newer one', async () => {
+  it('an opening that answers after a newer reading began stamps nothing', async () => {
     const first = deferred();
     const open = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(null);
+    const reach = vi.fn(() => Promise.resolve(null));
+    const reading = createTermsReading({ open, reach, onRefusal: vi.fn(), onChange: () => {} });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    expect(reading.state().end).toBe('recording');
+    // The end waits on the first opening; the reading starts again before it answers.
+    reading.restart();
+    first.resolve();
+    await flush();
+    expect(reach).not.toHaveBeenCalled();
+    expect(reading.state().end).toBe('unseen');
+    expect(open).toHaveBeenCalledTimes(2);
+  });
+
+  it('an opening that fails after a newer reading began neither restarts nor speaks', async () => {
+    const first = deferred();
+    const open = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(null);
+    const onRefusal = vi.fn();
+    const onUnopened = vi.fn();
+    const toTop = vi.fn();
     const reading = createTermsReading({
       open,
       reach: () => Promise.resolve(null),
-      onRefusal: vi.fn(),
+      onRefusal,
+      onUnopened,
       onChange: () => {},
+      toTop,
     });
     reading.start();
-    reading.rearm();
     reading.observe(at(2400), 2900);
+    reading.restart();
+    expect(toTop).toHaveBeenCalledOnce();
     first.reject(new Error('late'));
     await flush();
+    // The newer reading's opening stands; the stale failure changed nothing.
+    expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);
+    expect(onRefusal).not.toHaveBeenCalled();
+    expect(onUnopened).not.toHaveBeenCalled();
+    reading.observe(at(0), 2900);
+    reading.observe(at(2400), 2900);
+    await flush();
     expect(reading.state().end).toBe('recorded');
   });
 
@@ -419,5 +496,160 @@ describe('a reading the server lost (terms_not_opened)', () => {
     expect(open).toHaveBeenCalledTimes(2);
     expect(reach).toHaveBeenCalledOnce();
     expect(onRefusal).not.toHaveBeenCalled();
+  });
+});
+
+describe('a failed opening, tried again while the skater reads', () => {
+  function failingOnce() {
+    const time = clock();
+    const open = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(null);
+    const reach = vi.fn(() => Promise.resolve(null));
+    const onRefusal = vi.fn();
+    const onUnopened = vi.fn();
+    const toTop = vi.fn();
+    const reading = createTermsReading({
+      open,
+      reach,
+      onRefusal,
+      onUnopened,
+      onChange: () => {},
+      toTop,
+      now: time.now,
+    });
+    return { reading, open, reach, onRefusal, onUnopened, toTop, time };
+  }
+
+  it('is tried again on the next scroll past the gap, quietly, so the end finds a reading', async () => {
+    const { reading, open, reach, onRefusal, onUnopened, toTop, time } = failingOnce();
+    reading.start();
+    await flush();
+    expect(onRefusal).toHaveBeenCalledOnce();
+    // Scrolling inside the gap: no new try.
+    time.pass(TERMS_OPEN_RETRY_GAP_MS - 1);
+    reading.observe(at(400), 2900);
+    expect(open).toHaveBeenCalledOnce();
+    time.pass(1);
+    reading.observe(at(800), 2900);
+    expect(open).toHaveBeenCalledTimes(2);
+    await flush();
+    // Read on to the end: the retried opening is there, and the end is stamped on it.
+    time.pass(60_000);
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(reach).toHaveBeenCalledOnce();
+    expect(reading.state().end).toBe('recorded');
+    expect(onUnopened).not.toHaveBeenCalled();
+    expect(toTop).not.toHaveBeenCalled();
+    expect(onRefusal).toHaveBeenCalledOnce();
+  });
+
+  it('a retry that fails too says nothing; the end, still unopened, says why and starts again', async () => {
+    const { reading, open, reach, onRefusal, onUnopened, toTop, time } = failingOnce();
+    open
+      .mockReset()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(null);
+    reading.start();
+    await flush();
+    time.pass(TERMS_OPEN_RETRY_GAP_MS);
+    reading.observe(at(800), 2900);
+    await flush();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(onRefusal).toHaveBeenCalledOnce();
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(onUnopened).toHaveBeenCalledOnce();
+    expect(toTop).toHaveBeenCalledOnce();
+    expect(reach).not.toHaveBeenCalled();
+    expect(open).toHaveBeenCalledTimes(3);
+  });
+
+  it('a retry that changes where the skater goes is said: out of date (final), or can’t act', async () => {
+    const outdated = failingOnce();
+    outdated.open
+      .mockReset()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new ConvexError({ code: 'client_outdated', message: 'Out of date.' }));
+    outdated.reading.start();
+    await flush();
+    outdated.time.pass(TERMS_OPEN_RETRY_GAP_MS);
+    outdated.reading.observe(at(800), 2900);
+    await flush();
+    expect(outdated.onRefusal).toHaveBeenCalledTimes(2);
+    expect(outdated.reading.state().end).toBe('outdated');
+    // Final: no more tries.
+    outdated.time.pass(TERMS_OPEN_RETRY_GAP_MS);
+    outdated.reading.observe(at(900), 2900);
+    expect(outdated.open).toHaveBeenCalledTimes(2);
+
+    const suspended = failingOnce();
+    suspended.open
+      .mockReset()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new ConvexError('Account is suspended'));
+    suspended.reading.start();
+    await flush();
+    suspended.time.pass(TERMS_OPEN_RETRY_GAP_MS);
+    suspended.reading.observe(at(800), 2900);
+    await flush();
+    expect(suspended.onRefusal).toHaveBeenCalledTimes(2);
+  });
+
+  it('a reading started again opens quietly: just told why, its failure waits for the end', async () => {
+    const { reading, open, onRefusal, onUnopened, time } = failingOnce();
+    open
+      .mockReset()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(null);
+    reading.start();
+    await flush();
+    reading.observe(at(2400), 2900);
+    await flush();
+    // The end said why, and the new reading's opening failed too: nothing more is said for it.
+    expect(onUnopened).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(onRefusal).toHaveBeenCalledOnce();
+    // Still retried as the skater reads.
+    time.pass(TERMS_OPEN_RETRY_GAP_MS);
+    reading.observe(at(400), 2900);
+    expect(open).toHaveBeenCalledTimes(3);
+  });
+
+  it('is never tried, nor its end said, after the screen is gone', async () => {
+    const { reading, open, onUnopened, toTop, time } = failingOnce();
+    reading.start();
+    await flush();
+    reading.dispose();
+    time.pass(TERMS_OPEN_RETRY_GAP_MS);
+    reading.observe(at(800), 2900);
+    reading.observe(at(2400), 2900);
+    expect(open).toHaveBeenCalledOnce();
+    expect(onUnopened).not.toHaveBeenCalled();
+    expect(toTop).not.toHaveBeenCalled();
+  });
+
+  it('an opening refused as out of date while the end waits on it is said once, and only stops', async () => {
+    const opened = deferred();
+    const onRefusal = vi.fn();
+    const onUnopened = vi.fn();
+    const reading = createTermsReading({
+      open: () => opened.promise,
+      reach: () => Promise.resolve(null),
+      onRefusal,
+      onUnopened,
+      onChange: () => {},
+    });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    opened.reject(new ConvexError({ code: 'client_outdated', message: 'Out of date.' }));
+    await flush();
+    expect(reading.state().end).toBe('outdated');
+    expect(onRefusal).toHaveBeenCalledOnce();
+    expect(onUnopened).not.toHaveBeenCalled();
   });
 });
