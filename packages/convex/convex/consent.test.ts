@@ -15,7 +15,9 @@ import {
   meetsMinimumAge,
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
+  resolveEntryRoute,
   TERMS,
+  TERMS_HASHES,
   TERMS_SHA256,
 } from '@skating/core';
 import { ConvexError } from 'convex/values';
@@ -975,6 +977,96 @@ describe('latestTermsReceipt', () => {
     await accept(as);
     expect((await as.query(api.consent.latestTermsReceipt, {}))?.email).toBe('bea@new.test');
   });
+});
+
+describe('an acceptance whose hash has left the ledger', () => {
+  /**
+   * The 2026-11-24 terms were corrected in place, before launch, and their ledger line re-hashed
+   * (the one exception `TERMS_HASHES` records). The founder's dev account accepted the earlier
+   * words: its profile holds the current version, its record the earlier hash, which no ledger line
+   * names any more. Nothing routes or refuses by a stored hash, so that account goes on as accepted.
+   */
+  const EARLIER_HASH = 'dba06b83fd70e1b8376fc420df5b3a623d4bd9c6dc6f9dbd990f3e9e420e3010';
+
+  test('routes past the terms, answers the questions, and keeps the record it has', async () => {
+    const t = harness();
+    expect(Object.values(TERMS_HASHES)).not.toContain(EARLIER_HASH);
+    const id = await existingProfile(t, 'user_founder', {
+      termsVersion: TERMS.version,
+      termsAcceptedAt: T0 - 60_000,
+    });
+    const recordId = await t.run((ctx) =>
+      ctx.db.insert('consentRecords', {
+        kind: 'terms',
+        profileId: id,
+        clerkUserId: 'user_founder',
+        identity: { fullName: 'Bea Old-Timer', email: 'f@example.test', dateOfBirth: ADULT_DOB },
+        version: TERMS.version,
+        contentHash: EARLIER_HASH,
+        privacyVersion: PRIVACY_NOTICE_VERSION,
+        privacyHash: PRIVACY_NOTICE_SHA256,
+        context: 'returning',
+        openedAt: T0 - 120_000,
+        reachedEndAt: T0 - 90_000,
+        recordedAt: T0 - 60_000,
+        surface: { value: 'web', source: 'client_reported' },
+        ipStatus: 'unavailable',
+        ipUnavailable: 'no_key',
+        copyEmail: { status: 'accepted', at: T0 - 30_000 },
+      }),
+    );
+    const as = caller(t, 'user_founder', 'f@example.test');
+    const route = async () =>
+      resolveEntryRoute({
+        isLoaded: true,
+        isSignedIn: true,
+        profile: await as.query(api.profiles.current, {}),
+        watch: await as.query(api.consent.watchAnchor, {}),
+        now: T0,
+      });
+
+    // The route compares versions, so the terms are not asked for again: the questions are next.
+    expect(await route()).toBe('questions');
+    // The receipt reads the record as it is.
+    expect(await as.query(api.consent.latestTermsReceipt, {})).toEqual({
+      email: 'f@example.test',
+      copy: 'sent',
+    });
+    // The questions take the current build's claim, and a stale tab's earlier-words claim too: the
+    // terms claim is only consulted when the profile's version is behind.
+    expect(await complete(as)).toEqual({ season: null, repeat: false });
+    expect(await route()).toBe('app');
+    await t.run((ctx) => ctx.db.patch(id, { knowBeforeYouGoAt: undefined }));
+    expect(await complete(as, { termsVersion: TERMS.version, termsHash: EARLIER_HASH })).toEqual({
+      season: null,
+      repeat: false,
+    });
+
+    // Reading and accepting again records nothing: the acceptance at this version is returned.
+    const before = (await records(t)).length;
+    await readToEnd(as);
+    expect(await accept(as)).toEqual({ recordId, repeat: true });
+    expect((await records(t)).length).toBe(before);
+    expect((await t.run((ctx) => ctx.db.get(recordId)))?.contentHash).toBe(EARLIER_HASH);
+
+    // The export carries the record with the hash it was sealed with.
+    const bundle = await t.query(internal.dataExport.collect, { userId: id });
+    expect(bundle.consentRecords.find((r) => r.kind === 'terms')).toMatchObject({
+      version: TERMS.version,
+      contentHash: EARLIER_HASH,
+    });
+  });
+
+  function complete(
+    as: ReturnType<T['withIdentity']>,
+    terms: { termsVersion: string; termsHash: string } = TERMS_CLAIM,
+  ) {
+    return as.mutation(api.consent.completeKnowBeforeYouGo, {
+      ...QUESTIONS_CLAIM,
+      ...terms,
+      surface: 'web',
+    });
+  }
 });
 
 describe('the retention sweeps', () => {

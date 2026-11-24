@@ -82,9 +82,7 @@ export const TERMS: TermsDocument = {
         p(
           'Post honestly. A knowingly false ice report, especially a dangerously false “the ice is great” report, is a safety violation, not a prank, and may result in removal and a ban.',
         ),
-        p(
-          'Don’t harass, impersonate, spam, or post anyone’s private information. Follow Gli’s Code of Conduct.',
-        ),
+        p('Don’t harass, impersonate, spam, or post anyone’s private information.'),
         p(
           'Don’t post anything you don’t have the right to share, and don’t misuse the app’s data or interfere with how it runs.',
         ),
@@ -99,9 +97,7 @@ export const TERMS: TermsDocument = {
         p(
           'You’re responsible for what you post, including photos, and you confirm you have the right to post it.',
         ),
-        p(
-          'The operator may remove content, and suspend or ban accounts, that break these terms or the Code of Conduct.',
-        ),
+        p('The operator may remove content, and suspend or ban accounts, that break these terms.'),
       ],
     },
     {
@@ -171,7 +167,13 @@ export const TERMS: TermsDocument = {
  * that is already here, which is the forgotten bump.
  */
 export const TERMS_HASHES: Readonly<Record<string, string>> = {
-  '2026-11-24': 'dba06b83fd70e1b8376fc420df5b3a623d4bd9c6dc6f9dbd990f3e9e420e3010',
+  // The one edited line, and not a precedent: the text first published on 2026-11-24 was corrected
+  // the same day, before launch (production had never been initialized), to drop its references to
+  // a Code of Conduct (D295). The only acceptance of the earlier words was the founder's own test
+  // account on the dev deployment. The earlier text's hash was
+  // dba06b83fd70e1b8376fc420df5b3a623d4bd9c6dc6f9dbd990f3e9e420e3010, so a dev record holding that
+  // hash is that test acceptance. The append-only rule above applies to every line after this one.
+  '2026-11-24': 'a889ff74b2bfc8354da4e3591a98636fd5d3b10ec74841501b5c277bd55edd70',
 };
 
 /**

@@ -77,13 +77,22 @@ describe('the text', () => {
       'according to the visibility settings you choose',
       'including photos',
       'suspend or ban accounts',
-      'Code of Conduct',
       'OpenStreetMap',
       'Clerk',
       'desk@teaganatwater.com',
     ]) {
       expect(all).toContain(clause);
     }
+  });
+
+  it('never refers to a Code of Conduct', () => {
+    // Everything a skater agrees to must be in the text the consent record hashes. No conduct
+    // document is versioned with the terms or reachable in either app (the repo's
+    // CODE_OF_CONDUCT.md is the contributors' covenant), so the conduct rules live here, in full.
+    const all = TERMS.sections
+      .flatMap((s) => [s.heading, ...s.blocks.map((b) => b.text)])
+      .join(' ');
+    expect(all).not.toMatch(/code\s+of\s+conduct/i);
   });
 
   it('never says the ice is safe (D3)', () => {
