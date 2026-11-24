@@ -1597,7 +1597,8 @@ Notice link opens `links.ts`'s URL. No product analytics on mobile (`PRIVACY.md`
   under About.") and the receipt's *Continue* when no questions are due. *As built,* the apps needed more
   undrawn lines, all drafts and all in core so the two apps say the same thing (the governor's ruling):
   the taken handle, the full-screen reader's way back, the Home step's location and address states, the
-  two not-saved toasts, the typed-address field's own words (`ADDRESS_FIELD_COPY`, shared with the web's
+  two not-saved toasts and the *Your home wasn't cleared* toast, the terms' still-connecting line (an end
+  waiting on the server), the typed-address field's own words (`ADDRESS_FIELD_COPY`, shared with the web's
   Settings), the refusal toasts, and the delete screens' sentence (`CONSENT_RECORD_RETENTION`). Only a
   platform's own words stay in its app: the phone's month picker ("Pick a month", "Cancel") and its
   user-agent format.
