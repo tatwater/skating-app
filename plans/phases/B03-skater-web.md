@@ -1190,9 +1190,10 @@ figures; each caret is a slider with arrow, page and Home/End steps and an `aria
 
 ## 9. The onboarding and the season check (added 2026-11-24)
 
-> **Status:** in progress, scoped 2026-11-24. An addition to this phase, not a new one (founder,
-> 2026-11-24): one PR, on `phase-b03-onboarding`, carrying the already-committed 18+ change (D294) and
-> this build. Decisions: D295 (the terms acceptance, retiring the risk acknowledgment), D296 (Know Before
+> **Status:** built 2026-11-24, all three stages integrated on `phase-b03-onboarding`; the PR waits on
+> review. An addition to this phase, not a new one (founder, 2026-11-24): one PR, carrying the
+> already-committed 18+ change (D294) and this build. Where the build departed from the plan, the plan
+> below is corrected in place; §9.17 records what the build found. Decisions: D295 (the terms acceptance, retiring the risk acknowledgment), D296 (Know Before
 > You Go and its season rule), D297 (the consent record and its six years), D298 (the onboarding's order,
 > defaults and reach). Mocks: the *Onboarding* page in *Gli · Web app · Review 3* (rows 10 and
 > 11, 26 boards), from `skating-mockups/skater-web/sys-welcome.html` (every word of copy is there; `RULES`
@@ -1309,13 +1310,17 @@ gets the Clerk user id only, counts and never content.
   Clerk `sessionId` with the write; a scheduled internal action reads `GET /v1/sessions/{id}`, uses it
   only if its `user_id` is the caller's subject, else falls back to the caller's most recently active
   session (`GET /v1/sessions?user_id=…&status=active`); a `sid` claim, if the instance ever moves to the
-  Convex integration, is preferred over both. The IP stored is the session's *latest activity* IP read
+  Convex integration, is preferred over both. *As built:* only a named session that exists and is
+  someone else's falls back; a Clerk error on the named session records `error` and does not, so a
+  failed lookup is never papered over with a different session's address. The IP stored is the session's *latest activity* IP read
   within seconds of the write — evidence of where the session was, not the HTTP request's own address —
   and the record says which match was used. No key, no session, no activity, or any error: the record
   says `unavailable` with the reason; the acceptance never waits on it and never fails for it.
 - **R5 — confirmed, with a fork on the text.** Terms and questions live in core as versioned data with a
-  committed SHA-256 each (a core test recomputes it, so an edit without a version bump fails with
-  instructions); `TERMS.md`'s body is exactly core's rendering (a `packages/guards` test). The Privacy
+  committed SHA-256 each — *as built,* in an append-only ledger keyed by version (`TERMS_HASHES`,
+  `KNOW_BEFORE_YOU_GO_HASHES`, `legal/hashLedger.ts`), so every version ever published keeps its hash
+  and a version missing from its ledger matches nothing a client can send (a core test recomputes the
+  current one, so an edit without a version bump fails with instructions); `TERMS.md`'s body is exactly core's rendering (a `packages/guards` test). The Privacy
   Notice's version and hash are also committed in core and held to `PRIVACY.md` by the same guard, so the
   record can say which notice the line agreed to. Which text the terms are is the founder's (item 9).
 - **R6 — confirmed.** Stage one adds and changes no route; stage two switches both apps; stage three
@@ -1342,6 +1347,7 @@ match wins:
 |---|---|---|---|---|
 | 1 | Clerk not loaded, or signed in and `profile` or (past row 5) `watch` still `undefined` | `loading` | hold | `null` |
 | 2 | signed out | `auth` | `/sign-in`, `/sign-up`, `/about` | `(auth)` |
+| — | `hold === 'receipt'` (*as built:* the hold is an input to the rule) | `receipt` | the page the skater is on | the group the acceptance was on |
 | 3 | `profile === null` | `account` | `/onboarding` | `onboarding` |
 | 4 | `profile.deletionRequestedAt` set | `app` | as today | `(tabs)` |
 | 5 | `needsProfileSetup(profile)` | `account` | `/onboarding` | `onboarding` |
@@ -1354,12 +1360,16 @@ match wins:
 `lastAt` is undefined, `null` when `watch` is `null` (no season has opened: only the never-answered are
 asked), `null` when `lastAt ≥ watch.openedAt − KNOW_BEFORE_YOU_GO_EARLY_MS` (30 × 24 h, elapsed), and
 `'season'` otherwise. Its answer is the screen's flavor: `'never'` opens straight on the first question
-(after a receipt, if one is held); `'season'` opens on board 10.13. The step counter (*N of 5*) shows only
+(after a receipt, if one is held); `'season'` opens on board 10.13 — except straight from the receipt's
+*Start the questions*, which opens on the first question on both apps (the governor's ruling: the
+receipt has just said what comes next, and the card would say it again). The step counter (*N of 5*) shows only
 when the account is new this session (the Account step was seen); a returning account's terms and questions
 carry no counter.
 
-The receipt hold: on a successful acceptance the client sets `entryHold = 'receipt'`; both gates resolve to
-the screen the skater is on while it is set; *Start the questions* (questions due) or *Continue* (none due)
+The receipt hold: on a successful acceptance the client sets `entryHold = 'receipt'` (*as built,* both apps
+set it **before** the mutation is sent and release it on a refusal: Convex shows the new profile no later
+than it resolves the call, so a hold set on the answer can lose the race to the redirect); while it is
+set `resolveEntryRoute` answers `receipt` and both gates stay on the screen the skater is on; *Start the questions* (questions due) or *Continue* (none due)
 clears it and the route takes over. A sign-out clears it. The questions need no hold: the last answer shows
 board 10.9 locally, and the completion is written by its *Continue*.
 
@@ -1426,16 +1436,16 @@ owns the words), and the clients show it as a toast.
 | Function | Gate | Contract | Refusals |
 |---|---|---|---|
 | `watchAnchor` (query) | none | `{ season, label, openedAt } \| null` from the newest `imageryIngestSeasons` row (`label` "Winter 2027–28") | — |
-| `openTerms` (mutation) | identity | `{ termsVersion, termsHash, surface }`; upserts the reading row, keeping the first `openedAt` | `terms_changed` |
-| `reachTermsEnd` (mutation) | identity | `{ termsVersion, termsHash, via }`; sets `reachedEndAt` once | `terms_changed`, `terms_not_opened` |
-| `acceptTerms` (mutation) | identity | `{ termsVersion, termsHash, privacyVersion, privacyHash, surface, userAgent, clientSessionId?, account?: { displayName, username, dateOfBirth } }` → `{ recordId }`. No row: `account` required, the 18+ gate, name and username rules, then the row is created with today's `upsertFromClerk` defaults plus the terms fields and `welcomeStep: 'home'`. A canceled deletion's row: `account` required, patched in place (rename cooldown applies), `welcomeStep: 'home'`. Any other row: `account` must be absent. Then the record, the reading deleted, the profile's terms fields, `refreshPersonRow`, and two scheduled actions. | `terms_changed` (version or hash, either document), `terms_not_read` (no reading with `reachedEndAt`), `account_required`, `account_unexpected`, `underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`, the inactive and suspended refusals of `requireProfile`, `deletion_pending` |
+| `openTerms` (mutation) | identity; *as built,* a banned, finalizing or deleted profile is refused (a reading written after `erase` would outlive the deletion) | `{ termsVersion, termsHash, surface }`; upserts the reading row, keeping the first `openedAt` | `terms_changed`, "Account is not active" |
+| `reachTermsEnd` (mutation) | as `openTerms` | `{ termsVersion, termsHash, via }`; sets `reachedEndAt` once | `terms_changed`, `terms_not_opened`, "Account is not active" |
+| `acceptTerms` (mutation) | identity | `{ termsVersion, termsHash, privacyVersion, privacyHash, surface, userAgent?, clientSessionId?, account?: { displayName, username, dateOfBirth } }` → `{ recordId }`. No row: `account` required, the 18+ gate, name and username rules, then the row is created with the new-profile defaults (`lib/profileIdentity`, which `upsertFromClerk` used until stage three deleted it) and the Clerk mirrors, plus the terms fields and `welcomeStep: 'home'`. A canceled deletion's row: `account` required, patched in place (rename cooldown applies), **its visibility kept** (private after the request; a minor forced private), `welcomeStep: 'home'`. Any other row: `account` must be absent. Then the record, the reading deleted, the profile's terms fields, `refreshPersonRow`, and two scheduled actions. | `terms_changed` (version or hash, either document), `terms_not_read` (no reading with `reachedEndAt`), `account_required`, `account_unexpected`, `underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`, the inactive and suspended refusals of `requireProfile`, `deletion_pending` |
 | `completeKnowBeforeYouGo` (mutation) | `requireContributor` | `{ version, hash, surface, userAgent, clientSessionId? }` → `{ season }`; the record, the profile's two fields, the IP action. A second call within 60 s returns the first's answer and writes nothing. | `terms_first`, `questions_changed`, the contributor refusals |
 | `advanceWelcome` (mutation) | `requireContributor` | `{ from: 'home' \| 'profile' }`; home → profile → cleared; a `from` that isn't the current step is a no-op | contributor refusals |
 | `latestTermsReceipt` (query) | profile | `{ email, copy: 'pending' \| 'sent' \| 'not_sent' }` for board 10.5 (`accepted`/`unknown` read `sent`; `rejected` or no address read `not_sent`) | — |
 | `captureIp` (internal action) | — | the R4 lookup through `lib/clerkSessions.ts`, then `setIp` (internal mutation, fill-once). Never throws. | — |
 | `sendTermsCopy` (internal action) | — | renders core's terms through `lib/emailBlocks` (version line, no times), `sendEmailOutcome` with `idempotencyKey: recordId`, then `setCopyOutcome` (fill-once). | — |
-| `pruneReadings`, `purgeDue` (internal mutations, daily crons) | — | each deletes at most 256 rows through its index and re-schedules itself when the page was full | — |
-| `recordsFor`, `recordsByEmail` (internal queries) | CLI only | the evidence lookup; nothing on any screen reads them | — |
+| `pruneReadings`, `purgeDue` (internal mutations, daily crons) | — | each deletes at most 256 rows through its index and re-schedules itself when the page was full; *as built,* `purgeDue` also requires `severedAt` on each row and re-schedules only after a full page that deleted something (a page it skipped whole would re-read itself forever) | — |
+| `recordsFor`, `recordsByEmail` (internal queries) | CLI only | the evidence lookup, newest first; past the cap of 200 it is the newest that come back (each range read from its newest end); nothing on any screen reads them | — |
 
 Shared pieces move out of `profiles.ts` in stage one so both writers use one rule: `checkUsername`,
 `USERNAME_MESSAGES`, `assertMayRename` and the new-profile defaults go to `lib/profileIdentity.ts`.
@@ -1466,18 +1476,21 @@ Desk at 1440 is rows 10; below `md` the phone layout is rows 11 (390 wide). All 
 | 10.8 / 11.8 Not Quite | the miss amber with a cross, "Not quite." + why + "Pick the correct answer to continue."; the button stays off until the right pick |
 | 10.9 / 11.9 All Seven | local after the seventh; the seven `say` lines; *Continue* calls `completeKnowBeforeYouGo` |
 | 10.13 / 11.13 New Season | `/know-before-you-go` when the flavor is `season`: the season label, "Welcome back, <first name>", the two rows (terms "Unchanged since" the version's date; the questions' last-answered day in the skater's zone), *Start the questions*, *Not now — sign out* |
-| 10.10 / 11.10 Home · Typing | `/welcome?step=home`: `AddressField` with the geocoder's list open |
+| 10.10 / 11.10 Home · Typing | `/welcome?step=home`: `AddressField` with the geocoder's list open; "or" and *Use my current location* step aside while it is |
 | 10.11 / 11.11 Home | the picked address; "or"; *Use my current location*; *Save and continue* (`setHome`, then `advanceWelcome`) and *Skip for now* (`advanceWelcome` alone) |
-| 10.12 / 11.12 Profile | `/welcome?step=profile`: `ProfilePhoto`, Bio, Town (prefilled from the picked suggestion's `town`), Public profile on, Show my town on; *Open the map* saves what changed with `updateProfile` then `advanceWelcome`; *Skip* only advances |
+| 10.12 / 11.12 Profile | `/welcome?step=profile`: `ProfilePhoto`, Bio, Town (prefilled from the picked suggestion's `town`), Public profile showing the row's own visibility (on for a new account, off for a re-introduced one), Show my town on; *Open the map* saves what changed with `updateProfile` then `advanceWelcome`; *Skip* only advances |
 
 **Show my town** stores nothing of its own: on, the Town field is saved as `homeTownLabel`; off, it isn't
-(a founder confirmation, §9.15). Public profile writes `profileVisibility` only when switched off.
+(a founder confirmation, §9.15). Public profile shows the row's visibility and writes `profileVisibility`
+only when the skater changes it (the governor's ruling: a re-introduced account stays private, D298).
 `authZone.ts` maps the new routes; `boot.ts`'s zones become the new names (an old cookie's `reack` or
 `onboarding` is ignored, as unknown values already are); `/reack` and `/onboarding`'s old form are deleted
 in stage three; `skaterSearch.ts`'s comment follows.
 
-Refusals from `acceptTerms` and `completeKnowBeforeYouGo` are toasts (the skater toaster); `username_taken`
-also returns the skater to the Account step with the field marked, `terms_changed` reloads the text at its
+Refusals from `acceptTerms` and `completeKnowBeforeYouGo` are toasts (the skater toaster); every refusal of
+the Account fields (`underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`,
+and `account_required`: core's `isAccountRefusal`, read by both apps) also returns a new account to the
+Account step with its fields as typed — `username_taken` with the field marked — `terms_changed` reloads the text at its
 top (the reading starts again), `terms_not_read` re-arms the end marker.
 
 ### 9.7 Mobile: the same screens on the existing tokens
@@ -1487,7 +1500,7 @@ navigator's state. Built on Tamagui and `ThemedInputs` as an approximation of ro
 
 | Route | Screen | Notes |
 |---|---|---|
-| `account` | `app/onboarding.tsx` (rewritten): Account then Terms as internal steps | the month by name in a Tamagui `Select`; the terms read on the page (`onScroll` against content height) with the hairline; ack and *Record acceptance* in the foot |
+| `account` | `app/onboarding.tsx` (rewritten): Account then Terms as internal steps | the month by name — *as built,* a modal list (`MonthPicker`), not a Tamagui `Select`; the terms read on the page (`onScroll` against content height) with the hairline; ack and *Record acceptance* in the foot |
 | `terms` | `app/terms.tsx` | the Terms step alone, for an existing account |
 | `questions` | `app/know-before-you-go.tsx` | 10.13's card for the season flavor; picks as full-width pressables; no number keys |
 | `welcome` | `app/welcome.tsx` | Home: a new typed-address field over `geocode.suggest` (with the provider's attribution) and the existing location path; Profile: Bio, Town, the two switches; **no photo row** (no avatar upload exists on mobile, deferred) |
@@ -1523,7 +1536,13 @@ Notice link opens `links.ts`'s URL. No product analytics on mobile (`PRIVACY.md`
   `hazardCopy.ts` precedent). The name is **Know Before You Go** in title case everywhere it is a name.
 - The founder's copy pass owns every string; two lines are not drawn and are this plan's drafts: the
   receipt when no copy went ("We couldn't email you a copy. You can read the terms any time in Settings,
-  under About.") and the receipt's *Continue* when no questions are due.
+  under About.") and the receipt's *Continue* when no questions are due. *As built,* the apps needed more
+  undrawn lines, all drafts and all in core so the two apps say the same thing (the governor's ruling):
+  the taken handle, the full-screen reader's way back, the Home step's location and address states, the
+  two not-saved toasts, the typed-address field's own words (`ADDRESS_FIELD_COPY`, shared with the web's
+  Settings), the refusal toasts, and the delete screens' sentence (`CONSENT_RECORD_RETENTION`). Only a
+  platform's own words stay in its app: the phone's month picker ("Pick a month", "Cancel") and its
+  user-agent format.
 
 ### 9.10 Observability
 
@@ -1543,6 +1562,8 @@ No miss count and no per-question event: wrong picks are not stored, in our tabl
 line, so autocapture's labels can't carry a birth month or a wrong answer. The D240 test over event names
 and enum values covers the new ones. Sentry: confirm `sentryPrivacy` strips `dateOfBirth`, `email`,
 `userAgent` and `ip` at any depth of a breadcrumb's args (the account object nests the date of birth).
+*As built,* it did not strip `userAgent` or a bare `ip`; both joined its exact-match list, with the
+record's `fullName`.
 
 ### 9.11 Deletion, retention, export, and the documents
 
@@ -1554,7 +1575,10 @@ and enum values covers the new ones. Sentry: confirm `sentryPrivacy` strips `dat
   device details, six years past a deletion then deleted, never public, in the export; the retention bullet;
   Clerk's role in the IP), `TERMS.md` (§7 and §9 as the mock words them: the record, and re-acceptance on
   change), `docs/account-deletion.md`. The **delete screens** in both apps (web Settings' account section,
-  mobile `AccountLifecycle`) add one plain sentence on the six years, in stage two.
+  mobile `AccountLifecycle`) add one plain sentence on the six years, in stage two — *as built,* one
+  sentence for both, core's `CONSENT_RECORD_RETENTION`: what the record holds (the name, email and date
+  of birth given, which terms and when, when the questions were answered), that it is kept privately
+  for six years after the deletion and then deleted, and that the Privacy Notice has the details.
 - **Export:** the records as above.
 
 ### 9.12 The test plan
@@ -1609,7 +1633,7 @@ settled before this stage commits the terms.
 Neither touches `packages/*`; a needed change there is a request to the governor, who lands it on the
 stage-one line and both rebase. The two never share a file.
 
-**Stage three — the cleanup (the governor's delegate, after both integrate).** Deletes
+**Stage three — the cleanup (the governor's delegate, after both integrate; done 2026-11-24).** Deletes
 `profiles.upsertFromClerk`, `profiles.acceptCurrentRiskAck`, core's `riskAck.ts` and `resolveAuthRoute`
 (and their exports and tests), the web's `/reack`, `ReackForm`, `RiskAck`, `OnboardingForm`, `lib/riskAck.ts`,
 the mobile `reack.tsx`, `RiskAckConsent`, `src/lib/riskAck.ts`; moves the tests that named them; the inbox
@@ -1639,16 +1663,65 @@ the Privacy Notice; a Garmin step.
 4. **10.13's "Last answered" day stays as drawn** (§9.1 item 9). Recommended: yes — it is the skater's own
    day, not one of the terms' stamps.
 
+**Ruled (the governor, 2026-11-24), and built that way:** (1) option (b) — the mock's voice with every
+dropped clause put back in its section; (2) Show my town stores nothing of its own; (3) a Privacy Notice
+change does not re-ask; (4) "Last answered" stays. Counsel's view on (3) is still owed (§9.16).
+
 ### 9.16 Owed after merge
 
-- `convex dev --once` on dev (two tables, five optional fields, indexes, two crons; widen-only, no
-  backfill); `CLERK_SECRET_KEY` and the Resend keys confirmed present on the dev deployment (names only).
+- `convex dev --once` on dev **before the device pass or any use of the app against dev** (two tables,
+  five optional fields, indexes, two crons; widen-only, no backfill): both apps' root gates now query
+  `consent.watchAnchor`, which dev doesn't have until the push. `CLERK_SECRET_KEY` and the Resend keys
+  confirmed present on the dev deployment (names only).
 - On dev, one real acceptance checked end to end: the record's IP against the session in Clerk's dashboard,
   and whether the web's server-side Clerk handshake ever makes Vercel's address the session's latest
   activity (if it does, the web sends its session id from the browser only and the record's `match`
   says so); the copy received.
-- The Android pass on a fresh EAS `preview` build (the pre-merge build cannot onboard): a new account
-  through all five steps, an existing account through terms and questions.
-- The founder's browser pass, desk and 390; the copy pass on every string and the two drafted lines.
+- The Android pass on a fresh EAS `preview` build (the pre-merge build cannot onboard: `upsertFromClerk`
+  is gone): a new account through all five steps, an existing account through terms and questions, a
+  canceled deletion set up again (Public profile off).
+- The founder's browser pass, desk and 390; the copy pass on every string and every drafted line (§9.9's
+  list, the refusal toasts, the delete sentence, the copy email's intro).
 - Counsel's questions (L1, L3): agreeing to a privacy notice in the terms' line, the six years and tolling,
   IP as evidence, keeping the record through a deletion request.
+
+### 9.17 What the build found
+
+Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
+
+- **Hashes are ledgers, not one constant.** A single committed SHA-256 per text would have made every
+  earlier version's records unverifiable the day the text changed; each text keeps an append-only ledger
+  keyed by version (R5 is corrected).
+- **The hold belongs in the rule.** Each gate holding the receipt its own way would have let them differ;
+  `resolveEntryRoute` takes `hold` and answers `receipt` (§9.3's table gains the row). Both apps set it
+  before the send — a hold set on the answer lost the race to the redirect.
+- **`userAgent` is optional.** A browser can report none, and an empty one is stored as none.
+- **A Clerk error doesn't fall back.** Only a named session that exists and is someone else's falls back
+  to the most recent one; an error records `error` (R4 is corrected).
+- **The sweeps and the readers needed edges.** `purgeDue` also requires `severedAt` and re-schedules only
+  after a page that deleted something; `openTerms` and `reachTermsEnd` refuse a banned, finalizing or
+  deleted profile, so no reading outlives `erase`; the CLI lookups returned the *oldest* 200 past their
+  cap, and now return the newest.
+- **The terms as built.** Section 9 is headed "When these terms change"; a few of the risk phrases are
+  bold (the email renderer's `**…**`, the one markup the data allows).
+- **The two apps drifted, and were brought back.** The web sent only `username_taken` back to the
+  Account step, opened the season card straight after the receipt, and kept "or" and the location
+  button under the open suggestion list (the phone did too); each now matches the phone or the board,
+  and the refusal set is core's. Both apps wrote the Public switch only when it was switched off, so a
+  private account could not be made public from the step; both now write only a change. Each app had put the undrawn lines in a file
+  of its own; they moved to core, one wording each.
+- **A re-introduced account was being made public.** `acceptTerms` reset a canceled deletion's emptied
+  row to the new-account default; it now keeps the row's visibility (D298), as `upsertFromClerk` did.
+- **The web's phone layout keys on the card, not the viewport.** The way in's screens switch to rows 11
+  at the entry card's own width (a container query), so a narrow pane on a desk gets the phone layout.
+- **The month list's plate is the kit's.** One screenshot made the date of birth's month list look
+  see-through: it sits on `--plate-solid`, the token every Select and menu shares, which is 96% opaque by
+  design, so the form under it shows at 4% (as in Settings). A story holds the plate and the finished
+  fade; whether the token should be fully opaque is a design call, not this build's.
+- **Sentry kept two of the record's fields.** `userAgent` and a bare `ip` passed `sentryPrivacy`; both are
+  withheld now, with `fullName`.
+- **Nothing `upsertFromClerk` did was lost.** Its every behavior — the defaults, the server's stamps, the
+  18+ gate, the name and username rules, the Clerk mirrors (the first of the three writers), the inactive
+  and deleted rows left alone, the minor forced private and the grown-up kept private, the People row —
+  is now held by tests against `acceptTerms`; the inbox seed stamps the routing fields instead of the
+  acknowledgment.
