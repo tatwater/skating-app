@@ -798,26 +798,19 @@ describe('a failing end', () => {
     const scrollTo = spyOnScrollTo();
     Visibility.visible = false;
     fakes.queries.set('profiles:current', LIVE);
-    // The first open is still out when the end is reached, then refused: the end waits on it. Every
-    // open after it is refused after a round trip.
-    let refuseFirst: (e: Error) => void = () => {};
-    mutation('consent:openTerms')
-      .mockImplementationOnce(
-        () =>
-          new Promise((_resolve, reject) => {
-            refuseFirst = reject;
-          }),
-      )
-      .mockImplementation(() => later(new Error('offline'), 100));
+    // Every open is refused after a round trip.
+    mutation('consent:openTerms').mockImplementation(() => later(new Error('offline'), 100));
     render(<TermsPage />);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
     await readInFullScreen(user);
-    await act(async () => refuseFirst(new Error('offline')));
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
-    // Settled: the end still sits in view, nothing opens again by itself, and the one thing said is
-    // why the reading starts again — the new reading's own failed opening is quiet.
+    // Settled: the end still sits in view, nothing opens again by itself, and what was said is the
+    // opening's failure, then why the reading starts again — the new reading's own failed opening
+    // is quiet.
     await new Promise((r) => setTimeout(r, 350));
     expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
-    expect(m.toast).toHaveBeenCalledExactlyOnceWith({
+    expect(m.toast).toHaveBeenCalledTimes(2);
+    expect(m.toast).toHaveBeenLastCalledWith({
       title: CONSENT_REFUSAL_MESSAGES.terms_not_opened,
       tone: 'bad',
     });
@@ -829,7 +822,63 @@ describe('a failing end', () => {
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
     await new Promise((r) => setTimeout(r, 350));
     expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3);
-    expect(m.toast).toHaveBeenCalledTimes(2);
+    expect(m.toast).toHaveBeenCalledTimes(3);
+  });
+
+  it('never counts an end reached while the opening is out: it must leave and come back after', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    let answer: (v: null) => void = () => {};
+    mutation('consent:openTerms').mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve;
+        }),
+    );
+    // The end is in view from the first look, before the opening has answered.
+    render(<TermsPage />);
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledOnce());
+    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => answer(null));
+    // Answered, with the marker still in view: the arrival began before it, so nothing is stamped.
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+    await act(async () => Visibility.scroll(false));
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+    expect(m.toast).not.toHaveBeenCalled();
+  });
+
+  it('never counts an end reached while a retried opening is out either', async () => {
+    let clock = Date.UTC(2026, 10, 24, 15);
+    spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
+    Visibility.visible = false;
+    fakes.queries.set('profiles:current', LIVE);
+    let answer: (v: null) => void = () => {};
+    mutation('consent:openTerms')
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            answer = resolve;
+          }),
+      );
+    const { container } = render(<TermsPage />);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
+    clock += TERMS_OPEN_RETRY_GAP_MS;
+    fireEvent.scroll(
+      container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') as HTMLElement,
+    );
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    await act(async () => Visibility.scroll(true));
+    await act(async () => answer(null));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+    await act(async () => Visibility.scroll(false));
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+    // Nothing said beyond the first opening's failure: no terms_not_opened, no restart.
+    expect(m.toast).toHaveBeenCalledOnce();
+    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
   });
 
   it('a lost reading, reached in full-screen, is read again from its top before the end counts', async () => {
@@ -915,14 +964,14 @@ describe('a failing end', () => {
     expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
   });
 
-  it('a retry whose answer changes where the skater goes is said: out of date, or can’t act', async () => {
+  it('a retry is said only when it is out of date, which stops the step', async () => {
     let clock = Date.UTC(2026, 10, 24, 15);
     spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
     Visibility.visible = false;
-    fakes.queries.set('profiles:current', { ...LIVE, status: 'suspended', suspendedUntil: 1 });
+    fakes.queries.set('profiles:current', LIVE);
     mutation('consent:openTerms')
       .mockRejectedValueOnce(new Error('offline'))
-      .mockRejectedValueOnce(new ConvexError('Account is suspended'))
+      .mockRejectedValueOnce(new Error('offline'))
       .mockRejectedValueOnce(
         new ConvexError({
           code: 'client_outdated',
@@ -937,14 +986,57 @@ describe('a failing end', () => {
       );
     clock += TERMS_OPEN_RETRY_GAP_MS;
     scroll();
-    await waitFor(() =>
-      expect(m.toast).toHaveBeenLastCalledWith({ title: 'Account is suspended', tone: 'bad' }),
-    );
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.toast).toHaveBeenCalledOnce();
     clock += TERMS_OPEN_RETRY_GAP_MS;
     scroll();
     expect(await screen.findByRole('heading', { name: 'Time for an update' })).toBeInTheDocument();
-    expect(m.toast).toHaveBeenCalledTimes(3);
+    expect(m.toast).toHaveBeenCalledTimes(2);
     expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3);
+  });
+
+  it('an end with no opening because the account can’t act says the server’s words, once, and only that', async () => {
+    let clock = Date.UTC(2026, 10, 24, 15);
+    spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
+    Visibility.visible = false;
+    // Lapsed by this tab's clock, which runs ahead of the server's.
+    fakes.queries.set('profiles:current', { ...LIVE, status: 'suspended', suspendedUntil: 1 });
+    const SUSPENDED = { title: 'Account is suspended', tone: 'bad' };
+    mutation('consent:openTerms')
+      .mockRejectedValueOnce(new ConvexError('Account is suspended'))
+      .mockRejectedValueOnce(new ConvexError('Account is suspended'))
+      .mockResolvedValue(null);
+    const { container } = render(<TermsPage />);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledExactlyOnceWith(SUSPENDED));
+    const scroll = () =>
+      fireEvent.scroll(
+        container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') as HTMLElement,
+      );
+    // A quiet retry, refused the same way: nothing said.
+    clock += TERMS_OPEN_RETRY_GAP_MS;
+    scroll();
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.toast).toHaveBeenCalledOnce();
+    // The end: the server's words, and nothing else — no terms_not_opened, no restart, no opening.
+    clock += TERMS_OPEN_RETRY_GAP_MS;
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(m.toast).toHaveBeenCalledTimes(2));
+    expect(m.toast).toHaveBeenLastCalledWith(SUSPENDED);
+    scroll();
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.toast).toHaveBeenCalledTimes(2);
+    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
+    expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+    // The suspension ends: off the end, a retry opens the reading, and the end counts on the way back.
+    await act(async () => Visibility.scroll(false));
+    scroll();
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
+    await new Promise((r) => setTimeout(r, 20));
+    await act(async () => Visibility.scroll(true));
+    await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+    expect(m.toast).toHaveBeenCalledTimes(2);
   });
 
   it('records on the way back once the server answers', async () => {

@@ -43,13 +43,15 @@ const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
  * 1. The reader opens: `openTerms` stamps the reading (the server keeps the first stamp). A failed
  *    opening is said, then tried again quietly as the skater scrolls (no more often than core's
  *    `TERMS_OPEN_RETRY_GAP_MS`), so the server normally has the reading by the end — as on the phone.
- * 2. The end marker on screen: `reachTermsEnd` with the reader it was reached in — after the open
- *    has answered, so a fast scroll can't reach the end of a reading the server hasn't started.
- *    Recorded, the box unlocks. Failed, the toast, and the end stays disarmed until the marker has
- *    left the screen and come back — as on the phone — so a persistent error is said once. A
- *    reading the server doesn't have (no opening ever succeeded — said in `terms_not_opened`'s
- *    words — or `terms_not_opened` itself) starts again from the top of whichever reader is open,
- *    disarmed the same way.
+ * 2. The end marker on screen: `reachTermsEnd` with the reader it was reached in — only on an
+ *    opening that has answered. An end reached while one is out (the first, or a retry) never
+ *    counts on it: once it answers, the marker must leave the screen and come back, so the record
+ *    can never say the terms were opened and finished in one instant. Recorded, the box unlocks.
+ *    Failed, the toast, and the end stays disarmed until the marker has left the screen and come
+ *    back — as on the phone — so a persistent error is said once. A reading the server doesn't
+ *    have (no opening ever succeeded — said in `terms_not_opened`'s words — or `terms_not_opened`
+ *    itself) starts again from the top of whichever reader is open, disarmed the same way; one the
+ *    server refused as unable to act says the server's words instead, and only disarms.
  * 3. *Record acceptance*: the hold first (`lib/entryHold` says why), then `acceptTerms`. Through,
  *    the receipt draws under the hold; refused, a toast, the hold let go, and — by core's
  *    `consentRefusalAction` — the end marker re-arms (`terms_not_read`), or a new account goes
@@ -108,46 +110,49 @@ export function TermsFlow({
   const before = useRef(profile);
   if (!held) before.current = profile;
 
-  // The reading starts (again, on a reset): whether it did is what the end waits on. A failure is
-  // said here — the step's first opening's, or any that changes where the skater goes (out of date,
-  // which stops the step; an account that can't act) — unless the end is already waiting on it,
-  // which says why itself. A reading started again opens quietly: the skater was just told why, and
-  // the end says it again if it is still unopened.
-  const opened = useRef<Promise<boolean>>(Promise.resolve(false));
-  const attempt = useRef({ quiet: false, awaited: false });
-  // This reading has no opening on the server (its last try failed), and when that try began.
-  const openFailed = useRef(false);
+  // The reading starts (again, on a reset). Its opening is `out` until the server answers and
+  // `open` once it has the reading; `null` once its last try failed (`failure` says how): the server
+  // has nothing for the end to finish. A failure is said here when it is the step's first opening,
+  // or when it is out of date (which stops the step). A retry, or a reading started again, opens
+  // quietly: the skater was told already, and the end says why if it is still unopened.
+  const opening = useRef<{ status: 'out' | 'open' } | null>(null);
+  const failure = useRef<{ error: unknown } | null>(null);
   const lastTry = useRef<number | null>(null);
+  // An opening is out: a disarmed end waits for it to answer before it watches the marker leave, so
+  // an arrival while it was out never counts on it (the phone's rule).
+  const [openingOut, setOpeningOut] = useState(false);
   const openReading = (quiet: boolean) => {
-    const mine = { quiet, awaited: false };
-    attempt.current = mine;
-    openFailed.current = false;
+    const mine: { status: 'out' | 'open' } = { status: 'out' };
+    opening.current = mine;
+    failure.current = null;
     lastTry.current = Date.now();
-    const open: Promise<boolean> = openTerms({ ...TERMS_CLAIM, surface: 'web' }).then(
-      () => true,
+    setOpeningOut(true);
+    openTerms({ ...TERMS_CLAIM, surface: 'web' }).then(
+      () => {
+        if (opening.current !== mine) return;
+        mine.status = 'open';
+        setOpeningOut(false);
+      },
       (error: unknown) => {
-        if (opened.current === open && !stopped.current) {
-          openFailed.current = true;
-          const refusal = readConsentRefusal(error);
-          const final = consentRefusalAction(refusal.code) === 'outdated';
-          if (final || refusal.cannotAct || (!mine.quiet && !mine.awaited)) {
-            toastRefusal(error);
-          }
-          if (final) stop();
-        }
-        return false;
+        if (opening.current !== mine || stopped.current) return;
+        opening.current = null;
+        failure.current = { error };
+        setOpeningOut(false);
+        const final = consentRefusalAction(readConsentRefusal(error).code) === 'outdated';
+        if (final || !quiet) toastRefusal(error);
+        if (final) stop();
       },
     );
-    opened.current = open;
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: the reset key is the trigger
   useEffect(() => {
     if (held) return;
     openReading(resetKey !== 0);
   }, [resetKey]);
-  // Still reading with no opening: the next scroll tries again, at most once per gap.
+  // Still reading with no opening: the next scroll tries again, at most once per gap — not while the
+  // end waits for the marker to leave (it has just said why).
   const onReading = () => {
-    if (!openFailed.current || stopped.current || held) return;
+    if (failure.current === null || stopped.current || held || disarmed) return;
     if (termsOpenRetryDue(lastTry.current, Date.now())) openReading(true);
   };
 
@@ -156,30 +161,44 @@ export function TermsFlow({
   // again, never re-stamped the instant the new reading opens (the marker may still sit in view
   // while the scroll lands), and never a loop of opens against a server that keeps refusing.
   const restart = () => {
-    openFailed.current = false;
+    failure.current = null;
     setRead(false);
     setDisarmed(true);
     setResetKey((k) => k + 1);
+  };
+
+  // The end reached on a reading the server never opened: said in `terms_not_opened`'s words, and
+  // begun again from the top. A can't-act refusal is said in the server's words instead, and the end
+  // waits for the marker to come back: no second toast, no restart, no new opening on top of it.
+  const unopened = () => {
+    if (stopped.current) return;
+    const failed = failure.current;
+    if (failed !== null && readConsentRefusal(failed.error).cannotAct) {
+      toastRefusal(failed.error);
+      setDisarmed(true);
+      return;
+    }
+    toast({ title: consentRefusalMessage('terms_not_opened'), tone: 'bad' });
+    restart();
   };
 
   // In flight, by ref: two sightings in one frame (both readers, a re-render) send one write.
   const inFlight = useRef(false);
   const onEnd = async (via: TermsReaderVia) => {
     if (read || inFlight.current) return;
+    const mine = opening.current;
+    // An opening still out: this arrival never counts on it, even once it answers.
+    if (mine?.status === 'out') {
+      setDisarmed(true);
+      return;
+    }
+    if (mine === null) {
+      unopened();
+      return;
+    }
     inFlight.current = true;
     setReaching(true);
     try {
-      // A reading the server never started has no end to record: say why, and begin it again from
-      // the top — unless it was refused as out of date, which no new reading can fix. Waiting on an
-      // opening still out, the end is what speaks if it fails.
-      attempt.current.awaited = true;
-      if (!(await opened.current)) {
-        if (!stopped.current) {
-          toast({ title: consentRefusalMessage('terms_not_opened'), tone: 'bad' });
-          restart();
-        }
-        return;
-      }
       await reachTermsEnd({ ...TERMS_CLAIM, via });
       setRead(true);
       analytics.capture('terms_read_to_end', { via });
@@ -315,7 +334,8 @@ export function TermsFlow({
       step={step}
       read={read}
       armed={!read && !reaching && !held && !disarmed}
-      disarmed={disarmed}
+      // Watched for leaving only once no opening is out.
+      disarmed={disarmed && !openingOut}
       onEndGone={() => setDisarmed(false)}
       busy={busy || (held && !recorded)}
       resetKey={resetKey}

@@ -1,11 +1,13 @@
 /**
  * **A reading whose opening failed is opened again while the skater reads** (B03 §9.6), on both
  * apps: the first failure is said; after that, each burst of scrolling may try again, no more often
- * than `TERMS_OPEN_RETRY_GAP_MS`, without a word unless the answer changes where the skater goes
- * (out of date, or an account that can't act). So by the time the end is reached the server
- * normally has the reading, and its end is never stamped in the same breath as its opening. If the
- * end is reached with no opening still, the skater is told why (`terms_not_opened`'s words) and
- * the reading starts again from the top.
+ * than `TERMS_OPEN_RETRY_GAP_MS`, without a word unless the answer stops the step (out of date). So
+ * by the time the end is reached the server normally has the reading. An end reached while an
+ * opening is out never counts on it: once it answers, the end marker must leave the screen and
+ * come back, so the end is never stamped in the same breath as its opening. If the end is reached
+ * with no opening still, the skater is told why (`terms_not_opened`'s words) and the reading starts
+ * again from the top — or, when the account can't act right now, the server's own words, and
+ * nothing restarts.
  */
 
 /** The least time between two tries at opening a reading. */
