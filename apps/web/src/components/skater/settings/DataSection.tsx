@@ -25,6 +25,14 @@ export interface ExportRow {
   url: string | null;
 }
 
+/**
+ * What outlives a deleted account (B03 §9.11, D297): the sealed record of each terms acceptance
+ * and Know Before You Go completion, kept six years past the deletion (`CONSENT_RETENTION_YEARS`),
+ * never public. One plain sentence on the delete screen, so leaving says it before it happens.
+ */
+export const CONSENT_RETENTION_SENTENCE =
+  'One record stays longer: when you accepted the terms and answered Know Before You Go, with the name, email, and date of birth you gave, kept privately for six years after your account is deleted and then deleted too.';
+
 /** "Jan 4, 2027" */
 export function shortDate(ms: number): string {
   return new Date(ms).toLocaleDateString('en-US', {
@@ -198,6 +206,9 @@ export function DataSection({
             comments, and photo captions are deleted for good once they’re{' '}
             {DEPARTED_CONTENT_MAX_AGE_DAYS} days old. The account itself goes in{' '}
             {DELETION_GRACE_DAYS} days.
+          </p>
+          <p className="m-0" data-slot="consent-retention">
+            {CONSENT_RETENTION_SENTENCE}
           </p>
           <p className="m-0">
             During those {DELETION_GRACE_DAYS} days you can still sign in, and canceling keeps the
