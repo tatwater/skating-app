@@ -96,6 +96,13 @@ export function TermsStep({
   const copy = ONBOARDING_COPY.terms;
   const [checked, setChecked] = useState(initialChecked);
   const [progress, setProgress] = useState(0);
+  // A reading reset or re-locked clears the box, as on the phone: a tick given to one reading of the
+  // terms is never carried to the next, and the box can't re-tick itself when it unlocks again.
+  const [reading, setReading] = useState({ read, resetKey });
+  if (reading.read !== read || reading.resetKey !== resetKey) {
+    setReading({ read, resetKey });
+    if (!read || reading.resetKey !== resetKey) setChecked(false);
+  }
   const ready = read && checked;
   return (
     <EntryScreen
