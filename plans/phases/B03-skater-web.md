@@ -1341,8 +1341,8 @@ gets the Clerk user id only, counts and never content.
 ### 9.3 The state machine
 
 `resolveEntryRoute({ isLoaded, isSignedIn, profile, watch })` in `packages/core/src/entryRoute.ts` (*as built,* also
-`hold`, `now`, the instant a suspension is judged at, and `cannotActAt`, when the server last refused this account as
-unable to act), first match wins:
+`hold`, `now`, the instant a suspension is judged at, and `cannotAct`, the profile's standing when the server last
+refused this account as unable to act), first match wins:
 
 | # | Condition | Route | Web path | Mobile group |
 |---|---|---|---|---|
@@ -1350,7 +1350,7 @@ unable to act), first match wins:
 | 2 | signed out | `auth` | `/sign-in`, `/sign-up`, `/about` | `(auth)` |
 | — | `hold === 'receipt'` (*as built:* the hold is an input to the rule) | `receipt` | the page the skater is on | the group the acceptance was on |
 | 3 | `profile === null` | `account` | `/onboarding` | `onboarding` |
-| 4 | `profile.deletionRequestedAt` set, or *(as built)* the account can't act — banned, finalizing, deleted, or suspended (core's `canActNow`, the rule `requireProfile` applies, judged `SUSPENSION_CLOCK_MARGIN_MS` back from `now`: `entryCanAct`), or the server refused it as unable to act less than that margin ago (`cannotActAt`) | `app` | as today | `(tabs)` |
+| 4 | `profile.deletionRequestedAt` set, or *(as built)* the account can't act — banned, finalizing, deleted, or suspended (core's `canActNow`, the rule `requireProfile` applies, judged at `now` exactly, as the server judges it), or the server refused it as unable to act and its `status` and `suspendedUntil` are still what they were then (`cannotAct`, `cannotActHolds`) | `app` | as today | `(tabs)` |
 | 5 | `needsProfileSetup(profile)` | `account` | `/onboarding` | `onboarding` |
 | 6 | `profile.termsVersion !== TERMS.version` | `terms` | `/terms` | `terms` |
 | 7 | `knowBeforeYouGoDue(profile.knowBeforeYouGoAt, watch) !== null` | `questions` | `/know-before-you-go` | `know-before-you-go` |
@@ -1386,14 +1386,20 @@ Who sees what:
 | Pending deletion | app (read-only, as today) |
 | Banned, finalizing, or suspended now (*as built*) | app (read-only, with the support screen to appeal from); when a suspension lapses the gate wakes and the rows past 4 apply again |
 
-*As built,* `now` is the device's clock and the server's is the one that counts. A device running ahead would send a
-still-suspended account to the terms early, where the acceptance is refused on every press. So a suspension still holds
-`SUSPENSION_CLOCK_MARGIN_MS` (five minutes) past `suspendedUntil` by the device's clock, and a clock further ahead is
-caught by the server itself: the profile gate's two refusals ("Account is suspended", "Account is not active" — core's
-`ACCOUNT_SUSPENDED_MESSAGE`/`ACCOUNT_NOT_ACTIVE_MESSAGE`, which `lib/auth.ts` throws, read back by `isCannotActRefusal`)
-heard on any way-in step set the client's `cannotActAt` (the web's entry store, the phone's entry session), and row 4
-sends the skater to the app for the same margin after it, then the steps apply again. `entryRouteRecheckIn` wakes both
-gates for either end, and each gate re-arms its timer on every wake, so a timer that fires a hair early sets another.
+*As built,* `now` is the device's clock and the server's is the one that counts. The rule judges a suspension at `now`
+exactly, as the server does, so with a correct clock a lapsed suspension goes straight on to the consent it owes and is
+never let into the app without it (a property test holds this). A device running ahead would send a still-suspended
+account to the terms early, where every press is refused; the server catches that itself. The profile gate's two
+refusals ("Account is suspended", "Account is not active" — core's `ACCOUNT_SUSPENDED_MESSAGE`/`ACCOUNT_NOT_ACTIVE_MESSAGE`,
+which `lib/auth.ts` throws, read back by `isCannotActRefusal`) heard on any way-in step — the acceptance, the end, the
+opening, the completion, the welcome steps' advances and their own saves — record the profile's standing as the refusing
+screen saw it (`entryStanding`: `status` and `suspendedUntil`) as the client's `cannotAct` hold (the web's entry store, the
+phone's entry session; in memory only). Row 4 sends the skater to the app for as long as the profile still stands so
+(`cannotActHolds`): no timer and no timed retry, so a clock that stays ahead never bounces the skater between the app and a
+refused step. The hold ends when either field changes (a moderator's lift, a new suspension) or the session restarts (a
+reload, a relaunch, a sign-out); a property test holds that it never outlives a change of either. `entryRouteRecheckIn`
+wakes both gates at a suspension's end, and each gate re-arms its timer on every wake, so a timer that fires a hair early
+sets another.
 
 ### 9.4 The data model
 
@@ -1509,15 +1515,25 @@ build's bundled terms, Privacy Notice or questions aren't the server's — can't
 it stops the step on a blocking screen (*Time for an update*: the web offers *Reload the page*, the phone says to update
 the app) and nothing re-arms after it; its words never say the terms changed (a notice-only change is one). A failed end
 stamp is said once and tried again only after the marker has left the screen and come back, on both apps. *As built,* a
-reading the server doesn't have — the open failed, or `terms_not_opened` — is said, opened anew from the top of whichever
+failed opening is said once and tried again quietly as the skater scrolls, no more often than core's
+`TERMS_OPEN_RETRY_GAP_MS` (five seconds; a retry, like a restarted reading's opening, speaks only when its answer changes
+where the skater goes — out of date, or can't act), so the server normally has the reading by the end. A reading the server doesn't have at the end — no opening
+ever succeeded, said then in `terms_not_opened`'s words, or `terms_not_opened` itself — is opened anew from the top of whichever
 reader is open (the web's full-screen reader scrolls to its top too), and its end counts only once the marker has left the
 screen and been reached again, on both apps: never re-stamped in the same breath as the new opening (the record would say
 the terms were opened and finished in one instant), never a loop against a server that keeps refusing. `terms_first` is
-`say`: the gate takes the skater to the terms once its profile catches up. The profile gate's can't-act refusals on any
-way-in step also set `cannotActAt` (§9.3). The web counts `terms_accepted`, `onboarding_completed` and
+`say`: the gate takes the skater to the terms once its profile catches up. `terms_not_read` re-arms the end on the opening
+the reading already has, on both apps, never a new one. The profile gate's can't-act refusals on any way-in step also set
+the `cannotAct` hold (§9.3) — the Home and Profile steps' own saves too, which say the server's words for it and the step's
+*wasn't saved* line for anything else. The web counts `terms_accepted`, `onboarding_completed` and
 `know_before_you_go_completed` only when the call says it recorded something (`repeat: false`). On the Home step, *Save and
-continue* and *Skip for now* never wait on a location read (`currentPosition` gives up after 30 seconds, and either press
-drops a fix that lands later), and a skip or a location save takes the picked address off the field with its town.
+continue* and *Skip for now* never wait on a location read. *As built,* every *Use my current location* — the web's Home
+step and Settings' home, the phone's Home step — runs through core's `createLocateRead`: the button stops looking busy after
+`LOCATE_GIVE_UP_MS` (30 seconds) even if a permission prompt is never answered, but the read stays live, and a fix is taken
+only when nothing superseded it (a typed or picked address, a save, a skip, a cancel, leaving the step, another locate) — a
+slowly answered prompt still sets the home; a late fix never replaces one chosen since. A skip or a location save takes the
+picked address off the field with its town, on both apps (the phone's field and choice are one reducer,
+`homeFieldReducer`).
 
 ### 9.7 Mobile: the same screens on the existing tokens
 
@@ -1777,4 +1793,18 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   with it). The phone patched up a lost reading by opening and stamping in one breath, a record of
   terms opened and finished in the same instant; it now does what the web does. The rule judged a
   suspension by the device's clock (a five-minute margin, and a can't-act refusal sends the skater to
-  the app). A second tab counted one sealed record twice in analytics (`repeat` on both returns).
+  the app — both replaced in the third round, below). A second tab counted one sealed record twice in
+  analytics (`repeat` on both returns).
+- **The third review's ten (2026-11-24): what the second round's fixes broke or left on one app.** The
+  five-minute margin let a just-lapsed suspension into the app without the consent it owed, and its
+  five-minute refusal hold bounced a fast clock between the app and a refused step: the rule now judges a
+  suspension at the instant, and a can't-act refusal holds the skater in the app while the profile's
+  `status` and `suspendedUntil` are unchanged (§9.3; property-tested both ways). A failed opening ended
+  the reading with a silent jump to the top: it is now retried as the skater scrolls, and an end reached
+  with none says why. The Home and Profile steps swallowed the server's can't-act refusal of their own
+  saves. The phone's `terms_not_read` re-armed on a fresh opening, stamping it at once. The phone's Home
+  step let a late fix replace a picked address, never gave up on a read nobody answered, and kept the
+  picked address on the field after a failed skip. The web's 30-second give-up failed a slowly answered
+  prompt (Settings too); one rule in core now bounds the busy state and not the read, for all three
+  callers. The phone reading's stale-opening guards gained their tests, core's stranded import moved
+  up, and two web tests restore their spies in `afterEach`.
