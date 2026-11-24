@@ -118,7 +118,7 @@ describe('createTermsReading', () => {
     expect(states.at(-1)?.end).toBe('recorded');
   });
 
-  it('never counts an end reached while the opening is out: it must leave and come back after', async () => {
+  it('an end reached while the first opening is out waits for it, and counts once it answers', async () => {
     const opened = deferred();
     const reach = vi.fn(() => Promise.resolve(null));
     const reading = createTermsReading({
@@ -129,22 +129,34 @@ describe('createTermsReading', () => {
     });
     reading.start();
     reading.observe(at(2400), 2900);
-    // Left and reached again while the opening is still out: neither counts.
+    expect(reading.state().end).toBe('recording');
+    // Left and back while it waits: still one end, never stamped before the opening answers.
     reading.observe(at(0), 2900);
     reading.observe(at(2400), 2900);
-    expect(reading.state().end).toBe('unseen');
+    await flush();
+    expect(reach).not.toHaveBeenCalled();
     opened.resolve();
     await flush();
-    // Answered, but this arrival began before it: no stamp in the same breath as the opening.
-    expect(reach).not.toHaveBeenCalled();
-    reading.observe(at(2410), 2900);
-    await flush();
-    expect(reach).not.toHaveBeenCalled();
-    reading.observe(at(0), 2900);
-    reading.observe(at(2400), 2900);
-    await flush();
-    expect(reach).toHaveBeenCalledTimes(1);
+    expect(reach).toHaveBeenCalledOnce();
     expect(reading.state().end).toBe('recorded');
+  });
+
+  it('a text that fits the screen counts once its first opening answers', async () => {
+    const opened = deferred();
+    const reach = vi.fn(() => Promise.resolve(null));
+    const reading = createTermsReading({
+      open: () => opened.promise,
+      reach,
+      onRefusal: vi.fn(),
+      onChange: () => {},
+    });
+    reading.start();
+    // Laid out with its marker already on screen; nothing will ever scroll.
+    reading.observe(at(0, 800, 500), 450);
+    opened.resolve();
+    await flush();
+    expect(reach).toHaveBeenCalledOnce();
+    expect(reading.state()).toEqual({ end: 'recorded', progress: 1 });
   });
 
   it('a failed stamp is toasted, and tried again only when the end comes back on screen', async () => {
@@ -196,7 +208,7 @@ describe('createTermsReading', () => {
     expect(onRefusal).toHaveBeenCalledTimes(1);
   });
 
-  it('an opening that fails with the end on screen is said; the end, back again, says why and restarts', async () => {
+  it('a first opening that fails while the end waits on it is said once, and starts again from the top', async () => {
     const opened = deferred();
     const open = vi.fn().mockReturnValueOnce(opened.promise).mockResolvedValue(null);
     const reach = vi.fn(() => Promise.resolve(null));
@@ -213,24 +225,46 @@ describe('createTermsReading', () => {
     });
     reading.start();
     reading.observe(at(2400), 2900);
-    // The end never waits on an opening still out.
-    expect(reading.state().end).toBe('unseen');
     opened.reject(new Error('offline'));
     await flush();
-    // The screen's first opening says its own failure; the end, reached before it answered, waits.
-    expect(onRefusal).toHaveBeenCalledOnce();
-    expect(onUnopened).not.toHaveBeenCalled();
-    reading.observe(at(2410), 2900);
-    expect(open).toHaveBeenCalledOnce();
-    // Left and reached again, still unopened: why, and from the top.
-    reading.observe(at(0), 2900);
-    reading.observe(at(2400), 2900);
-    await flush();
+    // One toast, in `terms_not_opened`'s words (the opening's own is the end's to say), then the top.
     expect(onUnopened).toHaveBeenCalledOnce();
-    expect(onRefusal).toHaveBeenCalledOnce();
+    expect(onRefusal).not.toHaveBeenCalled();
     expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);
     expect(reach).not.toHaveBeenCalled();
+    expect(reading.state()).toEqual({ end: 'unseen', progress: 0 });
+    // The end counts when reached again in the new reading.
+    reading.observe(at(0), 2900);
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(reach).toHaveBeenCalledOnce();
+    expect(reading.state().end).toBe('recorded');
+  });
+
+  it('a first opening refused as unable to act while the end waits says the server’s words once', async () => {
+    const SUSPENDED = new ConvexError('Account is suspended');
+    const opened = deferred();
+    const open = vi.fn().mockReturnValueOnce(opened.promise).mockResolvedValue(null);
+    const onRefusal = vi.fn();
+    const onUnopened = vi.fn();
+    const toTop = vi.fn();
+    const reading = createTermsReading({
+      open,
+      reach: () => Promise.resolve(null),
+      onRefusal,
+      onUnopened,
+      onChange: () => {},
+      toTop,
+    });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    opened.reject(SUSPENDED);
+    await flush();
+    expect(onRefusal).toHaveBeenCalledOnce();
+    expect(onRefusal).toHaveBeenCalledWith(SUSPENDED);
+    expect(onUnopened).not.toHaveBeenCalled();
+    expect(toTop).toHaveBeenCalledOnce();
     expect(reading.state().end).toBe('unseen');
   });
 
@@ -619,7 +653,7 @@ describe('a failed opening, tried again while the skater reads', () => {
     expect(outdated.open).toHaveBeenCalledTimes(2);
   });
 
-  it('an end with no opening because the account can’t act says the server’s words, once, and only that', async () => {
+  it('an end with no opening because the account can’t act says the server’s words, once, and starts again', async () => {
     const { reading, open, reach, onRefusal, onUnopened, toTop, time } = failingOnce();
     const SUSPENDED = new ConvexError('Account is suspended');
     open
@@ -636,22 +670,21 @@ describe('a failed opening, tried again while the skater reads', () => {
     await flush();
     expect(open).toHaveBeenCalledTimes(2);
     expect(onRefusal).toHaveBeenCalledOnce();
-    // The end: the server's words, and nothing else — no terms_not_opened, no restart, no opening.
+    // The end: the server's words, not terms_not_opened's, and the reading starts again.
     time.pass(TERMS_OPEN_RETRY_GAP_MS);
     reading.observe(at(2400), 2900);
     await flush();
     expect(onRefusal).toHaveBeenCalledTimes(2);
     expect(onRefusal).toHaveBeenLastCalledWith(SUSPENDED);
     expect(onUnopened).not.toHaveBeenCalled();
-    expect(toTop).not.toHaveBeenCalled();
-    expect(open).toHaveBeenCalledTimes(2);
-    expect(reading.state().end).toBe('failed');
-    reading.observe(at(2410), 2900);
-    expect(open).toHaveBeenCalledTimes(2);
-    // The suspension ends: off the end, a retry opens the reading, and the end counts on the way back.
-    reading.observe(at(800), 2900);
+    expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(3);
+    // A stale report from before the scroll: nothing more said, no loop.
+    reading.observe(at(2410), 2900);
     await flush();
+    expect(onRefusal).toHaveBeenCalledTimes(2);
+    // The suspension has ended: the new reading's opening stands, and its end counts when reached.
+    reading.observe(at(0), 2900);
     reading.observe(at(2400), 2900);
     await flush();
     expect(reach).toHaveBeenCalledOnce();
@@ -659,32 +692,90 @@ describe('a failed opening, tried again while the skater reads', () => {
     expect(onRefusal).toHaveBeenCalledTimes(2);
   });
 
-  it('a retry still out when the end is reached never counts on it either', async () => {
-    const { reading, open, reach, onUnopened, time } = failingOnce();
+  it.each([
+    ['succeeds', (d: ReturnType<typeof deferred>) => d.resolve()],
+    ['fails', (d: ReturnType<typeof deferred>) => d.reject(new Error('offline'))],
+  ])(
+    'an end reached while a retry is out, which then %s, says why once and starts again',
+    async (_, answer) => {
+      const { reading, open, reach, onRefusal, onUnopened, toTop, time } = failingOnce();
+      const retried = deferred();
+      open
+        .mockReset()
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockReturnValueOnce(retried.promise)
+        .mockResolvedValue(null);
+      reading.start();
+      await flush();
+      time.pass(TERMS_OPEN_RETRY_GAP_MS);
+      reading.observe(at(800), 2900);
+      expect(open).toHaveBeenCalledTimes(2);
+      // The end reached while the retry is out: it waits for the answer.
+      reading.observe(at(2400), 2900);
+      expect(reading.state().end).toBe('recording');
+      answer(retried);
+      await flush();
+      // Most of the text was read with no reading on the server: said once, and from the top.
+      expect(onUnopened).toHaveBeenCalledOnce();
+      expect(onRefusal).toHaveBeenCalledOnce();
+      expect(toTop).toHaveBeenCalledOnce();
+      expect(open).toHaveBeenCalledTimes(3);
+      expect(reach).not.toHaveBeenCalled();
+      // The end counts only when reached again in the new reading.
+      reading.observe(at(2410), 2900);
+      await flush();
+      expect(reach).not.toHaveBeenCalled();
+      reading.observe(at(0), 2900);
+      reading.observe(at(2400), 2900);
+      await flush();
+      expect(reach).toHaveBeenCalledOnce();
+      expect(reading.state().end).toBe('recorded');
+      expect(onUnopened).toHaveBeenCalledOnce();
+    },
+  );
+
+  it('a retry refused as unable to act while the end waits says the server’s words, once', async () => {
+    const { reading, open, onRefusal, onUnopened, toTop, time } = failingOnce();
+    const SUSPENDED = new ConvexError('Account is suspended');
     const retried = deferred();
     open
       .mockReset()
       .mockRejectedValueOnce(new Error('offline'))
-      .mockReturnValueOnce(retried.promise);
+      .mockReturnValueOnce(retried.promise)
+      .mockResolvedValue(null);
     reading.start();
     await flush();
     time.pass(TERMS_OPEN_RETRY_GAP_MS);
     reading.observe(at(800), 2900);
-    expect(open).toHaveBeenCalledTimes(2);
-    // The end reached while the retry is out: not counted, not said.
     reading.observe(at(2400), 2900);
-    retried.resolve();
+    retried.reject(SUSPENDED);
     await flush();
+    expect(onRefusal).toHaveBeenCalledTimes(2);
+    expect(onRefusal).toHaveBeenLastCalledWith(SUSPENDED);
     expect(onUnopened).not.toHaveBeenCalled();
-    // Answered, with the marker still on screen: still nothing; off screen and back, then stamped.
+    expect(toTop).toHaveBeenCalledOnce();
+    // No loop: a stale report from before the scroll says nothing more.
     reading.observe(at(2410), 2900);
     await flush();
-    expect(reach).not.toHaveBeenCalled();
-    reading.observe(at(0), 2900);
+    expect(onRefusal).toHaveBeenCalledTimes(2);
+  });
+
+  it('a new reading whose opening fails is retried on scroll even before the end has left', async () => {
+    const { reading, open, time } = failingOnce();
+    open
+      .mockReset()
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockRejectedValueOnce(new Error('offline'))
+      .mockResolvedValue(null);
+    reading.start();
+    await flush();
     reading.observe(at(2400), 2900);
     await flush();
-    expect(reach).toHaveBeenCalledOnce();
-    expect(reading.state().end).toBe('recorded');
+    // Started again; its opening failed. The marker hasn't been seen to leave yet: retries go on.
+    expect(open).toHaveBeenCalledTimes(2);
+    time.pass(TERMS_OPEN_RETRY_GAP_MS);
+    reading.observe(at(2400), 2900);
+    expect(open).toHaveBeenCalledTimes(3);
   });
 
   it('a reading started again opens quietly: just told why, its failure waits for the end', async () => {

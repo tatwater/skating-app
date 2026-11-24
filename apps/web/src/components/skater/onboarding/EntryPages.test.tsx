@@ -825,60 +825,109 @@ describe('a failing end', () => {
     expect(m.toast).toHaveBeenCalledTimes(3);
   });
 
-  it('never counts an end reached while the opening is out: it must leave and come back after', async () => {
-    fakes.queries.set('profiles:current', LIVE);
-    let answer: (v: null) => void = () => {};
-    mutation('consent:openTerms').mockImplementationOnce(
-      () =>
-        new Promise((resolve) => {
-          answer = resolve;
+  /** An opening the test answers by hand. */
+  function heldOpening() {
+    const held = {
+      answer: (_v: null) => {},
+      refuse: (_e: Error) => {},
+      next: () =>
+        new Promise((resolve, reject) => {
+          held.answer = resolve;
+          held.refuse = reject;
         }),
-    );
-    // The end is in view from the first look, before the opening has answered.
+    };
+    return held;
+  }
+
+  it('an end in view while the first opening is out (a text that fits) waits, and counts once it answers', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    const opening = heldOpening();
+    mutation('consent:openTerms').mockImplementationOnce(opening.next);
+    // The end is in view from the first look, with nothing to scroll, before the opening answers.
     render(<TermsPage />);
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledOnce());
     await new Promise((r) => setTimeout(r, 20));
-    await act(async () => answer(null));
-    // Answered, with the marker still in view: the arrival began before it, so nothing is stamped.
-    await new Promise((r) => setTimeout(r, 20));
     expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
-    await act(async () => Visibility.scroll(false));
-    await act(async () => Visibility.scroll(true));
+    await act(async () => opening.answer(null));
     await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+    await waitFor(() => expect(screen.getByRole('checkbox')).not.toHaveAttribute('aria-disabled'));
     expect(m.toast).not.toHaveBeenCalled();
   });
 
-  it('never counts an end reached while a retried opening is out either', async () => {
-    let clock = Date.UTC(2026, 10, 24, 15);
-    spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
-    Visibility.visible = false;
+  it('a first opening that fails while the end waits on it is said once, and starts again from the top', async () => {
+    const scrollTo = spyOnScrollTo();
     fakes.queries.set('profiles:current', LIVE);
-    let answer: (v: null) => void = () => {};
-    mutation('consent:openTerms')
-      .mockRejectedValueOnce(new Error('offline'))
-      .mockImplementationOnce(
-        () =>
-          new Promise((resolve) => {
-            answer = resolve;
-          }),
-      );
-    const { container } = render(<TermsPage />);
-    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
-    clock += TERMS_OPEN_RETRY_GAP_MS;
-    fireEvent.scroll(
-      container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') as HTMLElement,
-    );
-    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
-    await act(async () => Visibility.scroll(true));
-    await act(async () => answer(null));
+    const opening = heldOpening();
+    mutation('consent:openTerms').mockImplementationOnce(opening.next);
+    render(<TermsPage />);
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledOnce());
     await new Promise((r) => setTimeout(r, 20));
+    await act(async () => opening.refuse(new Error('offline')));
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+    // One toast — why the reading starts again, not the opening's own words as well.
+    expect(m.toast).toHaveBeenCalledExactlyOnceWith({
+      title: CONSENT_REFUSAL_MESSAGES.terms_not_opened,
+      tone: 'bad',
+    });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0 });
     expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+    // Reached again in the new reading: it counts.
     await act(async () => Visibility.scroll(false));
     await act(async () => Visibility.scroll(true));
     await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
-    // Nothing said beyond the first opening's failure: no terms_not_opened, no restart.
     expect(m.toast).toHaveBeenCalledOnce();
-    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ['succeeds', (o: ReturnType<typeof heldOpening>) => o.answer(null)],
+    ['fails', (o: ReturnType<typeof heldOpening>) => o.refuse(new Error('offline'))],
+  ])(
+    'an end reached while a retried opening is out, which then %s, says why once and starts again',
+    async (_, settle) => {
+      let clock = Date.UTC(2026, 10, 24, 15);
+      spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
+      Visibility.visible = false;
+      fakes.queries.set('profiles:current', LIVE);
+      const retried = heldOpening();
+      mutation('consent:openTerms')
+        .mockRejectedValueOnce(new Error('offline'))
+        .mockImplementationOnce(retried.next);
+      const { container } = render(<TermsPage />);
+      await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
+      clock += TERMS_OPEN_RETRY_GAP_MS;
+      fireEvent.scroll(
+        container.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') as HTMLElement,
+      );
+      await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
+      await act(async () => Visibility.scroll(true));
+      await act(async () => settle(retried));
+      // Most of the text was read with no reading on the server: said once, and a new reading.
+      await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
+      expect(m.toast).toHaveBeenCalledTimes(2);
+      expect(m.toast).toHaveBeenLastCalledWith({
+        title: CONSENT_REFUSAL_MESSAGES.terms_not_opened,
+        tone: 'bad',
+      });
+      await new Promise((r) => setTimeout(r, 20));
+      expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
+      // Its end counts once reached again.
+      await act(async () => Visibility.scroll(false));
+      await act(async () => Visibility.scroll(true));
+      await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
+      expect(m.toast).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it('a failed opening after the step is gone says nothing', async () => {
+    fakes.queries.set('profiles:current', LIVE);
+    const opening = heldOpening();
+    mutation('consent:openTerms').mockImplementationOnce(opening.next);
+    const { unmount } = render(<TermsPage />);
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledOnce());
+    unmount();
+    await act(async () => opening.refuse(new Error('offline')));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.toast).not.toHaveBeenCalled();
   });
 
   it('a lost reading, reached in full-screen, is read again from its top before the end counts', async () => {
@@ -996,7 +1045,7 @@ describe('a failing end', () => {
     expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3);
   });
 
-  it('an end with no opening because the account can’t act says the server’s words, once, and only that', async () => {
+  it('an end with no opening because the account can’t act says the server’s words, once, and starts again', async () => {
     let clock = Date.UTC(2026, 10, 24, 15);
     spies.push(vi.spyOn(Date, 'now').mockImplementation(() => clock));
     Visibility.visible = false;
@@ -1019,21 +1068,19 @@ describe('a failing end', () => {
     await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2));
     await new Promise((r) => setTimeout(r, 20));
     expect(m.toast).toHaveBeenCalledOnce();
-    // The end: the server's words, and nothing else — no terms_not_opened, no restart, no opening.
+    // The end: the server's words, not terms_not_opened's, and the reading starts again.
     clock += TERMS_OPEN_RETRY_GAP_MS;
     await act(async () => Visibility.scroll(true));
-    await waitFor(() => expect(m.toast).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
+    expect(m.toast).toHaveBeenCalledTimes(2);
     expect(m.toast).toHaveBeenLastCalledWith(SUSPENDED);
-    scroll();
+    // No loop while the end sits in view: nothing more said or sent.
     await new Promise((r) => setTimeout(r, 20));
     expect(m.toast).toHaveBeenCalledTimes(2);
-    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(2);
+    expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3);
     expect(mutation('consent:reachTermsEnd')).not.toHaveBeenCalled();
-    // The suspension ends: off the end, a retry opens the reading, and the end counts on the way back.
+    // The suspension has ended: the new reading opened, and its end counts once reached again.
     await act(async () => Visibility.scroll(false));
-    scroll();
-    await waitFor(() => expect(mutation('consent:openTerms')).toHaveBeenCalledTimes(3));
-    await new Promise((r) => setTimeout(r, 20));
     await act(async () => Visibility.scroll(true));
     await waitFor(() => expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce());
     expect(m.toast).toHaveBeenCalledTimes(2);

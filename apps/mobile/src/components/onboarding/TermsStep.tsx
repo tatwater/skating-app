@@ -69,11 +69,11 @@ const USER_AGENT = appUserAgent(
  * Account fields (`username_taken`, the cooldown, a name, username or date the server won't take)
  * returns a new account to the Account step, `terms_not_read` re-arms the end marker (on the opening
  * it has), a failed opening is tried again quietly as the skater scrolls, an end reached while an
- * opening is out counts only once the marker has left and come back after it answered, a reading
- * the server doesn't have at the end (`terms_not_opened`, or an opening that never succeeded — said
- * in `terms_not_opened`'s words, or in the server's own when it refused the account as unable to
- * act, which restarts nothing) starts again from the top and its end counts only once reached again
- * (`lib/termsReading`, as on the web), and
+ * opening is out waits for its answer (the reading's first opening counts on success; a retry's
+ * answer starts over), a reading the server doesn't have at the end (`terms_not_opened`, or an
+ * opening that never succeeded — said in `terms_not_opened`'s words, or in the server's own when it
+ * refused the account as unable to act) starts again from the top and its end counts only once
+ * reached again (`lib/termsReading`, as on the web), and
  * `client_outdated` — this build's terms or notice aren't the server's, which no re-reading fixes —
  * stops the step on `OutdatedScreen`, asking for an update; nothing re-arms after it.
  */

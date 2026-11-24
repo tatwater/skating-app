@@ -36,6 +36,18 @@ import { ReceiptStep, TermsStep } from './TermsStep';
 
 const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
 
+/** One try at opening a reading. */
+interface Opening {
+  /** `out` until the server answers, `open` once it has the reading. */
+  status: 'out' | 'open';
+  /** An earlier try of this reading failed: most of it was read with no reading on the server. */
+  retry: boolean;
+  /** The end was reached while this try was out, and waits on its answer, which it speaks for. */
+  awaited: boolean;
+  /** How it answered; `stale` once a newer reading (or the step's leaving) overtook it. */
+  answer: Promise<'open' | 'failed' | 'stale'>;
+}
+
 /**
  * **The Terms step, wired** (boards 10.3–10.5, 11.2–11.5; D295): the same for a new account
  * (`/onboarding?step=terms`, with the Account step's fields) and an existing one (`/terms`).
@@ -44,14 +56,15 @@ const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
  *    opening is said, then tried again quietly as the skater scrolls (no more often than core's
  *    `TERMS_OPEN_RETRY_GAP_MS`), so the server normally has the reading by the end — as on the phone.
  * 2. The end marker on screen: `reachTermsEnd` with the reader it was reached in — only on an
- *    opening that has answered. An end reached while one is out (the first, or a retry) never
- *    counts on it: once it answers, the marker must leave the screen and come back, so the record
- *    can never say the terms were opened and finished in one instant. Recorded, the box unlocks.
- *    Failed, the toast, and the end stays disarmed until the marker has left the screen and come
- *    back — as on the phone — so a persistent error is said once. A reading the server doesn't
- *    have (no opening ever succeeded — said in `terms_not_opened`'s words — or `terms_not_opened`
- *    itself) starts again from the top of whichever reader is open, disarmed the same way; one the
- *    server refused as unable to act says the server's words instead, and only disarms.
+ *    opening that has answered. An end reached while one is out waits for its answer: the
+ *    reading's first opening, answered, is stamped then (a slow connection, a text that fits the
+ *    screen); a retry's answer, whatever it is, means most of the text was read with no reading on
+ *    the server, so it starts over as below. Recorded, the box unlocks. Failed, the toast, and the
+ *    end stays disarmed until the marker has left the screen and come back — as on the phone — so a
+ *    persistent error is said once. A reading the server doesn't have (no opening succeeded — said
+ *    in `terms_not_opened`'s words, or the server's own when it refused the account as unable to
+ *    act — or `terms_not_opened` itself) starts again from the top of whichever reader is open,
+ *    and its end counts only once the marker has left the screen and been reached again.
  * 3. *Record acceptance*: the hold first (`lib/entryHold` says why), then `acceptTerms`. Through,
  *    the receipt draws under the hold; refused, a toast, the hold let go, and — by core's
  *    `consentRefusalAction` — the end marker re-arms (`terms_not_read`), or a new account goes
@@ -110,37 +123,48 @@ export function TermsFlow({
   const before = useRef(profile);
   if (!held) before.current = profile;
 
+  // The step is gone (the phone's `disposed`): a late answer says nothing on another screen.
+  const gone = useRef(false);
+  useEffect(() => {
+    gone.current = false;
+    return () => {
+      gone.current = true;
+    };
+  }, []);
+
   // The reading starts (again, on a reset). Its opening is `out` until the server answers and
   // `open` once it has the reading; `null` once its last try failed (`failure` says how): the server
   // has nothing for the end to finish. A failure is said here when it is the step's first opening,
-  // or when it is out of date (which stops the step). A retry, or a reading started again, opens
-  // quietly: the skater was told already, and the end says why if it is still unopened.
-  const opening = useRef<{ status: 'out' | 'open' } | null>(null);
+  // or when it is out of date (which stops the step) — unless an end waits on it, which says why
+  // itself. A retry, or a reading started again, opens quietly: the skater was told already, and
+  // the end says why if it is still unopened.
+  const opening = useRef<Opening | null>(null);
   const failure = useRef<{ error: unknown } | null>(null);
   const lastTry = useRef<number | null>(null);
-  // An opening is out: a disarmed end waits for it to answer before it watches the marker leave, so
-  // an arrival while it was out never counts on it (the phone's rule).
-  const [openingOut, setOpeningOut] = useState(false);
   const openReading = (quiet: boolean) => {
-    const mine: { status: 'out' | 'open' } = { status: 'out' };
+    const mine: Opening = {
+      status: 'out',
+      retry: failure.current !== null,
+      awaited: false,
+      answer: Promise.resolve('stale'),
+    };
     opening.current = mine;
     failure.current = null;
     lastTry.current = Date.now();
-    setOpeningOut(true);
-    openTerms({ ...TERMS_CLAIM, surface: 'web' }).then(
+    mine.answer = openTerms({ ...TERMS_CLAIM, surface: 'web' }).then(
       () => {
-        if (opening.current !== mine) return;
+        if (opening.current !== mine || gone.current) return 'stale';
         mine.status = 'open';
-        setOpeningOut(false);
+        return 'open';
       },
       (error: unknown) => {
-        if (opening.current !== mine || stopped.current) return;
+        if (opening.current !== mine || stopped.current || gone.current) return 'stale';
         opening.current = null;
         failure.current = { error };
-        setOpeningOut(false);
         const final = consentRefusalAction(readConsentRefusal(error).code) === 'outdated';
-        if (final || !quiet) toastRefusal(error);
+        if (final || (!quiet && !mine.awaited)) toastRefusal(error);
         if (final) stop();
+        return 'failed';
       },
     );
   };
@@ -149,10 +173,9 @@ export function TermsFlow({
     if (held) return;
     openReading(resetKey !== 0);
   }, [resetKey]);
-  // Still reading with no opening: the next scroll tries again, at most once per gap — not while the
-  // end waits for the marker to leave (it has just said why).
+  // Still reading with no opening: the next scroll tries again, at most once per gap.
   const onReading = () => {
-    if (failure.current === null || stopped.current || held || disarmed) return;
+    if (failure.current === null || stopped.current || held) return;
     if (termsOpenRetryDue(lastTry.current, Date.now())) openReading(true);
   };
 
@@ -167,18 +190,13 @@ export function TermsFlow({
     setResetKey((k) => k + 1);
   };
 
-  // The end reached on a reading the server never opened: said in `terms_not_opened`'s words, and
-  // begun again from the top. A can't-act refusal is said in the server's words instead, and the end
-  // waits for the marker to come back: no second toast, no restart, no new opening on top of it.
+  // The end reached on a reading the server doesn't have: said — in `terms_not_opened`'s words, or
+  // the server's own for a refusal of the account as unable to act — and begun again from the top.
   const unopened = () => {
     if (stopped.current) return;
     const failed = failure.current;
-    if (failed !== null && readConsentRefusal(failed.error).cannotAct) {
-      toastRefusal(failed.error);
-      setDisarmed(true);
-      return;
-    }
-    toast({ title: consentRefusalMessage('terms_not_opened'), tone: 'bad' });
+    if (failed !== null && readConsentRefusal(failed.error).cannotAct) toastRefusal(failed.error);
+    else toast({ title: consentRefusalMessage('terms_not_opened'), tone: 'bad' });
     restart();
   };
 
@@ -187,11 +205,6 @@ export function TermsFlow({
   const onEnd = async (via: TermsReaderVia) => {
     if (read || inFlight.current) return;
     const mine = opening.current;
-    // An opening still out: this arrival never counts on it, even once it answers.
-    if (mine?.status === 'out') {
-      setDisarmed(true);
-      return;
-    }
     if (mine === null) {
       unopened();
       return;
@@ -199,10 +212,22 @@ export function TermsFlow({
     inFlight.current = true;
     setReaching(true);
     try {
+      // An opening still out: the end waits on its answer. The reading's first, answered, counts;
+      // a retry's answer, whatever it is, starts the reading over.
+      if (mine.status === 'out') {
+        mine.awaited = true;
+        const answer = await mine.answer;
+        if (answer === 'stale' || gone.current) return;
+        if (answer === 'failed' || mine.retry) {
+          unopened();
+          return;
+        }
+      }
       await reachTermsEnd({ ...TERMS_CLAIM, via });
       setRead(true);
       analytics.capture('terms_read_to_end', { via });
     } catch (error) {
+      if (gone.current) return;
       const { code } = toastRefusal(error);
       const action = consentRefusalAction(code);
       switch (action) {
@@ -334,8 +359,7 @@ export function TermsFlow({
       step={step}
       read={read}
       armed={!read && !reaching && !held && !disarmed}
-      // Watched for leaving only once no opening is out.
-      disarmed={disarmed && !openingOut}
+      disarmed={disarmed}
       onEndGone={() => setDisarmed(false)}
       busy={busy || (held && !recorded)}
       resetKey={resetKey}

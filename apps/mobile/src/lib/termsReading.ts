@@ -45,7 +45,7 @@ export function endMarkerOnScreen(metrics: ScrollMetrics, markerY: number | null
 /**
  * Where the end stands:
  * - `unseen` — the marker hasn't been on screen (or was re-armed);
- * - `recording` — it was, and the stamp is on its way;
+ * - `recording` — it was, and the stamp is on its way (or waits on the reading's first opening);
  * - `recorded` — the server has it: the agree line unlocks;
  * - `failed` — the stamp was refused or lost; it is tried again when the marker comes back on
  *   screen, never on every scroll event while it stays there;
@@ -104,23 +104,26 @@ export interface TermsReading {
 /** One try at opening a reading: `out` until the server answers, `open` once it has the reading. */
 interface Opening {
   status: 'out' | 'open';
+  /** An earlier try of this reading failed: most of it was read with no reading on the server. */
+  retry: boolean;
+  /** The end was reached while this try was out, and waits on its answer, which it speaks for. */
+  awaited: boolean;
 }
 
 /**
  * The reading's controller. **A reading the server doesn't have** — the opening failed, or the end
  * was refused `terms_not_opened` (pruned, or lost to a race) — is never patched up by opening and
  * stamping in one breath: the sealed record would say the terms were opened and finished in the same
- * instant. So **an end reached while an opening is out** (the first, or a retry) never counts on it:
- * once the opening has answered, the marker must leave the screen and come back before the end is
- * stamped. A failed opening is said once and tried again, quietly, as the skater scrolls (no more
+ * instant. A failed opening is said once and tried again, quietly, as the skater scrolls (no more
  * often than core's `TERMS_OPEN_RETRY_GAP_MS`), so the server normally has the reading by the end.
- * If the end is reached without one, the skater is told why (`onUnopened`) and — as on the web
- * (core's `reopen` action) — the reading opens anew, the screen scrolls to the top, and the end
- * counts only when the marker has left the screen and been reached again; so a server that keeps
- * refusing costs one toast per reading, never a loop. Unless the last refusal was the profile
- * gate's own (the account can't act right now): then the end says the server's words, once, and
- * nothing restarts or opens again; the end is tried again when the marker comes back, by which time
- * a quiet retry may have opened the reading.
+ * If the end is reached without one, the skater is told why (`onUnopened`, or the server's own words
+ * when it refused the account as unable to act) and — as on the web (core's `reopen` action) — the
+ * reading opens anew, the screen scrolls to the top, and the end counts only when the marker has
+ * left the screen and been reached again; so a server that keeps refusing costs one toast per
+ * reading, never a loop. **An end reached while an opening is out** waits for its answer: on the
+ * reading's first opening, a success stamps the end then (a slow connection, or a text that fits the
+ * screen, still counts) and a failure is the unopened end above; on a retry, whatever it answers,
+ * most of the text was read with no reading on the server, so it is the unopened end too.
  */
 export function createTermsReading(deps: TermsReadingDeps): TermsReading {
   const now = deps.now ?? Date.now;
@@ -131,10 +134,7 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
   let failure: { error: unknown } | null = null;
   /** When the last try at opening started, for the retries' spacing. */
   let lastTry: number | null = null;
-  /**
-   * The end was reached while an opening was out, or the reading started again: the marker must
-   * leave the screen, with no opening out, before its arrival counts.
-   */
+  /** Started again: the marker must leave the screen before its arrival counts. */
   let mustLeave = false;
   let last: { metrics: ScrollMetrics; markerY: number | null } | null = null;
   let generation = 0;
@@ -156,13 +156,19 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
    */
   const ensureOpen = (quiet = false) => {
     if (opening !== null) return;
-    const mine: Opening = { status: 'out' };
+    const mine: Opening = { status: 'out', retry: failure !== null, awaited: false };
     opening = mine;
     failure = null;
     lastTry = now();
     deps.open().then(
       () => {
-        if (opening === mine) mine.status = 'open';
+        if (opening !== mine || disposed) return;
+        mine.status = 'open';
+        // The end waited on this answer: the first opening's counts; a retry's starts over.
+        if (mine.awaited) {
+          if (mine.retry) unopened();
+          else stamp();
+        }
       },
       (error: unknown) => {
         if (opening !== mine || disposed) return;
@@ -170,7 +176,9 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
         failure = { error };
         const final = consentRefusalAction(readRefusal(error).code) === 'outdated';
         if (final) set({ end: 'outdated' });
-        if (final || !quiet) deps.onRefusal(error);
+        // An end waiting on it says why itself: one toast.
+        if (final || (!quiet && !mine.awaited)) deps.onRefusal(error);
+        if (mine.awaited) unopened();
       },
     );
   };
@@ -190,18 +198,13 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
   };
 
   /**
-   * The end reached on a reading the server never opened: said, then read again from the top. A
-   * can't-act refusal is said in the server's words instead, and the end waits for the marker to
-   * come back: no `terms_not_opened`, no restart, no new opening on top of it.
+   * The end reached on a reading the server doesn't have: said — in `terms_not_opened`'s words, or
+   * the server's own for a refusal of the account as unable to act — then read again from the top.
    */
   const unopened = () => {
     if (state.end === 'outdated' || disposed) return;
-    if (failure !== null && readRefusal(failure.error).cannotAct) {
-      deps.onRefusal(failure.error);
-      set({ end: 'failed' });
-      return;
-    }
-    deps.onUnopened?.();
+    if (failure !== null && readRefusal(failure.error).cannotAct) deps.onRefusal(failure.error);
+    else deps.onUnopened?.();
     restart();
   };
 
@@ -212,11 +215,14 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
       unopened();
       return;
     }
-    // An opening still out: this arrival never counts on it, even once it answers.
+    // An opening still out: the end waits on its answer (`ensureOpen`).
     if (opening.status === 'out') {
-      mustLeave = true;
-      return;
-    }
+      opening.awaited = true;
+      set({ end: 'recording' });
+    } else stamp();
+  };
+
+  const stamp = () => {
     const mine = generation;
     set({ end: 'recording' });
     deps.reach().then(
@@ -237,8 +243,7 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
     if (last === null) return;
     const onScreen = endMarkerOnScreen(last.metrics, last.markerY);
     if (mustLeave) {
-      // Left with no opening out: the next arrival counts.
-      if (!onScreen && opening?.status !== 'out') mustLeave = false;
+      if (!onScreen) mustLeave = false;
       return;
     }
     if (onScreen && state.end === 'unseen') record();
@@ -253,12 +258,10 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
       last = { metrics, markerY };
       set({ progress: readingProgress(metrics) });
       look();
-      // Still reading with no opening: try again, quietly, at most once per gap — not while the end
-      // waits for the marker to leave (it has just said why).
+      // Still reading with no opening: try again, quietly, at most once per gap.
       if (
         failure !== null &&
-        state.end === 'unseen' &&
-        !mustLeave &&
+        state.end !== 'outdated' &&
         !disposed &&
         termsOpenRetryDue(lastTry, now())
       ) {
