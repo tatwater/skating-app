@@ -8948,10 +8948,11 @@ becoming a permanent file on someone who left.
   through any of it (the governor's ruling), nor is an account the server refuses right now —
   banned, being finalized, or suspended — which goes to the read-only app and its support screen
   until it can act again (the governor's ruling, 2026-11-24; a suspension's end is judged at the
-  instant, as the server judges it, and a way-in call the server refuses as one — a device clock
-  running ahead — keeps the skater in the app while the profile's status and suspension end stay as
-  they were, until either changes or the session restarts, B03 §9.3). Stale terms and questions are client-routed, as the
-  acknowledgment was.
+  instant, as the server judges it, with no margin. A refusal heard on a way-in step routes
+  nothing: it is a toast in the server's words. The accepted limit: a device clock running ahead
+  of the server's shows the consent step that early at a suspension's end, and its button says
+  "Account is suspended" until the suspension really ends, then works, with no reload, B03 §9.3,
+  §9.17). Stale terms and questions are client-routed, as the acknowledgment was.
 - **Existing accounts** see the terms and the questions at their next sign-in, and never the Home and
   Profile steps.
 - **Built on the web and in the Android/iOS app in the same PR**, the phone on its existing design
