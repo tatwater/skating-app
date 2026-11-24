@@ -19,7 +19,8 @@
  *
  * **2. The record is sealed** (D297). One `consentRecords` row per acceptance and per completion, with
  * the identity as attested. After the insert only named fill-once fields change — the IP
- * (`setIp`), the copy's outcome and an email the token lacked (`setCopyOutcome`) — plus the finalize
+ * (`setIp`), the copy's outcome and an email the token lacked (`setCopyOutcome` for an acceptance,
+ * `setRecordEmail` for a completion) — plus the finalize
  * stage's sever (`accountDeletion.ts`); `purgeDue` is the only delete. `packages/guards`
  * `consentWriters.test.ts` holds that. Wrong quiz picks have no field anywhere: the client keeps
  * them in memory and the completion says only that all seven were answered.
@@ -466,7 +467,8 @@ function newestRecord(ctx: QueryCtx, profileId: Id<'profiles'>, kind: 'terms' | 
 
 /**
  * *Continue* on board 10.9: all seven answered (D296). The record — which version, when, the season
- * current at that instant — and the profile's two fields, then the IP. The answers themselves are not
+ * current at that instant — and the profile's two fields, then the IP (and the caller's Clerk address
+ * when neither the token nor the profile had one: `fillRecordEmail`). The answers themselves are not
  * an argument: the client holds them, and a wrong pick has no field anywhere.
  *
  * The account must be set up (a canceled deletion's emptied row is re-introduced first:
@@ -560,6 +562,15 @@ export const completeKnowBeforeYouGo = mutation({
       knowBeforeYouGoVersion: args.version,
     });
     await scheduleIp(ctx, recordId, identity, args.clientSessionId);
+    // Neither the token nor the mirror had an address: Clerk is asked once, after the commit, as the
+    // terms copy asks for its record — or `recordsByEmail` could never find this one once deletion
+    // severs its account links.
+    if (email === undefined) {
+      await ctx.scheduler.runAfter(0, internal.consent.fillRecordEmail, {
+        recordId,
+        clerkUserId: profile.clerkUserId,
+      });
+    }
     return { season, repeat: false };
   },
 });
@@ -697,6 +708,41 @@ export const setCopyOutcome = internalMutation({
       copyEmail: { status, at: Date.now() },
       ...(fillEmail ? { identity: { ...record.identity, email } } : {}),
     });
+  },
+});
+
+/**
+ * **A completion's missing address** (Greptile on #180), scheduled by `completeKnowBeforeYouGo` when
+ * neither the token nor the profile's mirror carried one: the caller's Clerk address, filled onto the
+ * record once by `setRecordEmail`. Without it a questions record whose token lacked the claim would
+ * hold no email, and once deletion severs the account links `recordsByEmail` is the only way to it.
+ * Clerk having no address, or no answer (no key, an error), leaves the record as it is. Never throws.
+ *
+ * The profile's mirror is left alone: it has three writers ordered by Clerk's `updated_at`
+ * (`MirrorClaims` in `profiles.ts`), and a lookup carries no such stamp, so its answer written there
+ * could land after a webhook that changed the address and put the old one back. A record's address is
+ * the attested one at that moment, so it is the record that is filled.
+ */
+export const fillRecordEmail = internalAction({
+  args: { recordId: v.id('consentRecords'), clerkUserId: v.string() },
+  handler: async (ctx, { recordId, clerkUserId }): Promise<void> => {
+    try {
+      const lookup = await clerkEmailLookup(clerkUserId);
+      if (lookup.kind !== 'found') return;
+      await ctx.runMutation(internal.consent.setRecordEmail, { recordId, email: lookup.email });
+    } catch (err) {
+      console.error(`consent: the address lookup for ${recordId} threw`, err);
+    }
+  },
+});
+
+/** The address a record lacked, filled once. A record that has one, or is gone, is left alone. */
+export const setRecordEmail = internalMutation({
+  args: { recordId: v.id('consentRecords'), email: v.string() },
+  handler: async (ctx, { recordId, email }): Promise<void> => {
+    const record = await ctx.db.get(recordId);
+    if (record === null || record.identity.email !== undefined) return;
+    await ctx.db.patch(recordId, { identity: { ...record.identity, email } });
   },
 });
 

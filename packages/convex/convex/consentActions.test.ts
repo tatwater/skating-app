@@ -1,10 +1,16 @@
 /**
- * The two actions a consent record's write schedules (B03 §9.2 R4 and R8): the IP read from the
- * caller's Clerk session, and the emailed copy of the terms. Both fill their field once and never
- * throw. Clerk and Resend are stubbed; nothing asserts on the wall clock.
+ * The actions a consent record's write schedules (B03 §9.2 R4 and R8): the IP read from the
+ * caller's Clerk session, the emailed copy of the terms, and a completion's missing address. Each
+ * fills its field once and never throws. Clerk and Resend are stubbed; nothing asserts on the wall clock.
  */
 
-import { TERMS, TERMS_SHA256, termsVersionLabel } from '@skating/core';
+import {
+  KNOW_BEFORE_YOU_GO,
+  KNOW_BEFORE_YOU_GO_SHA256,
+  TERMS,
+  TERMS_SHA256,
+  termsVersionLabel,
+} from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -263,6 +269,124 @@ describe('captureIp', () => {
     const { t, recordId, record } = await world();
     await t.mutation(internal.consent.setIp, { recordId });
     expect(await record()).toMatchObject({ ipStatus: 'unavailable', ipUnavailable: 'error' });
+  });
+});
+
+describe('fillRecordEmail', () => {
+  /** Clerk's answer for the caller: one primary address. */
+  const clerkUser = (email: string): Reply => ({
+    status: 200,
+    body: {
+      primary_email_address_id: 'e1',
+      email_addresses: [{ id: 'e1', email_address: email }],
+    },
+  });
+
+  /** A completion by a caller whose token and profile both lack an address, and its scheduled job. */
+  async function tokenlessCompletion() {
+    const w = await world();
+    await w.as.mutation(api.consent.completeKnowBeforeYouGo, {
+      version: KNOW_BEFORE_YOU_GO.version,
+      hash: KNOW_BEFORE_YOU_GO_SHA256,
+      termsVersion: TERMS.version,
+      termsHash: TERMS_SHA256,
+      surface: 'android',
+    });
+    const all = await w.t.run((ctx) => ctx.db.query('consentRecords').collect());
+    const questions = all.find((r) => r.kind === 'questions');
+    if (questions === undefined) throw new Error('no questions record');
+    const jobs = await w.t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    const job = jobs.find((j) => j.name === 'consent:fillRecordEmail');
+    const fill = () =>
+      w.t.action(
+        internal.consent.fillRecordEmail,
+        job?.args[0] as { recordId: Id<'consentRecords'>; clerkUserId: string },
+      );
+    const recordOf = () => w.t.run((ctx) => ctx.db.get(questions._id));
+    return { ...w, questionsId: questions._id, job, fill, recordOf };
+  }
+
+  test('a completion with no address anywhere schedules the lookup, which fills the record once', async () => {
+    stubFetch({ '/v1/users/': clerkUser('ada@clerk.test') });
+    const { job, questionsId, fill, recordOf, t } = await tokenlessCompletion();
+    expect(job?.args[0]).toEqual({ recordId: questionsId, clerkUserId: SUBJECT });
+    expect((await recordOf())?.identity.email).toBeUndefined();
+    await fill();
+    expect(seen.map((s) => s.url)).toEqual([`https://api.clerk.com/v1/users/${SUBJECT}`]);
+    expect((await recordOf())?.identity).toEqual({
+      fullName: 'Ada Lovelace',
+      email: 'ada@clerk.test',
+      dateOfBirth: Date.UTC(1990, 0, 1),
+    });
+    // Now the CLI lookup finds it — the one way to it once deletion severs the account links.
+    const found = await t.query(internal.consent.recordsByEmail, { email: 'ada@clerk.test' });
+    expect(found.map((r) => r._id)).toEqual([questionsId]);
+    // Fill-once: a later answer changes nothing.
+    stubFetch({ '/v1/users/': clerkUser('other@clerk.test') });
+    await fill();
+    expect((await recordOf())?.identity.email).toBe('ada@clerk.test');
+    // The profile's mirror is not a writer here: its three writers own it.
+    const profile = await t.run((ctx) =>
+      ctx.db
+        .query('profiles')
+        .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', SUBJECT))
+        .unique(),
+    );
+    expect(profile?.email).toBeUndefined();
+  });
+
+  test('an address on the token or the profile schedules no lookup', async () => {
+    for (const where of ['token', 'profile'] as const) {
+      const { t, profileId } = await world();
+      if (where === 'profile') {
+        await t.run((ctx) => ctx.db.patch(profileId, { email: 'ada@mirror.test' }));
+      }
+      const as = t.withIdentity({
+        subject: SUBJECT,
+        ...(where === 'token' ? { email: 'ada@token.test' } : {}),
+      });
+      await as.mutation(api.consent.completeKnowBeforeYouGo, {
+        version: KNOW_BEFORE_YOU_GO.version,
+        hash: KNOW_BEFORE_YOU_GO_SHA256,
+        termsVersion: TERMS.version,
+        termsHash: TERMS_SHA256,
+        surface: 'web',
+      });
+      const jobs = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+      expect(jobs.map((j) => j.name)).not.toContain('consent:fillRecordEmail');
+    }
+  });
+
+  test('no key, no address in Clerk, an error or a throw: the record is left as it is, and nothing throws', async () => {
+    const cases: [string, Record<string, Reply>][] = [
+      ['', {}],
+      ['sk_test_x', { '/v1/users/': { status: 404 } }],
+      ['sk_test_x', { '/v1/users/': { status: 200, body: { email_addresses: [] } } }],
+      ['sk_test_x', { '/v1/users/': { status: 500 } }],
+      ['sk_test_x', { '/v1/users/': 'throw' }],
+    ];
+    for (const [key, routes] of cases) {
+      vi.stubEnv('CLERK_SECRET_KEY', key);
+      stubFetch(routes);
+      const { fill, recordOf } = await tokenlessCompletion();
+      await expect(fill()).resolves.toBeNull();
+      if (key === '') expect(seen).toEqual([]);
+      expect((await recordOf())?.identity.email).toBeUndefined();
+    }
+  });
+
+  test('a gone record is a no-op, and setRecordEmail never overwrites an address', async () => {
+    stubFetch({ '/v1/users/': clerkUser('ada@clerk.test') });
+    const { t, recordId, record } = await world('ada@example.test');
+    await t.mutation(internal.consent.setRecordEmail, { recordId, email: 'other@example.test' });
+    expect((await record())?.identity.email).toBe('ada@example.test');
+    await t.run((ctx) => ctx.db.delete(recordId));
+    await expect(
+      t.action(internal.consent.fillRecordEmail, { recordId, clerkUserId: SUBJECT }),
+    ).resolves.toBeNull();
+    await expect(
+      t.mutation(internal.consent.setRecordEmail, { recordId, email: 'x@example.test' }),
+    ).resolves.toBeNull();
   });
 });
 

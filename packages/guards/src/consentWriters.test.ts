@@ -2,7 +2,8 @@
  * **The consent record is sealed** (D297; B03 §9.4, §9.12). One `consentRecords` row per terms
  * acceptance and per Know Before You Go completion, written once and whole; after the insert only
  * named fill-once fields change — the IP (`ipStatus`, `ip`, `ipUnavailable`), the emailed copy's
- * outcome (`copyEmail`) and an email the token lacked (`identity`) — plus the finalize stage's sever
+ * outcome (`copyEmail`) and an email the token lacked (`identity`, by the copy's send for an
+ * acceptance and by `setRecordEmail` for a completion) — plus the finalize stage's sever
  * (`profileId`, `clerkUserId`, `severedAt`, `purgeAt`); `consent.purgeDue` is the only delete. The
  * readings (`termsReadings`) are written by `consent.ts` and erased by it and the finalize `erase`
  * stage. And the profile's five routing fields are written only by `consent.ts` (and the inbox
@@ -68,6 +69,11 @@ const TOUCHES: Record<string, Touch> = {
   'consent.ts:copyTarget': { why: 'the copy’s address (read)' },
   'consent.ts:sendTermsCopy': { why: 'the copy’s send (an action: no db)' },
   'consent.ts:setCopyOutcome': { why: 'fill-once: the copy’s outcome', patches: ['recordId'] },
+  'consent.ts:fillRecordEmail': { why: 'a completion’s missing address (an action: no db)' },
+  'consent.ts:setRecordEmail': {
+    why: 'fill-once: an email the token lacked',
+    patches: ['recordId'],
+  },
   'consent.ts:captureIp': { why: 'the IP lookup (an action: no db)' },
   'consent.ts:setIp': { why: 'fill-once: the IP', patches: ['recordId'] },
   'consent.ts:pruneReadings': { why: 'unaccepted readings, 30 days on', deletes: ['row._id'] },
@@ -98,6 +104,7 @@ const RECORD_FILLS: Record<string, readonly string[]> = {
     'ipUnavailable',
   ],
   'consent.ts:setCopyOutcome': ['copyEmail', 'status', 'at', 'identity', 'email'],
+  'consent.ts:setRecordEmail': ['identity', 'email'],
   'accountDeletion.ts:severConsent': ['profileId', 'clerkUserId', 'severedAt', 'purgeAt'],
 };
 
@@ -284,6 +291,7 @@ test('every patch on a record names only the fill-once fields its function may w
       'accountDeletion.ts:severConsent',
       'consent.ts:setCopyOutcome',
       'consent.ts:setIp',
+      'consent.ts:setRecordEmail',
       'consent.ts:setIp',
     ].sort(),
   );
