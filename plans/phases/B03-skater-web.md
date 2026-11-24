@@ -1340,8 +1340,8 @@ gets the Clerk user id only, counts and never content.
 
 ### 9.3 The state machine
 
-`resolveEntryRoute({ isLoaded, isSignedIn, profile, watch })` in `packages/core/src/entryRoute.ts`, first
-match wins:
+`resolveEntryRoute({ isLoaded, isSignedIn, profile, watch })` in `packages/core/src/entryRoute.ts` (*as built,* also
+`hold` and `now`, the instant a suspension is judged at), first match wins:
 
 | # | Condition | Route | Web path | Mobile group |
 |---|---|---|---|---|
@@ -1349,7 +1349,7 @@ match wins:
 | 2 | signed out | `auth` | `/sign-in`, `/sign-up`, `/about` | `(auth)` |
 | — | `hold === 'receipt'` (*as built:* the hold is an input to the rule) | `receipt` | the page the skater is on | the group the acceptance was on |
 | 3 | `profile === null` | `account` | `/onboarding` | `onboarding` |
-| 4 | `profile.deletionRequestedAt` set | `app` | as today | `(tabs)` |
+| 4 | `profile.deletionRequestedAt` set, or *(as built)* the account can't act at `now` — banned, finalizing, deleted, or suspended now (core's `canActNow`, the rule `requireProfile` applies) | `app` | as today | `(tabs)` |
 | 5 | `needsProfileSetup(profile)` | `account` | `/onboarding` | `onboarding` |
 | 6 | `profile.termsVersion !== TERMS.version` | `terms` | `/terms` | `terms` |
 | 7 | `knowBeforeYouGoDue(profile.knowBeforeYouGoAt, watch) !== null` | `questions` | `/know-before-you-go` | `know-before-you-go` |
@@ -1383,6 +1383,7 @@ Who sees what:
 | Terms version bumped | Terms → receipt → app, or the questions if they are also due |
 | First sign-in after the watch opens | 10.13 → 7 questions → All seven → app |
 | Pending deletion | app (read-only, as today) |
+| Banned, finalizing, or suspended now (*as built*) | app (read-only, with the support screen to appeal from); when a suspension lapses the gate wakes and the rows past 4 apply again |
 
 ### 9.4 The data model
 
@@ -1436,10 +1437,10 @@ owns the words), and the clients show it as a toast.
 | Function | Gate | Contract | Refusals |
 |---|---|---|---|
 | `watchAnchor` (query) | none | `{ season, label, openedAt } \| null` from the newest `imageryIngestSeasons` row (`label` "Winter 2027–28") | — |
-| `openTerms` (mutation) | identity; *as built,* a banned, finalizing or deleted profile is refused (a reading written after `erase` would outlive the deletion) | `{ termsVersion, termsHash, surface }`; upserts the reading row, keeping the first `openedAt` | `terms_changed`, "Account is not active" |
-| `reachTermsEnd` (mutation) | as `openTerms` | `{ termsVersion, termsHash, via }`; sets `reachedEndAt` once | `terms_changed`, `terms_not_opened`, "Account is not active" |
-| `acceptTerms` (mutation) | identity | `{ termsVersion, termsHash, privacyVersion, privacyHash, surface, userAgent?, clientSessionId?, account?: { displayName, username, dateOfBirth } }` → `{ recordId }`. No row: `account` required, the 18+ gate, name and username rules, then the row is created with the new-profile defaults (`lib/profileIdentity`, which `upsertFromClerk` used until stage three deleted it) and the Clerk mirrors, plus the terms fields and `welcomeStep: 'home'`. A canceled deletion's row: `account` required, patched in place (rename cooldown applies), **its visibility kept** (private after the request; a minor forced private), `welcomeStep: 'home'`. Any other row: `account` must be absent. Then the record, the reading deleted, the profile's terms fields, `refreshPersonRow`, and two scheduled actions. | `terms_changed` (version or hash, either document), `terms_not_read` (no reading with `reachedEndAt`), `account_required`, `account_unexpected`, `underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`, the inactive and suspended refusals of `requireProfile`, `deletion_pending` |
-| `completeKnowBeforeYouGo` (mutation) | `requireContributor` | `{ version, hash, surface, userAgent, clientSessionId? }` → `{ season }`; the record, the profile's two fields, the IP action. A second call within 60 s returns the first's answer and writes nothing. | `terms_first`, `questions_changed`, the contributor refusals |
+| `openTerms` (mutation) | identity; *as built,* a banned, finalizing or deleted profile is refused (a reading written after `erase` would outlive the deletion) | `{ termsVersion, termsHash, surface }`; upserts the reading row, keeping the first `openedAt` | `client_outdated`, "Account is not active" |
+| `reachTermsEnd` (mutation) | as `openTerms` | `{ termsVersion, termsHash, via }`; sets `reachedEndAt` once | `client_outdated`, `terms_not_opened`, "Account is not active" |
+| `acceptTerms` (mutation) | identity | `{ termsVersion, termsHash, privacyVersion, privacyHash, surface, userAgent?, clientSessionId?, account?: { displayName, username, dateOfBirth } }` → `{ recordId }`. No row: `account` required, the 18+ gate, name and username rules, then the row is created with the new-profile defaults (`lib/profileIdentity`, which `upsertFromClerk` used until stage three deleted it) and the Clerk mirrors, plus the terms fields and `welcomeStep: 'home'`. A canceled deletion's row: `account` required, patched in place (rename cooldown applies), **its visibility kept** (private after the request; a minor forced private), `welcomeStep: 'home'`. Any other row: `account` must be absent; *as built,* one that has already accepted this version gets its newest acceptance back and nothing is written (no record, no email, no Clerk lookup — before the reading is asked for, so a retry after a lost answer gets the same answer). Then the record, the reading deleted, the profile's terms fields, `refreshPersonRow`, and two scheduled actions. | `client_outdated` (version or hash, either document: this build's bundled words aren't the server's), `terms_not_read` (no reading with `reachedEndAt`), `account_required`, `account_unexpected`, `underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`, the inactive and suspended refusals of `requireProfile`, `deletion_pending` |
+| `completeKnowBeforeYouGo` (mutation) | `requireContributor` | `{ version, hash, surface, userAgent, clientSessionId? }` → `{ season }`; the record, the profile's two fields, the IP action. *As built:* any **published** version of the questions is taken (core's `isPublishedKnowBeforeYouGo`, over the ledger), and the record and `knowBeforeYouGoVersion` name the version answered — an older phone keeps working after the yearly edit. When the questions aren't due (`knowBeforeYouGoDue`, the gate's own season rule, read here) the call returns the newest completion's season and writes nothing; that replaced the 60-second repeat rule and covers it. | `account_required` (*as built:* a canceled deletion's emptied row, which must be re-introduced first), `terms_first`, `client_outdated` (a version or hash nobody published), the contributor refusals |
 | `advanceWelcome` (mutation) | `requireContributor` | `{ from: 'home' \| 'profile' }`; home → profile → cleared; a `from` that isn't the current step is a no-op | contributor refusals |
 | `latestTermsReceipt` (query) | profile | `{ email, copy: 'pending' \| 'sent' \| 'not_sent' }` for board 10.5 (`accepted`/`unknown` read `sent`; `rejected` or no address read `not_sent`) | — |
 | `captureIp` (internal action) | — | the R4 lookup through `lib/clerkSessions.ts`, then `setIp` (internal mutation, fill-once). Never throws. | — |
@@ -1490,8 +1491,14 @@ in stage three; `skaterSearch.ts`'s comment follows.
 Refusals from `acceptTerms` and `completeKnowBeforeYouGo` are toasts (the skater toaster); every refusal of
 the Account fields (`underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`,
 and `account_required`: core's `isAccountRefusal`, read by both apps) also returns a new account to the
-Account step with its fields as typed — `username_taken` with the field marked — `terms_changed` reloads the text at its
-top (the reading starts again), `terms_not_read` re-arms the end marker.
+Account step with its fields as typed — `username_taken` with the field marked — `terms_not_opened` starts the reading
+again at its top, `terms_not_read` re-arms the end marker. *As built,* what each code does beyond its toast is one table in
+core (`CONSENT_REFUSAL_ACTIONS`: `account`, `reopen`, `rearm`, `outdated`, `say`), and each app's handling is a `switch` over
+it with a `never` default, so a new code is a type error until both apps answer it. `client_outdated` — the tab's or the
+build's bundled terms, Privacy Notice or questions aren't the server's — can't be fixed by reading the same text again, so
+it stops the step on a blocking screen (*Time for an update*: the web offers *Reload the page*, the phone says to update
+the app) and nothing re-arms after it; its words never say the terms changed (a notice-only change is one). A failed end
+stamp is said once and tried again only after the marker has left the screen and come back, on both apps.
 
 ### 9.7 Mobile: the same screens on the existing tokens
 
@@ -1598,7 +1605,7 @@ record's `fullName`.
   D294 property, through this mutation); the two actions scheduled; `captureIp` with stubbed fetch — no
   key, a foreign session id falling back, no session, an error, never throwing, fill-once; `sendTermsCopy`'s
   three outcomes and the receipt's mapping; `completeKnowBeforeYouGo` with no watch, a live row, a reset
-  (superseded) row, the 30-day edge, `terms_first`, the 60-s repeat; finalize severs and dates `purgeAt`
+  (superseded) row, the 30-day edge, `terms_first`, a repeat while not due (*as built,* replacing the 60-s repeat); finalize severs and dates `purgeAt`
   (a 29 February case); `purgeDue` deletes due rows and never one without `purgeAt` (the optional-index
   trap, seeded with both); `pruneReadings`; the export's shape.
 - **Web:** stories for all 26 boards (four-up dark and light, the keyboard path asserted — 1/2, Enter,
@@ -1725,3 +1732,16 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   and deleted rows left alone, the minor forced private and the grown-up kept private, the People row —
   is now held by tests against `acceptTerms`; the inbox seed stamps the routing fields instead of the
   acknowledgment.
+- **The review's eleven (2026-11-24).** A banned, finalizing or suspended account with stale consent
+  was routed to the terms, which its own gate refuses: it lost the app and the appeal; the rule now
+  sends an account that can't act to `app` (`canActNow`, shared with `requireProfile`), and the gates
+  wake when a suspension lapses. A client whose bundled words weren't the server's was told
+  `terms_changed`/`questions_changed` and re-read the same text forever; the questions now take any
+  published version, and the terms and notice answer one `client_outdated` that stops on a blocking
+  screen. The `'unpublished'` sentinel matched itself, so a build mid-edit could record an acceptance
+  (`claimMatches` refuses it). Repeat acceptances and completions sealed new records and sent new
+  emails; they now return the first. An emptied row could complete the questions under the scrubbed
+  name. The web counted the end without a scroll (an observer rooted at a window that clips nothing,
+  chosen once at mount), re-ticked the agreement after a reset, retried a failing end in a tight loop,
+  kept an abandoned address's town, and let a late location fix overwrite the home; the phone's
+  reading never recovered from `terms_not_opened` (a cached opening). Each is fixed and tested.

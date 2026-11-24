@@ -8841,7 +8841,9 @@ marked).** A skater accepts the Terms of Use by reading them, not by ticking a b
   `packages/guards` test, so the file and the app cannot say different things. The Privacy Notice's
   version and hash are pinned beside it (the governor's ruling). **A terms version change re-asks
   everyone** at their next sign-in, as `TERMS.md` §9 says; a privacy-notice change alone does not
-  (the governor's recommendation, the founder to confirm).
+  (the governor's recommendation, the founder to confirm). An app carrying other words than the
+  server's — an old phone build, a tab open across a deploy — is told it is out of date and asked to
+  reload or update, never sent round the same text again (the governor's ruling, 2026-11-24).
 - **D45's acknowledgment retires.** `RISK_ACK_VERSION`, `upsertFromClerk`'s acknowledgment,
   `acceptCurrentRiskAck` and `/reack` are removed by the build's last stage; existing accounts pass
   through the terms (and the questions, D296) at their next sign-in. The profile's
@@ -8869,7 +8871,9 @@ informational, so gating it on a scroll would add friction without adding meanin
   this, we're just making sure", not "you must obey". Gli checks nothing about the ice (D3).
 - **The questions live in one versioned source in `packages/core`**, with a committed hash, so the
   founder can rewrite them each summer in one file; a new version applies from the next season's
-  asking and never re-asks anyone mid-season (the governor's ruling).
+  asking and never re-asks anyone mid-season (the governor's ruling). A completion of **any
+  published version** counts and names the words answered, so an older app keeps working after the
+  yearly edit (the governor's ruling, 2026-11-24).
 - **Every season, again.** A skater answers them at their first sign-in after the Ice Watch opens a new
   season. The anchor is the instant the system recorded the opening (`imageryIngestSeasons.detectedAt`
   on the live row; a reset postpones an opening, so a superseded row never anchors — the governor's
@@ -8941,7 +8945,9 @@ becoming a permanent file on someone who left.
   steps; terms missing or stale → the terms; the questions never answered or stale for the season →
   the questions (a first-run screen, or *A new season on the ice* for a returning skater); a new
   account's Home and Profile pending → those; otherwise the app. A pending deletion is never routed
-  through any of it (the governor's ruling). Stale terms and questions are client-routed, as the
+  through any of it (the governor's ruling), nor is an account the server refuses right now —
+  banned, being finalized, or suspended — which goes to the read-only app and its support screen
+  until it can act again (the governor's ruling, 2026-11-24). Stale terms and questions are client-routed, as the
   acknowledgment was.
 - **Existing accounts** see the terms and the questions at their next sign-in, and never the Home and
   Profile steps.
