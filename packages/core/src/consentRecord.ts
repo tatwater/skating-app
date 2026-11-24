@@ -5,6 +5,8 @@
  * tests read one rule.
  */
 
+import { TERMS } from './legal/terms';
+
 /** Which kind of moment a record is: a terms acceptance or a Know Before You Go completion. */
 export type ConsentRecordKind = 'terms' | 'questions';
 
@@ -27,6 +29,10 @@ export type KnowBeforeYouGoContext = 'first_run' | 'season';
 /**
  * The context of an acceptance, from what the server found before writing: no row, a row that
  * `needsProfileSetup` says is a canceled deletion's, or a live row with the terms version it held.
+ *
+ * A live row that already holds the current version and still records an acceptance has none on
+ * record (one that had would be a repeat, which records nothing): the inbox seed's people, born
+ * routed. Nothing about its version changed, so it is `returning`, an existing account's first.
  */
 export function termsAcceptanceContext(found: {
   profile: 'none' | 'emptied' | 'live';
@@ -34,7 +40,9 @@ export function termsAcceptanceContext(found: {
 }): TermsAcceptanceContext {
   if (found.profile === 'none') return 'first_run';
   if (found.profile === 'emptied') return 'reintroduced';
-  return found.termsVersion === undefined ? 'returning' : 'version_change';
+  return found.termsVersion === undefined || found.termsVersion === TERMS.version
+    ? 'returning'
+    : 'version_change';
 }
 
 /** How many calendar years a record outlives the account it was severed from (D297). */

@@ -121,7 +121,7 @@ async function requireReader(ctx: QueryCtx) {
     .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
     .unique();
   if (profile !== null && isLockedOut(profile)) throw new ConvexError(ACCOUNT_NOT_ACTIVE_MESSAGE);
-  return identity;
+  return { identity, profile };
 }
 
 /** The caller's reading of the current terms, if they opened them. */
@@ -132,6 +132,39 @@ function currentReading(ctx: QueryCtx, clerkUserId: string) {
       q.eq('clerkUserId', clerkUserId).eq('termsVersion', TERMS.version),
     )
     .first();
+}
+
+/**
+ * The acceptance of the current terms this profile already has on record, or `null`: a row that is
+ * set up (not a canceled deletion's emptied one, which must accept again), at this version, with a
+ * terms record naming it. A row at this version with no record (the inbox seed's people, born routed)
+ * has none, so it reads and accepts as anyone does. The same test as `acceptTerms`' repeat.
+ */
+async function acceptedAtThisVersion(ctx: QueryCtx, profile: Doc<'profiles'> | null) {
+  if (profile === null || needsProfileSetup(profile) || profile.termsVersion !== TERMS.version) {
+    return null;
+  }
+  const record = await newestRecord(ctx, profile._id, 'terms');
+  return record !== null && record.version === TERMS.version ? record : null;
+}
+
+/**
+ * Drop a subject's readings of the current terms when no acceptance will consume them: on a repeat
+ * acceptance, because an acceptance at this version is already on record, so there is nothing left
+ * for them to become; and at a canceled deletion (`accountDeletion.cancelDeletion`), because the
+ * emptied row must accept again and its record should hold that visit's moments, not ones from before
+ * the request. Left alone, a reading would wait for the next acceptance that needs one and stamp it
+ * with an earlier visit's moments. There is at most one (`openTerms` writes one per subject and
+ * version); bounded all the same. `packages/guards` `consentWriters.test.ts` lists its callers.
+ */
+export async function discardReadings(ctx: MutationCtx, clerkUserId: string): Promise<void> {
+  const rows = await ctx.db
+    .query('termsReadings')
+    .withIndex('by_clerk_version', (q) =>
+      q.eq('clerkUserId', clerkUserId).eq('termsVersion', TERMS.version),
+    )
+    .take(8);
+  for (const row of rows) await ctx.db.delete(row._id);
 }
 
 /** A client-reported string as the record stores it, or nothing when it is empty. */
@@ -206,12 +239,15 @@ function requireCurrentTerms(claim: { version: string; hash: string }): void {
 /**
  * The reader opened (board 10.3): the reading row, stamped now, or the one already open — its first
  * `openedAt` is kept, so reopening the page never moves it. Refuses words other than this build's.
+ * An account that has already accepted this version (a second tab or device still on the step) gets
+ * the same answer and no row: there is nothing for a reading to become (`discardReadings` says why).
  */
 export const openTerms = mutation({
   args: { termsVersion: v.string(), termsHash: v.string(), surface: consentSurface },
   handler: async (ctx, args): Promise<null> => {
-    const identity = await requireReader(ctx);
+    const { identity, profile } = await requireReader(ctx);
     requireCurrentTerms({ version: args.termsVersion, hash: args.termsHash });
+    if ((await acceptedAtThisVersion(ctx, profile)) !== null) return null;
     if ((await currentReading(ctx, identity.subject)) !== null) return null;
     await ctx.db.insert('termsReadings', {
       clerkUserId: identity.subject,
@@ -225,13 +261,15 @@ export const openTerms = mutation({
 
 /**
  * The end marker was on screen (board 10.4), in the page's reader or the full-screen one: stamped
- * once — a second reach changes nothing, so the first stays the evidence.
+ * once — a second reach changes nothing, so the first stays the evidence. An account that has
+ * already accepted this version gets the same answer and no write, as `openTerms` does.
  */
 export const reachTermsEnd = mutation({
   args: { termsVersion: v.string(), termsHash: v.string(), via: termsReaderVia },
   handler: async (ctx, args): Promise<null> => {
-    const identity = await requireReader(ctx);
+    const { identity, profile } = await requireReader(ctx);
     requireCurrentTerms({ version: args.termsVersion, hash: args.termsHash });
+    if ((await acceptedAtThisVersion(ctx, profile)) !== null) return null;
     const reading = await currentReading(ctx, identity.subject);
     if (reading === null) refuse('terms_not_opened');
     if (reading.reachedEndAt !== undefined) return null;
@@ -284,8 +322,11 @@ async function checkAccount(
  * - **Any other row:** `account` must be absent; only the terms fields change. Inactive or suspended
  *   accounts get `requireProfile`'s refusals, and a pending deletion `deletion_pending` (its way back
  *   is the cancel in Settings). A row that has already accepted this version gets its newest
- *   acceptance back and nothing is written: a sealed record is one per acceptance, not per tap.
- *   The answer says `repeat: true` then, so a client counts the acceptance once.
+ *   acceptance back and no record, profile change, email or lookup: a sealed record is one per
+ *   acceptance, not per tap. Its only write is discarding a leftover reading of this version
+ *   (`discardReadings`). The answer says `repeat: true` then, so a client counts the acceptance once.
+ *   A row at this version with no acceptance on record (the inbox seed's people) accepts as an
+ *   account from before the terms does: `returning`.
  *
  * Every time is the server's. The client's `surface` and `userAgent` are stored as client-reported.
  */
@@ -329,11 +370,13 @@ export const acceptTerms = mutation({
     // Already accepted at this version: the acceptance there is, unchanged — no second sealed
     // record, no second email, no Clerk lookup. A double tap, a retry after a lost answer, a second
     // tab: each gets the first answer, before the reading is even asked for (the first consumed it),
-    // marked `repeat` so a client counts the acceptance once.
+    // marked `repeat` so a client counts the acceptance once. A leftover reading (one written before
+    // the reader stopped writing for an accepted account) is discarded, not kept for later.
     if (live !== null && live.termsVersion === TERMS.version) {
       if (args.account !== undefined) refuse('account_unexpected');
-      const accepted = await newestRecord(ctx, live._id, 'terms');
-      if (accepted !== null && accepted.version === TERMS.version) {
+      const accepted = await acceptedAtThisVersion(ctx, live);
+      if (accepted !== null) {
+        await discardReadings(ctx, subject);
         return { recordId: accepted._id, repeat: true };
       }
     }

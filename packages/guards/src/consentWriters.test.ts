@@ -5,8 +5,9 @@
  * outcome (`copyEmail`) and an email the token lacked (`identity`, by the copy's send for an
  * acceptance and by `setRecordEmail` for a completion) — plus the finalize stage's sever
  * (`profileId`, `clerkUserId`, `severedAt`, `purgeAt`); `consent.purgeDue` is the only delete. The
- * readings (`termsReadings`) are written by `consent.ts` and erased by it and the finalize `erase`
- * stage. And the profile's five routing fields are written only by `consent.ts` (and the inbox
+ * readings (`termsReadings`) are written by `consent.ts` and erased by it, by a canceled deletion
+ * (`accountDeletion.ts:cancelDeletion`, through `consent.ts`' `discardReadings`) and by the finalize
+ * `erase` stage. And the profile's five routing fields are written only by `consent.ts` (and the inbox
  * seed's fake people, born routed) and cleared only by the tombstone.
  *
  * This lint reads the convex sources with comments blanked and holds:
@@ -20,7 +21,9 @@
  * 4. every `ctx.db.patch(` whose target is a record (`recordId`, `record._id`) names only the keys its
  *    function may fill, at any depth of the patch's literal;
  * 5. the profile's routing fields appear as object keys only in `consent.ts`, the schema and the
- *    tombstone.
+ *    tombstone;
+ * 6. `discardReadings` — the one reading delete a caller reaches without naming the table — is called
+ *    only from {@link DISCARD_CALLERS}.
  *
  * **What it can't see:** a write in a function that never names the table — `reachTermsEnd` stamps
  * the reading its helper `currentReading` found (a reading is not sealed; a record helper would be
@@ -53,6 +56,10 @@ interface Touch {
 const TOUCHES: Record<string, Touch> = {
   'consent.ts:currentReading': { why: 'the caller’s reading of the current terms' },
   'consent.ts:openTerms': { why: 'the reading opened', inserts: ['termsReadings'] },
+  'consent.ts:discardReadings': {
+    why: 'a repeat acceptance’s leftover reading, which no acceptance will consume',
+    deletes: ['row._id'],
+  },
   'consent.ts:acceptTerms': {
     why: 'the acceptance: the profile, the record, the reading consumed',
     inserts: ['consentRecords'],
@@ -90,6 +97,15 @@ const TOUCHES: Record<string, Touch> = {
     patches: ['record._id'],
   },
   'dataExport.ts:collect': { why: 'the export (read)' },
+};
+
+/**
+ * Who may call `consent.ts`' `discardReadings`, which deletes the caller-named subject's readings of
+ * the current terms. A caller never names the table, so rule 1 can't see it; this list does.
+ */
+const DISCARD_CALLERS: Record<string, string> = {
+  'consent.ts:acceptTerms': 'a repeat acceptance: its acceptance is already on record',
+  'accountDeletion.ts:cancelDeletion': 'a canceled deletion: the emptied row must read again',
 };
 
 /** The keys each function may write on a record, at any depth of its patch's literal. */
@@ -305,6 +321,18 @@ test('every patch on a record names only the fill-once fields its function may w
       call.fn,
     ).toEqual([]);
   }
+});
+
+test('only the listed callers discard readings', () => {
+  const callers = new Set<string>();
+  for (const path of sources(CONVEX)) {
+    const rel = relative(CONVEX, path);
+    const code = unstring(uncomment(readFileSync(path, 'utf8')));
+    for (const m of code.matchAll(/(?<!function\s)\bdiscardReadings\(/g)) {
+      callers.add(`${rel}:${functionAt(code, m.index ?? 0)}`);
+    }
+  }
+  expect([...callers].sort()).toEqual(Object.keys(DISCARD_CALLERS).sort());
 });
 
 test('the profile’s routing fields are written only by consent.ts (and the seed) and cleared only by the tombstone', () => {

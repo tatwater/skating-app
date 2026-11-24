@@ -11,7 +11,8 @@
  *    `say` line listed on the last screen. `rightFirst` says which answer sits on top (so the right
  *    one isn't always first); change it freely. Keep each `id` as it is unless the question itself
  *    is new: ids are how the screens and tests name a question.
- * 2. Set `version` to today's date (`YYYY-MM-DD`).
+ * 2. Set `version` to today's date (`YYYY-MM-DD`). If a version was already published today, the
+ *    new one takes the next free date instead: a version names one text, and is never reused.
  * 3. Run core's tests (`pnpm --filter @skating/core test`). `knowBeforeYouGo.test.ts` fails and
  *    prints one line, `'<version>': '<sha256>'`. Add that line to `KNOW_BEFORE_YOU_GO_HASHES`
  *    below. Never edit an old line: each is a version skaters answered, and their records name it.

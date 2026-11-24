@@ -37,7 +37,7 @@ Keep your login secure. You’re responsible for what happens on your account.
 
 Post honestly. A knowingly false ice report, especially a dangerously false “the ice is great” report, is a safety violation, not a prank, and may result in removal and a ban.
 
-Don’t harass, impersonate, spam, or post anyone’s private information. Follow Gli’s Code of Conduct.
+Don’t harass, impersonate, spam, or post anyone’s private information. Don’t post sexual, hateful, violent, or otherwise inappropriate content.
 
 Don’t post anything you don’t have the right to share, and don’t misuse the app’s data or interfere with how it runs.
 
@@ -47,7 +47,7 @@ You keep ownership of what you post. You grant the operator a license to store, 
 
 You’re responsible for what you post, including photos, and you confirm you have the right to post it.
 
-The operator may remove content, and suspend or ban accounts, that break these terms or the Code of Conduct.
+The operator may remove content, and suspend or ban accounts, that break these terms or that the operator believes are harmful to other skaters.
 
 ## 6. Third-party services
 
@@ -86,8 +86,7 @@ Questions about these terms go to Contact Support, in Settings, or to **desk@tea
 
 ---
 
-*The Code of Conduct these terms refer to is [`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md), and the
-Privacy Notice is [`PRIVACY.md`](./PRIVACY.md).*
+*The Privacy Notice these terms refer to is [`PRIVACY.md`](./PRIVACY.md).*
 
 *The app's source code is licensed separately under the [AGPL-3.0](./LICENSE) (plus an
 [App Store distribution exception](./LICENSE-EXCEPTIONS.md)); those licenses govern the

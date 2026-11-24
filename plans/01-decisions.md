@@ -8862,6 +8862,22 @@ its own — which is also why the stamps stay off the screen: they are kept for 
 make the skater feel watched. One line for both documents keeps the moment short; the notice is
 informational, so gating it on a scroll would add friction without adding meaning.
 
+**Amended 2026-11-24 (founder call) — the terms name no Code of Conduct; its rules are written into
+them, corrected in place.** The terms told a skater to "follow Gli's Code of Conduct" and let the
+operator act on breaking it. That document was the repo's `CODE_OF_CONDUCT.md`, the contributors'
+covenant: no app links to it and the recorded hash doesn't cover it, so a skater would have been held
+to words they never read. Both references are gone, and the conduct rules they stood for are now in
+the terms themselves: *Your account and conduct* names the content not to post ("sexual, hateful,
+violent, or otherwise inappropriate" — what the apps' *inappropriate* flag reason is for), and *Your
+content* keeps the operator's discretion to remove content and suspend or ban accounts "that the
+operator believes are harmful to other skaters". The correction was made **in place under version
+2026-11-24**, its `TERMS_HASHES` line re-hashed, as a **one-time, pre-launch exception** to the
+ledger's append-only rule: production had never been initialized, and the only acceptance of the
+earlier words was the founder's own test on dev, whose record keeps the earlier hash (the ledger
+line's comment names it, and where the earlier words can be read). That account isn't asked again —
+the route compares versions — and every change after this one is a new version, on the next free
+date when one was already published that day.
+
 **Related:** D3, D45, D37, D294, D296, D297, D298, Q10, L1, B03 §9.
 
 ## D296 — Know Before You Go: seven questions at sign-up and again each season, keyed to the Ice Watch's opening

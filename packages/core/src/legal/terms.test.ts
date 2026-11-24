@@ -25,7 +25,7 @@ describe('the committed hash', () => {
     const hint =
       recorded === undefined
         ? `A new terms version. Add this line to TERMS_HASHES in packages/core/src/legal/terms.ts:\n  '${TERMS.version}': '${actual}',`
-        : `The terms' words changed but their version didn't. Set TERMS.version to today's date, then add the line this test prints to TERMS_HASHES (keep the old line).`;
+        : `The terms' words changed but their version didn't. Set TERMS.version to today's date (or the next free date, if today's is already in TERMS_HASHES), then add the line this test prints to TERMS_HASHES (keep the old line).`;
     expect(recorded, hint).toBe(actual);
     expect(TERMS_SHA256).toBe(actual);
   });
@@ -77,13 +77,26 @@ describe('the text', () => {
       'according to the visibility settings you choose',
       'including photos',
       'suspend or ban accounts',
-      'Code of Conduct',
       'OpenStreetMap',
       'Clerk',
       'desk@teaganatwater.com',
+      // The conduct rules the dropped Code of Conduct reference stood for, written in (D295).
+      'otherwise inappropriate content',
+      'harmful to other skaters',
     ]) {
       expect(all).toContain(clause);
     }
+  });
+
+  it('never names a Code of Conduct', () => {
+    // The only one is the repo's CODE_OF_CONDUCT.md, the contributors' covenant: neither app links
+    // to it and no record's hash covers it, so the terms must not name it (D295's amendment). Bold
+    // marks are stripped first, so `Code of **Conduct**` can't slip past.
+    const all = TERMS.sections
+      .flatMap((s) => [s.heading, ...s.blocks.map((b) => b.text)])
+      .map(stripBold)
+      .join(' ');
+    expect(all).not.toMatch(/code\s+of\s+conduct/i);
   });
 
   it('never says the ice is safe (D3)', () => {

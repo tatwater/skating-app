@@ -7,6 +7,7 @@ import {
   consentPurgeAt,
   termsAcceptanceContext,
 } from './consentRecord';
+import { TERMS } from './legal/terms';
 
 describe('consentPurgeAt', () => {
   it('is six calendar years on, at the same time of day, in UTC', () => {
@@ -38,8 +39,16 @@ describe('termsAcceptanceContext', () => {
       'reintroduced',
     );
     expect(termsAcceptanceContext({ profile: 'live' })).toBe('returning');
-    expect(termsAcceptanceContext({ profile: 'live', termsVersion: '2026-11-24' })).toBe(
+    expect(termsAcceptanceContext({ profile: 'live', termsVersion: '2026-01-01' })).toBe(
       'version_change',
+    );
+  });
+
+  it('calls a live row already at the current version returning: no version changed', () => {
+    // Only a row with no acceptance on record gets here at its own version (the inbox seed's people);
+    // one with an acceptance is a repeat, which records nothing.
+    expect(termsAcceptanceContext({ profile: 'live', termsVersion: TERMS.version })).toBe(
+      'returning',
     );
   });
 });
