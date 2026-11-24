@@ -25,21 +25,26 @@ export type TermsReaderVia = 'inline' | 'fullscreen';
  * Calls `onSeen` once `el` has been wholly on screen inside `root` — the box that scrolls it (the
  * reader's window, the phone's page, the full-screen reader's body). An `IntersectionObserver`
  * rooted there, not at the viewport: a desk board drawn wider than its canvas (a story, a narrow
- * window) must still count the end it scrolled to. Watches only while `armed`, and stops after one
- * sighting.
+ * window) must still count the end it scrolled to. Watches only while `armed` and `root` is known,
+ * and stops after one sighting. `stillRight` is asked at the sighting: a root the layout has just
+ * stopped making the right one (the observer is re-rooted a beat later) never counts.
  */
 export function useSeenOnScreen(
   el: HTMLElement | null,
   root: HTMLElement | null,
   armed: boolean,
   onSeen: () => void,
+  stillRight: () => boolean = () => true,
 ): void {
   const seen = useRef(onSeen);
   seen.current = onSeen;
+  const right = useRef(stillRight);
+  right.current = stillRight;
   useEffect(() => {
     if (!armed || !el || !root || typeof IntersectionObserver === 'undefined') return;
     const observer = new IntersectionObserver(
       (entries) => {
+        if (!right.current()) return;
         if (entries.some((e) => e.isIntersecting && e.intersectionRatio >= 0.99)) {
           observer.disconnect();
           seen.current();
@@ -58,6 +63,17 @@ export function scrollFraction(el: HTMLElement | null): number | null {
   const room = el.scrollHeight - el.clientHeight;
   if (room <= 1) return null;
   return Math.min(1, Math.max(0, el.scrollTop / room));
+}
+
+/**
+ * The box the skater reads the inline terms in, as the layout stands now: the reader's own window
+ * when it scrolls (a desk), else the page (a phone, where the window lets go of its height and
+ * clips nothing) — or `null` while the page isn't known yet, so nothing is watched. Never the
+ * window when it doesn't scroll: rooted there, the whole text is "inside" it and the end would
+ * count without a scroll.
+ */
+export function readingRoot(own: HTMLElement | null, page: HTMLElement | null): HTMLElement | null {
+  return scrollFraction(own) !== null ? own : page;
 }
 
 /**
@@ -101,11 +117,19 @@ export function TermsReader({
     [],
   );
 
-  // What scrolls the inline end into view: the window when it scrolls (a desk), else the page.
+  // What scrolls the inline end into view (`readingRoot`), picked again whenever the layout changes:
+  // the card's container query flips the window between a scrolling box (a desk) and none (a
+  // phone), which resizes it, and the page arrives a render after the reader does.
   const [inlineRoot, setInlineRoot] = useState<HTMLElement | null>(null);
   useEffect(() => {
     const own = viewport();
-    setInlineRoot(scrollFraction(own) !== null || !scroller ? own : scroller);
+    const pick = () => setInlineRoot(readingRoot(own, scroller));
+    pick();
+    if (!own || typeof ResizeObserver === 'undefined') return;
+    const layout = new ResizeObserver(pick);
+    layout.observe(own);
+    if (scroller) layout.observe(scroller);
+    return () => layout.disconnect();
   }, [viewport, scroller]);
 
   // How far: the window when it scrolls (a desk), else the phone's page.
@@ -135,7 +159,13 @@ export function TermsReader({
     progress.current?.(0);
   }, [resetKey]);
 
-  useSeenOnScreen(end, inlineRoot, armed && !full, () => onEnd('inline'));
+  useSeenOnScreen(
+    end,
+    inlineRoot,
+    armed && !full,
+    () => onEnd('inline'),
+    () => readingRoot(viewport(), scroller) === inlineRoot,
+  );
   useSeenOnScreen(
     fullEnd,
     fullEnd?.closest<HTMLElement>('[data-slot="dialog-body"]') ?? null,
