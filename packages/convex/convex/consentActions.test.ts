@@ -7,6 +7,8 @@
 import {
   KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_SHA256,
+  PRIVACY_NOTICE_SHA256,
+  PRIVACY_NOTICE_VERSION,
   TERMS,
   TERMS_SHA256,
   termsVersionLabel,
@@ -20,6 +22,24 @@ import { NOTIFICATION_PREF_DEFAULTS } from './lib/enums';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
+
+/**
+ * The terms the server's code reads as current, swappable: a test stands a later deployment's terms
+ * in for core's, as an edit to `TERMS` would, between an acceptance and its copy's send. `null` is
+ * core's own. (Core's version checks keep reading core's own terms: only `consent.ts`'s view moves.)
+ */
+const DEPLOYED = vi.hoisted(() => ({
+  terms: null as null | import('@skating/core').TermsDocument,
+}));
+vi.mock('@skating/core', async (importOriginal) => {
+  const core = await importOriginal<typeof import('@skating/core')>();
+  return {
+    ...core,
+    get TERMS() {
+      return DEPLOYED.terms ?? core.TERMS;
+    },
+  };
+});
 
 const SUBJECT = 'user_ada';
 const RECORDED_AT = Date.UTC(2026, 10, 24, 15);
@@ -115,6 +135,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  DEPLOYED.terms = null;
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
 });
@@ -392,7 +413,11 @@ describe('fillRecordEmail', () => {
 
 describe('sendTermsCopy', () => {
   const send = (t: T, recordId: Id<'consentRecords'>) =>
-    t.action(internal.consent.sendTermsCopy, { recordId, clerkUserId: SUBJECT });
+    t.action(internal.consent.sendTermsCopy, {
+      recordId,
+      clerkUserId: SUBJECT,
+      copy: termsCopyEmail(TERMS),
+    });
 
   test('accepted: sent to the record’s address under the record id, and the receipt reads sent', async () => {
     stubFetch({ 'api.resend.com': { status: 200, body: { id: 'em_1' } } });
@@ -499,7 +524,7 @@ describe('sendTermsCopy', () => {
   });
 
   test('the copy is the terms with their version line and no times', () => {
-    const { subject, html, text } = termsCopyEmail();
+    const { subject, html, text } = termsCopyEmail(TERMS);
     expect(subject).toBe(TERMS_COPY_SUBJECT);
     expect(text.split('\n\n')[1]).toBe(termsVersionLabel(TERMS));
     expect(html).toContain(
@@ -507,5 +532,77 @@ describe('sendTermsCopy', () => {
     );
     // No clock: nothing in the copy looks like a time of day.
     expect(text).not.toMatch(/\b\d{1,2}:\d{2}\b/);
+  });
+
+  test('the copy rides in the job’s arguments: three strings, kilobytes, no arrays', () => {
+    const copy = termsCopyEmail(TERMS);
+    const bytes = new TextEncoder().encode(JSON.stringify(copy)).length;
+    // About 9 KB today (HTML and text, ~600 words). A scheduled job's arguments are stored as a
+    // document, whose limit is 1 MiB: a bound of 64 KiB leaves the terms room to grow sevenfold before
+    // this asks for a look, and no array means the 8,192-item cap never applies.
+    expect(bytes).toBeGreaterThan(1024);
+    expect(bytes).toBeLessThan(64 * 1024);
+    expect(Object.values(copy).every((part) => typeof part === 'string')).toBe(true);
+  });
+
+  test('terms changed by a deployment before the send: the accepted words are what goes out', async () => {
+    stubFetch({ 'api.resend.com': { status: 200 } });
+    // Held, so the scheduled send runs only once the deployment below has landed.
+    vi.useFakeTimers();
+    vi.setSystemTime(RECORDED_AT);
+    try {
+      const t = convexTest(schema, modules);
+      const accepted = TERMS;
+      const claim = { termsVersion: accepted.version, termsHash: TERMS_SHA256 };
+      const acceptAs = async (subject: string, username: string) => {
+        const as = t.withIdentity({ subject, email: `${username}@example.test` });
+        await as.mutation(api.consent.openTerms, { ...claim, surface: 'web' });
+        await as.mutation(api.consent.reachTermsEnd, { ...claim, via: 'inline' });
+        return as.mutation(api.consent.acceptTerms, {
+          ...claim,
+          privacyVersion: PRIVACY_NOTICE_VERSION,
+          privacyHash: PRIVACY_NOTICE_SHA256,
+          surface: 'web',
+          account: { displayName: 'New Skater', username, dateOfBirth: Date.UTC(1990, 0, 1) },
+        });
+      };
+      const { recordId } = await acceptAs('user_new', 'new_skater');
+      expect((await t.run((ctx) => ctx.db.get(recordId)))?.version).toBe(accepted.version);
+
+      // A deployment lands while the send waits: a new date, and the first section's heading is new.
+      const first = accepted.sections[0];
+      if (first === undefined) throw new Error('no sections');
+      const edited = {
+        version: '2027-01-15',
+        sections: [
+          { ...first, heading: 'Edited after you accepted' },
+          ...accepted.sections.slice(1),
+        ],
+      };
+      DEPLOYED.terms = edited;
+      // The server reads the new terms now: an acceptance under it is sent the new words.
+      const later = await acceptAs('user_bea', 'bea_later');
+      expect((await t.run((ctx) => ctx.db.get(later.recordId)))?.version).toBe(edited.version);
+
+      await t.finishAllScheduledFunctions(vi.runAllTimers);
+      const sentTo = (to: string) =>
+        JSON.parse(
+          seen.find((s) => s.url.includes('api.resend.com') && s.body?.includes(to))?.body ?? '{}',
+        ) as { text?: string; html?: string };
+
+      // The first skater gets the words they accepted, exactly — never the deployment's.
+      const mine = sentTo('new_skater@example.test');
+      expect(mine.text).toBe(termsCopyEmail(accepted).text);
+      expect(mine.html).toBe(termsCopyEmail(accepted).html);
+      expect(mine.text).toContain(termsVersionLabel(accepted));
+      expect(mine.text).toContain('1. Gli is not a safety authority');
+      expect(mine.text).not.toContain('Edited after you accepted');
+      expect(mine.text).not.toContain(termsVersionLabel(edited));
+      // The second gets the new ones: the swap reached the server's code.
+      expect(sentTo('bea_later@example.test').text).toBe(termsCopyEmail(edited).text);
+      expect((await t.run((ctx) => ctx.db.get(recordId)))?.copyEmail?.status).toBe('accepted');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

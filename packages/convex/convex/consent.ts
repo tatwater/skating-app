@@ -53,6 +53,7 @@ import {
   storableAvatarUrl,
   TERMS,
   TERMS_SHA256,
+  type TermsDocument,
   termsAcceptanceContext,
   termsEmailBlocks,
   watchSeasonTitle,
@@ -271,7 +272,7 @@ async function checkAccount(
  * ***Record acceptance*** (boards 10.3–10.5; D295, D298). One transaction: the profile (created for a
  * new account, re-introduced in place for a canceled deletion's emptied row, or only its terms fields
  * for anyone else), the record, the reading consumed, the People row, then the two actions — the IP
- * and the emailed copy — scheduled after the commit.
+ * and the emailed copy, rendered now from the words the record names — scheduled after the commit.
  *
  * - **No row:** `account` is required; the 18+ gate, the name and username rules; the row is born
  *   with every new account's defaults (`lib/profileIdentity`), the Clerk mirrors, the terms fields and
@@ -427,9 +428,13 @@ export const acceptTerms = mutation({
     await ctx.db.delete(reading._id);
     await refreshPersonRow(ctx, profileId);
     await scheduleIp(ctx, recordId, identity, args.clientSessionId);
+    // The copy is rendered here, from the very `TERMS` the record just named, and travels in the
+    // job's arguments: a deployment that changes the terms before the job runs can't change what
+    // this skater is sent as the copy they accepted (Greptile on #180). About 9 KB today, no arrays.
     await ctx.scheduler.runAfter(0, internal.consent.sendTermsCopy, {
       recordId,
       clerkUserId: subject,
+      copy: termsCopyEmail(TERMS),
     });
     return { recordId, repeat: false };
   },
@@ -626,11 +631,21 @@ export const latestTermsReceipt = query({
 export const TERMS_COPY_SUBJECT = 'Your copy of the Gli Terms of Use';
 const TERMS_COPY_INTRO = 'Here’s a copy of the Terms of Use you accepted in Gli, for your records.';
 
-/** The copy as HTML and text, from one source: an intro line, then the terms (version, no times). */
-export function termsCopyEmail(): { subject: string; html: string; text: string } {
+/** The emailed copy, whole: what `sendTermsCopy` sends, exactly. */
+const termsCopy = v.object({ subject: v.string(), html: v.string(), text: v.string() });
+
+/**
+ * The copy of `terms` as HTML and text, from one source: an intro line, then the terms (version, no
+ * times). Rendered by the acceptance, from the words its record names, never by the send.
+ */
+export function termsCopyEmail(terms: TermsDocument): {
+  subject: string;
+  html: string;
+  text: string;
+} {
   const blocks: EmailBlock[] = [
     { kind: 'paragraph', text: TERMS_COPY_INTRO },
-    ...termsEmailBlocks(TERMS),
+    ...termsEmailBlocks(terms),
   ];
   return {
     subject: TERMS_COPY_SUBJECT,
@@ -650,15 +665,17 @@ export const copyTarget = internalQuery({
 });
 
 /**
- * **The emailed copy** (R8), scheduled by the acceptance: the address from the record, else the
- * caller's Clerk account (filled onto the record once); the email under the record id as Resend's
- * idempotency key, so a repeat within Resend's 24 hours sends nothing again; then the outcome, filled
- * once. No address — Clerk has none, or couldn't be asked — is `rejected`: definitely not sent.
- * Never throws.
+ * **The emailed copy** (R8), scheduled by the acceptance with the copy already rendered (`copy`): the
+ * words are the ones accepted, fixed at the acceptance, so a deployment that changes `TERMS` while
+ * the job waits can't put other words under "the Terms of Use you accepted". This never renders the
+ * current terms. The address from the record, else the caller's Clerk account (filled onto the record
+ * once); the email under the record id as Resend's idempotency key, so a repeat within Resend's 24
+ * hours sends nothing again; then the outcome, filled once. No address — Clerk has none, or couldn't
+ * be asked — is `rejected`: definitely not sent. Never throws.
  */
 export const sendTermsCopy = internalAction({
-  args: { recordId: v.id('consentRecords'), clerkUserId: v.string() },
-  handler: async (ctx, { recordId, clerkUserId }): Promise<void> => {
+  args: { recordId: v.id('consentRecords'), clerkUserId: v.string(), copy: termsCopy },
+  handler: async (ctx, { recordId, clerkUserId, copy }): Promise<void> => {
     try {
       const target = await ctx.runQuery(internal.consent.copyTarget, { recordId });
       if (target === null) return;
@@ -675,7 +692,7 @@ export const sendTermsCopy = internalAction({
       }
       const outcome = await sendEmailOutcome({
         to,
-        ...termsCopyEmail(),
+        ...copy,
         context: 'terms copy',
         idempotencyKey: recordId,
       });

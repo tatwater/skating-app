@@ -24,7 +24,7 @@ import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { CONSENT_SWEEP_PAGE, LOOKUP_CAP, READING_TTL_MS } from './consent';
+import { CONSENT_SWEEP_PAGE, LOOKUP_CAP, READING_TTL_MS, termsCopyEmail } from './consent';
 import { NOTIFICATION_PREF_DEFAULTS } from './lib/enums';
 import schema from './schema';
 
@@ -380,7 +380,11 @@ describe('acceptTerms: a new account', () => {
             clientSessionId: 'sess_client',
           },
         ],
-        ['consent:sendTermsCopy', { recordId, clerkUserId: 'user_ada' }],
+        [
+          'consent:sendTermsCopy',
+          // The copy, rendered from the accepted words at the acceptance (Greptile on #180).
+          { recordId, clerkUserId: 'user_ada', copy: termsCopyEmail(TERMS) },
+        ],
       ]),
     );
   });
