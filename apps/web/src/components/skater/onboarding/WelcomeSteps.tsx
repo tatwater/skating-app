@@ -37,8 +37,8 @@ function addressAvailable(lookup: AddressLookup): boolean {
  * field's own). *Save and continue* waits for a picked suggestion; *Skip for now* only moves on.
  * Neither waits on a location being read — a permission prompt nobody answers would otherwise hold
  * the step with no way on but signing out — and pressing either supersedes the read (the page drops
- * a fix that lands after). The location button shows it is busy until the read settles, which
- * `currentPosition` bounds.
+ * a fix that lands after). The location button shows it is busy until the read settles or the page
+ * stops waiting (`useLocateRead`), whichever comes first.
  * While the suggestion list is open, "or" and *Use my current location* step aside for it (board
  * 10.10), as on the phone.
  */

@@ -1,4 +1,4 @@
-import { CONSENT_RECORD_RETENTION } from '@skating/core';
+import { CONSENT_RECORD_RETENTION, LOCATE_GIVE_UP_MS } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -378,6 +378,67 @@ describe('home and drive time', () => {
     expect(setHome).toHaveBeenCalledWith({});
     // No server for a temporary base yet: no Traveling block.
     expect(screen.queryByText('Traveling')).toBeNull();
+  });
+
+  /** A browser whose location answers only when the test says. */
+  function slowGeolocation() {
+    const pending: Array<(p: unknown) => void> = [];
+    const geo = {
+      getCurrentPosition: vi.fn((ok: (p: unknown) => void) => {
+        pending.push(ok);
+      }),
+    };
+    Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+    return {
+      fix: (lat: number, lng: number) => {
+        for (const ok of pending.splice(0)) ok({ coords: { latitude: lat, longitude: lng } });
+      },
+    };
+  }
+
+  it('stops looking busy after a while, and still saves a slowly answered location', async () => {
+    // A permission prompt answered late: the button came back, and nothing was chosen since.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
+      const setHome = mutation('profiles:setHome');
+      const geo = slowGeolocation();
+      page('home', 'edit');
+      const locate = () => screen.getByRole('button', { name: 'Use my current location' });
+      await act(async () => fireEvent.click(locate()));
+      expect(locate()).toHaveAttribute('aria-busy', 'true');
+      await act(() => vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS));
+      expect(locate()).not.toHaveAttribute('aria-busy');
+      await act(async () => geo.fix(43.7, -72.29));
+      expect(setHome).toHaveBeenCalledWith({ homeCoord: { lat: 43.7, lng: -72.29 } });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('drops a late location once the skater types, picks or leaves', async () => {
+    m.suggest.mockImplementation(async ({ text }: { text: string }) => ({
+      status: 'ok',
+      attribution: 'Powered by Geoapify | © OpenStreetMap contributors',
+      suggestions: text
+        ? [{ label: '14 School Street, Hanover, NH 03755, USA', lat: 43.701, lng: -72.289 }]
+        : [],
+    }));
+    const setHome = mutation('profiles:setHome');
+    const geo = slowGeolocation();
+    page('home', 'edit');
+    const input = await screen.findByRole('combobox');
+    const locate = () => screen.getByRole('button', { name: 'Use my current location' });
+    // Typed after the press: the late fix never overwrites the address being typed.
+    await act(async () => fireEvent.click(locate()));
+    fireEvent.change(input, { target: { value: '14 School' } });
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
+    // Left the edit after the press: dropped too.
+    await act(async () => fireEvent.click(locate()));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
   });
 
   it('a browser with no geolocation says so', async () => {

@@ -19,13 +19,12 @@ import { useAnalytics } from '@/lib/analytics';
 import { carryAccount, carryHomeTown, useEntryStore } from '@/lib/entryHold';
 import { useSignOut } from '@/lib/sheetOwner';
 
-import { currentPosition } from '../settings/currentPosition';
+import { useLocateRead } from '../settings/currentPosition';
 import {
   type AddressSuggestion,
   type SuggestFn,
   useAddressSuggestions,
 } from '../settings/geocoder';
-import type { LocateState } from '../settings/HomeSection';
 import { ProfilePhoto } from '../settings/ProfilePhoto';
 import { useProfilePhoto } from '../settings/useProfilePhoto';
 import { AccountStep, type UsernameAvailability } from './AccountStep';
@@ -295,10 +294,12 @@ export function WelcomePage({
  * call that fails leaves the two agreeing (a town forgotten only after the call succeeded would
  * race the Profile step, which takes the town as it mounts).
  *
- * A location fix arrives when it arrives (`currentPosition` gives up on a read nobody answers). The
- * other buttons never wait for it: *Save and continue* and *Skip for now* each supersede it, and a fix
- * that lands after the step has moved on (another tab, the gate), after a save or a skip began, or
- * after the skater turned to a typed address, is dropped — it never overwrites a home chosen since.
+ * A location fix arrives when it arrives (`useLocateRead`, core's rule the phone shares: the button
+ * stops looking busy after a while, the read stays live). The other buttons never wait for it:
+ * *Save and continue* and *Skip for now* each supersede it, and a fix that lands after the step has
+ * moved on (another tab, the gate), after a save or a skip began, or after the skater turned to a
+ * typed address, is dropped — it never overwrites a home chosen since. One that lands late with
+ * nothing chosen since is still taken.
  */
 function WelcomeHome() {
   const email = useEmail();
@@ -310,26 +311,12 @@ function WelcomeHome() {
   const suggest = useAction(api.geocode.suggest) as unknown as SuggestFn;
   const [address, setAddress] = useState('');
   const [chosen, setChosen] = useState<AddressSuggestion | null>(null);
-  const [locate, setLocate] = useState<LocateState>('idle');
   const [saving, setSaving] = useState(false);
   const [skipping, setSkipping] = useState(false);
   const lookup = useAddressSuggestions(chosen === null ? address : '', suggest);
 
-  // What a late fix checks before it saves: the step is still here, nothing else is saving, and it
-  // is the newest locate (a typed address or a newer press supersedes it).
-  const mounted = useRef(true);
-  useEffect(() => {
-    mounted.current = true;
-    return () => {
-      mounted.current = false;
-    };
-  }, []);
+  // A save or a skip is out: the buttons wait for it.
   const busy = useRef(false);
-  const locating = useRef(0);
-  const dropLocate = () => {
-    locating.current += 1;
-    setLocate((l) => (l === 'locating' ? 'idle' : l));
-  };
   // The picked address and its town go together, so whatever the call that follows does — saved,
   // refused, lost — the field and the town the Profile step would take never disagree.
   const forgetPicked = () => {
@@ -337,6 +324,16 @@ function WelcomeHome() {
     setAddress('');
     carryHomeTown(null);
   };
+  const {
+    locate,
+    start: startLocate,
+    supersede,
+  } = useLocateRead((coord) => {
+    // Only a read nobody superseded lands here — every save and skip supersedes first, so nothing
+    // else is saving. Another place than the picked address: the address and its town give way.
+    forgetPicked();
+    void save(coord);
+  });
 
   const save = async (coord: { lat: number; lng: number }) => {
     busy.current = true;
@@ -369,7 +366,7 @@ function WelcomeHome() {
         setAddress(value);
         // The picked address is gone, and its town with it; a typed address supersedes a locate.
         carryHomeTown(null);
-        dropLocate();
+        supersede();
       }}
       lookup={lookup}
       chosen={chosen}
@@ -377,32 +374,17 @@ function WelcomeHome() {
         setChosen(s);
         setAddress(s.label);
         carryHomeTown(s.town ?? null);
-        dropLocate();
+        supersede();
       }}
       locate={locate}
       saving={saving}
       skipping={skipping}
       email={email}
-      onUseLocation={() => {
-        const mine = ++locating.current;
-        setLocate('locating');
-        currentPosition().then(
-          (coord) => {
-            if (!mounted.current || mine !== locating.current || busy.current) return;
-            setLocate('idle');
-            // Another place than the picked address: the address and its town give way to it.
-            forgetPicked();
-            void save(coord);
-          },
-          () => {
-            if (mounted.current && mine === locating.current) setLocate('failed');
-          },
-        );
-      }}
+      onUseLocation={startLocate}
       onSave={() => {
         if (chosen === null || busy.current) return;
         // The picked address supersedes a location still being read: a late fix is dropped.
-        dropLocate();
+        supersede();
         void save({ lat: chosen.lat, lng: chosen.lng });
       }}
       onSkip={async () => {
@@ -411,7 +393,7 @@ function WelcomeHome() {
         setSkipping(true);
         // Skipped: no home, so no address and no town for the Profile step to take from it.
         forgetPicked();
-        dropLocate();
+        supersede();
         try {
           await advance({ from: 'home' });
           analytics.capture('welcome_step_finished', { step: 'home', outcome: 'skipped' });

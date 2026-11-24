@@ -5,6 +5,7 @@ import {
   faLocationDot,
   faPen,
 } from '@fortawesome/sharp-light-svg-icons';
+import type { LocateReadState } from '@skating/core';
 
 import { Button } from '../../kit/button';
 import { Field, FieldLabel } from '../../kit/input';
@@ -18,7 +19,8 @@ import type { AddressLookup, AddressSuggestion } from './geocoder';
 import { Actions, Block, BlockText, OrRule, PaneHead, Row, Rows } from './SettingsParts';
 
 export type HomeView = 'summary' | 'edit' | 'travel';
-export type LocateState = 'idle' | 'locating' | 'failed';
+/** Where *Use my current location* stands (core's `LocateReadState`, the phone's too). */
+export type LocateState = LocateReadState;
 
 /** "30 · 60 · 90 min" */
 export function bandsLabel(bands: readonly number[]): string {

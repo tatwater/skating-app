@@ -1,6 +1,7 @@
 import {
   KNOW_BEFORE_YOU_GO,
   KNOW_BEFORE_YOU_GO_SHA256,
+  LOCATE_GIVE_UP_MS,
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
   TERMS,
@@ -1123,6 +1124,27 @@ describe('Home’s location, arriving late', () => {
     await new Promise((r) => setTimeout(r, 20));
     expect(mutation('profiles:setHome')).not.toHaveBeenCalled();
     expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
+  });
+
+  it('stops looking busy after a while, and still saves a fix nobody superseded', async () => {
+    // A permission prompt answered slowly: the button came back, the skater chose nothing else, and
+    // the fix is still the home.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      const geo = slowGeolocation();
+      render(<WelcomePage step="home" onStep={vi.fn()} />);
+      const locate = () => screen.getByRole('button', { name: 'Use my current location' });
+      await act(async () => locate().click());
+      expect(locate()).toHaveAttribute('aria-busy', 'true');
+      await act(() => vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS));
+      expect(locate()).not.toHaveAttribute('aria-busy');
+      await act(async () => geo.fix(44.1, -71.5));
+      expect(mutation('profiles:setHome')).toHaveBeenCalledWith({
+        homeCoord: { lat: 44.1, lng: -71.5 },
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('is dropped when the skater turned to a typed address, which then saves', async () => {

@@ -3,8 +3,7 @@ import { faLocationCrosshairs } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
 import { BIO_MAX_LENGTH, ONBOARDING_COPY, TOWN_LABEL_MAX_LENGTH } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
-import * as Location from 'expo-location';
-import { type ReactNode, useState } from 'react';
+import { type ReactNode, useReducer, useState } from 'react';
 import { Button, Paragraph, Separator, Switch, Text, useTheme, XStack, YStack } from 'tamagui';
 import { AddressField } from '../src/components/onboarding/AddressField';
 import { useEntrySession, useProfileNow } from '../src/components/onboarding/EntrySession';
@@ -20,11 +19,15 @@ import {
 import { Input, TextArea } from '../src/components/ThemedInputs';
 import { useToast } from '../src/components/Toast';
 import { readRefusal, readSaveRefusal } from '../src/lib/consentClient';
-import { ensureForegroundPermission } from '../src/lib/location';
+import { useLocateRead } from '../src/lib/useLocateRead';
 import { useSignOut } from '../src/lib/useSignOut';
 import {
+  EMPTY_HOME_FIELD,
   type HomeChoice,
+  type HomeField,
+  type HomeFieldEvent,
   homeCoordOf,
+  homeFieldReducer,
   initialProfileDraft,
   type ProfileDraft,
   profileStepPatch,
@@ -43,17 +46,19 @@ import {
 export default function WelcomeScreen() {
   const profile = useQuery(api.profiles.current, {});
   const signOut = useSignOut();
-  const [choice, setChoice] = useState<HomeChoice>(null);
+  // The Home step's field and its choice, kept here across the step change so the Profile step can
+  // offer the picked address's town.
+  const [home, onHome] = useReducer(homeFieldReducer, EMPTY_HOME_FIELD);
   const step = profile?.welcomeStep;
 
   // No step: the last one just cleared it and the gate is about to open the map — draw nothing
   // rather than flash the Home step for a frame.
   if (step === undefined) return null;
   return step === 'home' ? (
-    <HomeStep choice={choice} onChoice={setChoice} onSignOut={() => void signOut()} />
+    <HomeStep home={home} onHome={onHome} onSignOut={() => void signOut()} />
   ) : (
     <ProfileStep
-      choice={choice}
+      choice={home.choice}
       visibility={profile?.profileVisibility}
       onSignOut={() => void signOut()}
     />
@@ -62,26 +67,32 @@ export default function WelcomeScreen() {
 
 /** Boards 11.10–11.11: a typed address, or the phone's location; save or skip. */
 function HomeStep({
-  choice,
-  onChoice,
+  home,
+  onHome,
   onSignOut,
 }: {
-  choice: HomeChoice;
-  onChoice: (choice: HomeChoice) => void;
+  home: HomeField;
+  onHome: (event: HomeFieldEvent) => void;
   onSignOut: () => void;
 }) {
+  const { text, choice } = home;
   const toast = useToast();
   const { dispatch } = useEntrySession();
   const profileNow = useProfileNow();
   const setHome = useMutation(api.profiles.setHome);
   const advance = useMutation(api.consent.advanceWelcome);
-  const [text, setText] = useState(choice?.kind === 'address' ? choice.suggestion.label : '');
-  const [locating, setLocating] = useState(false);
-  const [locationFailed, setLocationFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   // While the suggestions are open, "or" and the location button step aside (board 11.10).
   const [listOpen, setListOpen] = useState(false);
   const copy = ONBOARDING_COPY.home;
+
+  // A fix is taken only when it is the newest read and the skater hasn't typed, picked, saved or
+  // skipped since (core's `createLocateRead`, as on the web): a late fix never replaces a choice.
+  const {
+    locate,
+    start: startLocate,
+    supersede,
+  } = useLocateRead(({ lat, lng }) => onHome({ type: 'located', lat, lng }));
 
   // The account can't act right now: the gate sends the skater to the tabs.
   const told = (refusal: { message: string; cannotAct?: true }) => {
@@ -89,27 +100,11 @@ function HomeStep({
     if (refusal.cannotAct) dispatch({ type: 'cannotAct', profile: profileNow.current });
   };
 
-  async function takeLocation() {
-    setLocating(true);
-    setLocationFailed(false);
-    try {
-      if (!(await ensureForegroundPermission())) {
-        setLocationFailed(true);
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({});
-      setText('');
-      onChoice({ kind: 'location', lat: pos.coords.latitude, lng: pos.coords.longitude });
-    } catch {
-      setLocationFailed(true);
-    } finally {
-      setLocating(false);
-    }
-  }
-
   async function finish(save: boolean) {
     if (busy) return;
     setBusy(true);
+    // Saved or skipped: a location still being read is dropped.
+    supersede();
     try {
       const homeCoord = homeCoordOf(choice);
       if (save && homeCoord !== null) {
@@ -122,9 +117,10 @@ function HomeStep({
           return;
         }
       }
-      // Skipped: no home was saved, so the Profile step has no town to take from it. Cleared
+      // Skipped: no home was saved, so the Profile step has no town to take from it, and the field
+      // lets go of the address with it (`homeFieldReducer`'s `skipped`, as the web's does). Cleared
       // before the advance, because the Profile step can mount before the call resolves.
-      if (!save) onChoice(null);
+      if (!save) onHome({ type: 'skipped' });
       await advance({ from: 'home' });
     } catch (error) {
       told(readRefusal(error));
@@ -161,22 +157,22 @@ function HomeStep({
         hint={choice?.kind === 'location' ? copy.usingLocation : copy.addressHint}
         value={text}
         onValueChange={(next) => {
-          setText(next);
-          // Typing again un-picks: only a suggestion from the list (or the location) is saved.
-          if (choice !== null) onChoice(null);
+          // Typing again un-picks, and a location still being read gives way to the typing.
+          onHome({ type: 'typed', text: next });
+          supersede();
         }}
         onPick={(suggestion) => {
-          setText(suggestion.label);
-          onChoice({ kind: 'address', suggestion });
+          onHome({ type: 'picked', suggestion });
+          supersede();
         }}
         onOpenChange={setListOpen}
       />
       {listOpen ? null : (
         <OtherWayIn
           located={choice?.kind === 'location'}
-          locating={locating}
-          failed={locationFailed}
-          onLocate={() => void takeLocation()}
+          locating={locate === 'locating'}
+          failed={locate === 'failed'}
+          onLocate={startLocate}
         />
       )}
     </OnboardingFrame>

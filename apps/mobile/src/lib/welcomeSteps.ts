@@ -26,6 +26,44 @@ export function homeCoordOf(choice: HomeChoice): { lat: number; lng: number } | 
   return { lat: choice.suggestion.lat, lng: choice.suggestion.lng };
 }
 
+/** The Home step's field and what it would save: they change together, so they never disagree. */
+export interface HomeField {
+  /** The words in the address field. */
+  text: string;
+  choice: HomeChoice;
+}
+
+export const EMPTY_HOME_FIELD: HomeField = { text: '', choice: null };
+
+export type HomeFieldEvent =
+  /** Typing un-picks: only a suggestion from the list (or the location) is saved. */
+  | { type: 'typed'; text: string }
+  | { type: 'picked'; suggestion: AddressSuggestion }
+  /** The phone's location: the field empties, and the location is what is saved. */
+  | { type: 'located'; lat: number; lng: number }
+  /**
+   * *Skip for now*: no home, so no town for the Profile step, and the field lets go of the address
+   * with it (as the web's does) — a skip that fails must not leave a picked address on the field
+   * with nothing chosen behind it, and *Save* disabled under it.
+   */
+  | { type: 'skipped' };
+
+export function homeFieldReducer(state: HomeField, event: HomeFieldEvent): HomeField {
+  switch (event.type) {
+    case 'typed':
+      return { text: event.text, choice: null };
+    case 'picked':
+      return {
+        text: event.suggestion.label,
+        choice: { kind: 'address', suggestion: event.suggestion },
+      };
+    case 'located':
+      return { text: '', choice: { kind: 'location', lat: event.lat, lng: event.lng } };
+    case 'skipped':
+      return state.text === '' && state.choice === null ? state : EMPTY_HOME_FIELD;
+  }
+}
+
 /** The Profile step's Town, prefilled from the picked address ("Hanover, NH"), else empty. */
 export function townOf(choice: HomeChoice): string {
   return choice?.kind === 'address' ? (choice.suggestion.town ?? '') : '';

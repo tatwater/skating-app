@@ -17,10 +17,10 @@ import { Skeleton } from '../../kit/skeleton';
 import { AccountSection, type StravaState } from './AccountSection';
 import { type BlockedPerson, BlockedSection } from './BlockedSection';
 import { ChangeEmailView } from './ChangeEmail';
-import { currentPosition } from './currentPosition';
+import { useLocateRead } from './currentPosition';
 import { DataSection, type ExportRow } from './DataSection';
 import { type AddressSuggestion, type SuggestFn, useAddressSuggestions } from './geocoder';
-import { HomeSection, type HomeView, type LocateState } from './HomeSection';
+import { HomeSection, type HomeView } from './HomeSection';
 import { NotificationsSection, radiusPatch } from './NotificationsSection';
 import { ProfilePhoto } from './ProfilePhoto';
 import { ProfileSection } from './ProfileSection';
@@ -205,12 +205,17 @@ function Home({
   const suggest = useAction(api.geocode.suggest) as unknown as SuggestFn;
   const [address, setAddress] = useState('');
   const [chosen, setChosen] = useState<AddressSuggestion | null>(null);
-  const [locate, setLocate] = useState<LocateState>('idle');
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState(false);
   const lookup = useAddressSuggestions(chosen === null ? address : '', suggest);
 
+  // A fix is saved only when it is the newest read and the skater hasn't typed, picked, saved,
+  // cleared or left since (`useLocateRead`): a slowly answered prompt never overwrites a choice.
+  const { locate, start: startLocate, supersede } = useLocateRead((coord) => void save(coord));
+
   const back = () => {
+    // Leaving the edit: a location still being read is dropped with the rest.
+    supersede();
     setAddress('');
     setChosen(null);
     setFailed(false);
@@ -239,28 +244,28 @@ function Home({
       onAddressChange={(value) => {
         setChosen(null);
         setAddress(value);
+        supersede();
       }}
       lookup={lookup}
       chosen={chosen}
       onPick={(s) => {
         setChosen(s);
         setAddress(s.label);
+        supersede();
       }}
       locate={locate}
       saving={saving}
       failed={failed}
-      onUseLocation={() => {
-        setLocate('locating');
-        currentPosition().then(
-          (coord) => {
-            setLocate('idle');
-            void save(coord);
-          },
-          () => setLocate('failed'),
-        );
+      onUseLocation={startLocate}
+      onSave={() => {
+        if (!chosen) return;
+        supersede();
+        void save({ lat: chosen.lat, lng: chosen.lng });
       }}
-      onSave={() => chosen && void save({ lat: chosen.lat, lng: chosen.lng })}
-      onClear={() => void save(undefined)}
+      onClear={() => {
+        supersede();
+        void save(undefined);
+      }}
       onEdit={() => onNavigate('/settings/home?edit=true')}
       onCancel={back}
     />

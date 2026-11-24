@@ -94,6 +94,7 @@ export * from './legal/hashLedger';
 export * from './legal/privacyNotice';
 export * from './legal/terms';
 export * from './libraryGrid';
+export * from './locateRead';
 export * from './mapRegion';
 export * from './mergeLists';
 export * from './metrics';
