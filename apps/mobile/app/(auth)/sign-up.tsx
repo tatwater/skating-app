@@ -8,11 +8,10 @@ import { Input } from '../../src/components/ThemedInputs';
 
 /**
  * Clerk account creation (D26): email + password + email-code verification. The profile
- * fields and the blocking Phase 00 gates (18+ age gate D41/D294, assumption-of-risk ack D45)
- * are collected right after, on the onboarding screen, where they're passed to the
- * enforced `upsertFromClerk` mutation — never staged in Clerk `unsafeMetadata`. Once the
- * session is active the root gate routes an unprovisioned user to onboarding, so no
- * manual navigation is needed here.
+ * fields and the 18+ gate (D41/D294) are collected right after, on the onboarding screen, and
+ * reach the server with the terms acceptance (`consent.acceptTerms`, D295/D298), which creates
+ * the row — never staged in Clerk `unsafeMetadata`. Once the session is active the root gate
+ * routes an unprovisioned user to onboarding, so no manual navigation is needed here.
  */
 export default function SignUpScreen() {
   const { signUp, setActive, isLoaded } = useSignUp();

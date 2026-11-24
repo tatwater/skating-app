@@ -103,7 +103,7 @@ export default function TabsLayout() {
   }, [hasProfile, storedZone, setTimezone]);
 
   // The Clerk mirrors (email for notification mail, the avatar), refreshed from the token's claims
-  // on the same "app open". `upsertFromClerk` runs at onboarding only, so without this a changed
+  // on the same "app open". `consent.acceptTerms` creates the row at onboarding only, so without this a changed
   // address or picture never reached the profile. On each signed-in mount, and again when the app
   // comes back to the foreground on a new UTC day — the per-day sign-in record's touch point (B01):
   // an app resumed on Tuesday without a remount would otherwise never say so, and a missed day can't

@@ -154,6 +154,11 @@ function DeleteAccount() {
         deleted for good once they're {DEPARTED_CONTENT_MAX_AGE_DAYS} days old. The account itself
         goes in {DELETION_GRACE_DAYS} days.
       </Paragraph>
+      {/* The consent record's six years (D297), said before the tap like everything else here. */}
+      <Paragraph color="foregroundMuted" fontSize={13}>
+        The record of the terms you accepted and the questions you answered is kept apart, unlinked
+        from your account, for six years after the deletion is final, and then deleted.
+      </Paragraph>
       <Paragraph color="foregroundMuted" fontSize={13}>
         During those {DELETION_GRACE_DAYS} days you can still sign in, and canceling keeps the
         account — but your profile stays empty and you'd set it up again from scratch. Export your
