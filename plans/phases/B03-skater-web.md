@@ -1515,7 +1515,8 @@ failed opening is said once and tried again quietly as the skater scrolls, no mo
 `TERMS_OPEN_RETRY_GAP_MS` (five seconds, and due at once if the device clock was set back past the last try; a retry, like
 a restarted reading's opening, speaks only when it is out of date, which stops the step), so the server normally has the
 reading by the end. An end reached while an opening is out waits for its answer, never silent, on both apps: on the
-reading's first opening (a slow connection; a text that fits the screen, which then counts once its opening answers), a
+reading's first opening (a slow connection; a text that fits the screen, which then counts once its opening answers —
+a restarted reading's never does, a known limit, §9.17), a
 success stamps the end then and a failure is said once — `terms_not_opened`'s words, or the server's own for a can't-act
 refusal — and the reading starts again; on a retried one (an earlier opening of this reading failed, so most of the text
 was read with no reading on the server), whatever it answers, the end says why once and the reading starts again. A
@@ -1862,3 +1863,11 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   sends both on reconnect and `openedAt` and `reachedEndAt` land together; that is accepted. What
   the record does hold is the order — opened, then the end, then the acceptance — and the words
   (version and hash).
+- **Known limit: a text that fits the screen locks for good after a restart.** A restarted reading's
+  end counts only once the marker has left the screen and been reached again; when there is nothing
+  to scroll the marker can never leave, so the agree box stays locked until the step is left and
+  entered again. Lifting it on both apps needs each to know whether its reader scrolls *and* whether
+  the new opening has answered (the web's reader and its step each hold one half), plus a guard so a
+  refusing server can't loop: more than a few lines, so it is recorded instead (the governor's
+  fallback). It cannot occur with today's terms (about 1,700 words, never one screen on either app);
+  a short text, or a much larger screen, would need it lifted first.
