@@ -15,6 +15,7 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
+    "@types/node": "^26.6.6",
     "@vitest/coverage-v8": "^5.1.0",
     "fast-check": "^4.10.2",
     "vitest": "^5.1.0"
