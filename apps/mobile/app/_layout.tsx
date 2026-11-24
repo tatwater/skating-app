@@ -14,6 +14,7 @@ import {
   EMPTY_ENTRY_SESSION,
   entryGroup,
   entrySessionReducer,
+  scheduleEntryRecheck,
   sessionEnded,
 } from '../src/lib/entryGate';
 import { retryPendingRelease } from '../src/lib/pushRegistration';
@@ -31,7 +32,8 @@ initSentry();
  *
  * - signed out → `(auth)`;
  * - no profile row, or a canceled deletion's emptied one → `onboarding` (Account, then Terms);
- * - a pending deletion → the tabs (read-only), before any consent check;
+ * - a pending deletion, or an account the server's profile gate refuses right now (banned, being
+ *   finalized, suspended) → the tabs (read-only, with support), before any consent check;
  * - terms not accepted at this version → `terms`;
  * - Know Before You Go due (never answered, or not this season) → `know-before-you-go`;
  * - a new account's Home and Profile still ahead → `welcome`;
@@ -66,6 +68,17 @@ function RootNavigator() {
     if (ended) dispatch({ type: 'signedOut' });
   }, [ended]);
 
+  // A suspension's end changes the route with no query changing: the gate wakes for it (each wake
+  // re-arms, so a suspension longer than a timer keeps waking until it ends).
+  const [tick, wake] = useReducer((n: number) => n + 1, 0);
+  const suspendedUntil = profile?.suspendedUntil;
+  const status = profile?.status;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the suspension's fields and the wake are the trigger
+  useEffect(
+    () => scheduleEntryRecheck({ status, suspendedUntil }, Date.now(), wake),
+    [status, suspendedUntil, tick],
+  );
+
   const route = resolveEntryRoute({
     isLoaded,
     isSignedIn,
@@ -73,6 +86,7 @@ function RootNavigator() {
     watch:
       anchor === undefined ? undefined : anchor === null ? null : { openedAt: anchor.openedAt },
     hold: session.hold,
+    now: Date.now(),
   });
   const group = entryGroup(route, session.heldOn);
   if (group === null) return null;

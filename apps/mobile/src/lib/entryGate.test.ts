@@ -1,10 +1,11 @@
 import { type EntryProfile, resolveEntryRoute, TERMS } from '@skating/core';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   EMPTY_ENTRY_SESSION,
   type EntrySession,
   entryGroup,
   entrySessionReducer,
+  scheduleEntryRecheck,
   sessionEnded,
 } from './entryGate';
 
@@ -44,6 +45,7 @@ describe('the hold, through core’s rule', () => {
         profile,
         watch: WATCH,
         hold: session.hold,
+        now: NOW,
       }),
       session.heldOn,
     );
@@ -84,6 +86,7 @@ describe('the hold, through core’s rule', () => {
           profile: undefined,
           watch: undefined,
           hold: held.hold,
+          now: NOW,
         }),
         held.heldOn,
       ),
@@ -122,5 +125,54 @@ describe('sessionEnded', () => {
     expect(sessionEnded(true, true)).toBe(false);
     expect(sessionEnded(true, false)).toBe(true);
     expect(sessionEnded(true, undefined)).toBe(true);
+  });
+});
+
+describe('scheduleEntryRecheck', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('wakes the gate just past a suspension’s end, where the route moves to the terms', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(NOW);
+    const suspended: EntryProfile = {
+      displayName: 'Kate Donovan',
+      status: 'suspended',
+      suspendedUntil: NOW + 60_000,
+    };
+    const routeAt = (now: number) =>
+      resolveEntryRoute({
+        isLoaded: true,
+        isSignedIn: true,
+        profile: suspended,
+        watch: WATCH,
+        now,
+      });
+    expect(routeAt(NOW)).toBe('app');
+    const wake = vi.fn();
+    scheduleEntryRecheck(suspended, NOW, wake);
+    vi.advanceTimersByTime(60_000);
+    expect(wake).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(wake).toHaveBeenCalledOnce();
+    expect(routeAt(Date.now())).toBe('terms');
+  });
+
+  it('schedules nothing when nothing moves with the clock, and cancels what it scheduled', () => {
+    vi.useFakeTimers();
+    const wake = vi.fn();
+    scheduleEntryRecheck(CURRENT, NOW, wake)();
+    scheduleEntryRecheck(null, NOW, wake)();
+    expect(vi.getTimerCount()).toBe(0);
+    const cancel = scheduleEntryRecheck(
+      { ...CURRENT, status: 'suspended', suspendedUntil: NOW + 1 },
+      NOW,
+      wake,
+    );
+    expect(vi.getTimerCount()).toBe(1);
+    cancel();
+    expect(vi.getTimerCount()).toBe(0);
+    expect(wake).not.toHaveBeenCalled();
   });
 });

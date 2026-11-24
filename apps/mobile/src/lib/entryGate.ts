@@ -10,7 +10,12 @@
  * receipt's button releases it; a sign-out clears it.
  */
 
-import type { EntryHold, EntryRoute } from '@skating/core';
+import {
+  type EntryHold,
+  type EntryProfile,
+  type EntryRoute,
+  entryRouteRecheckIn,
+} from '@skating/core';
 
 /** The root navigator's groups: each is one `Stack.Protected`, or nothing while loading. */
 export type EntryGroup =
@@ -113,4 +118,20 @@ export function entrySessionReducer(state: EntrySession, event: EntrySessionEven
  */
 export function sessionEnded(isLoaded: boolean, isSignedIn: boolean | undefined): boolean {
   return isLoaded && !isSignedIn;
+}
+
+/**
+ * Wakes the gate when its route changes with time alone — a suspension's end, after which the
+ * consent checks apply again (core's `entryRouteRecheckIn`) — and returns the cancel for the
+ * effect's cleanup. Nothing scheduled when nothing in the rule moves with the clock.
+ */
+export function scheduleEntryRecheck(
+  profile: EntryProfile | null | undefined,
+  now: number,
+  wake: () => void,
+): () => void {
+  const delay = entryRouteRecheckIn(profile, now);
+  if (delay === null) return () => {};
+  const timer = setTimeout(wake, delay);
+  return () => clearTimeout(timer);
 }

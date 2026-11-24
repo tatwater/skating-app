@@ -1,15 +1,23 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { type EntryProfile, type EntryRoute, resolveEntryRoute } from './entryRoute';
+import {
+  type EntryProfile,
+  type EntryRoute,
+  entryRouteRecheckIn,
+  MAX_TIMER_DELAY_MS,
+  resolveEntryRoute,
+} from './entryRoute';
 import { KNOW_BEFORE_YOU_GO_EARLY_MS } from './knowBeforeYouGoSeason';
 import { TERMS } from './legal/terms';
-import { DELETED_DISPLAY_NAME } from './profile';
+import { canActNow, DELETED_DISPLAY_NAME } from './profile';
 
 // Pinned instants (D243).
 const OPENED = Date.UTC(2027, 10, 20, 14);
 const watch = { openedAt: OPENED };
 const ANSWERED_THIS_SEASON = OPENED - 10 * 24 * 60 * 60 * 1000;
 const ANSWERED_LAST_SEASON = OPENED - 300 * 24 * 60 * 60 * 1000;
+/** The instant the gate reads the rule at. */
+const NOW = OPENED + 5 * 24 * 60 * 60 * 1000;
 
 /** A live account with the current terms and this season's answers: the one that reaches the app. */
 const done: EntryProfile = {
@@ -18,7 +26,7 @@ const done: EntryProfile = {
   knowBeforeYouGoAt: ANSWERED_THIS_SEASON,
 };
 
-const signedIn = { isLoaded: true, isSignedIn: true } as const;
+const signedIn = { isLoaded: true, isSignedIn: true, now: NOW } as const;
 /** Signed in, against the open watch unless a second argument (even `undefined`) says otherwise. */
 const route = (
   profile: EntryProfile | null | undefined,
@@ -27,20 +35,32 @@ const route = (
 
 describe('resolveEntryRoute, row by row', () => {
   it('1: holds on loading until Clerk is ready, whatever else is known', () => {
-    expect(resolveEntryRoute({ isLoaded: false, isSignedIn: true, profile: done, watch })).toBe(
-      'loading',
-    );
     expect(
-      resolveEntryRoute({ isLoaded: false, isSignedIn: undefined, profile: undefined, watch }),
+      resolveEntryRoute({ isLoaded: false, isSignedIn: true, profile: done, watch, now: NOW }),
+    ).toBe('loading');
+    expect(
+      resolveEntryRoute({
+        isLoaded: false,
+        isSignedIn: undefined,
+        profile: undefined,
+        watch,
+        now: NOW,
+      }),
     ).toBe('loading');
   });
 
   it('2: sends a signed-out caller to auth', () => {
-    expect(resolveEntryRoute({ isLoaded: true, isSignedIn: false, profile: done, watch })).toBe(
-      'auth',
-    );
     expect(
-      resolveEntryRoute({ isLoaded: true, isSignedIn: undefined, profile: undefined, watch }),
+      resolveEntryRoute({ isLoaded: true, isSignedIn: false, profile: done, watch, now: NOW }),
+    ).toBe('auth');
+    expect(
+      resolveEntryRoute({
+        isLoaded: true,
+        isSignedIn: undefined,
+        profile: undefined,
+        watch,
+        now: NOW,
+      }),
     ).toBe('auth');
   });
 
@@ -61,6 +81,29 @@ describe('resolveEntryRoute, row by row', () => {
     expect(route(leaving)).toBe('app');
     expect(route(leaving, undefined)).toBe('app');
     expect(route({ ...leaving, welcomeStep: 'home' }, null)).toBe('app');
+  });
+
+  it('4: lets an account the profile gate refuses into the (read-only) app, never the consent steps', () => {
+    // Each would be refused by acceptTerms or completeKnowBeforeYouGo (`requireProfile`), so the
+    // consent steps would trap it; the app holds its read-only view and the support screen.
+    const stale: EntryProfile = { displayName: 'Kate', knowBeforeYouGoAt: undefined };
+    for (const status of ['banned', 'deleting', 'deleted'] as const) {
+      expect(route({ ...stale, status })).toBe('app');
+      expect(route({ ...stale, status }, undefined)).toBe('app');
+      expect(route({ ...stale, status, displayName: DELETED_DISPLAY_NAME })).toBe('app');
+    }
+    expect(route({ ...stale, status: 'suspended' })).toBe('app');
+    expect(route({ ...stale, status: 'suspended', suspendedUntil: NOW + 1 })).toBe('app');
+    expect(route({ ...done, status: 'suspended', welcomeStep: 'home' })).toBe('app');
+  });
+
+  it('4: puts a lapsed suspension through the consent checks again', () => {
+    const lapsed: EntryProfile = { displayName: 'Kate', status: 'suspended', suspendedUntil: NOW };
+    expect(route(lapsed)).toBe('terms');
+    expect(route({ ...lapsed, termsVersion: TERMS.version })).toBe('questions');
+    expect(route({ ...done, status: 'suspended', suspendedUntil: NOW - 1 })).toBe('app');
+    expect(route({ ...done, status: 'active' })).toBe('app');
+    expect(route({ ...done, status: 'active', termsVersion: undefined })).toBe('terms');
   });
 
   it('5: sends a canceled deletion’s emptied row back to the Account step', () => {
@@ -112,6 +155,7 @@ describe('resolveEntryRoute, row by row', () => {
         profile: done,
         watch,
         hold: 'receipt',
+        now: NOW,
       }),
     ).toBe('auth');
     expect(
@@ -121,6 +165,7 @@ describe('resolveEntryRoute, row by row', () => {
         profile: done,
         watch,
         hold: 'receipt',
+        now: NOW,
       }),
     ).toBe('loading');
   });
@@ -158,6 +203,14 @@ const profileArb: fc.Arbitrary<EntryProfile> = fc.record(
     termsVersion: fc.constantFrom(TERMS.version, '2025-01-01'),
     knowBeforeYouGoAt: instant,
     welcomeStep: fc.constantFrom('home' as const, 'profile' as const),
+    status: fc.constantFrom(
+      'active' as const,
+      'suspended' as const,
+      'banned' as const,
+      'deleting' as const,
+      'deleted' as const,
+    ),
+    suspendedUntil: instant,
   },
   { requiredKeys: [] },
 );
@@ -168,17 +221,30 @@ const input = fc.record({
   profile: fc.oneof(fc.constant(undefined), fc.constant(null), profileArb),
   watch: fc.oneof(fc.constant(undefined), watchArb),
   hold: fc.constantFrom('receipt' as const, null),
+  now: instant,
 });
 
 describe('resolveEntryRoute, properties', () => {
-  it('never lets stale terms into the app unless a deletion is pending', () => {
+  it('never lets stale terms into the app unless a deletion is pending or the account can’t act', () => {
     fc.assert(
       fc.property(input, (i) => {
         const r = resolveEntryRoute(i);
         if (r !== 'app' || !i.profile) return true;
         return (
-          i.profile.termsVersion === TERMS.version || i.profile.deletionRequestedAt !== undefined
+          i.profile.termsVersion === TERMS.version ||
+          i.profile.deletionRequestedAt !== undefined ||
+          !canActNow(i.profile, i.now)
         );
+      }),
+    );
+  });
+
+  it('never sends an account the profile gate refuses to a step it would be refused at', () => {
+    fc.assert(
+      fc.property(input, (i) => {
+        const r = resolveEntryRoute(i);
+        if (!i.profile || canActNow(i.profile, i.now)) return true;
+        return r !== 'terms' && r !== 'questions' && r !== 'welcome' && r !== 'account';
       }),
     );
   });
@@ -192,7 +258,7 @@ describe('resolveEntryRoute, properties', () => {
     );
   });
 
-  it('is total and ordered: Clerk, then sign-in, then the hold, then a pending deletion', () => {
+  it('is total and ordered: Clerk, then sign-in, then the hold, then a deletion or the gate', () => {
     const routes = new Set<EntryRoute>([
       'loading',
       'auth',
@@ -211,6 +277,7 @@ describe('resolveEntryRoute, properties', () => {
         if (!i.isSignedIn) return r === 'auth';
         if (i.hold === 'receipt') return r === 'receipt';
         if (i.profile?.deletionRequestedAt !== undefined) return r === 'app';
+        if (i.profile && !canActNow(i.profile, i.now)) return r === 'app';
         return r !== 'auth' && r !== 'receipt';
       }),
     );
@@ -243,9 +310,39 @@ describe('resolveEntryRoute, properties', () => {
             i.hold === null &&
             i.profile !== null &&
             i.profile.deletionRequestedAt === undefined &&
+            canActNow(i.profile, i.now) &&
             i.profile.displayName !== DELETED_DISPLAY_NAME)
         );
       }),
+    );
+  });
+});
+
+describe('entryRouteRecheckIn', () => {
+  it('wakes a gate just past a suspension’s end, and for nothing else', () => {
+    const until = NOW + 60_000;
+    expect(entryRouteRecheckIn({ status: 'suspended', suspendedUntil: until }, NOW)).toBe(60_001);
+    expect(
+      resolveEntryRoute({
+        ...signedIn,
+        now: NOW + 60_001,
+        profile: { displayName: 'Kate', status: 'suspended', suspendedUntil: until },
+        watch,
+      }),
+    ).toBe('terms');
+    // An open-ended suspension, a lapsed one, an active or banned account, no profile: nothing due.
+    expect(entryRouteRecheckIn({ status: 'suspended' }, NOW)).toBeNull();
+    expect(entryRouteRecheckIn({ status: 'suspended', suspendedUntil: NOW }, NOW)).toBeNull();
+    expect(entryRouteRecheckIn({ status: 'active', suspendedUntil: until }, NOW)).toBeNull();
+    expect(entryRouteRecheckIn({ status: 'banned' }, NOW)).toBeNull();
+    expect(entryRouteRecheckIn(null, NOW)).toBeNull();
+    expect(entryRouteRecheckIn(undefined, NOW)).toBeNull();
+  });
+
+  it('never asks a timer for more than it keeps', () => {
+    const year = 365 * 24 * 60 * 60 * 1000;
+    expect(entryRouteRecheckIn({ status: 'suspended', suspendedUntil: NOW + year }, NOW)).toBe(
+      MAX_TIMER_DELAY_MS,
     );
   });
 });

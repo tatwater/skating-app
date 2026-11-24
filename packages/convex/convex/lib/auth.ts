@@ -14,6 +14,8 @@ import {
   can,
   type Grant,
   grantFor,
+  isLockedOut,
+  isSuspendedNow,
   type ReadCapability,
   roleMeets,
   type UserRole,
@@ -49,30 +51,11 @@ export async function requireProfile(ctx: Ctx): Promise<Doc<'profiles'>> {
 }
 
 /**
- * Banned, being taken apart, or gone: `requireProfile` refuses every call outright. Shared with
- * anything that has to agree with it about who can act at all.
+ * Banned, being taken apart, or gone, and suspended right now: `requireProfile`'s two refusals. The
+ * rules are core's (`isLockedOut`, `isSuspendedNow`), shared with the way in's routing
+ * (`resolveEntryRoute`), so the gate and the route can't disagree about who can act.
  */
-export function isLockedOut(profile: Pick<Doc<'profiles'>, 'status'>): boolean {
-  return (
-    profile.status === 'banned' || profile.status === 'deleting' || profile.status === 'deleted'
-  );
-}
-
-/**
- * A suspension blocks until it lapses (D37): an unset or future `suspendedUntil` still gates; a past
- * one is treated as active (the flip to `active` happens separately). Compared at call time so the
- * gate needs no scheduled cleanup. `requireProfile`'s rule, shared with anything that has to agree
- * with it about who can write right now.
- */
-export function isSuspendedNow(
-  profile: Pick<Doc<'profiles'>, 'status' | 'suspendedUntil'>,
-  now: number,
-): boolean {
-  return (
-    profile.status === 'suspended' &&
-    (profile.suspendedUntil === undefined || profile.suspendedUntil > now)
-  );
-}
+export { isLockedOut, isSuspendedNow };
 
 /**
  * The message a pending-deletion account gets when it tries to contribute. Exported so both clients

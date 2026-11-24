@@ -7,6 +7,7 @@
  */
 
 import { isMinor } from './age';
+import type { UserStatus } from './types';
 
 /** Username length bounds — short enough to type, long enough to stay distinctive. */
 export const USERNAME_MIN_LENGTH = 3;
@@ -222,6 +223,40 @@ export function needsProfileSetup(
   // deletion leaves a live account holding a cleared row.
   if (profile.deletionRequestedAt !== undefined) return false;
   return profile.displayName === DELETED_DISPLAY_NAME;
+}
+
+/**
+ * Banned, being taken apart, or gone: the server's profile gate (`requireProfile`, D37) refuses every
+ * call outright. One rule for the gate and for the way in (`resolveEntryRoute`), so the two can't
+ * disagree about who can act at all.
+ */
+export function isLockedOut(profile: { status?: UserStatus }): boolean {
+  return (
+    profile.status === 'banned' || profile.status === 'deleting' || profile.status === 'deleted'
+  );
+}
+
+/**
+ * A suspension blocks until it lapses (D37): an unset or future `suspendedUntil` still gates; a past
+ * one is treated as active (the flip to `active` happens separately). Compared at the instant given,
+ * so the rule needs no scheduled cleanup.
+ */
+export function isSuspendedNow(
+  profile: { status?: UserStatus; suspendedUntil?: number },
+  now: number,
+): boolean {
+  return (
+    profile.status === 'suspended' &&
+    (profile.suspendedUntil === undefined || profile.suspendedUntil > now)
+  );
+}
+
+/** Whether the profile gate lets this account act at `now`: neither locked out nor suspended. */
+export function canActNow(
+  profile: { status?: UserStatus; suspendedUntil?: number },
+  now: number,
+): boolean {
+  return !isLockedOut(profile) && !isSuspendedNow(profile, now);
 }
 
 /**

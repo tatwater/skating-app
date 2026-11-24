@@ -9,16 +9,26 @@ export interface ConsentRefusal {
   message: string;
 }
 
+/** Plain-string refusals that are no sentence for a skater: the session lapsed mid-call. */
+const UNSHOWN = new Set(['Not authenticated']);
+
 /**
- * What a consent mutation's failure says (B03 §9.5). The consent refusals arrive as
- * `ConvexError({ code, message })` and the server's own message wins; a refusal with a code and
- * no words gets core's for that code. Everything else — "Not authenticated" and the profile gate's
- * plain strings, a network failure, Convex's redacted server error — has no code this build can
- * name, and gets core's fallback rather than a string that was never written for a skater.
+ * What a consent mutation's failure says (B03 §9.5), as the phone reads it (`consentClient`). The
+ * consent refusals arrive as `ConvexError({ code, message })` and the server's own message wins; a
+ * refusal with a code and no words gets core's for that code. A plain-string `ConvexError` — the
+ * profile gate's "Account is suspended" — is already a sentence for a person and is shown as it is,
+ * except "Not authenticated", which only means the session lapsed. Anything else (a network
+ * failure, Convex's redacted server error) gets core's fallback: its text is for logs, not people.
  */
 export function readConsentRefusal(error: unknown): ConsentRefusal {
   if (error instanceof ConvexError) {
     const data: unknown = error.data;
+    if (typeof data === 'string') {
+      return {
+        code: undefined,
+        message: data.trim() === '' || UNSHOWN.has(data) ? consentRefusalMessage(undefined) : data,
+      };
+    }
     if (typeof data === 'object' && data !== null) {
       const code = (data as { code?: unknown }).code;
       const message = (data as { message?: unknown }).message;

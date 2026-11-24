@@ -334,6 +334,18 @@ describe('/terms', () => {
     );
   });
 
+  it('says the profile gate’s own plain-string refusal as it is, as the phone does', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:acceptTerms').mockRejectedValueOnce(new ConvexError('Account is suspended'));
+    render(<TermsPage />);
+    await readAndRecord(user);
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({ title: 'Account is suspended', tone: 'bad' }),
+    );
+    expect(useEntryStore.getState().hold).toBeNull();
+  });
+
   it('draws the receipt with Continue when no questions are due, and lets go on it', async () => {
     const user = userEvent.setup();
     fakes.queries.set('profiles:current', LIVE);

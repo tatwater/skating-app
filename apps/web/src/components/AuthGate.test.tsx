@@ -369,6 +369,33 @@ describe('the way in', () => {
     expect(mocks.push).not.toHaveBeenCalled();
   });
 
+  it('lets an account the server refuses right now into the app, where its support screen is', () => {
+    // Banned, or suspended with stale terms: the acceptance would refuse it, so the terms would trap
+    // it with nothing to do. Neither leaves for a consent step.
+    mocks.pathname = '/settings/data';
+    for (const profile of [
+      { displayName: 'Skater', status: 'banned' },
+      { displayName: 'Skater', status: 'suspended', suspendedUntil: Date.UTC(2099, 0, 1) },
+      { displayName: 'Skater', status: 'suspended' },
+    ]) {
+      mocks.profile = profile;
+      const { unmount } = render(<AuthGate>page</AuthGate>);
+      expect(screen.getByText('page')).toBeInTheDocument();
+      unmount();
+    }
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('sends a lapsed suspension through the terms again', () => {
+    mocks.profile = {
+      displayName: 'Skater',
+      status: 'suspended',
+      suspendedUntil: Date.UTC(2000, 0, 1),
+    };
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/terms');
+  });
+
   it('holds on the splash while the watch is still loading, past the profile’s own rows', () => {
     mocks.profile = PROVISIONED;
     mocks.watch = undefined;

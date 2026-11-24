@@ -8,6 +8,7 @@ import { authZoneTarget } from '../lib/authZone';
 import { type BootZone, bootCookieString, readBootZone } from '../lib/boot';
 import { useEntryStore } from '../lib/entryHold';
 import { useSheetOwnerBinding } from '../lib/sheetOwner';
+import { useEntryNow } from '../lib/useEntryNow';
 import { AppShell } from './AppShell';
 import { isConsolePath, usesOldShell } from './admin/shell/consoleNav';
 import { BootScreen } from './skater/BootScreen';
@@ -69,6 +70,8 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // only asked once someone is signed in: a signed-out visitor never waits on it.
   const watch = useQuery(api.consent.watchAnchor, isSignedIn ? {} : 'skip');
   const hold = useEntryStore((s) => s.hold);
+  // A suspension's end changes the answer with no query changing: the gate wakes for it.
+  const now = useEntryNow(profile);
   const route = resolveEntryRoute({
     isLoaded,
     isSignedIn,
@@ -76,6 +79,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     // The rule reads only the opening instant; `undefined` is still loading, `null` no season.
     watch: watch === undefined ? undefined : watch === null ? null : { openedAt: watch.openedAt },
     hold,
+    now,
   });
   // The report sheet is the signed-in author's; a change of account drops it (PR #77 review).
   useSheetOwnerBinding();

@@ -13,7 +13,7 @@
  * | — | `hold === 'receipt'` | `receipt` |
  * | 1 | `profile` still `undefined` | `loading` |
  * | 3 | `profile === null` | `account` |
- * | 4 | a deletion is pending | `app` |
+ * | 4 | a deletion is pending, or the account can't act at `now` (`canActNow`) | `app` |
  * | 5 | `needsProfileSetup(profile)` (a canceled deletion's emptied row) | `account` |
  * | 1 | `watch` still `undefined` | `loading` |
  * | 6 | `profile.termsVersion !== TERMS.version` | `terms` |
@@ -32,13 +32,22 @@
  * it is newer than any profile the query may still be returning.
  *
  * A pending deletion goes to `app` before any consent check: it is read-only, its cancel lives in
- * Settings, and walking someone who is leaving through the questions to reach it would be absurd. The
- * watch is only awaited past row 5, so a signed-out, new or leaving skater never waits on it.
+ * Settings, and walking someone who is leaving through the questions to reach it would be absurd.
+ *
+ * So does an account the server's profile gate refuses right now — banned, being finalized, gone, or
+ * suspended at `now` (core's `canActNow`, the very rule `lib/auth.ts`'s `requireProfile` applies). The
+ * acceptance and the completion refuse it, so the consent steps would trap it with nothing it can do;
+ * the app is where its read-only view and the support screen (its appeal) are. When the suspension
+ * lapses the same rule lets the consent checks apply again — each gate re-reads the rule then
+ * (`entryRouteRecheckIn`). `now` is an argument, so the rule stays pure.
+ *
+ * The watch is only awaited past row 5, so a signed-out, new or leaving skater never waits on it.
  */
 
 import { type KnowBeforeYouGoWatch, knowBeforeYouGoDue } from './knowBeforeYouGoSeason';
 import { TERMS } from './legal/terms';
-import { needsProfileSetup } from './profile';
+import { canActNow, isSuspendedNow, needsProfileSetup } from './profile';
+import type { UserStatus } from './types';
 
 export type EntryRoute =
   | 'loading'
@@ -59,6 +68,9 @@ export type EntryHold = 'receipt' | null;
 /** The fields of `profiles.current` the rule reads. */
 export interface EntryProfile {
   displayName?: string;
+  /** The profile gate's inputs (`canActNow`); absent reads as active. */
+  status?: UserStatus;
+  suspendedUntil?: number;
   deletionRequestedAt?: number;
   termsVersion?: string;
   knowBeforeYouGoAt?: number;
@@ -71,6 +83,7 @@ export function resolveEntryRoute({
   profile,
   watch,
   hold = null,
+  now,
 }: {
   isLoaded: boolean;
   // Clerk reports `isSignedIn` as `undefined` until `isLoaded`; read as signed out.
@@ -80,6 +93,8 @@ export function resolveEntryRoute({
   // `undefined` = still resolving; `null` = no season has opened (or the last one was reset).
   watch: KnowBeforeYouGoWatch | null | undefined;
   hold?: EntryHold;
+  /** The instant a suspension is judged at (the caller's clock). */
+  now: number;
 }): EntryRoute {
   if (!isLoaded) return 'loading';
   if (!isSignedIn) return 'auth';
@@ -87,10 +102,30 @@ export function resolveEntryRoute({
   if (profile === undefined) return 'loading';
   if (profile === null) return 'account';
   if (profile.deletionRequestedAt !== undefined) return 'app';
+  if (!canActNow(profile, now)) return 'app';
   if (needsProfileSetup(profile)) return 'account';
   if (watch === undefined) return 'loading';
   if (profile.termsVersion !== TERMS.version) return 'terms';
   if (knowBeforeYouGoDue(profile.knowBeforeYouGoAt, watch) !== null) return 'questions';
   if (profile.welcomeStep !== undefined) return 'welcome';
   return 'app';
+}
+
+/** The longest delay a browser or React Native timer keeps (2^31 − 1 ms); a longer one fires at once. */
+export const MAX_TIMER_DELAY_MS = 2_147_483_647;
+
+/**
+ * When a gate should read `resolveEntryRoute` again on its own, in ms from `now`, or `null` when
+ * nothing time-bound is pending: a suspension with an end lapses then, and the consent checks apply
+ * again. Capped at `MAX_TIMER_DELAY_MS` (a longer suspension just wakes the gate early, and it asks
+ * again); one past the end, so the rule reads it as lapsed.
+ */
+export function entryRouteRecheckIn(
+  profile: EntryProfile | null | undefined,
+  now: number,
+): number | null {
+  if (!profile || !isSuspendedNow(profile, now) || profile.suspendedUntil === undefined) {
+    return null;
+  }
+  return Math.min(profile.suspendedUntil - now + 1, MAX_TIMER_DELAY_MS);
 }
