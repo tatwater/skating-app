@@ -44,9 +44,11 @@ export default function WelcomeScreen() {
   const profile = useQuery(api.profiles.current, {});
   const signOut = useSignOut();
   const [choice, setChoice] = useState<HomeChoice>(null);
-  const step = profile?.welcomeStep ?? 'home';
+  const step = profile?.welcomeStep;
 
-  if (profile === undefined) return null;
+  // No step: the last one just cleared it and the gate is about to open the map — draw nothing
+  // rather than flash the Home step for a frame.
+  if (step === undefined) return null;
   return step === 'home' ? (
     <HomeStep choice={choice} onChoice={setChoice} onSignOut={() => void signOut()} />
   ) : (
@@ -102,6 +104,9 @@ function HomeStep({
     try {
       const homeCoord = homeCoordOf(choice);
       if (save && homeCoord !== null) await setHome({ homeCoord });
+      // Skipped: no home was saved, so the Profile step has no town to take from it. Cleared
+      // before the advance, because the Profile step can mount before the call resolves.
+      if (!save) onChoice(null);
       await advance({ from: 'home' });
     } catch (error) {
       toast(readRefusal(error).message);

@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import { DISPLAY_NAME_MAX_LENGTH, ONBOARDING_COPY, USERNAME_MAX_LENGTH } from '@skating/core';
-import { useQuery } from 'convex/react';
+import { useConvexAuth, useQuery } from 'convex/react';
 import { Text, XStack, YStack } from 'tamagui';
 import {
   type AccountDraft,
@@ -59,9 +59,12 @@ export function AccountStep({
 }) {
   const settled = useDebouncedValue(draft.username, USERNAME_SETTLE_MS);
   const asking = usernameQuery(settled);
+  // The check refuses an unauthenticated caller by throwing, so it is skipped the moment the
+  // session goes (a sign-out from this screen) rather than throw into the render on the way out.
+  const { isAuthenticated } = useConvexAuth();
   const check = useQuery(
     api.profiles.usernameAvailable,
-    asking !== null ? { username: asking } : 'skip',
+    asking !== null && isAuthenticated ? { username: asking } : 'skip',
   );
   const view = accountStepView(
     draft,
