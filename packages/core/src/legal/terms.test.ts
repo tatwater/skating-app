@@ -25,7 +25,7 @@ describe('the committed hash', () => {
     const hint =
       recorded === undefined
         ? `A new terms version. Add this line to TERMS_HASHES in packages/core/src/legal/terms.ts:\n  '${TERMS.version}': '${actual}',`
-        : `The terms' words changed but their version didn't. Set TERMS.version to today's date, then add the line this test prints to TERMS_HASHES (keep the old line).`;
+        : `The terms' words changed but their version didn't. Set TERMS.version to today's date (or the next free date, if today's is already in TERMS_HASHES), then add the line this test prints to TERMS_HASHES (keep the old line).`;
     expect(recorded, hint).toBe(actual);
     expect(TERMS_SHA256).toBe(actual);
   });

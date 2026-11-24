@@ -149,12 +149,15 @@ async function acceptedAtThisVersion(ctx: QueryCtx, profile: Doc<'profiles'> | n
 }
 
 /**
- * Drop the caller's readings of the current terms when there is already an acceptance at this version
- * for them to become (a repeat). Left alone, one would wait for the next acceptance that needs a
- * reading — a canceled deletion's re-introduction — and stamp that record with this visit's moments.
- * There is at most one (`openTerms` writes one per subject and version); bounded all the same.
+ * Drop a subject's readings of the current terms when no acceptance will consume them: on a repeat
+ * acceptance, because an acceptance at this version is already on record, so there is nothing left
+ * for them to become; and at a canceled deletion (`accountDeletion.cancelDeletion`), because the
+ * emptied row must accept again and its record should hold that visit's moments, not ones from before
+ * the request. Left alone, a reading would wait for the next acceptance that needs one and stamp it
+ * with an earlier visit's moments. There is at most one (`openTerms` writes one per subject and
+ * version); bounded all the same. `packages/guards` `consentWriters.test.ts` lists its callers.
  */
-async function discardReadings(ctx: MutationCtx, clerkUserId: string): Promise<void> {
+export async function discardReadings(ctx: MutationCtx, clerkUserId: string): Promise<void> {
   const rows = await ctx.db
     .query('termsReadings')
     .withIndex('by_clerk_version', (q) =>
@@ -319,8 +322,11 @@ async function checkAccount(
  * - **Any other row:** `account` must be absent; only the terms fields change. Inactive or suspended
  *   accounts get `requireProfile`'s refusals, and a pending deletion `deletion_pending` (its way back
  *   is the cancel in Settings). A row that has already accepted this version gets its newest
- *   acceptance back and nothing is written: a sealed record is one per acceptance, not per tap.
- *   The answer says `repeat: true` then, so a client counts the acceptance once.
+ *   acceptance back and no record, profile change, email or lookup: a sealed record is one per
+ *   acceptance, not per tap. Its only write is discarding a leftover reading of this version
+ *   (`discardReadings`). The answer says `repeat: true` then, so a client counts the acceptance once.
+ *   A row at this version with no acceptance on record (the inbox seed's people) accepts as an
+ *   account from before the terms does: `returning`.
  *
  * Every time is the server's. The client's `surface` and `userAgent` are stored as client-reported.
  */

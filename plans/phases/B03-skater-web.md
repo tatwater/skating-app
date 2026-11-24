@@ -1412,7 +1412,10 @@ tombstone clears all five.
 may exist yet: `clerkUserId`, `termsVersion`, `openedAt`, `reachedEndAt?`, `reachedEndVia?: 'inline' |
 'fullscreen'`, `surface: 'web' | 'android' | 'ios'` (client-reported). Indexes `by_clerk_version
 [clerkUserId, termsVersion]` and `by_opened [openedAt]`. Deleted by the acceptance that consumes it, by the
-finalize `erase` stage, and by a daily prune of rows opened more than 30 days ago.
+finalize `erase` stage, and by a daily prune of rows opened more than 30 days ago; *as built (after #180),*
+also by a repeat acceptance (its acceptance is already on record) and by a canceled deletion (the emptied
+row must read again), both through `consent.ts`' `discardReadings`. No row is written for an account whose
+acceptance of the current version is on record.
 
 **`consentRecords`** — sealed, append-only:
 
@@ -1449,9 +1452,9 @@ owns the words), and the clients show it as a toast.
 | Function | Gate | Contract | Refusals |
 |---|---|---|---|
 | `watchAnchor` (query) | none | `{ season, label, openedAt } \| null` from the newest `imageryIngestSeasons` row (`label` "Winter 2027–28") | — |
-| `openTerms` (mutation) | identity; *as built,* a banned, finalizing or deleted profile is refused (a reading written after `erase` would outlive the deletion) | `{ termsVersion, termsHash, surface }`; upserts the reading row, keeping the first `openedAt` | `client_outdated`, "Account is not active" |
-| `reachTermsEnd` (mutation) | as `openTerms` | `{ termsVersion, termsHash, via }`; sets `reachedEndAt` once | `client_outdated`, `terms_not_opened`, "Account is not active" |
-| `acceptTerms` (mutation) | identity | `{ termsVersion, termsHash, privacyVersion, privacyHash, surface, userAgent?, clientSessionId?, account?: { displayName, username, dateOfBirth } }` → `{ recordId, repeat }` (*as built,* `repeat: true` only when the call recorded nothing). No row: `account` required, the 18+ gate, name and username rules, then the row is created with the new-profile defaults (`lib/profileIdentity`, which `upsertFromClerk` used until stage three deleted it) and the Clerk mirrors, plus the terms fields and `welcomeStep: 'home'`. A canceled deletion's row: `account` required, patched in place (rename cooldown applies), **its visibility kept** (private after the request; a minor forced private), `welcomeStep: 'home'`. Any other row: `account` must be absent; *as built,* one that has already accepted this version gets its newest acceptance back and nothing is written (no record, no email, no Clerk lookup — before the reading is asked for, so a retry after a lost answer gets the same answer). Then the record, the reading deleted, the profile's terms fields, `refreshPersonRow`, and two scheduled actions (the copy's carries the copy, rendered here). | `client_outdated` (version or hash, either document: this build's bundled words aren't the server's), `terms_not_read` (no reading with `reachedEndAt`), `account_required`, `account_unexpected`, `underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`, the inactive and suspended refusals of `requireProfile`, `deletion_pending` |
+| `openTerms` (mutation) | identity; *as built,* a banned, finalizing or deleted profile is refused (a reading written after `erase` would outlive the deletion) | `{ termsVersion, termsHash, surface }`; upserts the reading row, keeping the first `openedAt`. *As built (after #180):* for an account whose acceptance of the current version is on record (a second tab or device still on the step), the same answer and no row | `client_outdated`, "Account is not active" |
+| `reachTermsEnd` (mutation) | as `openTerms` | `{ termsVersion, termsHash, via }`; sets `reachedEndAt` once. *As built (after #180):* for an account whose acceptance of the current version is on record, the same answer and no write | `client_outdated`, `terms_not_opened`, "Account is not active" |
+| `acceptTerms` (mutation) | identity | `{ termsVersion, termsHash, privacyVersion, privacyHash, surface, userAgent?, clientSessionId?, account?: { displayName, username, dateOfBirth } }` → `{ recordId, repeat }` (*as built,* `repeat: true` only when the call recorded nothing). No row: `account` required, the 18+ gate, name and username rules, then the row is created with the new-profile defaults (`lib/profileIdentity`, which `upsertFromClerk` used until stage three deleted it) and the Clerk mirrors, plus the terms fields and `welcomeStep: 'home'`. A canceled deletion's row: `account` required, patched in place (rename cooldown applies), **its visibility kept** (private after the request; a minor forced private), `welcomeStep: 'home'`. Any other row: `account` must be absent; *as built,* one that has already accepted this version gets its newest acceptance back and no record, email or Clerk lookup — before the reading is asked for, so a retry after a lost answer gets the same answer; *after #180* its only write is discarding a leftover reading of this version. A row at this version with no acceptance on record (the inbox seed's people) accepts as `returning`. Then the record, the reading deleted, the profile's terms fields, `refreshPersonRow`, and two scheduled actions (the copy's carries the copy, rendered here). | `client_outdated` (version or hash, either document: this build's bundled words aren't the server's), `terms_not_read` (no reading with `reachedEndAt`), `account_required`, `account_unexpected`, `underage`, `name_invalid`, `username_invalid`, `username_taken`, `username_cooldown`, the inactive and suspended refusals of `requireProfile`, `deletion_pending` |
 | `completeKnowBeforeYouGo` (mutation) | `requireContributor` | `{ version, hash, termsVersion, termsHash, surface, userAgent, clientSessionId? }` (*as built,* the client's bundled terms too) → `{ season, repeat }`; the record, the profile's two fields, the IP action. *As built:* any **published** version of the questions is taken (core's `isPublishedKnowBeforeYouGo`, over the ledger), and the record and `knowBeforeYouGoVersion` name the version answered — an older phone keeps working after the yearly edit. When neither the token nor the profile's mirror has an address, `fillRecordEmail` is scheduled too (*as built,* Greptile on #180). When the questions aren't due (`knowBeforeYouGoDue`, the gate's own season rule, read here) the call returns the newest completion's season with `repeat: true` and writes nothing; that replaced the 60-second repeat rule and covers it. | `account_required` (*as built:* a canceled deletion's emptied row, which must be re-introduced first), `terms_first` (*as built,* only when the client's terms claim is the server's: its gate routes by that version and will take it to the terms), `client_outdated` (a version or hash nobody published, or — when the profile hasn't accepted the server's terms — a terms claim that isn't the server's: an old build that routed itself here by its own old version, which the terms screen can't help), the contributor refusals |
 | `advanceWelcome` (mutation) | `requireContributor` | `{ from: 'home' \| 'profile' }`; home → profile → cleared; a `from` that isn't the current step is a no-op | contributor refusals |
 | `latestTermsReceipt` (query) | profile | `{ email, copy: 'pending' \| 'sent' \| 'not_sent' }` for board 10.5 (`accepted`/`unknown` read `sent`; `rejected` or no address read `not_sent`) | — |
@@ -1465,7 +1468,8 @@ Shared pieces move out of `profiles.ts` in stage one so both writers use one rul
 `USERNAME_MESSAGES`, `assertMayRename` and the new-profile defaults go to `lib/profileIdentity.ts`.
 `accountDeletion.ts` gains a `consent` stage between `photos` and `tombstone` (it needs the profile id the
 tombstone keeps but the index must still find), severing each record and setting `purgeAt`, and `erase`
-deletes the subject's reading rows. `dataExport.collect` adds `consentRecords` without `identity.email`,
+deletes the subject's reading rows; *after #180,* `cancelDeletion` discards the subject's readings of the
+current terms (`consent.ts`' `discardReadings`). `dataExport.collect` adds `consentRecords` without `identity.email`,
 `clerkUserId` or `profileId`, by the bundle's existing rule. `lib/geocoder.ts`'s Geoapify parse adds an
 optional `town` ("Hanover, NH": the result's city, else town or village, then `state_code`); the clients
 offer it as the Profile step's Town.
@@ -1925,9 +1929,14 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
 - **A reading could outlive its acceptance (the same review; from #180).** A repeat acceptance
   returned before it looked at the reading, and the reader wrote one for an account that had already
   accepted (a second tab or device still on the step), so a row could wait — only an acceptance, the
-  30-day prune and the finalize stage delete one — for a canceled deletion's re-introduction, which
+  30-day prune and the finalize stage deleted one — for a canceled deletion's re-introduction, which
   sealed a record with the earlier visit's stamps and no fresh reading (reproduced in a convex test
-  first). The reader now writes nothing for an account whose acceptance at this version is on record,
-  and a repeat acceptance discards any reading it finds. A row written before this fix stays until
-  the prune: dev holds one, so a canceled deletion tried on that account within its 30 days would
-  still use it.
+  first). The same held for a reading left, without accepting, by an account that then asked to be
+  deleted and canceled. The reader now writes nothing for an account whose acceptance at this version
+  is on record; a repeat acceptance discards any reading it finds; and a canceled deletion discards
+  the subject's readings of the current terms (`discardReadings`, whose callers the consent-writers
+  guard lists), so the re-introduction is sealed only on a reading made after the cancel. Dev's
+  leftover row goes with the founder account's next repeat acceptance or canceled deletion, or the
+  prune. Removing any one of the four guards fails a convex test. A row already at this version with
+  no acceptance on record (the inbox seed's people) now records `returning`, not `version_change`:
+  core's `termsAcceptanceContext` says so, for the server and the web's analytics alike.

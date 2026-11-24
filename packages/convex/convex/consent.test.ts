@@ -548,10 +548,9 @@ describe('acceptTerms: an existing row', () => {
     const again = { recordId: first.recordId, repeat: true };
     const jobs = (await scheduled(t)).length;
     const acceptedAt = (await t.run((ctx) => ctx.db.get(id)))?.termsAcceptedAt;
-    // A retry after a lost answer (the reading already consumed), and a second tab that read again.
+    // A retry after a lost answer (the reading already consumed), and a second tab's press later.
     vi.setSystemTime(T0 + 30_000);
     expect(await accept(as)).toEqual(again);
-    await readToEnd(as);
     vi.setSystemTime(T0 + 60_000);
     expect(await accept(as)).toEqual(again);
     expect((await records(t)).map((r) => r._id)).toEqual([first.recordId]);
@@ -1044,13 +1043,23 @@ describe('a record whose hash is not in the ledger', () => {
       repeat: false,
     });
 
-    // Reading and accepting again records nothing: the acceptance at this version is returned.
+    // Accepting again records nothing: the acceptance at this version is returned, and a reading
+    // left from before the reader stopped writing for an accepted account (dev holds one beside the
+    // 2026-11-24 record) is discarded rather than kept for a later acceptance.
     const before = (await records(t)).length;
-    await readToEnd(as);
+    await t.run((ctx) =>
+      ctx.db.insert('termsReadings', {
+        clerkUserId: 'user_founder',
+        termsVersion: TERMS.version,
+        openedAt: T0 - 20_000,
+        reachedEndAt: T0 - 10_000,
+        reachedEndVia: 'inline',
+        surface: 'web',
+      }),
+    );
     expect(await accept(as)).toEqual({ recordId, repeat: true });
     expect((await records(t)).length).toBe(before);
     expect((await t.run((ctx) => ctx.db.get(recordId)))?.contentHash).toBe(EARLIER_HASH);
-    // And no reading is left behind for a later acceptance to find.
     expect(await readings(t)).toEqual([]);
 
     // The export carries the record with the hash it was sealed with.
@@ -1073,13 +1082,15 @@ describe('a record whose hash is not in the ledger', () => {
   }
 });
 
-describe('a reading never outlives an acceptance at its version', () => {
+describe('a reading never outlives the acceptance it was for', () => {
   /**
    * A reading is the evidence for one acceptance. An account that has already accepted this version
    * has nothing for a reading to become, so none is written for it, and a repeat acceptance discards
-   * any it finds. Otherwise a leftover row would wait — the 30-day prune, or the finalize stage, the
-   * only other deletes — for the next acceptance that needs one: a canceled deletion's
+   * any it finds; a canceled deletion discards the subject's readings, since its emptied row must
+   * accept again on a reading made after the cancel. Otherwise a leftover row would wait — the 30-day
+   * prune, or the finalize stage — for the next acceptance that needs one: a canceled deletion's
    * re-introduction, which would seal a record with an earlier visit's stamps and no fresh reading.
+   * Each of the three is held by a test below that fails without it.
    */
   async function acceptedAccount(t: T) {
     const as = caller(t);
@@ -1099,11 +1110,19 @@ describe('a reading never outlives an acceptance at its version', () => {
 
   test('a canceled deletion re-accepts only on a fresh reading, stamped by the new visit', async () => {
     const t = harness();
-    const { as, recordId } = await acceptedAccount(t);
-    // A second tab reads the terms again and presses the button: the first acceptance comes back.
-    vi.setSystemTime(T0 + 60_000);
-    await readToEnd(as);
-    expect(await accept(as)).toEqual({ recordId, repeat: true });
+    const { as } = await acceptedAccount(t);
+    // A reading left after the acceptance, written before the reader stopped writing for an
+    // accepted account (dev holds one): opened and read to the end a minute on.
+    await t.run((ctx) =>
+      ctx.db.insert('termsReadings', {
+        clerkUserId: 'user_ada',
+        termsVersion: TERMS.version,
+        openedAt: T0 + 60_000,
+        reachedEndAt: T0 + 60_000,
+        reachedEndVia: 'inline',
+        surface: 'web',
+      }),
+    );
 
     await deleteAndCancel(as, T0 + 2 * DAY);
     const profile = await as.query(api.profiles.current, {});
@@ -1126,6 +1145,42 @@ describe('a reading never outlives an acceptance at its version', () => {
       recordedAt: T0 + 5 * DAY + 30_000,
     });
     expect(await readings(t)).toEqual([]);
+  });
+
+  test('a reading from before a deletion request never seals the re-introduction', async () => {
+    // An account that owed an acceptance reads the terms to the end and leaves without accepting;
+    // then it asks to be deleted and cancels. Its emptied row must accept again, on a new reading.
+    const t = harness();
+    await existingProfile(t, 'user_bea');
+    const bea = caller(t, 'user_bea');
+    vi.setSystemTime(T0 + 60_000);
+    await readToEnd(bea);
+    expect(await readings(t)).toHaveLength(1);
+    await deleteAndCancel(bea, T0 + 2 * DAY);
+    expect(await readings(t)).toEqual([]);
+
+    const back = { displayName: 'Bea Again', username: 'bea', dateOfBirth: ADULT_DOB };
+    vi.setSystemTime(T0 + 4 * DAY);
+    await expectRefusal(accept(bea, { account: back }), 'terms_not_read');
+    await readToEnd(bea);
+    vi.setSystemTime(T0 + 4 * DAY + 30_000);
+    const { recordId } = await accept(bea, { account: back });
+    expect(await t.run((ctx) => ctx.db.get(recordId))).toMatchObject({
+      context: 'reintroduced',
+      openedAt: T0 + 4 * DAY,
+      reachedEndAt: T0 + 4 * DAY,
+    });
+  });
+
+  test('a cancel discards only the canceling account’s readings', async () => {
+    const t = harness();
+    await existingProfile(t, 'user_bea');
+    await existingProfile(t, 'user_cy');
+    const bea = caller(t, 'user_bea');
+    await readToEnd(bea);
+    await readToEnd(caller(t, 'user_cy'));
+    await deleteAndCancel(bea, T0 + DAY);
+    expect((await readings(t)).map((r) => r.clerkUserId)).toEqual(['user_cy']);
   });
 
   test('an accepted account’s open and end write no reading, and answer as they do today', async () => {
@@ -1161,8 +1216,11 @@ describe('a reading never outlives an acceptance at its version', () => {
     const as = caller(t, 'user_bea');
     await readToEnd(as);
     expect(await readings(t)).toHaveLength(1);
-    expect((await accept(as)).repeat).toBe(false);
+    const { recordId, repeat } = await accept(as);
+    expect(repeat).toBe(false);
     expect(await readings(t)).toEqual([]);
+    // No version changed: an existing account's first acceptance on record is `returning`.
+    expect((await t.run((ctx) => ctx.db.get(recordId)))?.context).toBe('returning');
   });
 
   test('a leftover reading is discarded by a repeat acceptance', async () => {

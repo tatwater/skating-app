@@ -76,6 +76,7 @@ import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id, TableNames } from './_generated/dataModel';
 import { internalMutation, type MutationCtx, mutation } from './_generated/server';
+import { discardReadings } from './consent';
 import { requireProfile } from './lib/auth';
 import { redactAgedContent } from './lib/contentPurge';
 import { reclaimExportBlob } from './lib/exportBundles';
@@ -225,6 +226,10 @@ export const requestDeletion = mutation({
  * already redacted is gone — their old reports keep their readings and lose their prose. That's not a
  * limitation of the implementation; the words were deleted, and pretending a cancel could recover them
  * would be the one dishonest thing this flow could do.
+ *
+ * The emptied row must accept the terms again (D298), so any reading of them from before the request
+ * is discarded here (`consent.discardReadings`): the re-introduction's record holds the stamps of a
+ * reading made after the cancel, never ones left from before it.
  */
 export const cancelDeletion = mutation({
   args: {},
@@ -232,6 +237,7 @@ export const cancelDeletion = mutation({
     const profile = await requireProfile(ctx);
     if (profile.deletionRequestedAt === undefined) return { canceled: false };
     await ctx.db.patch(profile._id, { deletionRequestedAt: undefined });
+    await discardReadings(ctx, profile.clerkUserId);
     await refreshPersonRow(ctx, profile._id);
     return { canceled: true };
   },

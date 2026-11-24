@@ -20,7 +20,7 @@ describe('the committed hash', () => {
     const hint =
       recorded === undefined
         ? `New questions. Add this line to KNOW_BEFORE_YOU_GO_HASHES in packages/core/src/knowBeforeYouGo.ts:\n  '${KNOW_BEFORE_YOU_GO.version}': '${actual}',`
-        : `The questions changed but their version didn't. Set KNOW_BEFORE_YOU_GO.version to today's date, run this test again, and add the line it prints (keep the old line).`;
+        : `The questions changed but their version didn't. Set KNOW_BEFORE_YOU_GO.version to today's date (or the next free date, if today's is already in KNOW_BEFORE_YOU_GO_HASHES), run this test again, and add the line it prints (keep the old line).`;
     expect(recorded, hint).toBe(actual);
     expect(KNOW_BEFORE_YOU_GO_SHA256).toBe(actual);
   });
