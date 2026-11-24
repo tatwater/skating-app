@@ -187,11 +187,12 @@ function HomeLocation() {
   // even if the read is never answered, and only the newest read nobody superseded is saved. This
   // tab stays mounted all session, so here the read is also dropped at the give-up (said as the
   // couldn't-locate line) and whenever the tab loses focus: a fix landing later, with nothing on
-  // screen, never replaces the home.
-  const { locate, start, supersede } = useLocateRead((homeCoord) => void save(homeCoord), {
+  // screen, never replaces the home. Leaving the tab also forgets a said failure (`reset`), so the
+  // couldn't-locate line isn't still there on the way back.
+  const { locate, start, supersede, reset } = useLocateRead((homeCoord) => void save(homeCoord), {
     dropAtGiveUp: true,
   });
-  useFocusEffect(useCallback(() => supersede, [supersede]));
+  useFocusEffect(useCallback(() => reset, [reset]));
   // A save or a clear the server didn't take: its words for a refusal (the tabs hold suspended,
   // read-only accounts), else the not-saved or not-cleared line — a toast, as every refusal is.
   const refused = (error: unknown, line: string = ONBOARDING_COPY.home.notSaved) =>

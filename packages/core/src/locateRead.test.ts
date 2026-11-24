@@ -157,6 +157,33 @@ describe('createLocateRead', () => {
     expect(states).toEqual(['locating', 'idle', 'locating', 'failed']);
   });
 
+  it('a reset forgets a failure already said, and drops a read still out', async () => {
+    const { locate, out, states, onFix } = setup(undefined, true);
+    // Timed out (the You tab's give-up): said, then forgotten when the tab is left.
+    locate.start();
+    await vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS);
+    locate.reset();
+    expect(states).toEqual(['locating', 'failed', 'idle']);
+    // Refused: the same.
+    locate.start();
+    await vi.advanceTimersByTimeAsync(0);
+    out[1]?.reject(new Error('denied'));
+    await vi.advanceTimersByTimeAsync(0);
+    locate.reset();
+    expect(states).toEqual(['locating', 'failed', 'idle', 'locating', 'failed', 'idle']);
+    // A read still out: dropped, its give-up cleared, its late fix not taken.
+    locate.start();
+    locate.reset();
+    expect(vi.getTimerCount()).toBe(0);
+    out[2]?.resolve('somewhere else, later');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(onFix).not.toHaveBeenCalled();
+    expect(states.at(-1)).toBe('idle');
+    // Idle already: nothing to say.
+    locate.reset();
+    expect(states).toHaveLength(8);
+  });
+
   it('takes only the newest of two reads, and the older one’s give-up changes nothing', async () => {
     const { locate, out, states, onFix } = setup();
     locate.start();

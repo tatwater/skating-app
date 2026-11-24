@@ -26,6 +26,7 @@ export function useLocateRead(
   locate: LocateReadState;
   start: () => void;
   supersede: () => void;
+  reset: () => void;
 } {
   const [locate, setLocate] = useState<LocateReadState>('idle');
   const fix = useRef(onFix);
@@ -47,6 +48,7 @@ export function useLocateRead(
   const [calls] = useState(() => ({
     start: () => read.current?.start(),
     supersede: () => read.current?.supersede(),
+    reset: () => read.current?.reset(),
   }));
   return { locate, ...calls };
 }

@@ -46,6 +46,11 @@ export interface LocateRead {
   start(): void;
   /** The skater chose otherwise (typed, picked, saved, skipped): a read still out is dropped. */
   supersede(): void;
+  /**
+   * The screen was left but stays mounted (the phone's You tab losing focus): a read still out is
+   * dropped, and a failure already said is forgotten, so the screen comes back `idle`.
+   */
+  reset(): void;
   /** The screen is gone: nothing is taken or said after this. */
   dispose(): void;
 }
@@ -109,6 +114,11 @@ export function createLocateRead<T>({
       stopWaiting();
       // A failure already said stays said; a read in progress just stops.
       if (state === 'locating') set('idle');
+    },
+    reset() {
+      token++;
+      stopWaiting();
+      set('idle');
     },
     dispose() {
       token++;
