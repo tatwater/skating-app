@@ -884,6 +884,38 @@ describe('Home’s town for the Profile step', () => {
     );
     expect(useEntryStore.getState().homeTown).toBeNull();
   });
+
+  it('goes with the picked address when the location’s save fails: the field and the town agree', async () => {
+    const user = userEvent.setup();
+    const geo = slowGeolocation();
+    mutation('profiles:setHome').mockRejectedValueOnce(new Error('offline'));
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await pick(user);
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Use my current location' }));
+    await act(async () => geo.fix(44.1, -71.5));
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({
+        title: 'Your home wasn’t saved. Try again in a moment.',
+        tone: 'bad',
+      }),
+    );
+    // No town without its address, and no address left on the field without its town.
+    expect(useEntryStore.getState().homeTown).toBeNull();
+    expect(screen.getByRole('combobox')).toHaveValue('');
+    expect(screen.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
+  });
+
+  it('goes with the picked address when the skip fails: the field and the town agree', async () => {
+    const user = userEvent.setup();
+    mutation('consent:advanceWelcome').mockRejectedValueOnce(new Error('offline'));
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await pick(user);
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }));
+    await waitFor(() => expect(m.toast).toHaveBeenCalledOnce());
+    expect(useEntryStore.getState().homeTown).toBeNull();
+    expect(screen.getByRole('combobox')).toHaveValue('');
+  });
 });
 
 describe('Home’s location, arriving late', () => {

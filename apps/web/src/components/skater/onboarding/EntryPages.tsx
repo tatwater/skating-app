@@ -277,7 +277,10 @@ export function WelcomePage({
 /**
  * Home (boards 10.10, 10.11): a picked address or the browser's location, saved; or skipped. The
  * picked address's town rides to the Profile step (`carryHomeTown`) only while that address is the
- * one on the field: edited, skipped, or replaced by the location, it is forgotten, as on the phone.
+ * one on the field: edited, skipped, or replaced by the location, it is forgotten, as on the phone —
+ * and a skip or a location takes the picked address off the field with it, before the call, so a
+ * call that fails leaves the two agreeing (a town forgotten only after the call succeeded would
+ * race the Profile step, which takes the town as it mounts).
  *
  * A location fix arrives when it arrives (`currentPosition` gives up on a read nobody answers). The
  * other buttons never wait for it: *Save and continue* and *Skip for now* each supersede it, and a fix
@@ -312,6 +315,13 @@ function WelcomeHome() {
   const dropLocate = () => {
     locating.current += 1;
     setLocate((l) => (l === 'locating' ? 'idle' : l));
+  };
+  // The picked address and its town go together, so whatever the call that follows does — saved,
+  // refused, lost — the field and the town the Profile step would take never disagree.
+  const forgetPicked = () => {
+    setChosen(null);
+    setAddress('');
+    carryHomeTown(null);
   };
 
   const save = async (coord: { lat: number; lng: number }) => {
@@ -365,8 +375,8 @@ function WelcomeHome() {
           (coord) => {
             if (!mounted.current || mine !== locating.current || busy.current) return;
             setLocate('idle');
-            // Another place than the picked address: its town is not this home's.
-            carryHomeTown(null);
+            // Another place than the picked address: the address and its town give way to it.
+            forgetPicked();
             void save(coord);
           },
           () => {
@@ -384,8 +394,8 @@ function WelcomeHome() {
         if (busy.current) return;
         busy.current = true;
         setSkipping(true);
-        // Skipped: no home, so no town for the Profile step to take from it.
-        carryHomeTown(null);
+        // Skipped: no home, so no address and no town for the Profile step to take from it.
+        forgetPicked();
         dropLocate();
         try {
           await advance({ from: 'home' });
