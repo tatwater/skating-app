@@ -21,7 +21,7 @@
  * each; the test holds that too.
  */
 
-import { ledgerHash } from './legal/hashLedger';
+import { claimMatches, ledgerHash } from './legal/hashLedger';
 
 export interface KnowBeforeYouGoQuestion {
   /** Stable name for the question: screens and tests refer to it. */
@@ -139,9 +139,15 @@ export function knowBeforeYouGoHashInput(set: KnowBeforeYouGo): string {
   ]);
 }
 
-/** Whether a client's `{ version, hash }` names the questions this build asks. */
+/**
+ * Whether a client's `{ version, hash }` names the questions this build asks — never while this
+ * build's version is missing from `KNOW_BEFORE_YOU_GO_HASHES` (`claimMatches`).
+ */
 export function isCurrentKnowBeforeYouGo(claim: { version: string; hash: string }): boolean {
-  return claim.version === KNOW_BEFORE_YOU_GO.version && claim.hash === KNOW_BEFORE_YOU_GO_SHA256;
+  return claimMatches(
+    { version: KNOW_BEFORE_YOU_GO.version, hash: KNOW_BEFORE_YOU_GO_SHA256 },
+    claim,
+  );
 }
 
 /** A question's two answers in the order they are drawn: the first is key 1, the second key 2. */

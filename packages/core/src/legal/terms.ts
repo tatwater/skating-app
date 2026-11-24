@@ -17,7 +17,7 @@
  * paragraph (`p`) or a list item (`li`); consecutive items make one list.
  */
 
-import { ledgerHash } from './hashLedger';
+import { claimMatches, ledgerHash } from './hashLedger';
 
 export interface TermsBlock {
   kind: 'p' | 'li';
@@ -181,9 +181,12 @@ export const TERMS_HASHES: Readonly<Record<string, string>> = {
  */
 export const TERMS_SHA256: string = ledgerHash(TERMS_HASHES, TERMS.version);
 
-/** Whether a client's `{ version, hash }` names the terms this build serves. */
+/**
+ * Whether a client's `{ version, hash }` names the terms this build serves — never while this
+ * build's version is missing from `TERMS_HASHES` (`claimMatches`).
+ */
 export function isCurrentTerms(claim: { version: string; hash: string }): boolean {
-  return claim.version === TERMS.version && claim.hash === TERMS_SHA256;
+  return claimMatches({ version: TERMS.version, hash: TERMS_SHA256 }, claim);
 }
 
 /** "Version 2026-11-24" — the reader's meta line and the document's first line. */

@@ -11,6 +11,8 @@
  * again (the governor's ruling, B03 §9.15); the next terms acceptance pins the new one.
  */
 
+import { claimMatches } from './hashLedger';
+
 export const PRIVACY_NOTICE_VERSION = '2026-11-24';
 
 export const PRIVACY_NOTICE_SHA256 =
@@ -18,5 +20,5 @@ export const PRIVACY_NOTICE_SHA256 =
 
 /** Whether a client's `{ version, hash }` names the notice this build serves. */
 export function isCurrentPrivacyNotice(claim: { version: string; hash: string }): boolean {
-  return claim.version === PRIVACY_NOTICE_VERSION && claim.hash === PRIVACY_NOTICE_SHA256;
+  return claimMatches({ version: PRIVACY_NOTICE_VERSION, hash: PRIVACY_NOTICE_SHA256 }, claim);
 }
