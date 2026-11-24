@@ -879,7 +879,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - Clerk's ban lock reconciled daily (B01-4k, D277): on dev, `convex dev --once`, then — before the next 10:20 UTC tick — one dry run (`convex run clerkReconcile:run '{"dryRun":true}'`), its checked counts read back against the People *Banned* lane and Clerk's banned users, before the cron's first real run; a non-zero repair count on Machinery means one of the two sync gaps happened. Dry run on dev (2026-11-17): 0 banned in Clerk, 0 expected, 0 repairs; the first real run, due 2026-11-18 10:20 UTC, is still to confirm → the plan's *B01-4k*
 
 ## Phase B03 — The skater web app
-🟢 **Complete** 2026-11-24 · PRs #95–#104, #180 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244 D294 D295 D296 D297 D298
+🟢 **Complete** 2026-11-24 · PRs #95–#104, #180, #181 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244 D294 D295 D296 D297 D298
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
@@ -890,9 +890,10 @@ the report draft's photos move to IndexedDB so a reload loses nothing but what a
 PostHog extends the merged D235 (deduped pageviews, masked usernames, a wider taxonomy); Sentry gains
 route-level boundaries. Built by one governor and parallel agents in their own worktrees, four PRs. *A
 skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
-Reopened 2026-11-24 for one more PR, on web and phone: an 18+ minimum, a five-step onboarding whose terms
+Reopened 2026-11-24 for two more PRs, on web and phone: an 18+ minimum, a five-step onboarding whose terms
 are read to the end and recorded in place of the old acknowledgment, and seven Know Before You Go
-questions asked again each season, all kept in a record that outlives a deleted account by six years.
+questions asked again each season, all kept in a record that outlives a deleted account by six years;
+then conduct rules written into the terms.
 
 #### Data runs
 - **2026-11-07 — the phase's two backfills on dev:** `posts:backfillSearchText` and `gpsActivities:backfillGpxProvider`, run against the deployment the app drives; neither needs a re-run
