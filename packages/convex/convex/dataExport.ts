@@ -254,6 +254,13 @@ export const collect = internalQuery({
     // What they wrote to support, and the replies that reached them by email (B01-5f): theirs. Never a
     // staff note, a reply that didn't go, or who on staff wrote one (`lib/supportThread`).
     const support = await exportTicketsOf(ctx, profile.clerkUserId);
+    // What they accepted and answered, and when (D297): theirs, so it's in the bundle — by the rule
+    // below, without the email it holds (a delivery address, as on the profile), the Clerk subject or
+    // the profile id (internal join keys).
+    const consentRecords = await ctx.db
+      .query('consentRecords')
+      .withIndex('by_profile', (q) => q.eq('profileId', userId))
+      .take(ROW_CAP);
 
     const {
       // Not exported: the Clerk subject is an internal identifier for a system the user already has
@@ -301,6 +308,17 @@ export const collect = internalQuery({
           : {}),
       })),
       supportTickets: support.tickets,
+      consentRecords: consentRecords.map(
+        ({
+          identity: { email: _email, ...identity },
+          clerkUserId: _subject,
+          profileId: _p,
+          ...r
+        }) => ({
+          ...r,
+          identity,
+        }),
+      ),
       // The no-silent-caps rule: a person with more tickets or replies than one bundle reads is told.
       ...(support.capped
         ? {

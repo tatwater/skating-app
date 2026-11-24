@@ -65,6 +65,7 @@
  */
 
 import {
+  consentPurgeAt,
   DELETED_DATE_OF_BIRTH,
   DELETED_DISPLAY_NAME,
   DELETION_GRACE_MS,
@@ -471,8 +472,13 @@ async function saveTurn(
  * the last one that will ever see these rows. What it skips is kept forever. It sits before `tracks`
  * for a reason that survived the posture change — it erases the *unpublished* recordings, so `tracks`
  * only ever sees activities that are still worth deciding about.
+ *
+ * **`consent` is next to last** (D297). It severs the consent records from the account, which has to
+ * happen once nothing can write another (the lock) and while `by_profile` still finds them — the
+ * tombstone keeps the profile id, but this is the stage that reads by it, so it runs before the last
+ * write, not after it.
  */
-const STAGES = ['lock', 'redact', 'erase', 'tracks', 'photos', 'tombstone'] as const;
+const STAGES = ['lock', 'redact', 'erase', 'tracks', 'photos', 'consent', 'tombstone'] as const;
 type Stage = (typeof STAGES)[number];
 
 /**
@@ -574,6 +580,8 @@ async function runStage(
       return severTracks(ctx, profile._id, cursor, size);
     case 'photos':
       return erasePhotos(ctx, profile._id, cursor, size);
+    case 'consent':
+      return severConsent(ctx, profile._id, size);
     case 'tombstone':
       await writeTombstone(ctx, profile);
       return { more: false };
@@ -739,6 +747,15 @@ async function erasePrivate(
     await ctx.db
       .query('consolePresence')
       .withIndex('by_user', (q) => q.eq('userId', userId))
+      .take(size),
+  );
+  // A terms reading that never became an acceptance (D295): the opened and read-to-the-end stamps,
+  // keyed by the Clerk subject — which the tombstone is about to scrub, so it goes here. (An accepted
+  // reading was consumed by its acceptance; what it proved lives on in the consent record.)
+  await drain(
+    await ctx.db
+      .query('termsReadings')
+      .withIndex('by_clerk_version', (q) => q.eq('clerkUserId', profile.clerkUserId))
       .take(size),
   );
 
@@ -912,6 +929,41 @@ async function erasePhotos(
 }
 
 /**
+ * **The consent record: severed, then kept six years** (D297). The one thing finalization neither
+ * erases nor pseudonymizes. Each record made by this account loses both of its pointers back to it —
+ * the profile id and the Clerk subject — so it can't tie the tombstone's surviving reports to a
+ * person (D62's promise), and gets its `purgeAt`: this instant plus six calendar years
+ * (`consentPurgeAt`), after which `consent.purgeDue` deletes it. The identity snapshot inside it stays:
+ * that is what makes it worth keeping, and the Privacy Notice says so.
+ *
+ * Severing takes a record out of the `by_profile` range it was read from, so re-`take()`ing walks
+ * forward on its own and a re-driven stage finds only what is left. Nothing earlier — not a pending
+ * deletion, a cancel or a re-onboarding — touches a record; this is the only sever
+ * (`packages/guards` `consentWriters.test.ts`).
+ */
+async function severConsent(
+  ctx: MutationCtx,
+  userId: Id<'profiles'>,
+  size: number,
+): Promise<StageResult> {
+  const severedAt = Date.now();
+  const purgeAt = consentPurgeAt(severedAt);
+  const records = await ctx.db
+    .query('consentRecords')
+    .withIndex('by_profile', (q) => q.eq('profileId', userId))
+    .take(size);
+  for (const record of records) {
+    await ctx.db.patch(record._id, {
+      profileId: undefined,
+      clerkUserId: undefined,
+      severedAt,
+      purgeAt,
+    });
+  }
+  return { more: records.length >= size };
+}
+
+/**
  * Bucket 2 — **anonymize**, which is a single write. Every `v.id('profiles')` pointer in the app keeps
  * pointing here; what changes is that "here" no longer identifies anyone. Reports, comments, hazards,
  * ratings, flags and point events are untouched, which is the whole D33 posture: the ice record
@@ -953,6 +1005,12 @@ async function writeTombstone(ctx: MutationCtx, profile: Doc<'profiles'>): Promi
     feedFilterPrefs: undefined,
     riskAckVersion: undefined,
     riskAckAt: undefined,
+    // The way in's routing state (D295–D298): the records keep what was accepted, severed above.
+    termsVersion: undefined,
+    termsAcceptedAt: undefined,
+    knowBeforeYouGoAt: undefined,
+    knowBeforeYouGoVersion: undefined,
+    welcomeStep: undefined,
     // A moderator's free-text reason for a past suspension or ban, denormalized onto the profile —
     // prose about this person, frequently naming another one ("repeatedly abusive to @someone in
     // comments"). It is on the same side of the D62 seam as everything else here, and it was missed
