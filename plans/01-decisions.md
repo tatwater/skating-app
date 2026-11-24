@@ -8833,6 +8833,10 @@ marked).** A skater accepts the Terms of Use by reading them, not by ticking a b
   *Record acceptance*.
 - **The server stamps three moments** — the terms opened, their end reached (and in which reader), the
   acceptance — and **none of them is ever shown on a screen**. They are evidence, not interface.
+  Each is when the server heard of that moment, **not a measure of reading time**: an end reached
+  while the opening is still on its way is stamped when the opening answers, so a device offline for
+  the whole read lands its opening and its end together on reconnect (the governor's ruling,
+  2026-11-24). They prove the order and the words, not how long anyone read.
   After the acceptance the skater sees *Acceptance recorded* and that a copy of the accepted terms was
   emailed to them (sent through the existing Resend transport; the line changes only when the send is
   known not to have happened — the governor's ruling).

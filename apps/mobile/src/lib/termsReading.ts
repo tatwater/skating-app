@@ -71,7 +71,8 @@ export interface TermsReadingDeps {
   /** The reading starts again: the screen scrolls its reader to the top. */
   toTop?: () => void;
   /**
-   * The end was reached on a reading the server never opened: the screen says why, in
+   * The end was reached on a reading the server doesn't have — no opening succeeded, or the retry it
+   * waited on answered (most of the text was read without one): the screen says why, in
    * `terms_not_opened`'s words, as the reading starts again from the top.
    */
   onUnopened?: () => void;
@@ -112,9 +113,8 @@ interface Opening {
 
 /**
  * The reading's controller. **A reading the server doesn't have** — the opening failed, or the end
- * was refused `terms_not_opened` (pruned, or lost to a race) — is never patched up by opening and
- * stamping in one breath: the sealed record would say the terms were opened and finished in the same
- * instant. A failed opening is said once and tried again, quietly, as the skater scrolls (no more
+ * was refused `terms_not_opened` (pruned, or lost to a race) — is never patched up at the end by a
+ * new opening and its stamp: the terms were read with no reading on the server. A failed opening is said once and tried again, quietly, as the skater scrolls (no more
  * often than core's `TERMS_OPEN_RETRY_GAP_MS`), so the server normally has the reading by the end.
  * If the end is reached without one, the skater is told why (`onUnopened`, or the server's own words
  * when it refused the account as unable to act) and — as on the web (core's `reopen` action) — the
@@ -123,7 +123,9 @@ interface Opening {
  * reading, never a loop. **An end reached while an opening is out** waits for its answer: on the
  * reading's first opening, a success stamps the end then (a slow connection, or a text that fits the
  * screen, still counts) and a failure is the unopened end above; on a retry, whatever it answers,
- * most of the text was read with no reading on the server, so it is the unopened end too.
+ * most of the text was read with no reading on the server, so it is the unopened end too. The
+ * stamps say when the server heard of each moment, not how long the reading took: a device offline
+ * for the whole read sends its first opening and its end on reconnect, and both land together.
  */
 export function createTermsReading(deps: TermsReadingDeps): TermsReading {
   const now = deps.now ?? Date.now;

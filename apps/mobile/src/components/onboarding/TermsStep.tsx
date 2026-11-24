@@ -163,7 +163,8 @@ function Reader({
           via: 'inline',
         }),
       onRefusal: (error) => calls.current.toast(readRefusal(error).message),
-      // The end reached with no opening on the server (each retry failed too): why, then the top.
+      // The end reached on a reading the server doesn't have (no opening succeeded, or the retry it
+      // waited on answered — most of the text was read without one): why, then the top.
       onUnopened: () => calls.current.toast(consentRefusalMessage('terms_not_opened')),
       onChange: setState,
       // A reading started again is read from the top. The marker stays where it was laid out (the

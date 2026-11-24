@@ -3,11 +3,13 @@
  * apps: the first failure is said; after that, each burst of scrolling may try again, no more often
  * than `TERMS_OPEN_RETRY_GAP_MS`, without a word unless the answer stops the step (out of date). So
  * by the time the end is reached the server normally has the reading. An end reached while an
- * opening is out never counts on it: once it answers, the end marker must leave the screen and
- * come back, so the end is never stamped in the same breath as its opening. If the end is reached
- * with no opening still, the skater is told why (`terms_not_opened`'s words) and the reading starts
- * again from the top — or, when the account can't act right now, the server's own words, and
- * nothing restarts.
+ * opening is out waits for its answer: the reading's first opening, answered, stamps the end then;
+ * a retry's answer, either way, means most of the text was read with no reading on the server. If
+ * the end is reached with no opening (or on a retry's answer), the skater is told why —
+ * `terms_not_opened`'s words, or the server's own when the account can't act right now — and the
+ * reading starts again from the top, its end counting once the marker has left and been reached
+ * again. The stamps say when the server heard, not how long the reading took: a device offline for
+ * the whole read sends its opening and its end on reconnect, and both land together.
  */
 
 /** The least time between two tries at opening a reading. */

@@ -190,7 +190,7 @@ describe('createTermsReading', () => {
     reading.observe(at(2400), 2900);
     await flush();
     // No reading on the server: said (`terms_not_opened`'s words), opened anew, from the top, and
-    // nothing stamped in the same breath.
+    // nothing stamped until the end is reached again.
     expect(onUnopened).toHaveBeenCalledOnce();
     expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);
@@ -278,7 +278,7 @@ describe('createTermsReading', () => {
     reading.rearm();
     expect(reading.state().end).toBe('recording');
     await flush();
-    // Never a new opening stamped in the same breath as its end: the opening is the reading's.
+    // Never a new opening: the stamp is on the opening the reading already has.
     expect(open).toHaveBeenCalledOnce();
     expect(reach).toHaveBeenCalledTimes(2);
     expect(reading.state().end).toBe('recorded');
@@ -502,8 +502,8 @@ describe('a reading the server lost (terms_not_opened)', () => {
     await flush();
     reading.observe(at(2400), 2900);
     await flush();
-    // As on the web: the toast, a new reading, the reader at its top — and no stamp at once, so the
-    // record can never say the terms were opened and finished in the same instant.
+    // As on the web: the toast, a new reading, the reader at its top — and no stamp until the end
+    // is reached again in the new reading.
     expect(onRefusal).toHaveBeenCalledOnce();
     expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);

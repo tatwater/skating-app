@@ -1522,11 +1522,12 @@ was read with no reading on the server), whatever it answers, the end says why o
 reading the server doesn't have at the end — no opening ever succeeded, said then in `terms_not_opened`'s words (or the
 server's for a can't-act refusal), or `terms_not_opened` itself — is opened anew from the top of whichever
 reader is open (the web's full-screen reader scrolls to its top too), and its end counts only once the marker has left the
-screen and been reached again, on both apps: never re-stamped in the same breath as the new opening (the record would say
-the terms were opened and finished in one instant), never a loop against a server that keeps refusing. `terms_first` is
+screen and been reached again, on both apps: a new reading is read again, not counted from where the old one ended, and
+never a loop against a server that keeps refusing. `terms_first` is
 `say`: the gate takes the skater to the terms once its profile catches up. `terms_not_read` re-arms the end on the opening
-the reading already has, on both apps, never a new one. Only a failed end stamp disarms the end until the marker has left
-and come back; quiet retries of a failed opening are never paused, a restarted reading's included. The profile gate's can't-act refusals on any
+the reading already has, on both apps, never a new one. A failed end stamp and a restarted reading are what disarm the
+end until the marker has left and come back; quiet retries of a failed opening are never paused, a restarted reading's
+included. The stamps say when the server heard of each moment, not how long the reading took (§9.17). The profile gate's can't-act refusals on any
 way-in step are a toast in the server's words and route nothing (§9.3) — the Home and Profile steps' own saves too, which
 say the server's words for it and the step's *wasn't saved* line for anything else. The web counts `terms_accepted`, `onboarding_completed` and
 `know_before_you_go_completed` only when the call says it recorded something (`repeat: false`). On the Home step, *Save and
@@ -1845,8 +1846,8 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   count. As ruled, the end now waits for that opening's answer: the reading's first opening, answered,
   stamps it; refused, it is said once and the reading starts again; a retried one's answer, either
   way, starts the reading again with one toast (§9.6). The leave-and-come-back disarm is back to
-  only a failed end stamp, so a can't-act end now restarts like any unopened end, in the server's
-  words, and quiet retries are never paused. The web's step said a late opening failure on another
+  a failed end stamp and a restarted reading only, so a can't-act end now restarts like any unopened
+  end, in the server's words, and quiet retries are never paused. The web's step said a late opening failure on another
   screen (it now goes quiet when unmounted). Settings' home painted *Change home* without its address
   field, which popped in a round trip later (the provider's `on` is now learned once a session),
   pulled the skater back to the home when a save answered after they left, and said nothing for a
@@ -1854,3 +1855,10 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   dropped), failed Clear silently and said a refused save as a location failure with no busy label.
   The phone's address field could mistake an effect for an older value for an outside change and drop
   the live query (an explicit `reset` counter now).
+- **What the three stamps are, and are not (the governor's ruling).** `openedAt`, `reachedEndAt` and
+  the acceptance's time are when the server heard of each moment: the opening, the end on screen,
+  the button. They are not a measure of reading time, and nothing reads them as one. An end that
+  waited on its opening is stamped when the opening answers, so a device offline for the whole read
+  sends both on reconnect and `openedAt` and `reachedEndAt` land together; that is accepted. What
+  the record does hold is the order — opened, then the end, then the acceptance — and the words
+  (version and hash).
