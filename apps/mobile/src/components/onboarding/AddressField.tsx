@@ -1,6 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faLocationDot, faMagnifyingGlass } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
+import { ADDRESS_FIELD_COPY, ONBOARDING_COPY } from '@skating/core';
 import { useAction } from 'convex/react';
 import { openBrowserAsync } from 'expo-web-browser';
 import { useEffect, useRef, useState } from 'react';
@@ -15,7 +16,6 @@ import {
   shownSuggestions,
   splitAddress,
 } from '../../lib/addressLookup';
-import { ONBOARDING_COPY_MOBILE } from '../../lib/onboardingCopyMobile';
 import { Input } from '../ThemedInputs';
 import { FieldHint, FieldLabel, FieldProblem } from './OnboardingFrame';
 
@@ -32,12 +32,15 @@ export function AddressField({
   value,
   onValueChange,
   onPick,
+  onOpenChange,
 }: {
   label: string;
   hint: string;
   value: string;
   onValueChange: (value: string) => void;
   onPick: (suggestion: AddressSuggestion) => void;
+  /** Told when the suggestion list opens or closes (the Home step clears room for it). */
+  onOpenChange?: (open: boolean) => void;
 }) {
   const theme = useTheme();
   const suggest = useAction(api.geocode.suggest);
@@ -63,6 +66,7 @@ export function AddressField({
 
   const suggestions = shownSuggestions(lookup);
   const open = !closed && suggestions.length > 0;
+  useEffect(() => onOpenChange?.(open), [open, onOpenChange]);
   const attribution = lookupAttribution(lookup);
   const typed = value.trim().toLowerCase();
   const out = lookup.state === 'off' || lookup.state === 'quota';
@@ -80,7 +84,7 @@ export function AddressField({
           paddingHorizontal={0}
           value={value}
           readOnly={out}
-          placeholder={ONBOARDING_COPY_MOBILE.home.addressPlaceholder}
+          placeholder={ADDRESS_FIELD_COPY.placeholder}
           accessibilityLabel={label}
           autoCorrect={false}
           autoComplete="street-address"
@@ -141,9 +145,9 @@ export function AddressField({
         </YStack>
       ) : null}
       {out ? (
-        <FieldProblem>{ONBOARDING_COPY_MOBILE.home.suggestionsOff}</FieldProblem>
+        <FieldProblem>{ONBOARDING_COPY.home.suggestionsOff}</FieldProblem>
       ) : lookup.state === 'error' ? (
-        <FieldProblem>{ONBOARDING_COPY_MOBILE.home.suggestionsFailed}</FieldProblem>
+        <FieldProblem>{ADDRESS_FIELD_COPY.suggestionsFailed}</FieldProblem>
       ) : (
         <FieldHint>{hint}</FieldHint>
       )}

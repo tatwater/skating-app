@@ -32,7 +32,6 @@ import { type OnboardingStep, onboardingStepShown, welcomeStepShown } from './en
 import { KnowBeforeYouGoFlow } from './KnowBeforeYouGoFlow';
 import { TermsFlow } from './TermsFlow';
 import { AddPhotoLabel, HomeStep, type ProfileDraft, ProfileStep } from './WelcomeSteps';
-import { WEB_ONBOARDING_COPY } from './webCopy';
 
 /** The signed-in address, for *Signed in as* (Clerk's, before any profile exists). */
 function useEmail(): string | null {
@@ -151,6 +150,7 @@ export function KnowBeforeYouGoPage() {
   const profile = useQuery(api.profiles.current, {});
   const watch = useQuery(api.consent.watchAnchor, {});
   const complete = useMutation(api.consent.completeKnowBeforeYouGo);
+  const fromReceipt = useEntryStore((s) => s.questionsFromReceipt);
   const [busy, setBusy] = useState(false);
   const [attempt, setAttempt] = useState(0);
 
@@ -193,7 +193,8 @@ export function KnowBeforeYouGoPage() {
     <KnowBeforeYouGoFlow
       key={attempt}
       step={profile.welcomeStep !== undefined ? ONBOARDING_COPY.questions.step : null}
-      flavor={attempt > 0 ? 'never' : flavor}
+      // Straight from the receipt, or starting over: the first question, never the season card.
+      flavor={attempt > 0 || fromReceipt ? 'never' : flavor}
       season={
         profile.knowBeforeYouGoAt !== undefined
           ? {
@@ -241,6 +242,7 @@ export function WelcomePage({
       name={profile.displayName}
       bio={profile.bio ?? ''}
       town={profile.homeTownLabel ?? ''}
+      visibility={profile.profileVisibility}
     />
   );
 }
@@ -265,7 +267,7 @@ function WelcomeHome() {
       await setHome({ homeCoord: coord });
     } catch {
       setSaving(false);
-      toast({ title: WEB_ONBOARDING_COPY.home.notSaved, tone: 'bad' });
+      toast({ title: ONBOARDING_COPY.home.notSaved, tone: 'bad' });
       return;
     }
     try {
@@ -326,20 +328,33 @@ function WelcomeHome() {
 /** What *Open the map* sends to `updateProfile`: only what the step changed (§9.6). */
 export function profilePatch(
   draft: ProfileDraft,
-  saved: { bio: string; town: string },
-): { bio?: string; homeTownLabel?: string; profileVisibility?: 'private' } {
+  saved: { bio: string; town: string; isPublic: boolean },
+): { bio?: string; homeTownLabel?: string; profileVisibility?: 'public' | 'private' } {
   const bio = draft.bio.trim();
   const town = draft.town.trim();
   return {
     ...(bio !== saved.bio.trim() ? { bio } : {}),
     // Show my town stores nothing of its own: on, the town is the profile's; off, it isn't saved.
     ...(draft.showTown && town !== '' && town !== saved.town.trim() ? { homeTownLabel: town } : {}),
-    // Public is the new account's default; only switching it off writes.
-    ...(draft.isPublic ? {} : { profileVisibility: 'private' as const }),
+    // The switch shows the row's own visibility (public for a new account, private for a
+    // re-introduced one, D298) and writes only when the skater changed it.
+    ...(draft.isPublic !== saved.isPublic
+      ? { profileVisibility: draft.isPublic ? ('public' as const) : ('private' as const) }
+      : {}),
   };
 }
 
-function WelcomeProfile({ name, bio, town }: { name: string; bio: string; town: string }) {
+function WelcomeProfile({
+  name,
+  bio,
+  town,
+  visibility,
+}: {
+  name: string;
+  bio: string;
+  town: string;
+  visibility: 'public' | 'private';
+}) {
   const email = useEmail();
   const signOut = useSignOut();
   const analytics = useAnalytics();
@@ -350,7 +365,7 @@ function WelcomeProfile({ name, bio, town }: { name: string; bio: string; town: 
   const [draft, setDraft] = useState<ProfileDraft>(() => ({
     bio,
     town: town || homeTown || '',
-    isPublic: true,
+    isPublic: visibility === 'public',
     showTown: true,
   }));
   const [saving, setSaving] = useState(false);
@@ -360,12 +375,15 @@ function WelcomeProfile({ name, bio, town }: { name: string; bio: string; town: 
     const set = outcome === 'saved' ? setSaving : setSkipping;
     set(true);
     try {
-      const patch = outcome === 'saved' ? profilePatch(draft, { bio, town }) : {};
+      const patch =
+        outcome === 'saved'
+          ? profilePatch(draft, { bio, town, isPublic: visibility === 'public' })
+          : {};
       if (Object.keys(patch).length > 0) {
         try {
           await update(patch);
         } catch {
-          toast({ title: WEB_ONBOARDING_COPY.profile.notSaved, tone: 'bad' });
+          toast({ title: ONBOARDING_COPY.profile.notSaved, tone: 'bad' });
           return;
         }
       }

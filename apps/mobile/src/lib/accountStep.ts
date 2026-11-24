@@ -17,8 +17,8 @@ import {
   isValidUsername,
   normalizeDisplayName,
   normalizeUsername,
+  ONBOARDING_COPY,
 } from '@skating/core';
-import { ONBOARDING_COPY_MOBILE } from './onboardingCopyMobile';
 
 export interface AccountDraft {
   displayName: string;
@@ -98,7 +98,9 @@ export function accountStepView(
   // An empty name says nothing (Continue stays off); only a name that can't be stored is called out.
   if (!nameOk && displayName !== '') messages.name = CONSENT_REFUSAL_MESSAGES.name_invalid;
   if (username === 'invalid') messages.username = CONSENT_REFUSAL_MESSAGES.username_invalid;
-  if (username === 'taken') messages.username = ONBOARDING_COPY_MOBILE.account.usernameTaken;
+  if (username === 'taken') {
+    messages.username = ONBOARDING_COPY.account.usernameTaken(normalizeUsername(draft.username));
+  }
   if (dob === 'invalid' || dob === 'underage') messages.dob = DATE_OF_BIRTH_MESSAGES[dob];
   const dateOfBirth = composeDateOfBirth(draft.dob);
   const ready = nameOk && username === 'available' && dob === null && dateOfBirth !== null;

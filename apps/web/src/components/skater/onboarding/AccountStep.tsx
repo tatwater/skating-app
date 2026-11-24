@@ -18,7 +18,6 @@ import { AuthField, NEED_GROUP, NEED_INPUT } from '../auth/AuthField';
 import { suggestUsernames, usernameNeedsFixing } from '../auth/onboarding';
 import { DobField, type DobNeed } from './DobField';
 import { ENTRY_PRIMARY, EntryHead, EntryScreen, WIDE } from './EntryScreen';
-import { WEB_ONBOARDING_COPY } from './webCopy';
 
 /** What the live check knows about a handle: free, taken, or not answered yet. */
 export type UsernameAvailability = 'free' | 'taken' | 'unknown';
@@ -88,7 +87,7 @@ export function AccountStep({
   const dateOfBirth = composeDateOfBirth(fields);
 
   const usernameNeed = taken
-    ? WEB_ONBOARDING_COPY.account.usernameTaken(username)
+    ? ONBOARDING_COPY.account.usernameTaken(username)
     : usernameNeedsFixing(fields.username, leftUsername)
       ? CONSENT_REFUSAL_MESSAGES.username_invalid
       : null;

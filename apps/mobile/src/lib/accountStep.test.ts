@@ -2,6 +2,8 @@ import {
   CONSENT_REFUSAL_MESSAGES,
   DATE_OF_BIRTH_MESSAGES,
   DISPLAY_NAME_MAX_LENGTH,
+  normalizeUsername,
+  ONBOARDING_COPY,
 } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import {
@@ -12,7 +14,6 @@ import {
   usernameField,
   usernameQuery,
 } from './accountStep';
-import { ONBOARDING_COPY_MOBILE } from './onboardingCopyMobile';
 
 // Pinned (D243): 24 November 2026, noon UTC.
 const NOW = Date.UTC(2026, 10, 24, 12);
@@ -130,7 +131,7 @@ describe('accountStepView', () => {
       CONSENT_REFUSAL_MESSAGES.username_invalid,
     );
     expect(accountStepView(kate, 'taken', NOW).messages.username).toBe(
-      ONBOARDING_COPY_MOBILE.account.usernameTaken,
+      ONBOARDING_COPY.account.usernameTaken(normalizeUsername(kate.username)),
     );
     expect(accountStepView(kate, 'checking', NOW).account).toBeNull();
   });

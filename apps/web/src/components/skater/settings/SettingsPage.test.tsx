@@ -1,3 +1,4 @@
+import { CONSENT_RECORD_RETENTION } from '@skating/core';
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -566,9 +567,7 @@ describe('data and account', () => {
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Export my data' })));
     expect(request).toHaveBeenCalled();
     // Leaving says what outlives the account before it happens (B03 §9.11, D297): one sentence.
-    expect(
-      screen.getByText(/kept privately for six years after your account is deleted/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(CONSENT_RECORD_RETENTION)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Delete my account' }));
     const yes = screen.getByRole('button', { name: 'Yes, delete my account' });
     expect(yes).toHaveAttribute('data-armed');

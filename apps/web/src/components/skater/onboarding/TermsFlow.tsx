@@ -1,6 +1,7 @@
 import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
 import {
+  isAccountRefusal,
   knowBeforeYouGoDue,
   needsProfileSetup,
   PRIVACY_NOTICE_SHA256,
@@ -18,9 +19,9 @@ import {
   type AccountDraft,
   finishReceipt,
   holdForReceipt,
-  markUsernameTaken,
   recordReceipt,
   releaseHold,
+  returnToAccount,
   useEntryStore,
 } from '@/lib/entryHold';
 
@@ -40,9 +41,12 @@ const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
  *    Recorded, the box unlocks.
  * 3. *Record acceptance*: the hold first (`lib/entryHold` says why), then `acceptTerms`. Through,
  *    the receipt draws under the hold; refused, a toast, the hold let go, and — by code — the
- *    reading starts again (`terms_changed`), the end marker re-arms (`terms_not_read`), or the
- *    skater goes back to the Account step with the handle marked (`username_taken`).
- * 4. The receipt's button lets go, and the gate takes it from there.
+ *    reading starts again (`terms_changed`), the end marker re-arms (`terms_not_read`), or a new
+ *    account goes back to the Account step for any refusal of its fields (core's
+ *    `isAccountRefusal`: the age, the name, the handle's shape, its being taken — marked — or
+ *    its cooldown), as on the phone.
+ * 4. The receipt's button lets go, and the gate takes it from there. *Start the questions* opens
+ *    them on the first one: the receipt has just said what comes next.
  */
 export function TermsFlow({
   account,
@@ -56,7 +60,7 @@ export function TermsFlow({
   /** "2 of 5" for an account new this session. */
   step: number | null;
   email: string | null;
-  /** `username_taken`: back to the Account step (the store marks the handle). */
+  /** A refusal of the Account step's fields: back to it (the store keeps the fields as typed). */
   onBackToAccount: () => void;
   onSignOut: () => void;
 }) {
@@ -151,8 +155,8 @@ export function TermsFlow({
       if (context === 'first_run') analytics.capture('onboarding_completed');
     } catch (error) {
       const { code } = toastRefusal(error);
-      if (code === 'username_taken' && account !== null) {
-        markUsernameTaken(account.username);
+      if (account !== null && isAccountRefusal(code)) {
+        returnToAccount(code === 'username_taken' ? account.username : undefined);
         onBackToAccount();
       } else {
         releaseHold();
@@ -185,7 +189,7 @@ export function TermsFlow({
         line={line}
         questionsDue={due}
         email={email}
-        onContinue={finishReceipt}
+        onContinue={() => finishReceipt(due)}
         onSignOut={onSignOut}
       />
     );

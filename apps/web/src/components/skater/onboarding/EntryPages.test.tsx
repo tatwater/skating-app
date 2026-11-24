@@ -122,6 +122,7 @@ const FIELDS = {
 const LIVE = {
   _id: 'p1',
   displayName: 'Kate Donovan',
+  profileVisibility: 'public',
   termsVersion: TERMS.version,
   knowBeforeYouGoAt: Date.UTC(2026, 10, 16),
 };
@@ -238,6 +239,50 @@ describe('/onboarding', () => {
       tone: 'bad',
     });
     expect(useEntryStore.getState()).toMatchObject({ hold: null, taken: 'kdonovan' });
+  });
+
+  it.each([
+    'underage',
+    'name_invalid',
+    'username_invalid',
+    'username_cooldown',
+    'account_required',
+  ])(
+    'sends a %s refusal back to the Account step with a toast, as the phone does',
+    async (code) => {
+      const user = userEvent.setup();
+      fakes.queries.set('profiles:current', null);
+      carryAccount(FIELDS, ACCOUNT);
+      mutation('consent:acceptTerms').mockRejectedValueOnce(
+        new ConvexError({ code, message: `Refused: ${code}` }),
+      );
+      const onStep = vi.fn();
+      render(<OnboardingPage step="terms" onStep={onStep} />);
+      await readAndRecord(user);
+      await waitFor(() => expect(onStep).toHaveBeenCalledWith('account'));
+      expect(m.toast).toHaveBeenCalledWith({ title: `Refused: ${code}`, tone: 'bad' });
+      // The fields come back as typed; only a taken handle is marked.
+      expect(useEntryStore.getState()).toMatchObject({
+        hold: null,
+        recorded: false,
+        account: null,
+        fields: FIELDS,
+        taken: null,
+      });
+    },
+  );
+
+  it('keeps an existing account on the terms for any refusal: it has no Account step', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', LIVE);
+    mutation('consent:acceptTerms').mockRejectedValueOnce(
+      new ConvexError({ code: 'account_required', message: 'Refused.' }),
+    );
+    render(<TermsPage />);
+    await readAndRecord(user);
+    await waitFor(() => expect(m.toast).toHaveBeenCalledWith({ title: 'Refused.', tone: 'bad' }));
+    expect(useEntryStore.getState().hold).toBeNull();
+    expect(screen.getByRole('button', { name: 'Record acceptance' })).toBeInTheDocument();
   });
 });
 
@@ -382,6 +427,37 @@ describe('/know-before-you-go', () => {
       title: 'The questions were just updated.',
       tone: 'bad',
     });
+  });
+
+  it('opens on the first question, never the season card, straight from the receipt', async () => {
+    const user = userEvent.setup();
+    // A returning skater whose terms and questions are both due this season.
+    const due = { ...LIVE, termsVersion: undefined, knowBeforeYouGoAt: Date.UTC(2025, 10, 16) };
+    fakes.queries.set('profiles:current', due);
+    fakes.queries.set('consent:watchAnchor', {
+      season: 'winter-2026-27',
+      label: 'Winter 2026–27',
+      openedAt: Date.UTC(2026, 10, 20),
+    });
+    fakes.queries.set('consent:latestTermsReceipt', { email: 'k@example.test', copy: 'sent' });
+    holdForReceipt();
+    recordReceipt();
+    const receipt = render(<TermsPage />);
+    await user.click(screen.getByRole('button', { name: 'Start the questions' }));
+    expect(useEntryStore.getState()).toMatchObject({ hold: null, questionsFromReceipt: true });
+    receipt.unmount();
+
+    render(<KnowBeforeYouGoPage />);
+    expect(screen.queryByText('Winter 2026–27')).toBeNull();
+    expect(
+      screen.getByText(KNOW_BEFORE_YOU_GO.questions[0]?.prompt ?? 'missing'),
+    ).toBeInTheDocument();
+    // Still counted as the season's asking.
+    await answerAll(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(m.capture).toHaveBeenCalledWith('know_before_you_go_completed', { flavor: 'season' }),
+    );
   });
 
   it('draws nothing while the profile or the watch is loading', () => {
@@ -573,6 +649,49 @@ describe('Home’s picked address', () => {
   });
 });
 
+describe('Profile’s visibility', () => {
+  it('shows a re-introduced account’s private profile off, and leaves it so unless switched', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', {
+      ...LIVE,
+      profileVisibility: 'private',
+      welcomeStep: 'profile',
+    });
+    render(<WelcomePage step="profile" onStep={vi.fn()} />);
+    const toggle = screen.getByRole('switch', { name: /Public profile/ });
+    expect(toggle).not.toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Open the map' }));
+    await waitFor(() =>
+      expect(mutation('consent:advanceWelcome')).toHaveBeenCalledWith({ from: 'profile' }),
+    );
+    // No town to save, nothing changed: no write at all.
+    expect(mutation('profiles:updateProfile')).not.toHaveBeenCalled();
+  });
+
+  it('writes public only when a private account’s switch is turned on', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', {
+      ...LIVE,
+      profileVisibility: 'private',
+      welcomeStep: 'profile',
+    });
+    render(<WelcomePage step="profile" onStep={vi.fn()} />);
+    await user.click(screen.getByRole('switch', { name: /Public profile/ }));
+    await user.click(screen.getByRole('button', { name: 'Open the map' }));
+    await waitFor(() =>
+      expect(mutation('profiles:updateProfile')).toHaveBeenCalledWith({
+        profileVisibility: 'public',
+      }),
+    );
+  });
+
+  it('shows a new account’s public profile on', () => {
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'profile' });
+    render(<WelcomePage step="profile" onStep={vi.fn()} />);
+    expect(screen.getByRole('switch', { name: /Public profile/ })).toBeChecked();
+  });
+});
+
 describe('Profile’s save', () => {
   it('says a profile the server didn’t take as a toast, and doesn’t advance', async () => {
     const user = userEvent.setup();
@@ -608,7 +727,7 @@ describe('Profile’s save', () => {
 });
 
 describe('profilePatch', () => {
-  const saved = { bio: '', town: '' };
+  const saved = { bio: '', town: '', isPublic: true };
   const draft = { bio: '', town: 'Hanover, NH', isPublic: true, showTown: true };
 
   it('saves the town only while Show my town is on', () => {
@@ -616,15 +735,22 @@ describe('profilePatch', () => {
     expect(profilePatch({ ...draft, showTown: false }, saved)).toEqual({});
   });
 
-  it('writes visibility only when Public profile is switched off', () => {
-    expect(profilePatch({ ...draft, showTown: false, isPublic: false }, saved)).toEqual({
+  it('writes visibility only when the switch differs from the row', () => {
+    const quiet = { ...draft, showTown: false };
+    expect(profilePatch({ ...quiet, isPublic: false }, saved)).toEqual({
       profileVisibility: 'private',
     });
+    expect(profilePatch(quiet, saved)).toEqual({});
+    const reintroduced = { ...saved, isPublic: false };
+    expect(profilePatch({ ...quiet, isPublic: false }, reintroduced)).toEqual({});
+    expect(profilePatch(quiet, reintroduced)).toEqual({ profileVisibility: 'public' });
   });
 
   it('sends nothing that didn’t change, and trims what did', () => {
-    expect(profilePatch({ ...draft, bio: ' Hi ' }, { bio: 'Hi', town: 'Hanover, NH' })).toEqual({});
-    expect(profilePatch({ ...draft, bio: ' Hello ' }, { bio: 'Hi', town: '' })).toEqual({
+    expect(
+      profilePatch({ ...draft, bio: ' Hi ' }, { bio: 'Hi', town: 'Hanover, NH', isPublic: true }),
+    ).toEqual({});
+    expect(profilePatch({ ...draft, bio: ' Hello ' }, { ...saved, bio: 'Hi' })).toEqual({
       bio: 'Hello',
       homeTownLabel: 'Hanover, NH',
     });

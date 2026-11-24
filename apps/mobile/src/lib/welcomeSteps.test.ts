@@ -54,20 +54,32 @@ describe('profileStepPatch', () => {
   const draft = initialProfileDraft(PICKED, 'public');
 
   it('saves the town only while Show my town is on', () => {
-    expect(profileStepPatch(draft)).toEqual({ homeTownLabel: 'Hanover, NH' });
-    expect(profileStepPatch({ ...draft, showTown: false })).toBeNull();
+    expect(profileStepPatch(draft, 'public')).toEqual({ homeTownLabel: 'Hanover, NH' });
+    expect(profileStepPatch({ ...draft, showTown: false }, 'public')).toBeNull();
   });
 
-  it('writes visibility only when Public profile is switched off', () => {
-    expect(profileStepPatch({ ...draft, publicProfile: false, town: '' })).toEqual({
+  it('writes visibility only when the switch differs from the row', () => {
+    const blank = { ...draft, town: '' };
+    // A new account (public): switched off writes private; left on writes nothing.
+    expect(profileStepPatch({ ...blank, publicProfile: false }, 'public')).toEqual({
       profileVisibility: 'private',
+    });
+    expect(profileStepPatch(blank, 'public')).toBeNull();
+    // A re-introduced account (private, D298): left off writes nothing; switched on writes public.
+    const reintroduced = initialProfileDraft(null, 'private');
+    expect(profileStepPatch(reintroduced, 'private')).toBeNull();
+    expect(profileStepPatch({ ...reintroduced, publicProfile: true }, 'private')).toEqual({
+      profileVisibility: 'public',
     });
   });
 
   it('saves a trimmed bio and a tidied town, and nothing for blank fields', () => {
     expect(
-      profileStepPatch({ ...draft, bio: '  Lunchtime skater.  ', town: ' Norwich,   VT ' }),
+      profileStepPatch(
+        { ...draft, bio: '  Lunchtime skater.  ', town: ' Norwich,   VT ' },
+        'public',
+      ),
     ).toEqual({ bio: 'Lunchtime skater.', homeTownLabel: 'Norwich, VT' });
-    expect(profileStepPatch({ ...draft, bio: '   ', town: '  ' })).toBeNull();
+    expect(profileStepPatch({ ...draft, bio: '   ', town: '  ' }, 'public')).toBeNull();
   });
 });

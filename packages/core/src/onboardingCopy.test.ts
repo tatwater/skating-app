@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCOUNT_REFUSAL_CODES,
+  ADDRESS_FIELD_COPY,
+  CONSENT_RECORD_RETENTION,
   CONSENT_REFUSAL_FALLBACK,
   CONSENT_REFUSAL_MESSAGES,
   consentRefusalMessage,
@@ -7,6 +10,7 @@ import {
   firstName,
   formatCardDay,
   formatVersionDay,
+  isAccountRefusal,
   KNOW_BEFORE_YOU_GO_NAME,
   ONBOARDING_COPY,
   onboardingStepLabel,
@@ -26,6 +30,9 @@ function strings(value: unknown): string[] {
 
 const ALL = [
   ...strings(ONBOARDING_COPY),
+  ONBOARDING_COPY.account.usernameTaken('ada_l'),
+  ...strings(ADDRESS_FIELD_COPY),
+  CONSENT_RECORD_RETENTION,
   ...Object.values(CONSENT_REFUSAL_MESSAGES),
   ...Object.values(DATE_OF_BIRTH_MESSAGES),
   CONSENT_REFUSAL_FALLBACK,
@@ -130,5 +137,48 @@ describe('consentRefusalMessage', () => {
       'Use 3 to 30 letters, numbers, and underscores, starting and ending with a letter or number.',
     );
     expect(CONSENT_REFUSAL_MESSAGES.name_invalid).toContain('50');
+  });
+});
+
+describe('the lines both apps share beyond the boards', () => {
+  it('names the taken handle the one way', () => {
+    expect(ONBOARDING_COPY.account.usernameTaken('ada_l')).toBe(
+      '@ada_l is taken. Try another one.',
+    );
+  });
+
+  it('says what the record keeps, for six years past the deletion, and then that it goes (D297)', () => {
+    for (const fact of [
+      'six years after your account is deleted',
+      'name, email, and date of birth you gave',
+      'which terms you accepted and when',
+      'when you answered Know Before You Go',
+      'we delete it too',
+      'Privacy Notice',
+    ]) {
+      expect(CONSENT_RECORD_RETENTION).toContain(fact);
+    }
+  });
+});
+
+describe('isAccountRefusal', () => {
+  it('sends the Account fields’ refusals back to the Account step, and nothing else', () => {
+    for (const code of ACCOUNT_REFUSAL_CODES) expect(isAccountRefusal(code)).toBe(true);
+    expect([...ACCOUNT_REFUSAL_CODES].sort()).toEqual(
+      [
+        'account_required',
+        'name_invalid',
+        'underage',
+        'username_cooldown',
+        'username_invalid',
+        'username_taken',
+      ].sort(),
+    );
+    for (const code of Object.keys(CONSENT_REFUSAL_MESSAGES)) {
+      if (!ACCOUNT_REFUSAL_CODES.has(code as never)) expect(isAccountRefusal(code)).toBe(false);
+    }
+    expect(isAccountRefusal(null)).toBe(false);
+    expect(isAccountRefusal(undefined)).toBe(false);
+    expect(isAccountRefusal('something_new')).toBe(false);
   });
 });

@@ -429,7 +429,7 @@ describe('the receipt hold', () => {
     mocks.pathname = '/terms';
     render(<AuthGate>page</AuthGate>);
     expect(mocks.push).not.toHaveBeenCalled();
-    act(() => finishReceipt());
+    act(() => finishReceipt(true));
     expect(mocks.push).toHaveBeenCalledWith('/know-before-you-go');
   });
 

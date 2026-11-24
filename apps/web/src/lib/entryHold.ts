@@ -53,6 +53,11 @@ interface EntryState {
    * Town. Only a suggestion: nothing saves it but the Profile step's own button.
    */
   homeTown: string | null;
+  /**
+   * The receipt's *Start the questions* let go: the questions open on the first one, never on the
+   * new-season card, which would only say again what the receipt just said.
+   */
+  questionsFromReceipt: boolean;
 }
 
 const EMPTY: EntryState = {
@@ -62,6 +67,7 @@ const EMPTY: EntryState = {
   fields: null,
   taken: null,
   homeTown: null,
+  questionsFromReceipt: false,
 };
 
 export const useEntryStore = create<EntryState>(() => ({ ...EMPTY }));
@@ -87,16 +93,26 @@ export function releaseHold(): void {
 }
 
 /**
- * The receipt's button (*Start the questions* or *Continue*): the route takes over. The typed
- * fields go too — the account exists now, and nothing should be able to send them again.
+ * The receipt's button (*Start the questions*, `startQuestions`, or *Continue*): the route takes
+ * over. The typed fields go too — the account exists now, and nothing should be able to send them
+ * again.
  */
-export function finishReceipt(): void {
-  useEntryStore.setState({ ...EMPTY });
+export function finishReceipt(startQuestions: boolean): void {
+  useEntryStore.setState({ ...EMPTY, questionsFromReceipt: startQuestions });
 }
 
-/** The acceptance said the username was taken: back to the Account step, the field marked. */
-export function markUsernameTaken(username: string): void {
-  useEntryStore.setState({ hold: null, recorded: false, account: null, taken: username });
+/**
+ * The acceptance refused one of the Account step's fields (core's `isAccountRefusal`): back to
+ * the Account step with the fields as typed. A handle the server called taken is marked there
+ * until it changes; any other refusal leaves the mark as it was.
+ */
+export function returnToAccount(takenUsername?: string): void {
+  useEntryStore.setState((s) => ({
+    hold: null,
+    recorded: false,
+    account: null,
+    taken: takenUsername ?? s.taken,
+  }));
 }
 
 /** The Home step picked an address: its town (if the provider named one) waits for Profile. */

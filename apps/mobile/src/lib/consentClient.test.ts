@@ -1,7 +1,7 @@
 import { CONSENT_REFUSAL_FALLBACK, CONSENT_REFUSAL_MESSAGES } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { describe, expect, it } from 'vitest';
-import { appUserAgent, consentSurface, isAccountRefusal, readRefusal } from './consentClient';
+import { appUserAgent, consentSurface, readRefusal } from './consentClient';
 
 describe('consentSurface', () => {
   it('names the two phones', () => {
@@ -68,15 +68,5 @@ describe('readRefusal', () => {
     expect(readRefusal(new ConvexError(null as unknown as string)).message).toBe(
       CONSENT_REFUSAL_FALLBACK,
     );
-  });
-});
-
-describe('isAccountRefusal', () => {
-  it('sends the Account fields’ refusals back, and nothing else', () => {
-    for (const code of ['username_taken', 'username_cooldown', 'underage', 'name_invalid']) {
-      expect(isAccountRefusal(code)).toBe(true);
-    }
-    expect(isAccountRefusal('terms_changed')).toBe(false);
-    expect(isAccountRefusal(null)).toBe(false);
   });
 });

@@ -1,7 +1,7 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faCamera, faLocationCrosshairs } from '@fortawesome/sharp-light-svg-icons';
 import { BIO_MAX_LENGTH, ONBOARDING_COPY, TOWN_LABEL_MAX_LENGTH } from '@skating/core';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 
 import { cn } from '@/lib/utils';
 
@@ -14,7 +14,6 @@ import type { AddressLookup, AddressSuggestion } from '../settings/geocoder';
 import type { LocateState } from '../settings/HomeSection';
 import { OrRule, ToggleRow } from '../settings/SettingsParts';
 import { ENTRY_PRIMARY, EntryHead, EntryScreen, WIDE } from './EntryScreen';
-import { WEB_ONBOARDING_COPY } from './webCopy';
 
 /** The two buttons at a welcome step's foot: the primary takes two parts of the row, Skip one. */
 function TwoActions({ primary, skip }: { primary: ReactNode; skip: ReactNode }) {
@@ -36,6 +35,8 @@ function addressAvailable(lookup: AddressLookup): boolean {
  * the map provider's suggestions as you type, or *Use my current location*. Private: only the
  * drive-time zones it anchors are ever used (D11), and the typed words are `ph-no-capture` (the
  * field's own). *Save and continue* waits for a picked suggestion; *Skip for now* only moves on.
+ * While the suggestion list is open, "or" and *Use my current location* step aside for it (board
+ * 10.10), as on the phone.
  */
 export function HomeStep({
   address,
@@ -71,6 +72,8 @@ export function HomeStep({
   const copy = ONBOARDING_COPY.home;
   const typed = addressAvailable(lookup);
   const busy = saving || skipping;
+  const [listOpen, setListOpen] = useState(false);
+  const listShown = typed && listOpen;
   return (
     <EntryScreen
       width="home"
@@ -118,24 +121,29 @@ export function HomeStep({
           onValueChange={onAddressChange}
           lookup={lookup}
           onPick={onPick}
+          onOpenChange={setListOpen}
           autoFocus
         />
       )}
       {lookup.state === 'quota' && (
-        <p className="m-0 text-assist text-fg3">{WEB_ONBOARDING_COPY.home.quota}</p>
+        <p className="m-0 text-assist text-fg3">{copy.suggestionsOff}</p>
       )}
-      {typed && <OrRule />}
-      <Button
-        className={WIDE}
-        onClick={onUseLocation}
-        loading={locate === 'locating'}
-        disabled={busy && locate !== 'locating'}
-        data-attr="welcome-home-locate"
-      >
-        <FontAwesomeIcon icon={faLocationCrosshairs} aria-hidden="true" />
-        {copy.useLocation}
-      </Button>
-      {locate === 'failed' && <FormLine>{WEB_ONBOARDING_COPY.home.locateFailed}</FormLine>}
+      {!listShown && (
+        <>
+          {typed && <OrRule />}
+          <Button
+            className={WIDE}
+            onClick={onUseLocation}
+            loading={locate === 'locating'}
+            disabled={busy && locate !== 'locating'}
+            data-attr="welcome-home-locate"
+          >
+            <FontAwesomeIcon icon={faLocationCrosshairs} aria-hidden="true" />
+            {copy.useLocation}
+          </Button>
+          {locate === 'failed' && <FormLine>{copy.locationFailed}</FormLine>}
+        </>
+      )}
     </EntryScreen>
   );
 }

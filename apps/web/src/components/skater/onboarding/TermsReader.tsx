@@ -17,7 +17,6 @@ import { Kbd } from '../../kit/kbd';
 import { ScrollArea } from '../../kit/scroll-area';
 import { useEntryScroller } from './EntryScreen';
 import { TermsText } from './TermsText';
-import { WEB_ONBOARDING_COPY } from './webCopy';
 
 /** Where the end was reached: the page's own reader, or the full-screen one. */
 export type TermsReaderVia = 'inline' | 'fullscreen';
@@ -195,7 +194,7 @@ export function TermsReader({
                 Esc
               </Kbd>
               <DialogClose render={<Button size="sm" />}>
-                {WEB_ONBOARDING_COPY.terms.closeFullScreen}
+                {ONBOARDING_COPY.terms.closeFullScreen}
               </DialogClose>
             </DialogFooter>
           </DialogContent>

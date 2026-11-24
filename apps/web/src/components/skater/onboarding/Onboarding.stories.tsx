@@ -10,6 +10,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import type { AccountFields } from '@/lib/entryHold';
 import { BOARD_NOON } from '@/test/boardNow';
+import { computedColor, sameColor } from '../../kit/measure';
 import { stageGlobals } from '../auth/storyFrame';
 import type { AddressLookup, AddressSuggestion } from '../settings/geocoder';
 import { ProfilePhoto } from '../settings/ProfilePhoto';
@@ -150,6 +151,30 @@ export const AccountEmpty: Story = {
     await expect(c.getAllByRole('button', { name: 'Sign out' }).at(-1)).toHaveFocus();
     await expect(c.getByRole('button', { name: 'Continue' })).toBeDisabled();
     await expect(c.getByText(ONBOARDING_COPY.account.dateOfBirthHint)).toBeVisible();
+  },
+};
+
+/**
+ * Not drawn: the month list open, on the kit's own plate — `--plate-solid`, the design token every
+ * Select and menu shares (96% opaque by design, so the form under it shows at 4%, as in Settings)
+ * — and fully faded in. Checked because one screenshot made the list look see-through.
+ */
+export const AccountMonthList: Story = {
+  ...desk(),
+  render: () => <Account />,
+  play: async ({ canvasElement }) => {
+    const c = within(canvasElement);
+    await userEvent.click(c.getByRole('combobox', { name: 'Month' }));
+    const plate = await waitFor(() => {
+      const open = document.querySelector<HTMLElement>('[data-slot="select-content"][data-open]');
+      if (!open) throw new Error('the month list is not open');
+      return open;
+    });
+    await waitFor(() => expect(getComputedStyle(plate).opacity).toBe('1'));
+    await expect(getComputedStyle(plate).backgroundColor).toEqual(
+      sameColor(computedColor(plate, 'var(--plate-solid)')),
+    );
+    await userEvent.keyboard('{Escape}');
   },
 };
 
@@ -719,7 +744,10 @@ function Home({ phone: onPhone = false, typing = false }: { phone?: boolean; typ
   );
 }
 
-/** 10.10 — typing: Settings' own suggestions under the field, the first lit. */
+/**
+ * 10.10 — typing: Settings' own suggestions under the field, the first lit; "or" and *Use my
+ * current location* step aside while the list is open, as the board draws.
+ */
 export const HomeTyping: Story = {
   ...desk(),
   render: () => <Home typing />,
@@ -727,6 +755,10 @@ export const HomeTyping: Story = {
     const c = within(canvasElement);
     await expect(c.getAllByRole('option')).toHaveLength(4);
     await expect(c.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
+    await waitFor(() =>
+      expect(c.queryByRole('button', { name: 'Use my current location' })).toBeNull(),
+    );
+    await expect(c.queryByText(ONBOARDING_COPY.home.or)).toBeNull();
   },
 };
 
@@ -742,6 +774,8 @@ export const HomeTypingKeys: Story = {
     c.getByRole('combobox').focus();
     await userEvent.keyboard('{ArrowDown}{Enter}');
     await expect(onPick).toHaveBeenCalledWith(SUGGESTIONS[1]);
+    // The list closed on the pick: the other way in comes back.
+    await expect(await c.findByRole('button', { name: 'Use my current location' })).toBeVisible();
   },
 };
 

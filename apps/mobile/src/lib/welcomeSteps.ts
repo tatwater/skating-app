@@ -5,8 +5,9 @@
  * are optional, and *Skip* only moves on.
  *
  * **Show my town stores nothing of its own** (founder, §9.15): on, the Town field is saved as the
- * profile's town; off, it isn't. **Public profile** is on for every new account already, so it is
- * written only when it is switched off.
+ * profile's town; off, it isn't. **Public profile** shows the row's own visibility — on for a new
+ * account, off for a canceled deletion's re-introduced one, which stays private (D298) — and is
+ * written only when the skater changes it.
  */
 
 import { normalizeBio, normalizeTownLabel } from '@skating/core';
@@ -49,18 +50,28 @@ export function initialProfileDraft(
   };
 }
 
-/** What *Open the map* sends to `profiles.updateProfile`; `null` when there is nothing to save. */
-export function profileStepPatch(draft: ProfileDraft): {
+export interface ProfileStepPatch {
   bio?: string;
   homeTownLabel?: string;
-  profileVisibility?: 'private';
-} | null {
-  const patch: { bio?: string; homeTownLabel?: string; profileVisibility?: 'private' } = {};
+  profileVisibility?: 'public' | 'private';
+}
+
+/**
+ * What *Open the map* sends to `profiles.updateProfile`; `null` when there is nothing to save.
+ * `visibility` is the row's as the step opened: the switch writes only when it differs.
+ */
+export function profileStepPatch(
+  draft: ProfileDraft,
+  visibility: 'public' | 'private' | undefined,
+): ProfileStepPatch | null {
+  const patch: ProfileStepPatch = {};
   const bio = normalizeBio(draft.bio);
   if (bio !== '') patch.bio = bio;
   const town = normalizeTownLabel(draft.town);
   if (draft.showTown && town !== '') patch.homeTownLabel = town;
-  if (!draft.publicProfile) patch.profileVisibility = 'private';
+  if (draft.publicProfile !== (visibility !== 'private')) {
+    patch.profileVisibility = draft.publicProfile ? 'public' : 'private';
+  }
   return Object.keys(patch).length > 0 ? patch : null;
 }
 

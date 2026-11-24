@@ -2,6 +2,7 @@ import { useAuth } from '@clerk/expo';
 import { api } from '@skating/convex/api';
 import {
   groupTermsBlocks,
+  isAccountRefusal,
   KNOW_BEFORE_YOU_GO_NAME,
   knowBeforeYouGoDue,
   ONBOARDING_COPY,
@@ -27,12 +28,7 @@ import {
   type ScrollViewInstance,
 } from 'react-native';
 import { Paragraph, Separator, Text, XStack, YStack } from 'tamagui';
-import {
-  appUserAgent,
-  consentSurface,
-  isAccountRefusal,
-  readRefusal,
-} from '../../lib/consentClient';
+import { appUserAgent, consentSurface, readRefusal } from '../../lib/consentClient';
 import type { ReceiptGroup } from '../../lib/entryGate';
 import { DOC_URLS } from '../../lib/links';
 import {

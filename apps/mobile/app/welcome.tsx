@@ -20,7 +20,6 @@ import { Input, TextArea } from '../src/components/ThemedInputs';
 import { useToast } from '../src/components/Toast';
 import { readRefusal } from '../src/lib/consentClient';
 import { ensureForegroundPermission } from '../src/lib/location';
-import { ONBOARDING_COPY_MOBILE } from '../src/lib/onboardingCopyMobile';
 import { useSignOut } from '../src/lib/useSignOut';
 import {
   type HomeChoice,
@@ -70,7 +69,6 @@ function HomeStep({
   onChoice: (choice: HomeChoice) => void;
   onSignOut: () => void;
 }) {
-  const theme = useTheme();
   const toast = useToast();
   const setHome = useMutation(api.profiles.setHome);
   const advance = useMutation(api.consent.advanceWelcome);
@@ -78,6 +76,8 @@ function HomeStep({
   const [locating, setLocating] = useState(false);
   const [locationFailed, setLocationFailed] = useState(false);
   const [busy, setBusy] = useState(false);
+  // While the suggestions are open, "or" and the location button step aside (board 11.10).
+  const [listOpen, setListOpen] = useState(false);
   const copy = ONBOARDING_COPY.home;
 
   async function takeLocation() {
@@ -103,7 +103,15 @@ function HomeStep({
     setBusy(true);
     try {
       const homeCoord = homeCoordOf(choice);
-      if (save && homeCoord !== null) await setHome({ homeCoord });
+      if (save && homeCoord !== null) {
+        try {
+          await setHome({ homeCoord });
+        } catch {
+          toast(copy.notSaved);
+          setBusy(false);
+          return;
+        }
+      }
       // Skipped: no home was saved, so the Profile step has no town to take from it. Cleared
       // before the advance, because the Profile step can mount before the call resolves.
       if (!save) onChoice(null);
@@ -140,9 +148,7 @@ function HomeStep({
       />
       <AddressField
         label={copy.address}
-        hint={
-          choice?.kind === 'location' ? ONBOARDING_COPY_MOBILE.home.usingLocation : copy.addressHint
-        }
+        hint={choice?.kind === 'location' ? copy.usingLocation : copy.addressHint}
         value={text}
         onValueChange={(next) => {
           setText(next);
@@ -153,7 +159,36 @@ function HomeStep({
           setText(suggestion.label);
           onChoice({ kind: 'address', suggestion });
         }}
+        onOpenChange={setListOpen}
       />
+      {listOpen ? null : (
+        <OtherWayIn
+          located={choice?.kind === 'location'}
+          locating={locating}
+          failed={locationFailed}
+          onLocate={() => void takeLocation()}
+        />
+      )}
+    </OnboardingFrame>
+  );
+}
+
+/** "or", then *Use my current location* and its problem line: the Home step's other way in. */
+function OtherWayIn({
+  located,
+  locating,
+  failed,
+  onLocate,
+}: {
+  located: boolean;
+  locating: boolean;
+  failed: boolean;
+  onLocate: () => void;
+}) {
+  const theme = useTheme();
+  const copy = ONBOARDING_COPY.home;
+  return (
+    <>
       <XStack alignItems="center" gap="3">
         <Separator flex={1} borderColor="border" />
         <Text color="foregroundMuted" fontSize={13}>
@@ -163,21 +198,19 @@ function HomeStep({
       </XStack>
       <Button
         variant="outlined"
-        borderColor={choice?.kind === 'location' ? 'foreground' : 'border'}
+        borderColor={located ? 'foreground' : 'border'}
         color="foreground"
         disabled={locating}
         opacity={locating ? 0.45 : 1}
         icon={
           <FontAwesomeIcon icon={faLocationCrosshairs} size={15} color={theme.foreground?.val} />
         }
-        onPress={() => void takeLocation()}
+        onPress={onLocate}
       >
         {copy.useLocation}
       </Button>
-      {locationFailed ? (
-        <FieldProblem>{ONBOARDING_COPY_MOBILE.home.locationFailed}</FieldProblem>
-      ) : null}
-    </OnboardingFrame>
+      {failed ? <FieldProblem>{copy.locationFailed}</FieldProblem> : null}
+    </>
   );
 }
 
@@ -202,8 +235,16 @@ function ProfileStep({
     if (busy) return;
     setBusy(true);
     try {
-      const patch = save ? profileStepPatch(draft) : null;
-      if (patch !== null) await updateProfile(patch);
+      const patch = save ? profileStepPatch(draft, visibility) : null;
+      if (patch !== null) {
+        try {
+          await updateProfile(patch);
+        } catch {
+          toast(copy.notSaved);
+          setBusy(false);
+          return;
+        }
+      }
       await advance({ from: 'profile' });
     } catch (error) {
       toast(readRefusal(error).message);

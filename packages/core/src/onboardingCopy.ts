@@ -1,10 +1,14 @@
 /**
  * **The words of the way in** (D298, B03 §9.9): every string the onboarding and the season check put
  * on a screen, in one place so the web and the phone say the same thing (the `hazardCopy.ts`
- * precedent). Taken from the reviewed mocks; the founder's copy pass owns every one. Two lines were
- * never drawn and are drafts: the receipt when no copy went out (`receipt.notSent`) and the receipt's
- * button when no questions are due (`receipt.continue`). The fallback refusal messages and the date
- * of birth's `invalid` line are drafts too — the server's own message is preferred when it sends one.
+ * precedent). Taken from the reviewed mocks; the founder's copy pass owns every one. Lines the boards
+ * never drew are drafts, marked so where they sit: the receipt when no copy went out
+ * (`receipt.notSent`) and its button when no questions are due (`receipt.continue`), the taken
+ * handle, the full-screen reader's way back, the Home step's location and address states, the two
+ * not-saved toasts, the delete screens' sentence on the record (`CONSENT_RECORD_RETENTION`), the
+ * fallback refusal messages and the date of birth's `invalid` line (the server's own message is
+ * preferred when it sends one). Only a platform's own words stay in its app (the phone's month
+ * picker, the user-agent format).
  *
  * The legal text and the questions are not here: they are versioned data (`legal/terms.ts`,
  * `knowBeforeYouGo.ts`). Nothing here may say or imply the ice is safe (D3).
@@ -40,6 +44,11 @@ export const ONBOARDING_COPY = {
     day: 'Day',
     year: 'Year',
     continue: 'Continue',
+    /**
+     * Draft: the live check (or the acceptance) found the handle in use — an amber line under the
+     * field on both apps.
+     */
+    usernameTaken: (handle: string) => `@${handle} is taken. Try another one.`,
   },
   terms: {
     kicker: 'Terms of use',
@@ -49,6 +58,8 @@ export const ONBOARDING_COPY = {
     /** Appended to the meta line's version once the end has been on screen. */
     readToEnd: 'Read to the end',
     openFullScreen: 'Open in full-screen',
+    /** Draft: the full-screen reader's way back (on a desk it also closes on Esc). */
+    closeFullScreen: 'Back to the terms',
     endMarker: 'End of the terms',
     /** The agree line: `before`, then `link` (the Privacy Notice), then `after`. */
     agree: {
@@ -111,6 +122,16 @@ export const ONBOARDING_COPY = {
     keys: { move: 'Move', choose: 'Choose', close: 'Close' },
     save: 'Save and continue',
     skip: 'Skip for now',
+    // Drafts below: the states the boards don't draw.
+    /** The field's line once the device's location is chosen instead of an address. */
+    usingLocation: 'Using your current location.',
+    /** The location couldn't be read: permission refused, or no fix. */
+    locationFailed: 'We couldn’t get your location. Check that Gli is allowed to use it.',
+    /** No address provider, or its limit is reached: typed addresses are out for now. */
+    suggestionsOff:
+      'Address suggestions aren’t available right now. You can use your current location instead.',
+    /** A home the server didn't take (a toast). */
+    notSaved: 'Your home wasn’t saved. Try again in a moment.',
   },
   profile: {
     kicker: 'Profile',
@@ -129,6 +150,8 @@ export const ONBOARDING_COPY = {
     showTownHint: 'On your public profile. Your address is never shown.',
     done: 'Open the map',
     skip: 'Skip',
+    /** Draft: a profile save the server didn't take (a toast). */
+    notSaved: 'Your profile wasn’t saved. Try again in a moment.',
   },
   season: {
     heading: 'A new season on the ice',
@@ -140,6 +163,25 @@ export const ONBOARDING_COPY = {
   /** The card's foot on every step but the season card. */
   foot: { signedInAs: 'Signed in as', signOut: 'Sign out' },
 } as const;
+
+/**
+ * The typed-address field's own words, wherever it is drawn: the Home step on both apps and the
+ * web's Settings, which share the one field.
+ */
+export const ADDRESS_FIELD_COPY = {
+  placeholder: 'Start typing an address',
+  /** The suggestions failed this once; typing again retries. */
+  suggestionsFailed: 'Suggestions didn’t load. Keep typing, or use your current location.',
+} as const;
+
+/**
+ * Draft: the delete screens' sentence on what outlives the account (D297, B03 §9.11), the same on
+ * both apps. It says only what the record holds — the identity as given, which terms and when, when
+ * the questions were answered — and points at the Privacy Notice for the rest (the IP, the device
+ * details). Never "safe", never more than is true (D3).
+ */
+export const CONSENT_RECORD_RETENTION =
+  'For six years after your account is deleted, we privately keep a record of the name, email, and date of birth you gave, which terms you accepted and when, and when you answered Know Before You Go, and then we delete it too. The Privacy Notice has the details.';
 
 /** The first word of a display name, for "Welcome back, Kate." (empty when there is none). */
 export function firstName(displayName: string): string {
@@ -179,6 +221,24 @@ export function termsUnchangedSince(termsVersion: string): string {
 /** The season card's questions row: "Last answered Nov 16, 2026", in the skater's zone. */
 export function questionsLastAnswered(lastAt: number, timeZone: string): string {
   return `Last answered ${formatCardDay(lastAt, timeZone)}`;
+}
+
+/**
+ * The acceptance's refusals that are about the Account step's fields, not the terms: on either app
+ * a new or re-introduced account is sent back to the Account step, with the toast, to fix them.
+ */
+export const ACCOUNT_REFUSAL_CODES: ReadonlySet<ConsentRefusalCode> = new Set<ConsentRefusalCode>([
+  'account_required',
+  'underage',
+  'name_invalid',
+  'username_invalid',
+  'username_taken',
+  'username_cooldown',
+]);
+
+/** Whether a refusal code sends a new account back to the Account step. */
+export function isAccountRefusal(code: string | null | undefined): boolean {
+  return code != null && (ACCOUNT_REFUSAL_CODES as ReadonlySet<string>).has(code);
 }
 
 /** What the receipt knows about the emailed copy (`consent.latestTermsReceipt`). */
