@@ -1,6 +1,6 @@
 /**
- * **Where a skater's way in goes next** (D298, B03 §9.3): the one routing rule both apps' gates share,
- * replacing `resolveAuthRoute` once they switch (it stays, untouched, until then). Pure, so each
+ * **Where a skater's way in goes next** (D298, B03 §9.3): the one routing rule both apps' gates share
+ * (it replaced the risk acknowledgment's `resolveAuthRoute`, D295). Pure, so each
  * gate's table is unit-testable without a render harness, and the web (paths) and mobile
  * (`Stack.Protected` groups) can only differ in how they draw a state, never in which one it is.
  *

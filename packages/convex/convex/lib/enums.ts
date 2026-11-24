@@ -507,8 +507,8 @@ export const RATING_VERDICTS = ['helpful', 'unhelpful'] as const;
  * Notification types, their `notificationPrefs` keys, and the per-key defaults — **re-exported from
  * `@skating/core`, not defined here** (A08). Both settings pages iterate the list, so it has to live
  * where a client can import it; the D16 1:1 mirror between types and keys is enforced in core, and
- * `upsertFromClerk`'s defaults and `backfillNotificationPrefs`'s missing-key fill both read the
- * same `NOTIFICATION_PREF_DEFAULTS`.
+ * a new profile's defaults (`lib/profileIdentity`) and `backfillNotificationPrefs`'s missing-key
+ * fill both read the same `NOTIFICATION_PREF_DEFAULTS`.
  */
 export const NOTIFICATION_TYPES = CORE_NOTIFICATION_TYPES;
 export const NOTIFICATION_PREF_KEYS = CORE_NOTIFICATION_PREF_KEYS;

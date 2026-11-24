@@ -11,6 +11,11 @@ can be tested once and reused everywhere (D7/D40).
 - **`units`** — metric↔imperial conversions + imperial display formatters (D25).
 - **`age`** — derive the 18+ signup gate (D294) and under-18 minor status from a stored date of
   birth (D41), in UTC. Computed at read time so the minor→adult transition is automatic.
+- **The way in** (D295–D298) — `entryRoute` (`resolveEntryRoute`, the one routing rule both
+  apps' gates share) and `knowBeforeYouGoSeason` (the season rule); `legal/terms` and
+  `legal/privacyNotice` (the Terms of Use as versioned data, with the notice's pin) and
+  `knowBeforeYouGo` (the seven questions), each with a committed SHA-256; `consentRecord` (the
+  record's rules); `onboardingCopy` (every word the way in puts on a screen, for both apps).
 - **`visibility`** — report/comment visibility resolution (D13) and default-visibility
   derivation (D41). Property-tested — a bug here can leak a private spot.
 - **`hazards`** — hazard freshness lifecycle derivation (D15).

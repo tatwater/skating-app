@@ -16,7 +16,6 @@ import {
   meetsMinimumAge,
   PRIVACY_NOTICE_SHA256,
   PRIVACY_NOTICE_VERSION,
-  RISK_ACK_VERSION,
   TERMS,
   TERMS_SHA256,
 } from '@skating/core';
@@ -111,7 +110,8 @@ async function existingProfile(
       profileVisibility: 'public',
       notificationPrefs: { ...NOTIFICATION_PREF_DEFAULTS },
       dateOfBirth: ADULT_DOB,
-      riskAckVersion: RISK_ACK_VERSION,
+      // The retired acknowledgment (D45), as an account from before the terms carries it.
+      riskAckVersion: '2026-07-11',
       riskAckAt: T0 - 100 * DAY,
       reputationPoints: 12,
       role: 'member',

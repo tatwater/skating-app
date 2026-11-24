@@ -2,31 +2,23 @@
  * Profile functions.
  *
  * Identity split (D26): Clerk authenticates the user; this module owns the mirroring
- * `profiles` row. `upsertFromClerk` is the provisioning bridge the client calls from the
- * onboarding screen — create-or-update the profile keyed by the Clerk subject. Kept
- * idempotent, but it is *not* the launch-time path: both clients call it at onboarding only.
- * What runs on every app open is the pair beside it, `setTimezone` and `syncFromClerk`
- * (the Clerk mirrors — email and avatar).
+ * `profiles` row. The row is born — or a canceled deletion's emptied row re-introduced — by
+ * `consent.acceptTerms`, at *Record acceptance* (D298), never here. What runs on every app open is
+ * the pair below, `setTimezone` and `syncFromClerk` (the Clerk mirrors — email and avatar).
  */
 
 import {
   canSetProfilePublic,
   effectiveChannelPrefs,
-  isCurrentRiskAckVersion,
   isDriveTimeBand,
   isKnownTimeZone,
   isLeaving,
   isMinor,
   isValidBio,
   isValidCoord,
-  isValidDisplayName,
   isValidTownLabel,
   isValidTravelBaseUntil,
-  isValidUsername,
-  MINIMUM_SIGNUP_AGE,
-  meetsMinimumAge,
   normalizeBio,
-  normalizeDisplayName,
   normalizeTownLabel,
   normalizeUsername,
   type PostCardData,
@@ -59,12 +51,7 @@ import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums'
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
 import { isLastLedgerEditor, seesLedgerGrants, withoutLedgerGrantsFor } from './lib/ledgerEditors';
 import { refreshPersonRow } from './lib/peopleRows';
-import {
-  assertMayRename,
-  checkUsername,
-  newProfileDefaults,
-  USERNAME_MESSAGES,
-} from './lib/profileIdentity';
+import { assertMayRename, checkUsername, USERNAME_MESSAGES } from './lib/profileIdentity';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { takeCappedResult } from './lib/scan';
@@ -115,141 +102,6 @@ export const publicByIds = query({
   },
 });
 
-/** Create or update the caller's profile from their Clerk identity (idempotent). */
-export const upsertFromClerk = mutation({
-  args: {
-    displayName: v.string(),
-    username: v.string(),
-    dateOfBirth: v.number(), // UTC-midnight epoch ms; gate + minor status derived (D41)
-    riskAckVersion: v.string(), // must be the current version (D45); rejected otherwise
-    // Note: the acceptance *time* is deliberately NOT a client arg — the server stamps it
-    // (see `now` below) so a wrong/tampered device clock can't corrupt the audit record.
-  },
-  handler: async (ctx, args) => {
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new ConvexError('Not authenticated');
-
-    // Avatar is Clerk-managed for v1 (Phase 03 decision #2): mirror the OIDC `picture` claim into
-    // `profileImageUrl` — no upload pipeline. Absent if the Clerk `convex` JWT template doesn't map
-    // `picture`; when absent we leave any existing mirror untouched rather than clearing it.
-    const profileImageUrl = storableAvatarUrl(identity.pictureUrl);
-    // The email, likewise mirrored from the `email` claim (A08 PR 3 / D174) so a notification email is
-    // not a Clerk API call per recipient. Same absence rule: an unmapped claim leaves the mirror alone.
-    // Both mirrors are *refreshed* on every later app open by `syncFromClerk` below — this mutation
-    // runs at onboarding only.
-    const email = identity.email;
-
-    // Hard 18+ minimum (D41, raised by D294), derived from DOB and enforced server-side, so
-    // whoever accepts the acknowledgment below is of age to accept it. Minor status is
-    // likewise derived: no new account is a minor, and a row that is one (written before
-    // D294, or under a lower minimum later) self-corrects on the 18th birthday with no
-    // re-attestation or scheduled job (same pattern as suspension lapse).
-    const now = Date.now();
-    if (!meetsMinimumAge(args.dateOfBirth, now)) {
-      throw new ConvexError(`You must be at least ${MINIMUM_SIGNUP_AGE} years old`);
-    }
-    const minor = isMinor(args.dateOfBirth, now);
-
-    // Assumption-of-risk acknowledgment (D45). The Convex function is the trust boundary
-    // (D37), so a profile can't be created OR kept in sync without a *current* recorded
-    // acceptance — never trust a client-side gate. Bumping the version re-prompts users.
-    if (!isCurrentRiskAckVersion(args.riskAckVersion)) {
-      throw new ConvexError('You must accept the current assumption-of-risk acknowledgment');
-    }
-
-    // Normalize + validate the identity fields here too (D37): the client validates for
-    // instant feedback, but the trust boundary can't trust it. We store the canonical
-    // forms so `username` uniqueness is genuinely case-insensitive (06-data-model.md).
-    const username = normalizeUsername(args.username);
-    if (!isValidUsername(username)) throw new ConvexError(USERNAME_MESSAGES.invalid);
-    const displayName = normalizeDisplayName(args.displayName);
-    if (!isValidDisplayName(displayName)) {
-      throw new ConvexError('Display name is required');
-    }
-
-    const existing = await ctx.db
-      .query('profiles')
-      .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
-      .unique();
-
-    // An inactive account must not mutate its identity via this onboarding sync:
-    //  - a banned/suspended user could squat a new username or rename to evade
-    //    moderation (D37);
-    //  - a *deleted* user would un-scrub the PII that deletion cleared (displayName →
-    //    "deleted user", dropped handle — D33).
-    // Idempotent sync still succeeds (returns the profile); it just applies no edits.
-    if (existing && existing.status !== 'active') {
-      return existing._id;
-    }
-
-    // **A ghost is the same case wearing a different field** (D62 amendment). A pending deletion
-    // scrubs the profile while leaving `status: 'active'` — deliberately, since `status` is the gate
-    // that would also close reads — so without this branch a re-onboarding would helpfully re-sync
-    // `displayName` and the avatar back out of Clerk and quietly un-delete the person's identity.
-    // (`syncFromClerk`, which *does* run on every launch, carries the same guard for the same reason.)
-    //
-    // Canceling clears the stamp, and *then* this sync is exactly the re-onboarding path
-    // (`needsProfileSetup` routes them here): same code, no special restore, and the name they type
-    // is the name they get.
-    if (existing && existing.deletionRequestedAt !== undefined) {
-      return existing._id;
-    }
-
-    // `username` is unique (06-data-model.md) — `checkUsername` is the one rule, shared with the
-    // availability query and the rename. (Only reached for new or active profiles — i.e. only when
-    // we're about to write it.)
-    const verdict = await checkUsername(ctx, username, identity.subject);
-    if (!verdict.ok) throw new ConvexError(USERNAME_MESSAGES[verdict.reason]);
-
-    if (existing) {
-      // Force a minor's profile private; never silently *widen* an adult's existing choice. So on
-      // the 18th birthday (minor → false) an already-private profile stays private until the user
-      // opts to make it public — nothing is auto-widened (D13/D41). Posting also unlocks at 18
-      // separately (reports.create gates on age), since all reports are public (D13).
-      // Keep the *original* acceptance time when the version is unchanged (a re-onboarding,
-      // e.g. after a canceled deletion); only stamp a new time when the user accepts a bumped version.
-      const reAccepted = existing.riskAckVersion !== args.riskAckVersion;
-      // A different handle on an existing profile is a rename, under the rename's cooldown — else
-      // re-running onboarding would be the way round it. The same handle re-synced is not one.
-      const renamed = username !== existing.username;
-      if (renamed) assertMayRename(existing, now);
-      await ctx.db.patch(existing._id, {
-        displayName,
-        username,
-        ...(renamed ? { usernameChangedAt: now } : {}),
-        dateOfBirth: args.dateOfBirth,
-        profileVisibility: minor ? 'private' : existing.profileVisibility,
-        // A claim present but past the cap clears the old mirror (initials), never keeps a stale one.
-        ...(identity.pictureUrl !== undefined ? { profileImageUrl } : {}),
-        ...(email !== undefined ? { email } : {}),
-        riskAckVersion: args.riskAckVersion,
-        // Server-stamped: freshly on a new acceptance (version bump), otherwise the
-        // original time is preserved across routine re-syncs (never trust the client clock).
-        riskAckAt: reAccepted ? now : (existing.riskAckAt ?? now),
-      });
-      await refreshPersonRow(ctx, existing._id);
-      return existing._id;
-    }
-
-    const created = await ctx.db.insert('profiles', {
-      clerkUserId: identity.subject,
-      displayName,
-      username,
-      ...(profileImageUrl !== undefined ? { profileImageUrl } : {}),
-      ...(email !== undefined ? { email } : {}),
-      dateOfBirth: args.dateOfBirth,
-      riskAckVersion: args.riskAckVersion,
-      riskAckAt: now, // server-stamped, not client-supplied
-      // The defaults every new account starts with, minors forced private (D13/D41) — shared with
-      // `consent.acceptTerms` (`lib/profileIdentity`).
-      ...newProfileDefaults(now, minor),
-    });
-    // The People lists' row (`lib/peopleRows`), with the new account in Everyone and Newest.
-    await refreshPersonRow(ctx, created);
-    return created;
-  },
-});
-
 /**
  * Is this username free, and allowed (B03 §11, settings 7.x and onboarding)? Answers for the caller:
  * signed in, with or without a profile yet — onboarding asks before the row exists. `username` is
@@ -290,7 +142,7 @@ export const usernameAvailable = query({
  *
  * `requireContributor`: a ghost's handle is reserved, not theirs to trade (D62), and `requireProfile`
  * under it keeps a banned or suspended account from renaming to slip a moderation action (D37) — the
- * same reason `upsertFromClerk` refuses an inactive account's identity edits.
+ * same reason `consent.acceptTerms` refuses an inactive account.
  *
  * One rename per 30 days (`USERNAME_CHANGE_COOLDOWN_MS`), enforced here: a refusal is a `ConvexError`
  * whose data is `{ code: 'username_cooldown', message, unlocksAt }`. Re-saving the current name is
@@ -320,32 +172,6 @@ export {
   usernameCooldownMessage,
   usernameUnlocksAt,
 } from './lib/profileIdentity';
-
-/**
- * Re-accept the *current* assumption-of-risk acknowledgment for an already-provisioned
- * profile (D45). The lightweight counterpart to `upsertFromClerk`: when we bump
- * `RISK_ACK_VERSION`, existing users are re-prompted for consent *only* — they don't
- * re-enter their profile fields. The acceptance time is stamped server-side (D37), and
- * `requireProfile` ensures a banned/suspended/deleted account can't re-ack its way in.
- */
-export const acceptCurrentRiskAck = mutation({
-  args: {
-    // The client asserts the version it displayed; we reject anything but the current one
-    // so a stale app build (still showing old copy) can't satisfy the gate.
-    riskAckVersion: v.string(),
-  },
-  handler: async (ctx, args) => {
-    const profile = await requireProfile(ctx);
-    if (!isCurrentRiskAckVersion(args.riskAckVersion)) {
-      throw new ConvexError('You must accept the current assumption-of-risk acknowledgment');
-    }
-    await ctx.db.patch(profile._id, {
-      riskAckVersion: args.riskAckVersion,
-      riskAckAt: Date.now(),
-    });
-    return profile._id;
-  },
-});
 
 /**
  * Edit the caller's own profile (D13) — bio, town label, and public↔private visibility. Each field
@@ -438,23 +264,23 @@ export const setTimezone = mutation({
  * Refresh the two Clerk mirrors — `email` (A08 PR 3 / D174) and `profileImageUrl` (Phase 03) — from
  * the identity's claims. Called by both clients on app open, beside `setTimezone`.
  *
- * **Why this exists apart from `upsertFromClerk`.** That mutation is the onboarding write: it takes
- * a display name, a username, a date of birth and a risk acknowledgment, and both clients call it
- * from the onboarding screen only. Nothing re-ran it on an ordinary launch, so a mirror set there was
- * set once — every profile that onboarded before the email field existed had no address, and a
- * changed Clerk email or avatar never reached us. The email sender's Clerk fallback papered over the
+ * **Why this exists apart from the onboarding write** (`consent.acceptTerms`, which mirrors the
+ * claims it is given when it creates or re-introduces a row). That runs once, at *Record acceptance*;
+ * nothing re-runs it on an ordinary launch, so a mirror set there is set once — every profile that
+ * onboarded before the email field existed had no address, and a changed Clerk email or avatar never
+ * reached us. The email sender's Clerk fallback papered over the
  * first (one lookup per person, cached), but a cached address is exactly the thing that goes stale
  * when the person changes it. This is the launch-time half: claims only, no identity args, writes
  * nothing when the claims match (beyond the day's sign-in row, once a day — below).
  *
- * **Never un-scrub.** The same rule as `upsertFromClerk`: an inactive account or a pending deletion
+ * **Never un-scrub.** The same rule as the acceptance: an inactive account or a pending deletion
  * has had these fields cleared on purpose, and a launch-time sync is the first thing that would put
  * them back. Fail-soft rather than throw — this runs unattended on every open, and a ghost signing in
  * to cancel should see nothing from it. An unmapped claim (`undefined`) leaves the mirror alone.
  *
  * The gate is `canReceiveNotifications` — the same predicate `notificationDelivery.cacheEmail`, the
  * other writer of `profiles.email`, sits behind — so the two writers of the mirror can't drift on
- * who may hold one. (Like `upsertFromClerk`, and unlike `requireProfile`, this reads `status` alone:
+ * who may hold one. (Unlike `requireProfile`, this reads `status` alone:
  * a suspension that has lapsed without an explicit `unbanUser` still counts as inactive here.)
  *
  * The webhook (`applyClerkMirrors`) is the other caller of the same helper: this one fires on the
@@ -1131,7 +957,7 @@ const PROFILE_FIELDS = Object.keys(schema.tables.profiles.validator.fields);
  * rebuilds each row via `replace` from the allowed fields only — dropping retired top-level fields,
  * canonicalizing `notificationPrefs` to exactly `NOTIFICATION_PREF_KEYS` (preserving booleans,
  * defaulting missing keys on per D16), and defaulting a missing `profileVisibility` from age (minors
- * private, D41). New profiles are already canonical (`upsertFromClerk` + `DEFAULT_NOTIFICATION_PREFS`),
+ * private, D41). New profiles are already canonical (`consent.acceptTerms` + `DEFAULT_NOTIFICATION_PREFS`),
  * and prod is uninitialized, so this is a no-op there. Idempotent. Run once after deploy:
  * `convex run profiles:backfillNotificationPrefs`.
  *

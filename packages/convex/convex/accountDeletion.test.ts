@@ -9,8 +9,12 @@ import {
   deletedClerkUserId,
   deletedUsername,
   needsProfileSetup,
-  RISK_ACK_VERSION,
+  PRIVACY_NOTICE_SHA256,
+  PRIVACY_NOTICE_VERSION,
+  TERMS,
+  TERMS_SHA256,
 } from '@skating/core';
+import type { ConvexError } from 'convex/values';
 import { convexTest } from 'convex-test';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -544,17 +548,28 @@ describe('the grace window', () => {
    * its ghost branch it would un-delete the person's identity the next time they opened the app,
    * which is not a corner case — it's the first thing that happens.
    */
-  test('the Clerk launch sync cannot un-wipe a ghost', async () => {
+  test('onboarding cannot un-wipe a ghost: the acceptance refuses a pending deletion', async () => {
     const t = harness();
     const user = await seedUser(t, 'leaver');
     await user.as.mutation(api.accountDeletion.requestDeletion, {});
 
-    await user.as.mutation(api.profiles.upsertFromClerk, {
-      displayName: 'Leaver Again',
-      username: 'leaver',
-      dateOfBirth: ADULT_DOB,
-      riskAckVersion: RISK_ACK_VERSION,
-    });
+    // The way back is the cancel in Settings, never a second onboarding (D298).
+    const terms = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
+    await user.as.mutation(api.consent.openTerms, { ...terms, surface: 'web' });
+    await user.as.mutation(api.consent.reachTermsEnd, { ...terms, via: 'inline' });
+    const refusal = await user.as
+      .mutation(api.consent.acceptTerms, {
+        ...terms,
+        privacyVersion: PRIVACY_NOTICE_VERSION,
+        privacyHash: PRIVACY_NOTICE_SHA256,
+        surface: 'web',
+        account: { displayName: 'Leaver Again', username: 'leaver', dateOfBirth: ADULT_DOB },
+      })
+      .then(
+        () => null,
+        (e: unknown) => e,
+      );
+    expect((refusal as ConvexError<{ code: string }>).data.code).toBe('deletion_pending');
 
     const profile = await t.run((ctx) => ctx.db.get(user.id));
     expect(profile?.displayName).toBe(DELETED_DISPLAY_NAME);

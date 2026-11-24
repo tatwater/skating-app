@@ -6,8 +6,9 @@ import { finishSession } from './clerkSession';
 
 /**
  * Sign up (8.4), on Clerk's `useSignUp`: the same two steps as signing in. It creates the Clerk
- * account only; the profile fields and the blocking gates (18+, D41 and D294; the acknowledgment, D45) come
- * right after on onboarding, where they go to the enforced `upsertFromClerk`.
+ * account only; the profile fields and the blocking gates (18+, D41 and D294; the terms read to the
+ * end, D295) come right after, on the way in, where *Record acceptance* sends them to the enforced
+ * `consent.acceptTerms` (D298).
  *
  * **It can only finish if the Clerk instance doesn't require a password at sign-up.** With `password`
  * required, the code verifies and the attempt stops at `missing_requirements`. That reads as

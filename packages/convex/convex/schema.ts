@@ -178,9 +178,9 @@ export default defineSchema({
     homeCoord: v.optional(latLng), // PRIVATE — filter input only (D11); set at onboarding
     homeTownLabel: v.optional(v.string()), // optional PUBLIC label (D11)
     bio: v.optional(v.string()), // optional PUBLIC blurb, shown only on a public profile (D13)
-    // Avatar mirrored from Clerk's `imageUrl` — written at `upsertFromClerk` (Phase 03 decision #2) and
-    // refreshed on every app open by `syncFromClerk` — no upload pipeline; users manage it via Clerk's
-    // own UI. Optional ⇒ migration-free; scrubbed on deletion.
+    // Avatar mirrored from Clerk's `imageUrl` — written at onboarding (`consent.acceptTerms`; Phase 03
+    // decision #2) and refreshed on every app open by `syncFromClerk` — no upload pipeline; users
+    // manage it via Clerk's own UI. Optional ⇒ migration-free; scrubbed on deletion.
     profileImageUrl: v.optional(v.string()),
     driveTimePrefMinutes: v.number(), // legacy single pref (D18); superseded by the bands + notif radii below
     // Drive-time bands derived from the PRIVATE `homeCoord` (Phase 04, decision #2). 30/60 are hosted-ORS
@@ -268,7 +268,8 @@ export default defineSchema({
     timezone: v.optional(v.string()),
     /**
      * The primary email, mirrored from the Clerk identity's `email` claim — written at
-     * `upsertFromClerk` (A08 PR 3 / D174) and refreshed on every app open by `syncFromClerk` — the same
+     * onboarding (`consent.acceptTerms`; A08 PR 3 / D174) and refreshed on every app open by
+     * `syncFromClerk` — the same
      * posture as `profileImageUrl`: Clerk owns it, we hold a copy so a send is not a Clerk API call per
      * recipient (`lib/clerkEmail` says why that doesn't scale). PRIVATE:
      * never on a public profile, scrubbed at the deletion request and again at the tombstone. Absent

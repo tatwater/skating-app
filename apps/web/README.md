@@ -47,8 +47,10 @@ Newsfeed/profile remain placeholders deep-dived in their own later-phase PRs.
 Two co-primary top-level pages — **Map** (`/`, default) and **Newsfeed** (`/feed`). Creating
 a report is surfaced *in place* on both, and bounties on the map — there are **no** standalone
 `/report` or `/bounties` pages (D47). Profiles are their own page (`/u/:username`). Auth +
-provisioning use the same gate as mobile: `sign-in` → `sign-up` → `onboarding` (collects
-username + display name + DOB + risk ack) → `reack` (renew consent after a version bump).
+provisioning use the same gate as mobile (D298): `sign-in` → `sign-up` → `onboarding` (the
+Account step — full name, username, date of birth — then the terms, read to the end and accepted;
+the profile is created at *Record acceptance*) → `know-before-you-go` → `welcome` (Home, then
+Profile). An existing account meets `terms` when the terms change and the questions each season.
 
 ```
 src/
@@ -62,11 +64,11 @@ src/
     _skater.u.$username.tsx  # profile · _skater.settings.* settings
     feed.tsx  post.tsx  notifications.tsx  # old paths, kept as redirects (D242)
     sign-in.tsx  sign-up.tsx # Clerk sign-in / sign-up
-    onboarding.tsx  reack.tsx# profile provisioning · risk-ack renewal
+    onboarding.tsx  terms.tsx  know-before-you-go.tsx  welcome.tsx  # the way in (D298)
     admin.*.tsx              # the admin console (still inside the old AppShell)
   components/
     AppProviders.tsx         # Clerk → Convex → theme
-    AuthGate.tsx             # shared resolveAuthRoute → redirect (mobile parity, D7)
+    AuthGate.tsx             # shared resolveEntryRoute → redirect, with the receipt hold (D7, D298)
     AppShell.tsx             # the admin console's chrome
     skater/                  # the skater app (B03): shell, map, lake, panels, sheet, Latest, phone
     admin/                   # admin console pieces
@@ -80,7 +82,7 @@ src/
   instrument.server.ts       # server Sentry.init (D29)
 ```
 
-Auth-route resolution (`resolveAuthRoute`) and DOB parsing (`parseDateOfBirth`) are shared
+Entry-route resolution (`resolveEntryRoute`), the season rule and DOB parsing are shared
 with mobile via `@skating/core` (D7) — this app only adds the web-specific redirect mapping
 (`src/lib/authZone.ts`).
 

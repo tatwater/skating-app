@@ -4,7 +4,7 @@
  * throw. Clerk and Resend are stubbed; nothing asserts on the wall clock.
  */
 
-import { RISK_ACK_VERSION, TERMS, TERMS_SHA256, termsVersionLabel } from '@skating/core';
+import { TERMS, TERMS_SHA256, termsVersionLabel } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -32,7 +32,8 @@ async function world(email?: string) {
       profileVisibility: 'public',
       notificationPrefs: { ...NOTIFICATION_PREF_DEFAULTS },
       dateOfBirth: Date.UTC(1990, 0, 1),
-      riskAckVersion: RISK_ACK_VERSION,
+      // The retired acknowledgment (D45), as an account from before the terms carries it.
+      riskAckVersion: '2026-07-11',
       reputationPoints: 0,
       role: 'member',
       status: 'active',

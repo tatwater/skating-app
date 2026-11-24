@@ -59,7 +59,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   }, [hasProfile, storedZone, setTimezone]);
 
   // The Clerk mirrors (email for notification mail, the avatar), refreshed from the token's claims
-  // on the same "app open". `upsertFromClerk` runs at onboarding only, so without this a changed
+  // on the same "app open". The acceptance mirrors them at onboarding only, so without this a changed
   // address or picture never reached the profile. On each signed-in mount, and again when a tab left
   // open returns on a new day (the sign-in record's touch point); the server writes nothing when the
   // claims already match.

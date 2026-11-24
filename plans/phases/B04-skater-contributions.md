@@ -152,7 +152,8 @@ Each entry: the date, where it was found, what is wrong or missing, and where th
 - **2026-11-17 · found by** the same build — two sign-outs skip the draft guard entirely: the old
   admin pages' header (`components/AppShell.tsx`) and the re-acknowledgment page (`routes/reack.tsx`)
   call `useSignOut` straight, so a written report (this tab's, or the stored one) is discarded without
-  asking. *Not yet planned.*
+  asking. *Not yet planned.* (2026-11-24: the re-acknowledgment page is gone with B03 §9; the way
+  in's *Sign out* buttons, which replaced it, call `useSignOut` the same way.)
 - **2026-11-17 · found by** the B01 "Shape unknown" pin (B01-3t) — the skater map drops a hazard whose
   footprint can't be grown: `hazardsToFeatureCollection` (core's `hazardLayer.ts`, both apps) skips a
   row `safeFootprint` returns nothing for, so a skater sees no mark where the console now draws a pin

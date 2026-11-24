@@ -8,7 +8,8 @@ counsel*, it doesn't answer them.
 > **Who this is for.** Anyone building a feature that a minor could touch, anyone weighing the
 > "let 16+ in" question, and anyone expanding to a new region who needs to know the age rules
 > aren't as portable as they look. The enforcement lives in `packages/core/src/age.ts` (the pure
-> math) and the Convex mutations that call it (D41, D294).
+> math) and the Convex mutations that call it — at sign-up, `consent.acceptTerms`, where *Record
+> acceptance* creates the profile (D41, D294, D298).
 
 ---
 
@@ -135,7 +136,9 @@ protections, it never auto-exposes.** The load-bearing example: a minor's profil
 `private`. On their 18th birthday `isMinor` flips to false, but their profile **stays private**
 until *they* choose to change it. We "force private for minors" but "never silently widen an
 adult's existing choice." A birthday should hand someone *new options*, never flip a privacy
-setting on their behalf.
+setting on their behalf. The same rule holds when a canceled deletion's account is set up again:
+it keeps the visibility it has (private, after the request), and only its own switch widens it
+(D298).
 
 ---
 

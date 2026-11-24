@@ -5,8 +5,8 @@
  * outcome (`copyEmail`) and an email the token lacked (`identity`) — plus the finalize stage's sever
  * (`profileId`, `clerkUserId`, `severedAt`, `purgeAt`); `consent.purgeDue` is the only delete. The
  * readings (`termsReadings`) are written by `consent.ts` and erased by it and the finalize `erase`
- * stage. And the profile's five routing fields are written only by `consent.ts` and cleared only by
- * the tombstone.
+ * stage. And the profile's five routing fields are written only by `consent.ts` (and the inbox
+ * seed's fake people, born routed) and cleared only by the tombstone.
  *
  * This lint reads the convex sources with comments blanked and holds:
  *
@@ -104,10 +104,20 @@ const RECORD_FILLS: Record<string, readonly string[]> = {
 /** A record-patch target: the names a record id goes by. */
 const RECORD_TARGET = /^(?:recordId|record\._id)$/;
 
-/** The profile's routing fields, and where they may be written as keys. */
+/**
+ * The profile's routing fields, and where they may be written as keys: `consent.ts`, the schema, the
+ * tombstone that clears them, and the inbox seed's fake people (`inboxSeed.ts:ensurePeople`, dev
+ * only), born routed as through the way in — they stand where the retired risk acknowledgment's
+ * stamp stood, and write no record.
+ */
 const ROUTING_FIELDS =
   /\b(termsVersion|termsAcceptedAt|knowBeforeYouGoAt|knowBeforeYouGoVersion|welcomeStep)\s*:/g;
-const ROUTING_WRITERS = new Set(['consent.ts', 'schema.ts', 'accountDeletion.ts:writeTombstone']);
+const ROUTING_WRITERS = new Set([
+  'consent.ts',
+  'schema.ts',
+  'accountDeletion.ts:writeTombstone',
+  'inboxSeed.ts:ensurePeople',
+]);
 
 function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((e) => {
@@ -289,7 +299,7 @@ test('every patch on a record names only the fill-once fields its function may w
   }
 });
 
-test('the profile’s routing fields are written only by consent.ts and cleared only by the tombstone', () => {
+test('the profile’s routing fields are written only by consent.ts (and the seed) and cleared only by the tombstone', () => {
   expect(scan().routingKeys).toEqual([]);
 });
 

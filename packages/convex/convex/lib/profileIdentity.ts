@@ -1,9 +1,8 @@
 /**
- * **The identity rules both profile writers share** (B03 §9.5): the username check, its messages,
- * the rename cooldown and a new profile's defaults. `profiles.ts` (the onboarding sync, the rename,
- * the availability query) and `consent.ts` (the acceptance that creates or re-introduces an account)
- * each used to be the one place a rule lived; two writers with a copy each would drift, so they ask
- * here.
+ * **The identity rules every profile writer shares** (B03 §9.5): the username check, its messages,
+ * the rename cooldown and a new profile's defaults. `profiles.ts` (the rename, the availability
+ * query) and `consent.ts` (the acceptance that creates or re-introduces an account) ask here, so a
+ * rule lives in one place and the writers can't drift.
  */
 
 import { isValidUsername, normalizeUsername } from '@skating/core';
@@ -24,8 +23,8 @@ export type UsernameVerdict =
   | { ok: false; username: string; reason: keyof typeof USERNAME_MESSAGES };
 
 /**
- * May `holderClerkId` have this username? **The one rule** (B03 §11): onboarding, the acceptance, the
- * availability query and the rename all ask it, so a name the settings field calls free is a name the
+ * May `holderClerkId` have this username? **The one rule** (B03 §11): the acceptance (onboarding),
+ * the availability query and the rename all ask it, so a name the settings field calls free is a name the
  * save takes.
  *
  * The canonical form first (D37 — the client's normalization is a courtesy), then the shape, then
@@ -66,8 +65,8 @@ export function usernameUnlocksAt(
 /**
  * Throws the cooldown refusal — `{ code: 'username_cooldown', message, unlocksAt }` — when `profile`
  * renamed itself less than 30 days before `now`. Every path that changes an existing profile's
- * handle calls it (`changeUsername`, `upsertFromClerk`'s re-sync, and the acceptance that
- * re-introduces a canceled deletion), so none is a way round.
+ * handle calls it (`changeUsername` and the acceptance that re-introduces a canceled deletion), so
+ * neither is a way round.
  */
 export function assertMayRename(
   profile: Pick<Doc<'profiles'>, 'usernameChangedAt' | 'timezone'>,

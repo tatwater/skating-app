@@ -26,9 +26,14 @@ and a Clerk JWT template named `convex`).
   `adminAreaCells`, D5/D48/A01), `listing.ts` (the `isListed` derivation).
 - **No Convex components are installed.** `convex.config.ts` was deleted with
   `@convex-dev/geospatial` in A01; spatial lookups are plain tables + indexes now.
-- **`convex/profiles.ts`** — `current` + `upsertFromClerk` (idempotent Clerk→profile
-  bridge; enforces the 18+ gate and username uniqueness) + `publicByIds` (minimal public
-  attribution — `username`/`displayName` keyed by id — for report feeds/detail, Phase 02a).
+- **`convex/consent.ts`** — the way in (D295–D298): the terms reading (`openTerms`,
+  `reachTermsEnd`), `acceptTerms` (the one place a profile is created or a canceled deletion's
+  row re-introduced — the 18+ gate, the name and username rules, the Clerk mirrors, the sealed
+  record), `completeKnowBeforeYouGo`, `advanceWelcome`, the IP and emailed-copy actions, and the
+  record's retention sweeps.
+- **`convex/profiles.ts`** — `current` + `syncFromClerk` (the launch-time Clerk mirrors) +
+  `publicByIds` (minimal public attribution — `username`/`displayName` keyed by id — for report
+  feeds/detail, Phase 02a).
 - **`convex/waterBodies.ts`** — internal `importCanonical` (idempotent OSM/NHD upsert keyed
   on `by_external_id`, preserves removed state across re-import, D14/D48; now also computes the
   D49 `displayScore`/`minVisibleZoom`) + `backfillCells` (the paginated cell-index migration);

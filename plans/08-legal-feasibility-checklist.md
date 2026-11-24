@@ -59,11 +59,13 @@ feasibility pass before it's even a legal question · 🟢 cleared · ⏸ dorman
 The umbrella. A safety app's terms have to survive the *"peer observation, never a guarantee"*
 framing (D3) and the assumption-of-risk acknowledgment (D45) being enforced as written.
 - **Live:** interim [`TERMS.md`](../TERMS.md) and [`PRIVACY.md`](../PRIVACY.md); the 18+ gate (D294);
-  a versioned, server-stamped risk-ack (`RISK_ACK_VERSION`) that re-prompts on change.
-- [ ] Lawyer engaged. [ ] Final ToS + privacy policy supersede the interim files. [ ] Risk-ack
-      wording reviewed; bump the version if it changes. [ ] The policy states D248's retention
+  the terms acceptance below, which re-prompts when `TERMS.version` changes (it replaced the
+  versioned risk-ack, `RISK_ACK_VERSION`, retired by B03 §9 — the profile keeps its old stamps,
+  unread).
+- [ ] Lawyer engaged. [ ] Final ToS + privacy policy supersede the interim files. [ ] Terms
+      wording reviewed; bump `TERMS.version` if it changes. [ ] The policy states D248's retention
       (L3).
-- **Being built (B03 §9, D295, D296):** the risk-ack retires; the terms are read to the end in the app,
+- **Built (B03 §9, D295, D296; on dev once deployed):** the risk-ack retired; the terms are read to the end in the app,
   accepted in one line that also names the Privacy Notice, and recorded with their version and hash,
   three server stamps, the IP from the sign-in provider's session and an emailed copy; seven Know Before
   You Go questions are answered at sign-up and each season, misses never stored. For counsel:

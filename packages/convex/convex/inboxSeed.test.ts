@@ -5,7 +5,12 @@
  * `inbox.lanes`, a second run filing nothing, and the clear leaving every table as it found it.
  */
 
-import { NOTIFICATION_PREF_KEYS, representativePoint } from '@skating/core';
+import {
+  KNOW_BEFORE_YOU_GO,
+  NOTIFICATION_PREF_KEYS,
+  representativePoint,
+  TERMS,
+} from '@skating/core';
 import { makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
@@ -193,7 +198,7 @@ async function realLife(t: T) {
         email: `${clerkUserId}@example.test`,
         dateOfBirth: Date.UTC(1985, 0, 1),
         reputationPoints: 0,
-        // As onboarding writes them (`profiles.upsertFromClerk`).
+        // As onboarding writes them (`consent.acceptTerms`, from `lib/profileIdentity`).
         reportCount: 0,
         commentCount: 0,
         role: 'member',
@@ -1893,7 +1898,17 @@ describe('ensurePeople', () => {
       expect(Object.values(p.notificationPrefs).every((on) => on === false)).toBe(true);
       expect(p.channelPrefs).toEqual({ push: false, email: false });
       expect(p.email).toBeUndefined();
+      // Routed as an account through the way in, not by the retired acknowledgment (D295).
+      expect(p).toMatchObject({
+        termsVersion: TERMS.version,
+        knowBeforeYouGoVersion: KNOW_BEFORE_YOU_GO.version,
+      });
+      expect(p.termsAcceptedAt).toBe(p.knowBeforeYouGoAt);
+      expect(p.riskAckVersion).toBeUndefined();
+      expect(p.welcomeStep).toBeUndefined();
     }
+    // No record: these people never accepted anything.
+    expect(await t.run((ctx) => ctx.db.query('consentRecords').collect())).toEqual([]);
     expect(await t.run((ctx) => ctx.db.query('peopleRows').collect())).toHaveLength(8);
     expect(await t.run((ctx) => ctx.db.query('pushTokens').collect())).toEqual([]);
   });
