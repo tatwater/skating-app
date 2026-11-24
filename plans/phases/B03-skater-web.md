@@ -1,7 +1,7 @@
 # Phase B03 — The skater web app
 
 > **Status:** complete, 2026-11-07; **reopened 2026-11-24** for the onboarding and the season check, §9
-> (with the 18+ change, D294). PRs #95–#98 built it; #100–#104 are the close-out and the live-test
+> (with the 18+ change, D294), built in PR #180 and complete again 2026-11-24. PRs #95–#98 built it; #100–#104 are the close-out and the live-test
 > fixes that followed, and §8 is their record. The build model held: one governor and parallel agents in
 > their own worktrees, cut from main on `phase-b03-skater-web`. The deferred and owed rows live in the
 > roadmap entry (`07-roadmap.md`, Phase B03). Mocks: Paper *Gli · Web app · Review 3* (157 boards), rules
@@ -1190,8 +1190,8 @@ figures; each caret is a slider with arrow, page and Home/End steps and an `aria
 
 ## 9. The onboarding and the season check (added 2026-11-24)
 
-> **Status:** built 2026-11-24, all three stages integrated on `phase-b03-onboarding`; the PR waits on
-> review. An addition to this phase, not a new one (founder, 2026-11-24): one PR, carrying the
+> **Status:** built 2026-11-24, all three stages integrated on `phase-b03-onboarding` and shipped in
+> PR #180. An addition to this phase, not a new one (founder, 2026-11-24): one PR, carrying the
 > already-committed 18+ change (D294) and this build. Where the build departed from the plan, the plan
 > below is corrected in place; §9.17 records what the build found. Decisions: D295 (the terms acceptance, retiring the risk acknowledgment), D296 (Know Before
 > You Go and its season rule), D297 (the consent record and its six years), D298 (the onboarding's order,
@@ -1859,6 +1859,14 @@ Recorded at integration (2026-11-24). Telegraphic; the commits carry the detail.
   dropped), failed Clear silently and said a refused save as a location failure with no busy label.
   The phone's address field could mistake an effect for an older value for an outside change and drop
   the live query (an explicit `reset` counter now).
+- **The sixth review's nine (2026-11-24).** The phone's You tab returned to idle, saying nothing,
+  when its give-up dropped a read (it now says its couldn't-locate line). The docs still called the
+  stamps a measure of reading time and a restart's disarm gone (corrected, below). Settings' refused
+  home Save kept an inline line, and a failed Clear on either app said the home wasn't *saved*: both
+  are toasts now, a Clear in its own words. A reached end waiting on the server said nothing (a
+  quiet line after three seconds now, both apps). The geocoder's probe taught the session nothing if
+  its field had unmounted. The web step's two gone guards gained tests. A text that fits the screen
+  after a restart is recorded as a known limit, below.
 - **What the three stamps are, and are not (the governor's ruling).** `openedAt`, `reachedEndAt` and
   the acceptance's time are when the server heard of each moment: the opening, the end on screen,
   the button. They are not a measure of reading time, and nothing reads them as one. An end that

@@ -879,7 +879,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - Clerk's ban lock reconciled daily (B01-4k, D277): on dev, `convex dev --once`, then — before the next 10:20 UTC tick — one dry run (`convex run clerkReconcile:run '{"dryRun":true}'`), its checked counts read back against the People *Banned* lane and Clerk's banned users, before the cron's first real run; a non-zero repair count on Machinery means one of the two sync gaps happened. Dry run on dev (2026-11-17): 0 banned in Clerk, 0 expected, 0 repairs; the first real run, due 2026-11-18 10:20 UTC, is still to confirm → the plan's *B01-4k*
 
 ## Phase B03 — The skater web app
-🟡 **In progress** 2026-11-24 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244 D294 D295 D296 D297 D298
+🟢 **Complete** 2026-11-24 · PRs #95–#104, #180 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244 D294 D295 D296 D297 D298
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
