@@ -356,6 +356,7 @@ describe('/terms', () => {
         tone: 'bad',
       }),
     );
+    expect(useEntryStore.getState().cannotActAt).toBeNull();
   });
 
   it('says the profile gate’s own plain-string refusal as it is, as the phone does', async () => {
@@ -368,6 +369,9 @@ describe('/terms', () => {
       expect(m.toast).toHaveBeenCalledWith({ title: 'Account is suspended', tone: 'bad' }),
     );
     expect(useEntryStore.getState().hold).toBeNull();
+    // And it tells the gate, which sends the skater to the app (a device clock ahead of the
+    // server's routed a still-suspended account here).
+    expect(useEntryStore.getState().cannotActAt).toEqual(expect.any(Number));
   });
 
   it('draws the receipt with Continue when no questions are due, and lets go on it', async () => {
@@ -440,10 +444,22 @@ describe('/know-before-you-go', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     await waitFor(() => expect(mutation('consent:completeKnowBeforeYouGo')).toHaveBeenCalled());
     await new Promise((r) => setTimeout(r, 20));
-    expect(m.capture).not.toHaveBeenCalledWith(
-      'know_before_you_go_completed',
-      expect.anything(),
+    expect(m.capture).not.toHaveBeenCalledWith('know_before_you_go_completed', expect.anything());
+  });
+
+  it('tells the gate when the server says the account can’t act, so it goes to the app', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, knowBeforeYouGoAt: undefined });
+    mutation('consent:completeKnowBeforeYouGo').mockRejectedValueOnce(
+      new ConvexError('Account is not active'),
     );
+    render(<KnowBeforeYouGoPage />);
+    await answerAll(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() =>
+      expect(m.toast).toHaveBeenCalledWith({ title: 'Account is not active', tone: 'bad' }),
+    );
+    expect(useEntryStore.getState().cannotActAt).toEqual(expect.any(Number));
   });
 
   it('opens a season’s asking on its card; Not now signs out and counts it', async () => {

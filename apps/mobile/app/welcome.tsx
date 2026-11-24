@@ -7,6 +7,7 @@ import * as Location from 'expo-location';
 import { type ReactNode, useState } from 'react';
 import { Button, Paragraph, Separator, Switch, Text, useTheme, XStack, YStack } from 'tamagui';
 import { AddressField } from '../src/components/onboarding/AddressField';
+import { useEntrySession } from '../src/components/onboarding/EntrySession';
 import {
   FieldHint,
   FieldLabel,
@@ -70,6 +71,7 @@ function HomeStep({
   onSignOut: () => void;
 }) {
   const toast = useToast();
+  const { dispatch } = useEntrySession();
   const setHome = useMutation(api.profiles.setHome);
   const advance = useMutation(api.consent.advanceWelcome);
   const [text, setText] = useState(choice?.kind === 'address' ? choice.suggestion.label : '');
@@ -117,7 +119,10 @@ function HomeStep({
       if (!save) onChoice(null);
       await advance({ from: 'home' });
     } catch (error) {
-      toast(readRefusal(error).message);
+      const refusal = readRefusal(error);
+      toast(refusal.message);
+      // The account can't act right now: the gate sends the skater to the tabs.
+      if (refusal.cannotAct) dispatch({ type: 'cannotAct', at: Date.now() });
       setBusy(false);
     }
   }
@@ -225,6 +230,7 @@ function ProfileStep({
   onSignOut: () => void;
 }) {
   const toast = useToast();
+  const { dispatch } = useEntrySession();
   const updateProfile = useMutation(api.profiles.updateProfile);
   const advance = useMutation(api.consent.advanceWelcome);
   const [draft, setDraft] = useState<ProfileDraft>(() => initialProfileDraft(choice, visibility));
@@ -247,7 +253,10 @@ function ProfileStep({
       }
       await advance({ from: 'profile' });
     } catch (error) {
-      toast(readRefusal(error).message);
+      const refusal = readRefusal(error);
+      toast(refusal.message);
+      // The account can't act right now: the gate sends the skater to the tabs.
+      if (refusal.cannotAct) dispatch({ type: 'cannotAct', at: Date.now() });
       setBusy(false);
     }
   }

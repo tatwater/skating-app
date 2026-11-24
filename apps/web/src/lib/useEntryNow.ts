@@ -3,14 +3,17 @@ import { useEffect, useReducer } from 'react';
 
 /**
  * The instant the gate reads `resolveEntryRoute` at, and a wake-up when that answer changes with
- * time alone: a suspension's end (`entryRouteRecheckIn`), after which the consent checks apply
- * again. Nothing else in the rule moves with the clock, so the gate re-renders on its queries
- * otherwise.
+ * time alone: a suspension's end (with its margin), or a can't-act refusal's hold running out
+ * (`entryRouteRecheckIn`), after which the consent checks apply again. Nothing else in the rule
+ * moves with the clock, so the gate re-renders on its queries otherwise.
  */
-export function useEntryNow(profile: EntryProfile | null | undefined): number {
+export function useEntryNow(
+  profile: EntryProfile | null | undefined,
+  cannotActAt: number | null = null,
+): number {
   const [woken, wake] = useReducer((n: number) => n + 1, 0);
   const now = Date.now();
-  const delay = entryRouteRecheckIn(profile, now);
+  const delay = entryRouteRecheckIn(profile, now, cannotActAt);
   // Keyed on the instant it wakes at, not the delay: a re-render must not push the wake-up back.
   const at = delay === null ? null : now + delay;
   // And on each wake, as the phone's gate is: a timer that fired a hair early (a clock step, a

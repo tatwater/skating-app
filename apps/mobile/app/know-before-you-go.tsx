@@ -313,6 +313,7 @@ function AllSeven({
   onOutdated: () => void;
 }) {
   const { sessionId } = useAuth();
+  const { dispatch } = useEntrySession();
   const theme = useTheme();
   const toast = useToast();
   const complete = useMutation(api.consent.completeKnowBeforeYouGo);
@@ -338,6 +339,8 @@ function AllSeven({
     } catch (error) {
       const refusal = readRefusal(error);
       toast(refusal.message);
+      // The account can't act right now: the gate sends the skater to the tabs.
+      if (refusal.cannotAct) dispatch({ type: 'cannotAct', at: Date.now() });
       setBusy(false);
       const action = consentRefusalAction(refusal.code);
       switch (action) {

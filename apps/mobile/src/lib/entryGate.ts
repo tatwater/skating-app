@@ -69,6 +69,13 @@ export interface EntrySession {
    * not on the season card, which would only say again what the receipt just said.
    */
   questionsFromReceipt: boolean;
+  /**
+   * When (this device's clock) the server last refused this account as unable to act right now —
+   * the profile gate's "Account is suspended" or "Account is not active" (core's
+   * `isCannotActRefusal`). For a few minutes after, core's rule sends the skater to the tabs rather
+   * than leave them on a step every press of which is refused (`resolveEntryRoute`'s `cannotActAt`).
+   */
+  cannotActAt: number | null;
 }
 
 export const EMPTY_ENTRY_SESSION: EntrySession = {
@@ -76,6 +83,7 @@ export const EMPTY_ENTRY_SESSION: EntrySession = {
   heldOn: null,
   accountSeen: false,
   questionsFromReceipt: false,
+  cannotActAt: null,
 };
 
 export type EntrySessionEvent =
@@ -89,6 +97,8 @@ export type EntrySessionEvent =
   /** The acceptance was refused: the screen stays on the reader, so nothing is held. */
   | { type: 'acceptFailed' }
   | { type: 'released'; startQuestions: boolean }
+  /** The server refused this account as unable to act (`refusal.cannotAct`), at `at`. */
+  | { type: 'cannotAct'; at: number }
   | { type: 'signedOut' };
 
 export function entrySessionReducer(state: EntrySession, event: EntrySessionEvent): EntrySession {
@@ -106,6 +116,8 @@ export function entrySessionReducer(state: EntrySession, event: EntrySessionEven
         heldOn: null,
         questionsFromReceipt: event.startQuestions,
       };
+    case 'cannotAct':
+      return { ...state, cannotActAt: event.at };
     case 'signedOut':
       return state === EMPTY_ENTRY_SESSION ? state : EMPTY_ENTRY_SESSION;
   }
@@ -121,16 +133,18 @@ export function sessionEnded(isLoaded: boolean, isSignedIn: boolean | undefined)
 }
 
 /**
- * Wakes the gate when its route changes with time alone — a suspension's end, after which the
- * consent checks apply again (core's `entryRouteRecheckIn`) — and returns the cancel for the
- * effect's cleanup. Nothing scheduled when nothing in the rule moves with the clock.
+ * Wakes the gate when its route changes with time alone — a suspension's end (with its margin), or
+ * a can't-act refusal's hold running out, after which the consent checks apply again (core's
+ * `entryRouteRecheckIn`) — and returns the cancel for the effect's cleanup. Nothing scheduled when
+ * nothing in the rule moves with the clock.
  */
 export function scheduleEntryRecheck(
   profile: EntryProfile | null | undefined,
   now: number,
   wake: () => void,
+  cannotActAt: number | null = null,
 ): () => void {
-  const delay = entryRouteRecheckIn(profile, now);
+  const delay = entryRouteRecheckIn(profile, now, cannotActAt);
   if (delay === null) return () => {};
   const timer = setTimeout(wake, delay);
   return () => clearTimeout(timer);

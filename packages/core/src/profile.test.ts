@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  ACCOUNT_NOT_ACTIVE_MESSAGE,
+  ACCOUNT_SUSPENDED_MESSAGE,
   BIO_MAX_LENGTH,
   canActNow,
   canSetProfilePublic,
@@ -7,6 +9,7 @@ import {
   DELETION_GRACE_DAYS,
   DEPARTED_CONTENT_MAX_AGE_DAYS,
   DISPLAY_NAME_MAX_LENGTH,
+  isCannotActRefusal,
   isLockedOut,
   isSuspendedNow,
   isValidBio,
@@ -157,5 +160,13 @@ describe('the profile gate’s standing (D37): isLockedOut, isSuspendedNow, canA
     expect(canActNow({ status: 'suspended', suspendedUntil: NOW }, NOW)).toBe(true);
     expect(canActNow({ status: 'active' }, NOW)).toBe(true);
     expect(canActNow({}, NOW)).toBe(true);
+  });
+
+  it('reads its two refusals, and nothing else, as an account that can’t act', () => {
+    expect(isCannotActRefusal(ACCOUNT_NOT_ACTIVE_MESSAGE)).toBe(true);
+    expect(isCannotActRefusal(ACCOUNT_SUSPENDED_MESSAGE)).toBe(true);
+    for (const other of ['Not authenticated', '', null, undefined, { code: 'terms_first' }]) {
+      expect(isCannotActRefusal(other)).toBe(false);
+    }
   });
 });

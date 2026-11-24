@@ -34,6 +34,7 @@
  */
 
 import {
+  ACCOUNT_NOT_ACTIVE_MESSAGE,
   CONSENT_REFUSAL_MESSAGES,
   type ConsentRefusalCode,
   capClientReported,
@@ -117,7 +118,7 @@ async function requireReader(ctx: QueryCtx) {
     .query('profiles')
     .withIndex('by_clerk_user_id', (q) => q.eq('clerkUserId', identity.subject))
     .unique();
-  if (profile !== null && isLockedOut(profile)) throw new ConvexError('Account is not active');
+  if (profile !== null && isLockedOut(profile)) throw new ConvexError(ACCOUNT_NOT_ACTIVE_MESSAGE);
   return identity;
 }
 

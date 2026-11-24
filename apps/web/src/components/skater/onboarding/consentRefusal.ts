@@ -1,5 +1,7 @@
-import { consentRefusalMessage } from '@skating/core';
+import { consentRefusalMessage, isCannotActRefusal } from '@skating/core';
 import { ConvexError } from 'convex/values';
+
+import { markCannotAct } from '@/lib/entryHold';
 
 import { toast } from '../../kit/toast';
 
@@ -7,6 +9,8 @@ import { toast } from '../../kit/toast';
 export interface ConsentRefusal {
   code: string | undefined;
   message: string;
+  /** The profile gate's own refusal: this account can't act right now (suspended, or locked out). */
+  cannotAct: boolean;
 }
 
 /** Plain-string refusals that are no sentence for a skater: the session lapsed mid-call. */
@@ -27,6 +31,7 @@ export function readConsentRefusal(error: unknown): ConsentRefusal {
       return {
         code: undefined,
         message: data.trim() === '' || UNSHOWN.has(data) ? consentRefusalMessage(undefined) : data,
+        cannotAct: isCannotActRefusal(data),
       };
     }
     if (typeof data === 'object' && data !== null) {
@@ -39,19 +44,24 @@ export function readConsentRefusal(error: unknown): ConsentRefusal {
           typeof message === 'string' && message.length > 0
             ? message
             : consentRefusalMessage(named),
+        cannotAct: false,
       };
     }
   }
-  return { code: undefined, message: consentRefusalMessage(undefined) };
+  return { code: undefined, message: consentRefusalMessage(undefined), cannotAct: false };
 }
 
 /**
  * Says a refusal the one way the skater app says one (D268): a toast, never a line on the form.
- * Returns what it read, so the caller can act on the code.
+ * Returns what it read, so the caller can act on the code. The profile gate's own refusal — the
+ * account can't act right now — also tells the gate (`markCannotAct`), which sends the skater to the
+ * app instead of leaving them on a step every press of which is refused: a device clock ahead of
+ * the server's can route a still-suspended account to the way in early.
  */
 export function toastRefusal(error: unknown): ConsentRefusal {
   const refusal = readConsentRefusal(error);
   toast({ title: refusal.message, tone: 'bad' });
+  if (refusal.cannotAct) markCannotAct();
   return refusal;
 }
 

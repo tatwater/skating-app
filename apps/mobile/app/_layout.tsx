@@ -33,7 +33,9 @@ initSentry();
  * - signed out → `(auth)`;
  * - no profile row, or a canceled deletion's emptied one → `onboarding` (Account, then Terms);
  * - a pending deletion, or an account the server's profile gate refuses right now (banned, being
- *   finalized, suspended) → the tabs (read-only, with support), before any consent check;
+ *   finalized, suspended — judged a margin past a suspension's end, and for a while after the
+ *   server refused a way-in screen's call as one) → the tabs (read-only, with support), before any
+ *   consent check;
  * - terms not accepted at this version → `terms`;
  * - Know Before You Go due (never answered, or not this season) → `know-before-you-go`;
  * - a new account's Home and Profile still ahead → `welcome`;
@@ -73,10 +75,12 @@ function RootNavigator() {
   const [tick, wake] = useReducer((n: number) => n + 1, 0);
   const suspendedUntil = profile?.suspendedUntil;
   const status = profile?.status;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: the suspension's fields and the wake are the trigger
+  // So does a can't-act refusal's hold running out (a way-in screen's `{ type: 'cannotAct' }`).
+  const cannotActAt = session.cannotActAt;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the suspension's fields, the refusal and the wake are the trigger
   useEffect(
-    () => scheduleEntryRecheck({ status, suspendedUntil }, Date.now(), wake),
-    [status, suspendedUntil, tick],
+    () => scheduleEntryRecheck({ status, suspendedUntil }, Date.now(), wake, cannotActAt),
+    [status, suspendedUntil, cannotActAt, tick],
   );
 
   const route = resolveEntryRoute({
@@ -87,6 +91,7 @@ function RootNavigator() {
       anchor === undefined ? undefined : anchor === null ? null : { openedAt: anchor.openedAt },
     hold: session.hold,
     now: Date.now(),
+    cannotActAt,
   });
   const group = entryGroup(route, session.heldOn);
   if (group === null) return null;

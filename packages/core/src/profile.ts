@@ -259,6 +259,21 @@ export function canActNow(
   return !isLockedOut(profile) && !isSuspendedNow(profile, now);
 }
 
+/** `requireProfile`'s refusal of a banned, finalizing or deleted account (`lib/auth.ts`). */
+export const ACCOUNT_NOT_ACTIVE_MESSAGE = 'Account is not active';
+/** `requireProfile`'s refusal of an account suspended right now (`lib/auth.ts`). */
+export const ACCOUNT_SUSPENDED_MESSAGE = 'Account is suspended';
+
+/**
+ * Whether a refusal is the profile gate's own "this account can't act right now" — a plain-string
+ * `ConvexError` whose `data` is one of the two messages above. The way in reads it to send a skater
+ * the server just refused back to the app (`resolveEntryRoute`'s `cannotActAt`) rather than leave
+ * them on a step whose every press is refused.
+ */
+export function isCannotActRefusal(data: unknown): boolean {
+  return data === ACCOUNT_NOT_ACTIVE_MESSAGE || data === ACCOUNT_SUSPENDED_MESSAGE;
+}
+
 /**
  * The date of birth a tombstone carries. DOB is sensitive PII that gets scrubbed (D41/D33), but the
  * field is required and everything that reads it derives an *age* — so it has to be a real date

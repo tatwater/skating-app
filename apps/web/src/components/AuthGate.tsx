@@ -70,8 +70,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
   // only asked once someone is signed in: a signed-out visitor never waits on it.
   const watch = useQuery(api.consent.watchAnchor, isSignedIn ? {} : 'skip');
   const hold = useEntryStore((s) => s.hold);
-  // A suspension's end changes the answer with no query changing: the gate wakes for it.
-  const now = useEntryNow(profile);
+  // The server's last "this account can't act" (a way-in step's refusal): the app, for a while.
+  const cannotActAt = useEntryStore((s) => s.cannotActAt);
+  // A suspension's end, or that refusal's hold running out, changes the answer with no query
+  // changing: the gate wakes for it.
+  const now = useEntryNow(profile, cannotActAt);
   const route = resolveEntryRoute({
     isLoaded,
     isSignedIn,
@@ -80,6 +83,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     watch: watch === undefined ? undefined : watch === null ? null : { openedAt: watch.openedAt },
     hold,
     now,
+    cannotActAt,
   });
   // The report sheet is the signed-in author's; a change of account drops it (PR #77 review).
   useSheetOwnerBinding();

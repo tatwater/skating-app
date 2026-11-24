@@ -54,10 +54,23 @@ describe('readRefusal', () => {
     expect(readRefusal(new ConvexError('Account is suspended'))).toEqual({
       code: null,
       message: 'Account is suspended',
+      cannotAct: true,
     });
     expect(readRefusal(new ConvexError('Not authenticated')).message).toBe(
       CONSENT_REFUSAL_FALLBACK,
     );
+  });
+
+  it('marks the profile gate’s two refusals, and only those, as an account that can’t act', () => {
+    expect(readRefusal(new ConvexError('Account is not active')).cannotAct).toBe(true);
+    expect(readRefusal(new ConvexError('Not authenticated')).cannotAct).toBeUndefined();
+    expect(readRefusal(new ConvexError('Your report posting has been restricted')).cannotAct).toBe(
+      undefined,
+    );
+    expect(
+      readRefusal(new ConvexError({ code: 'terms_first', message: 'Account is suspended' }))
+        .cannotAct,
+    ).toBeUndefined();
   });
 
   it('never shows a non-Convex error’s text', () => {

@@ -140,8 +140,8 @@ function Reader({
 
   // The calls change identity only with the client. The controller is made in the effect (not a
   // memo) so a remount always gets a live one.
-  const calls = useRef({ openTerms, reachTermsEnd, toast });
-  calls.current = { openTerms, reachTermsEnd, toast };
+  const calls = useRef({ openTerms, reachTermsEnd, toast, dispatch });
+  calls.current = { openTerms, reachTermsEnd, toast, dispatch };
   const readingRef = useRef<TermsReading | null>(null);
   useEffect(() => {
     const reading = createTermsReading({
@@ -157,7 +157,12 @@ function Reader({
           termsHash: TERMS_SHA256,
           via: 'inline',
         }),
-      onRefusal: (error) => calls.current.toast(readRefusal(error).message),
+      onRefusal: (error) => {
+        const refusal = readRefusal(error);
+        calls.current.toast(refusal.message);
+        // The account can't act right now: the gate sends the skater to the tabs.
+        if (refusal.cannotAct) calls.current.dispatch({ type: 'cannotAct', at: Date.now() });
+      },
       onChange: setState,
       // A reading started again is read from the top. The marker stays where it was laid out (the
       // same text), so its position is kept.
@@ -224,6 +229,9 @@ function Reader({
       dispatch({ type: 'acceptFailed' });
       const refusal = readRefusal(error);
       toast(refusal.message);
+      // The account can't act right now (a device clock ahead of the server's sent a suspended
+      // account here early): the gate sends the skater to the tabs.
+      if (refusal.cannotAct) dispatch({ type: 'cannotAct', at: Date.now() });
       const action = consentRefusalAction(refusal.code);
       if (account && onAccountRefused && action === 'account') {
         onAccountRefused(refusal.code as string, account.username);

@@ -1,4 +1,9 @@
-import { DELETED_DISPLAY_NAME, KNOW_BEFORE_YOU_GO_EARLY_MS, TERMS } from '@skating/core';
+import {
+  DELETED_DISPLAY_NAME,
+  KNOW_BEFORE_YOU_GO_EARLY_MS,
+  SUSPENSION_CLOCK_MARGIN_MS,
+  TERMS,
+} from '@skating/core';
 import { act, render, screen } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import type { ReactNode } from 'react';
@@ -45,7 +50,13 @@ vi.mock('./skater/BootScreen', () => ({
 }));
 
 import { BOOT_COOKIE, bootCookieString, readBootZoneFromCookie } from '../lib/boot';
-import { finishReceipt, forgetEntry, holdForReceipt, recordReceipt } from '../lib/entryHold';
+import {
+  finishReceipt,
+  forgetEntry,
+  holdForReceipt,
+  markCannotAct,
+  recordReceipt,
+} from '../lib/entryHold';
 import { AuthGate, usesOldShell } from './AuthGate';
 
 /** The Ice Watch opened this season (the instant pinned, D243). */
@@ -384,6 +395,31 @@ describe('the way in', () => {
       unmount();
     }
     expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('lets an account the server just refused as unable to act into the app, then tries the terms again', () => {
+    // A device clock far ahead: by it the suspension lapsed long ago, so the rule alone would say
+    // the terms. The server's refusal there, a second ago, holds the skater in the app a while.
+    vi.useFakeTimers();
+    vi.setSystemTime(OPENED_AT);
+    try {
+      mocks.profile = {
+        displayName: 'Skater',
+        status: 'suspended',
+        suspendedUntil: Date.UTC(2000, 0, 1),
+      };
+      mocks.pathname = '/settings/data';
+      markCannotAct(OPENED_AT - 1_000);
+      render(<AuthGate>page</AuthGate>);
+      expect(screen.getByText('page')).toBeInTheDocument();
+      expect(mocks.push).not.toHaveBeenCalled();
+      act(() => {
+        vi.advanceTimersByTime(SUSPENSION_CLOCK_MARGIN_MS - 1_000);
+      });
+      expect(mocks.push).toHaveBeenCalledWith('/terms');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('sends a lapsed suspension through the terms again', () => {

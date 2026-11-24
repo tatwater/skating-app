@@ -3,7 +3,7 @@
  * §9.5). Pure, so the rules are tested without a device.
  */
 
-import { CONSENT_REFUSAL_FALLBACK, consentRefusalMessage } from '@skating/core';
+import { CONSENT_REFUSAL_FALLBACK, consentRefusalMessage, isCannotActRefusal } from '@skating/core';
 import { ConvexError } from 'convex/values';
 
 /** The record's client-reported surface. The phone is one of two; anything else reads as Android. */
@@ -25,6 +25,11 @@ export interface Refusal {
   message: string;
   /** `username_cooldown` only: when a rename is allowed again. */
   unlocksAt?: number;
+  /**
+   * The profile gate's own refusal: this account can't act right now (suspended, or locked out).
+   * The screen tells the gate (`{ type: 'cannotAct' }`), which sends the skater to the tabs.
+   */
+  cannotAct?: true;
 }
 
 const UNSHOWN = new Set(['Not authenticated']);
@@ -41,7 +46,11 @@ export function readRefusal(error: unknown): Refusal {
   if (error instanceof ConvexError) {
     const data: unknown = error.data;
     if (typeof data === 'string') {
-      return { code: null, message: UNSHOWN.has(data) ? CONSENT_REFUSAL_FALLBACK : data };
+      return {
+        code: null,
+        message: UNSHOWN.has(data) ? CONSENT_REFUSAL_FALLBACK : data,
+        ...(isCannotActRefusal(data) ? { cannotAct: true as const } : {}),
+      };
     }
     if (data !== null && typeof data === 'object') {
       const { code, message, unlocksAt } = data as {
