@@ -100,6 +100,41 @@ describe('createAddressLookup', () => {
     expect(shownSuggestions(lookup.current())).toEqual([]);
   });
 
+  it('an emptied field closes its list and forgets the query, an answer still out included', async () => {
+    let release!: (r: SuggestResult) => void;
+    const { suggest, lookup } = setup((text) =>
+      text === '14 School Street'
+        ? new Promise((r) => {
+            release = r;
+          })
+        : Promise.resolve(ok()),
+    );
+    await vi.runAllTimersAsync();
+    lookup.setText('14 School');
+    await vi.runAllTimersAsync();
+    expect(shownSuggestions(lookup.current())).toEqual([SCHOOL]);
+    // What the skater typed, echoed back as the value: nothing changes.
+    lookup.setValue('14 School');
+    expect(shownSuggestions(lookup.current())).toEqual([SCHOOL]);
+    // A failed skip empties the field from outside: no list for words no longer there.
+    lookup.setValue('');
+    expect(lookup.current()).toEqual({ state: 'idle', attribution: ATTRIBUTION });
+    // An answer out when the field was emptied is dropped too, and a pending ask never goes.
+    lookup.setText('14 School Street');
+    await vi.advanceTimersByTimeAsync(SUGGEST_DEBOUNCE_MS);
+    lookup.setText('14 School Street, Han');
+    lookup.setValue('');
+    release(ok());
+    await vi.runAllTimersAsync();
+    expect(shownSuggestions(lookup.current())).toEqual([]);
+    expect(suggest).toHaveBeenCalledTimes(3);
+    // A pick sets the value from outside too: the list closes and the old query is gone.
+    lookup.setText('14 School');
+    await vi.runAllTimersAsync();
+    lookup.setValue(SCHOOL.label);
+    expect(shownSuggestions(lookup.current())).toEqual([]);
+  });
+
   it('stops asking for the session after a quota refusal', async () => {
     const first = setup((text) => Promise.resolve(text ? unavailable('quota') : ok()));
     await vi.runAllTimersAsync();

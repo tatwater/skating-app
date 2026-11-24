@@ -81,8 +81,14 @@ export function lookupAttribution(lookup: AddressLookup): string | null {
 }
 
 export interface AddressLookupController {
-  /** The field's text changed. */
+  /** The field's text changed: the skater typed it. */
   setText(text: string): void;
+  /**
+   * The field's value as the screen holds it. One the skater didn't type here — emptied by a skip,
+   * by the location, or set to a pick — closes the list and forgets the old query: an answer still
+   * out for it is dropped, and no suggestions show for words no longer in the field.
+   */
+  setValue(value: string): void;
   current(): AddressLookup;
   dispose(): void;
 }
@@ -99,6 +105,8 @@ export function createAddressLookup({
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** Bumped by every new text: an answer for an older one is dropped. */
   let generation = 0;
+  /** What the skater last typed, to tell an outside change of the value from their own. */
+  let typed = '';
   let disposed = false;
 
   const set = (next: AddressLookup) => {
@@ -122,20 +130,31 @@ export function createAddressLookup({
     );
   }
 
+  /**
+   * Drops the last text's lookup (its timer, and its answer if one is out). True when there is
+   * nothing to ask about the new one: the session is out of suggestions, or the text is too short,
+   * which shows none.
+   */
+  const forget = (text: string): boolean => {
+    generation++;
+    if (timer !== null) clearTimeout(timer);
+    timer = null;
+    if (latch !== null) {
+      set({ state: latch });
+      return true;
+    }
+    if (text.trim().length < SUGGEST_MIN_CHARS) {
+      if (lookup.state !== 'unknown') set({ state: 'idle', attribution });
+      return true;
+    }
+    return false;
+  };
+
   return {
     setText(text) {
-      generation++;
-      if (timer !== null) clearTimeout(timer);
-      timer = null;
-      if (latch !== null) {
-        set({ state: latch });
-        return;
-      }
+      typed = text;
+      if (forget(text)) return;
       const query = text.trim();
-      if (query.length < SUGGEST_MIN_CHARS) {
-        if (lookup.state !== 'unknown') set({ state: 'idle', attribution });
-        return;
-      }
       set({ state: 'loading', attribution, suggestions: shownSuggestions(lookup) });
       const mine = generation;
       timer = setTimeout(() => {
@@ -157,6 +176,11 @@ export function createAddressLookup({
           },
         );
       }, SUGGEST_DEBOUNCE_MS);
+    },
+    setValue(value) {
+      if (value === typed) return;
+      typed = value;
+      forget('');
     },
     current: () => lookup,
     dispose() {

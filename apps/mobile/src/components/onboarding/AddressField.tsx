@@ -64,6 +64,10 @@ export function AddressField({
     };
   }, []);
 
+  // A value the skater didn't type here (a failed skip emptied it, the location, a pick) closes the
+  // list and forgets the old query (`setValue`).
+  useEffect(() => controller.current?.setValue(value), [value]);
+
   const suggestions = shownSuggestions(lookup);
   const open = !closed && suggestions.length > 0;
   useEffect(() => onOpenChange?.(open), [open, onOpenChange]);
