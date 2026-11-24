@@ -11,7 +11,8 @@
  *   nobody answers would otherwise hold it for good. The read itself stays live: a prompt answered
  *   slowly still delivers its fix, as long as nothing superseded it in the meantime — except on a
  *   screen that asks for `dropAtGiveUp` (the phone's You tab, mounted all session, where a fix
- *   landing long after, with nothing on screen, could replace the home from somewhere else).
+ *   landing long after, with nothing on screen, could replace the home from somewhere else). There
+ *   the give-up drops the read and says it `failed`, so the tab shows its couldn't-locate line.
  *
  * Plain timers over an injected read, so the rule is tested without a browser or a device.
  */
@@ -33,7 +34,10 @@ export interface LocateReadDeps<T> {
   /** The newest unsuperseded read's fix. */
   onFix: (fix: T) => void;
   giveUpMs?: number;
-  /** The give-up drops the read too, not just the busy state: no fix is taken after it. */
+  /**
+   * The give-up drops the read too, not just the busy state: it ends `failed`, and no fix or
+   * failure is taken after it.
+   */
   dropAtGiveUp?: boolean;
 }
 
@@ -74,12 +78,15 @@ export function createLocateRead<T>({
       const mine = ++token;
       stopWaiting();
       set('locating');
-      // Only the busy state gives up: the read stays live, and its fix still counts if it is newest.
+      // The busy state gives up: the read stays live, and its fix still counts if it is newest —
+      // unless the screen asked for `dropAtGiveUp`, where the read is dropped and said as failed.
       giveUp = setTimeout(() => {
         giveUp = null;
         if (mine !== token || state !== 'locating') return;
-        if (dropAtGiveUp) token++;
-        set('idle');
+        if (dropAtGiveUp) {
+          token++;
+          set('failed');
+        } else set('idle');
       }, giveUpMs);
       Promise.resolve()
         .then(read)

@@ -91,11 +91,11 @@ describe('createLocateRead', () => {
     expect(states).toEqual(['locating', 'idle']);
   });
 
-  it('with `dropAtGiveUp`, takes nothing after the give-up, fix or failure', async () => {
+  it('with `dropAtGiveUp`, says the give-up as failed and takes nothing after it, fix or failure', async () => {
     const { locate, out, states, onFix } = setup(undefined, true);
     locate.start();
     await vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS);
-    expect(states).toEqual(['locating', 'idle']);
+    expect(states).toEqual(['locating', 'failed']);
     out[0]?.resolve('somewhere else, hours later');
     await vi.advanceTimersByTimeAsync(0);
     expect(onFix).not.toHaveBeenCalled();
@@ -103,7 +103,7 @@ describe('createLocateRead', () => {
     await vi.advanceTimersByTimeAsync(LOCATE_GIVE_UP_MS);
     out[1]?.reject(new Error('denied'));
     await vi.advanceTimersByTimeAsync(0);
-    expect(states).toEqual(['locating', 'idle', 'locating', 'idle']);
+    expect(states).toEqual(['locating', 'failed', 'locating', 'failed']);
     // A read answered inside the give-up still counts.
     locate.start();
     await vi.advanceTimersByTimeAsync(0);

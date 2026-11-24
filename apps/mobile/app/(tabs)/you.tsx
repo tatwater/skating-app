@@ -185,8 +185,9 @@ function HomeLocation() {
 
   // The Home step's rule (core's `createLocateRead`): the button stops looking busy after a while
   // even if the read is never answered, and only the newest read nobody superseded is saved. This
-  // tab stays mounted all session, so here the read is also dropped at the give-up and whenever the
-  // tab loses focus: a fix landing later, with nothing on screen, never replaces the home.
+  // tab stays mounted all session, so here the read is also dropped at the give-up (said as the
+  // couldn't-locate line) and whenever the tab loses focus: a fix landing later, with nothing on
+  // screen, never replaces the home.
   const { locate, start, supersede } = useLocateRead((homeCoord) => void save(homeCoord), {
     dropAtGiveUp: true,
   });

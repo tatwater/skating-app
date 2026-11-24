@@ -1536,7 +1536,7 @@ looking busy after `LOCATE_GIVE_UP_MS` (30 seconds) even if a permission prompt 
 and a fix is taken only when nothing superseded it (a typed or picked address, a save, a skip, a clear, leaving the edit or
 the step by any way — Settings' home form is keyed by its view, so the browser's Back drops a read as Cancel does — another
 locate) — a slowly answered prompt still sets the home; a late fix never replaces one chosen since. The phone's You tab,
-mounted all session, drops its read at the give-up and whenever the tab loses focus (`dropAtGiveUp`). The button waits
+mounted all session, drops its read at the give-up — said as its *couldn't get your location* line — and whenever the tab loses focus (`dropAtGiveUp`). The button waits
 while a save or a skip is out, on both apps; the You tab's says *Saving…*, and its failed save or Clear is a toast (the
 server's words for a refusal, else the *wasn't saved* line), as Settings' failed Clear is. A Settings home save answered
 after the skater left neither navigates back nor writes the gone form (a late failure is a toast). Leaving Settings' home
