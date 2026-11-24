@@ -18,10 +18,12 @@ const KATE: AccountFields = {
 function renderAccount({
   initial,
   taken,
+  now = BOARD_NOON,
   availability = () => 'free',
 }: {
   initial?: AccountFields;
   taken?: string;
+  now?: number;
   availability?: (username: string | null) => UsernameAvailability;
 } = {}) {
   const onContinue = vi.fn();
@@ -31,7 +33,7 @@ function renderAccount({
     <AccountStep
       initial={initial ?? null}
       taken={taken ?? null}
-      now={BOARD_NOON}
+      now={now}
       email="kate.donovan@gmail.com"
       useAvailability={asked}
       onContinue={onContinue}
@@ -84,10 +86,24 @@ describe('AccountStep', () => {
     expect(onContinue).not.toHaveBeenCalled();
   });
 
-  it('turns 18 on the birthday itself, by the clock it is given', () => {
-    // BOARD_NOON is 16 January 2027: born 16 January 2009 is 18 that day.
-    renderAccount({ initial: { ...KATE, month: 1, day: '16', year: '2009' } });
+  // The 18+ gate (D294) reads the UTC calendar at `now − 12 h`, so its edge is one absolute
+  // instant: born 16 January 2009, a skater is admitted at noon UTC on 16 January 2027 (midnight at
+  // UTC−12, the last calendar to reach the birthday) and not a millisecond sooner. That needs a
+  // UTC-pinned clock. `BOARD_NOON` is local noon, which east of UTC falls before noon UTC (22:00 UTC
+  // the day before, in UTC+14), so a birthday asserted against it held only west of Greenwich.
+  const TURNS_18 = { ...KATE, month: 1, day: '16', year: '2009' };
+  const ADMITTED_AT = Date.UTC(2027, 0, 16, 12);
+
+  it('turns 18 at noon UTC on the birthday, once it is the birthday on every calendar', () => {
+    renderAccount({ initial: TURNS_18, now: ADMITTED_AT });
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(proceed()).toBeEnabled();
+  });
+
+  it('holds Continue the instant before, though the birthday has begun in UTC', () => {
+    renderAccount({ initial: TURNS_18, now: ADMITTED_AT - 1 });
+    expect(screen.getByRole('alert')).toHaveTextContent('You must be at least 18 to use Gli.');
+    expect(proceed()).toBeDisabled();
   });
 
   it('says a date that isn’t one, once it is complete', () => {
