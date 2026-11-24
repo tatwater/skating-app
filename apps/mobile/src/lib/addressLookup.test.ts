@@ -100,7 +100,7 @@ describe('createAddressLookup', () => {
     expect(shownSuggestions(lookup.current())).toEqual([]);
   });
 
-  it('an emptied field closes its list and forgets the query, an answer still out included', async () => {
+  it('a reset from the screen closes the list and forgets the query, an answer still out included', async () => {
     let release!: (r: SuggestResult) => void;
     const { suggest, lookup } = setup((text) =>
       text === '14 School Street'
@@ -113,17 +113,14 @@ describe('createAddressLookup', () => {
     lookup.setText('14 School');
     await vi.runAllTimersAsync();
     expect(shownSuggestions(lookup.current())).toEqual([SCHOOL]);
-    // What the skater typed, echoed back as the value: nothing changes.
-    lookup.setValue('14 School');
-    expect(shownSuggestions(lookup.current())).toEqual([SCHOOL]);
     // A failed skip empties the field from outside: no list for words no longer there.
-    lookup.setValue('');
+    lookup.reset();
     expect(lookup.current()).toEqual({ state: 'idle', attribution: ATTRIBUTION });
     // An answer out when the field was emptied is dropped too, and a pending ask never goes.
     lookup.setText('14 School Street');
     await vi.advanceTimersByTimeAsync(SUGGEST_DEBOUNCE_MS);
     lookup.setText('14 School Street, Han');
-    lookup.setValue('');
+    lookup.reset();
     release(ok());
     await vi.runAllTimersAsync();
     expect(shownSuggestions(lookup.current())).toEqual([]);
@@ -131,7 +128,7 @@ describe('createAddressLookup', () => {
     // A pick sets the value from outside too: the list closes and the old query is gone.
     lookup.setText('14 School');
     await vi.runAllTimersAsync();
-    lookup.setValue(SCHOOL.label);
+    lookup.reset();
     expect(shownSuggestions(lookup.current())).toEqual([]);
   });
 

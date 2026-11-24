@@ -74,7 +74,7 @@ function HomeStep({
   onHome: (event: HomeFieldEvent) => void;
   onSignOut: () => void;
 }) {
-  const { text, choice } = home;
+  const { text, choice, reset } = home;
   const toast = useToast();
   const setHome = useMutation(api.profiles.setHome);
   const advance = useMutation(api.consent.advanceWelcome);
@@ -147,6 +147,7 @@ function HomeStep({
         label={copy.address}
         hint={choice?.kind === 'location' ? copy.usingLocation : copy.addressHint}
         value={text}
+        resetKey={reset}
         onValueChange={(next) => {
           // Typing again un-picks, and a location still being read gives way to the typing.
           onHome({ type: 'typed', text: next });

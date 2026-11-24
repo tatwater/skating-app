@@ -84,11 +84,11 @@ export interface AddressLookupController {
   /** The field's text changed: the skater typed it. */
   setText(text: string): void;
   /**
-   * The field's value as the screen holds it. One the skater didn't type here — emptied by a skip,
-   * by the location, or set to a pick — closes the list and forgets the old query: an answer still
-   * out for it is dropped, and no suggestions show for words no longer in the field.
+   * The screen changed the field from outside — a pick, the location, a skip: the list closes and
+   * the old query is forgotten (an answer still out for it is dropped), so no suggestions show for
+   * words no longer in the field. Only the screen calls it, never the skater's typing.
    */
-  setValue(value: string): void;
+  reset(): void;
   current(): AddressLookup;
   dispose(): void;
 }
@@ -105,8 +105,6 @@ export function createAddressLookup({
   let timer: ReturnType<typeof setTimeout> | null = null;
   /** Bumped by every new text: an answer for an older one is dropped. */
   let generation = 0;
-  /** What the skater last typed, to tell an outside change of the value from their own. */
-  let typed = '';
   let disposed = false;
 
   const set = (next: AddressLookup) => {
@@ -152,7 +150,6 @@ export function createAddressLookup({
 
   return {
     setText(text) {
-      typed = text;
       if (forget(text)) return;
       const query = text.trim();
       set({ state: 'loading', attribution, suggestions: shownSuggestions(lookup) });
@@ -177,9 +174,7 @@ export function createAddressLookup({
         );
       }, SUGGEST_DEBOUNCE_MS);
     },
-    setValue(value) {
-      if (value === typed) return;
-      typed = value;
+    reset() {
       forget('');
     },
     current: () => lookup,

@@ -30,6 +30,7 @@ export function AddressField({
   label,
   hint,
   value,
+  resetKey,
   onValueChange,
   onPick,
   onOpenChange,
@@ -37,6 +38,11 @@ export function AddressField({
   label: string;
   hint: string;
   value: string;
+  /**
+   * Bumped by the screen when it changes the field from outside (a pick, the location, a skip):
+   * the list closes and the old query is forgotten. Typing never bumps it.
+   */
+  resetKey: number;
   onValueChange: (value: string) => void;
   onPick: (suggestion: AddressSuggestion) => void;
   /** Told when the suggestion list opens or closes (the Home step clears room for it). */
@@ -64,9 +70,10 @@ export function AddressField({
     };
   }, []);
 
-  // A value the skater didn't type here (a failed skip emptied it, the location, a pick) closes the
-  // list and forgets the old query (`setValue`).
-  useEffect(() => controller.current?.setValue(value), [value]);
+  // The screen changed the field from outside: the list closes and the old query is forgotten. An
+  // explicit signal, not the value: an effect for an older value can't be told from typing.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the key is the trigger
+  useEffect(() => controller.current?.reset(), [resetKey]);
 
   const suggestions = shownSuggestions(lookup);
   const open = !closed && suggestions.length > 0;

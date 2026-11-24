@@ -89,23 +89,43 @@ describe('homeFieldReducer', () => {
 
   it('keeps the field and the choice together through a pick, typing and the location', () => {
     const picked = homeFieldReducer(EMPTY_HOME_FIELD, { type: 'picked', suggestion });
-    expect(picked).toEqual({ text: suggestion.label, choice: PICKED });
+    expect(picked).toEqual({ text: suggestion.label, choice: PICKED, reset: 1 });
     // Typing un-picks.
     expect(homeFieldReducer(picked, { type: 'typed', text: '14 School St' })).toEqual({
       text: '14 School St',
       choice: null,
+      reset: 1,
     });
     // The location replaces the address, and empties the field.
     expect(homeFieldReducer(picked, { type: 'located', lat: 44.1, lng: -72.5 })).toEqual({
       text: '',
       choice: HERE,
+      reset: 2,
     });
+  });
+
+  it('signals the field to forget its query on a pick, the location and a skip, never on typing', () => {
+    let field = EMPTY_HOME_FIELD;
+    const resets: number[] = [];
+    const on = (event: Parameters<typeof homeFieldReducer>[1]) => {
+      field = homeFieldReducer(field, event);
+      resets.push(field.reset);
+    };
+    on({ type: 'typed', text: '1' });
+    on({ type: 'typed', text: '14' });
+    on({ type: 'typed', text: '14 School' });
+    on({ type: 'picked', suggestion });
+    on({ type: 'typed', text: '14 School St' });
+    on({ type: 'located', lat: 44.1, lng: -72.5 });
+    on({ type: 'typed', text: '9 Main' });
+    on({ type: 'skipped' });
+    expect(resets).toEqual([0, 0, 0, 1, 1, 2, 2, 3]);
   });
 
   it('a skip takes the picked address off the field with its choice, so a failed skip leaves no orphan', () => {
     const picked = homeFieldReducer(EMPTY_HOME_FIELD, { type: 'picked', suggestion });
     const skipped = homeFieldReducer(picked, { type: 'skipped' });
-    expect(skipped).toEqual(EMPTY_HOME_FIELD);
+    expect(skipped).toEqual({ ...EMPTY_HOME_FIELD, reset: 2 });
     // Nothing on the field said a home was chosen when none is: Save has nothing to save, and
     // shows nothing that suggests otherwise.
     expect(homeCoordOf(skipped.choice)).toBeNull();

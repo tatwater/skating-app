@@ -31,9 +31,15 @@ export interface HomeField {
   /** The words in the address field. */
   text: string;
   choice: HomeChoice;
+  /**
+   * Bumped whenever the field changes from outside the skater's typing (a pick, the location, a
+   * skip): the address field closes its list and forgets its query on it (`AddressField`'s
+   * `resetKey`).
+   */
+  reset: number;
 }
 
-export const EMPTY_HOME_FIELD: HomeField = { text: '', choice: null };
+export const EMPTY_HOME_FIELD: HomeField = { text: '', choice: null, reset: 0 };
 
 export type HomeFieldEvent =
   /** Typing un-picks: only a suggestion from the list (or the location) is saved. */
@@ -51,16 +57,23 @@ export type HomeFieldEvent =
 export function homeFieldReducer(state: HomeField, event: HomeFieldEvent): HomeField {
   switch (event.type) {
     case 'typed':
-      return { text: event.text, choice: null };
+      return { ...state, text: event.text, choice: null };
     case 'picked':
       return {
         text: event.suggestion.label,
         choice: { kind: 'address', suggestion: event.suggestion },
+        reset: state.reset + 1,
       };
     case 'located':
-      return { text: '', choice: { kind: 'location', lat: event.lat, lng: event.lng } };
+      return {
+        text: '',
+        choice: { kind: 'location', lat: event.lat, lng: event.lng },
+        reset: state.reset + 1,
+      };
     case 'skipped':
-      return state.text === '' && state.choice === null ? state : EMPTY_HOME_FIELD;
+      return state.text === '' && state.choice === null
+        ? state
+        : { text: '', choice: null, reset: state.reset + 1 };
   }
 }
 
