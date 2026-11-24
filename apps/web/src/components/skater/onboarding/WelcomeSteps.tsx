@@ -34,8 +34,11 @@ function addressAvailable(lookup: AddressLookup): boolean {
  * **Where are you based?** (boards 10.10, 10.11, 11.10, 11.11): Settings' own address field, with
  * the map provider's suggestions as you type, or *Use my current location*. Private: only the
  * drive-time zones it anchors are ever used (D11), and the typed words are `ph-no-capture` (the
- * field's own). *Save and continue* waits for a picked suggestion; *Skip for now* only moves on;
- * both wait while a location is being read.
+ * field's own). *Save and continue* waits for a picked suggestion; *Skip for now* only moves on.
+ * Neither waits on a location being read — a permission prompt nobody answers would otherwise hold
+ * the step with no way on but signing out — and pressing either supersedes the read (the page drops
+ * a fix that lands after). The location button shows it is busy until the read settles, which
+ * `currentPosition` bounds.
  * While the suggestion list is open, "or" and *Use my current location* step aside for it (board
  * 10.10), as on the phone.
  */
@@ -92,9 +95,9 @@ export function HomeStep({
             <Button
               variant="primary"
               className={cn(ENTRY_PRIMARY, 'h-full w-full')}
-              // While a location is being read, the step waits for it.
-              disabled={chosen === null || skipping || locate === 'locating'}
-              loading={saving && locate !== 'locating'}
+              // Never held by a location being read: saving the picked address supersedes it.
+              disabled={chosen === null || skipping}
+              loading={saving}
               onClick={onSave}
               data-attr="welcome-home-save"
             >
@@ -104,7 +107,8 @@ export function HomeStep({
           skip={
             <Button
               className="h-full w-full"
-              disabled={saving || locate === 'locating'}
+              // Never held by a location being read: skipping supersedes it.
+              disabled={saving}
               loading={skipping}
               onClick={onSkip}
               data-attr="welcome-home-skip"

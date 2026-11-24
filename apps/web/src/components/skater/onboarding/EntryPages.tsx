@@ -279,9 +279,10 @@ export function WelcomePage({
  * picked address's town rides to the Profile step (`carryHomeTown`) only while that address is the
  * one on the field: edited, skipped, or replaced by the location, it is forgotten, as on the phone.
  *
- * A location fix arrives when it arrives. While it is on its way the other buttons wait, and a fix
- * that lands after the step has moved on (another tab, the gate), after another save began, or after
- * the skater turned to a typed address, is dropped — it never overwrites a home chosen since.
+ * A location fix arrives when it arrives (`currentPosition` gives up on a read nobody answers). The
+ * other buttons never wait for it: *Save and continue* and *Skip for now* each supersede it, and a fix
+ * that lands after the step has moved on (another tab, the gate), after a save or a skip began, or
+ * after the skater turned to a typed address, is dropped — it never overwrites a home chosen since.
  */
 function WelcomeHome() {
   const email = useEmail();
@@ -373,7 +374,12 @@ function WelcomeHome() {
           },
         );
       }}
-      onSave={() => chosen && !busy.current && void save({ lat: chosen.lat, lng: chosen.lng })}
+      onSave={() => {
+        if (chosen === null || busy.current) return;
+        // The picked address supersedes a location still being read: a late fix is dropped.
+        dropLocate();
+        void save({ lat: chosen.lat, lng: chosen.lng });
+      }}
       onSkip={async () => {
         if (busy.current) return;
         busy.current = true;

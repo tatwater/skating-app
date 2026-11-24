@@ -59,6 +59,7 @@ import {
   useEntryStore,
 } from '@/lib/entryHold';
 
+import { resetGeocoderSession } from '../settings/geocoder';
 import {
   KnowBeforeYouGoPage,
   OnboardingPage,
@@ -135,6 +136,8 @@ const LIVE = {
 beforeEach(() => {
   resetFakes();
   forgetEntry();
+  // A test that turns the provider off latches it for the session: each test is a new one.
+  resetGeocoderSession();
   m.toast.mockClear();
   m.capture.mockClear();
   m.signOut.mockClear();
@@ -888,13 +891,45 @@ describe('Home’s location, arriving late', () => {
     fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
   });
 
-  it('holds Save and Skip while it is read', async () => {
+  it('never holds Skip while it is read, and a fix after the skip is dropped', async () => {
     const user = userEvent.setup();
-    slowGeolocation();
+    // No address provider, and a permission prompt nobody answers: Skip is the only way on.
+    m.suggest.mockImplementation(
+      async () => ({ status: 'unavailable', reason: 'off', suggestions: [] }) as never,
+    );
+    const geo = slowGeolocation();
     render(<WelcomePage step="home" onStep={vi.fn()} />);
     await user.click(screen.getByRole('button', { name: 'Use my current location' }));
-    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }));
+    await waitFor(() =>
+      expect(mutation('consent:advanceWelcome')).toHaveBeenCalledWith({ from: 'home' }),
+    );
+    await act(async () => geo.fix(44.1, -71.5));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mutation('profiles:setHome')).not.toHaveBeenCalled();
+  });
+
+  it('keeps Save usable for a picked address while it is read, and drops the late fix', async () => {
+    const user = userEvent.setup();
+    offerHanover();
+    const geo = slowGeolocation();
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await user.type(await screen.findByRole('combobox'), '14 School');
+    await user.click(await screen.findByRole('option', { name: /14 School Street/ }));
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Use my current location' }));
+    expect(screen.getByRole('button', { name: 'Save and continue' })).toBeEnabled();
+    // The save fails: the late fix must still not save in its place.
+    mutation('profiles:setHome').mockRejectedValueOnce(new Error('offline'));
+    await user.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() => expect(mutation('profiles:setHome')).toHaveBeenCalledOnce());
+    await act(async () => geo.fix(44.1, -71.5));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mutation('profiles:setHome')).toHaveBeenCalledOnce();
+    expect(mutation('profiles:setHome')).toHaveBeenCalledWith({
+      homeCoord: { lat: 43.7, lng: -72.29 },
+    });
   });
 
   it('is dropped when the step has moved on before it lands', async () => {
