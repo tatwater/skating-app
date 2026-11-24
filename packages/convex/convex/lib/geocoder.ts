@@ -15,12 +15,18 @@
  * back as `unavailable`, for the client to show, and "Use my current location" is still there.
  */
 
-import { isValidCoord } from '@skating/core';
+import { isValidCoord, isValidTownLabel, normalizeTownLabel } from '@skating/core';
 
 export interface GeocodeSuggestion {
   label: string;
   lat: number;
   lng: number;
+  /**
+   * The suggestion's town as a profile shows it — "Hanover, NH" — for the onboarding's Profile step
+   * to offer as the Town (B03 §9.5, board 10.12). Absent when the provider names no place, or the
+   * name wouldn't fit a town label. Additive: Settings' address field reads only the three above.
+   */
+  town?: string;
 }
 
 export type GeocodeResult =
@@ -82,18 +88,47 @@ export const geoapifyGeocoder: GeocoderAdapter = {
     const results = (body as { results?: unknown } | null)?.results;
     if (!Array.isArray(results)) return [];
     const suggestions: GeocodeSuggestion[] = [];
-    for (const result of results as { formatted?: unknown; lat?: unknown; lon?: unknown }[]) {
+    for (const result of results as {
+      formatted?: unknown;
+      lat?: unknown;
+      lon?: unknown;
+      city?: unknown;
+      town?: unknown;
+      village?: unknown;
+      state_code?: unknown;
+    }[]) {
       const label = result?.formatted;
       const lat = result?.lat;
       const lng = result?.lon;
       if (typeof label !== 'string' || label === '') continue;
       if (typeof lat !== 'number' || typeof lng !== 'number' || !isValidCoord({ lat, lng }))
         continue;
-      suggestions.push({ label, lat, lng });
+      const town = geoapifyTown(result);
+      suggestions.push({ label, lat, lng, ...(town !== undefined ? { town } : {}) });
     }
     return suggestions;
   },
 };
+
+/**
+ * A Geoapify result's town: its `city`, else its `town` or `village`, then its `state_code` — "Hanover,
+ * NH", or the place alone without a state. `undefined` when there's no place name, or the label isn't
+ * a valid town label (`isValidTownLabel`, the cap the profile's own field holds).
+ */
+export function geoapifyTown(result: {
+  city?: unknown;
+  town?: unknown;
+  village?: unknown;
+  state_code?: unknown;
+}): string | undefined {
+  const named = (value: unknown) =>
+    typeof value === 'string' && value.trim() !== '' ? value.trim() : undefined;
+  const place = named(result.city) ?? named(result.town) ?? named(result.village);
+  if (place === undefined) return undefined;
+  const state = named(result.state_code);
+  const label = normalizeTownLabel(state === undefined ? place : `${place}, ${state}`);
+  return isValidTownLabel(label) ? label : undefined;
+}
 
 /** One lookup through an adapter: the bounds, the refusals and the no-logging rule live here. */
 export async function suggestWith(adapter: GeocoderAdapter, text: string): Promise<GeocodeResult> {

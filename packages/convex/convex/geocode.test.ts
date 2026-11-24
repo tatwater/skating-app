@@ -6,6 +6,7 @@ import {
   GEOCODE_MAX_SUGGESTIONS,
   type GeocoderAdapter,
   geoapifyGeocoder,
+  geoapifyTown,
   suggestWith,
 } from './lib/geocoder';
 import schema from './schema';
@@ -262,5 +263,51 @@ describe('suggestWith, for any adapter', () => {
       parse: () => Array.from({ length: 9 }, () => ({ label: 'a', lat: 1, lng: 1 })),
     };
     expect((await suggestWith(adapter, ADDRESS)).suggestions).toHaveLength(GEOCODE_MAX_SUGGESTIONS);
+  });
+});
+
+describe('the town a suggestion carries (B03 §9.5, the Profile step’s Town)', () => {
+  test('the city, else the town or the village, then the state code', () => {
+    expect(geoapifyTown({ city: 'Hanover', town: 'X', village: 'Y', state_code: 'NH' })).toBe(
+      'Hanover, NH',
+    );
+    expect(geoapifyTown({ town: '  Norwich ', state_code: 'VT' })).toBe('Norwich, VT');
+    expect(geoapifyTown({ village: 'Etna', state_code: 'NH' })).toBe('Etna, NH');
+    expect(geoapifyTown({ city: '', town: 'Lyme', state_code: 'NH' })).toBe('Lyme, NH');
+    // No state: the place alone.
+    expect(geoapifyTown({ city: 'Hanover', state_code: '' })).toBe('Hanover');
+    expect(geoapifyTown({ city: 'Hanover' })).toBe('Hanover');
+  });
+
+  test('no place name, a name that isn’t text, or one too long for a town label: none', () => {
+    expect(geoapifyTown({ state_code: 'NH' })).toBeUndefined();
+    expect(geoapifyTown({ city: 7, state_code: 'NH' })).toBeUndefined();
+    expect(geoapifyTown({ city: '   ' })).toBeUndefined();
+    expect(geoapifyTown({ city: 'x'.repeat(200), state_code: 'NH' })).toBeUndefined();
+  });
+
+  test('a parsed suggestion carries it when the provider names one, and not otherwise', () => {
+    expect(
+      geoapifyGeocoder.parse({
+        results: [
+          {
+            formatted: '1 South Main Street, Hanover, NH 03755, United States of America',
+            lat: 43.702264,
+            lon: -72.28973,
+            city: 'Hanover',
+            state_code: 'NH',
+          },
+          { formatted: 'Somewhere', lat: 44.5, lon: -72.5 },
+        ],
+      }),
+    ).toEqual([
+      {
+        label: '1 South Main Street, Hanover, NH 03755, United States of America',
+        lat: 43.702264,
+        lng: -72.28973,
+        town: 'Hanover, NH',
+      },
+      { label: 'Somewhere', lat: 44.5, lng: -72.5 },
+    ]);
   });
 });
