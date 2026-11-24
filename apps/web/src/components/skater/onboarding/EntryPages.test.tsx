@@ -800,6 +800,139 @@ describe('Home’s picked address', () => {
   });
 });
 
+/** The address provider, offering one Hanover address for anything three characters long. */
+function offerHanover() {
+  m.suggest.mockImplementation(async ({ text }: { text: string }) => ({
+    status: 'ok',
+    suggestions:
+      text.length >= 3
+        ? [
+            {
+              label: '14 School Street, Hanover, NH 03755, USA',
+              lat: 43.7,
+              lng: -72.29,
+              town: 'Hanover, NH',
+            },
+          ]
+        : [],
+    attribution: 'Powered by Geoapify',
+  }));
+}
+
+/** A browser whose location answers when the test says (`fix`), or never. */
+function slowGeolocation() {
+  const pending: Array<(p: unknown) => void> = [];
+  vi.stubGlobal('navigator', {
+    ...navigator,
+    geolocation: {
+      getCurrentPosition: (ok: (p: unknown) => void) => {
+        pending.push(ok);
+      },
+    },
+  });
+  return {
+    fix: (lat: number, lng: number) => {
+      for (const ok of pending.splice(0)) ok({ coords: { latitude: lat, longitude: lng } });
+    },
+  };
+}
+
+describe('Home’s town for the Profile step', () => {
+  async function pick(user: ReturnType<typeof userEvent.setup>) {
+    await user.type(await screen.findByRole('combobox'), '14 School');
+    await user.click(await screen.findByRole('option', { name: /14 School Street/ }));
+    expect(useEntryStore.getState().homeTown).toBe('Hanover, NH');
+  }
+
+  beforeEach(() => {
+    offerHanover();
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
+  });
+
+  it('is forgotten when the picked address is edited', async () => {
+    const user = userEvent.setup();
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await pick(user);
+    await user.type(screen.getByRole('combobox'), 'x');
+    expect(useEntryStore.getState().homeTown).toBeNull();
+  });
+
+  it('is forgotten when the step is skipped', async () => {
+    const user = userEvent.setup();
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await pick(user);
+    await user.click(screen.getByRole('button', { name: 'Skip for now' }));
+    expect(useEntryStore.getState().homeTown).toBeNull();
+    expect(mutation('consent:advanceWelcome')).toHaveBeenCalledWith({ from: 'home' });
+  });
+
+  it('is forgotten when the current location saves a different place', async () => {
+    const user = userEvent.setup();
+    const geo = slowGeolocation();
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await pick(user);
+    await user.keyboard('{Escape}');
+    await user.click(screen.getByRole('button', { name: 'Use my current location' }));
+    await act(async () => geo.fix(44.1, -71.5));
+    await waitFor(() =>
+      expect(mutation('profiles:setHome')).toHaveBeenCalledWith({
+        homeCoord: { lat: 44.1, lng: -71.5 },
+      }),
+    );
+    expect(useEntryStore.getState().homeTown).toBeNull();
+  });
+});
+
+describe('Home’s location, arriving late', () => {
+  beforeEach(() => {
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'home' });
+  });
+
+  it('holds Save and Skip while it is read', async () => {
+    const user = userEvent.setup();
+    slowGeolocation();
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Use my current location' }));
+    expect(screen.getByRole('button', { name: 'Skip for now' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save and continue' })).toBeDisabled();
+  });
+
+  it('is dropped when the step has moved on before it lands', async () => {
+    const user = userEvent.setup();
+    const geo = slowGeolocation();
+    const page = render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Use my current location' }));
+    // Another tab finished Home meanwhile: the profile says Profile now.
+    fakes.queries.set('profiles:current', { ...LIVE, welcomeStep: 'profile' });
+    page.rerender(<WelcomePage step="home" onStep={vi.fn()} />);
+    expect(screen.getByRole('heading', { name: 'Complete your profile' })).toBeInTheDocument();
+    await act(async () => geo.fix(44.1, -71.5));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mutation('profiles:setHome')).not.toHaveBeenCalled();
+    expect(mutation('consent:advanceWelcome')).not.toHaveBeenCalled();
+  });
+
+  it('is dropped when the skater turned to a typed address, which then saves', async () => {
+    const user = userEvent.setup();
+    offerHanover();
+    const geo = slowGeolocation();
+    render(<WelcomePage step="home" onStep={vi.fn()} />);
+    await user.click(screen.getByRole('button', { name: 'Use my current location' }));
+    await user.type(await screen.findByRole('combobox'), '14 School');
+    await user.click(await screen.findByRole('option', { name: /14 School Street/ }));
+    await act(async () => geo.fix(44.1, -71.5));
+    await new Promise((r) => setTimeout(r, 20));
+    expect(mutation('profiles:setHome')).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Save and continue' }));
+    await waitFor(() =>
+      expect(mutation('profiles:setHome')).toHaveBeenCalledWith({
+        homeCoord: { lat: 43.7, lng: -72.29 },
+      }),
+    );
+    expect(mutation('profiles:setHome')).toHaveBeenCalledOnce();
+  });
+});
+
 describe('Profile’s visibility', () => {
   it('shows a re-introduced account’s private profile off, and leaves it so unless switched', async () => {
     const user = userEvent.setup();

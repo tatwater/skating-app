@@ -34,7 +34,8 @@ function addressAvailable(lookup: AddressLookup): boolean {
  * **Where are you based?** (boards 10.10, 10.11, 11.10, 11.11): Settings' own address field, with
  * the map provider's suggestions as you type, or *Use my current location*. Private: only the
  * drive-time zones it anchors are ever used (D11), and the typed words are `ph-no-capture` (the
- * field's own). *Save and continue* waits for a picked suggestion; *Skip for now* only moves on.
+ * field's own). *Save and continue* waits for a picked suggestion; *Skip for now* only moves on;
+ * both wait while a location is being read.
  * While the suggestion list is open, "or" and *Use my current location* step aside for it (board
  * 10.10), as on the phone.
  */
@@ -91,7 +92,8 @@ export function HomeStep({
             <Button
               variant="primary"
               className={cn(ENTRY_PRIMARY, 'h-full w-full')}
-              disabled={chosen === null || skipping}
+              // While a location is being read, the step waits for it.
+              disabled={chosen === null || skipping || locate === 'locating'}
               loading={saving && locate !== 'locating'}
               onClick={onSave}
               data-attr="welcome-home-save"
@@ -102,7 +104,7 @@ export function HomeStep({
           skip={
             <Button
               className="h-full w-full"
-              disabled={saving}
+              disabled={saving || locate === 'locating'}
               loading={skipping}
               onClick={onSkip}
               data-attr="welcome-home-skip"

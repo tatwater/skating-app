@@ -11,7 +11,7 @@ import {
   type WelcomeStep,
 } from '@skating/core';
 import { useAction, useMutation, useQuery } from 'convex/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { useAnalytics } from '@/lib/analytics';
 import { carryAccount, carryHomeTown, useEntryStore } from '@/lib/entryHold';
@@ -274,6 +274,15 @@ export function WelcomePage({
   );
 }
 
+/**
+ * Home (boards 10.10, 10.11): a picked address or the browser's location, saved; or skipped. The
+ * picked address's town rides to the Profile step (`carryHomeTown`) only while that address is the
+ * one on the field: edited, skipped, or replaced by the location, it is forgotten, as on the phone.
+ *
+ * A location fix arrives when it arrives. While it is on its way the other buttons wait, and a fix
+ * that lands after the step has moved on (another tab, the gate), after another save began, or after
+ * the skater turned to a typed address, is dropped — it never overwrites a home chosen since.
+ */
 function WelcomeHome() {
   const email = useEmail();
   const signOut = useSignOut();
@@ -288,11 +297,29 @@ function WelcomeHome() {
   const [skipping, setSkipping] = useState(false);
   const lookup = useAddressSuggestions(chosen === null ? address : '', suggest);
 
+  // What a late fix checks before it saves: the step is still here, nothing else is saving, and it
+  // is the newest locate (a typed address or a newer press supersedes it).
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const busy = useRef(false);
+  const locating = useRef(0);
+  const dropLocate = () => {
+    locating.current += 1;
+    setLocate((l) => (l === 'locating' ? 'idle' : l));
+  };
+
   const save = async (coord: { lat: number; lng: number }) => {
+    busy.current = true;
     setSaving(true);
     try {
       await setHome({ homeCoord: coord });
     } catch {
+      busy.current = false;
       setSaving(false);
       toast({ title: ONBOARDING_COPY.home.notSaved, tone: 'bad' });
       return;
@@ -303,6 +330,7 @@ function WelcomeHome() {
     } catch (error) {
       toastRefusal(error);
     } finally {
+      busy.current = false;
       setSaving(false);
     }
   };
@@ -313,6 +341,9 @@ function WelcomeHome() {
       onAddressChange={(value) => {
         setChosen(null);
         setAddress(value);
+        // The picked address is gone, and its town with it; a typed address supersedes a locate.
+        carryHomeTown(null);
+        dropLocate();
       }}
       lookup={lookup}
       chosen={chosen}
@@ -320,30 +351,43 @@ function WelcomeHome() {
         setChosen(s);
         setAddress(s.label);
         carryHomeTown(s.town ?? null);
+        dropLocate();
       }}
       locate={locate}
       saving={saving}
       skipping={skipping}
       email={email}
       onUseLocation={() => {
+        const mine = ++locating.current;
         setLocate('locating');
         currentPosition().then(
           (coord) => {
+            if (!mounted.current || mine !== locating.current || busy.current) return;
             setLocate('idle');
+            // Another place than the picked address: its town is not this home's.
+            carryHomeTown(null);
             void save(coord);
           },
-          () => setLocate('failed'),
+          () => {
+            if (mounted.current && mine === locating.current) setLocate('failed');
+          },
         );
       }}
-      onSave={() => chosen && void save({ lat: chosen.lat, lng: chosen.lng })}
+      onSave={() => chosen && !busy.current && void save({ lat: chosen.lat, lng: chosen.lng })}
       onSkip={async () => {
+        if (busy.current) return;
+        busy.current = true;
         setSkipping(true);
+        // Skipped: no home, so no town for the Profile step to take from it.
+        carryHomeTown(null);
+        dropLocate();
         try {
           await advance({ from: 'home' });
           analytics.capture('welcome_step_finished', { step: 'home', outcome: 'skipped' });
         } catch (error) {
           toastRefusal(error);
         } finally {
+          busy.current = false;
           setSkipping(false);
         }
       }}
