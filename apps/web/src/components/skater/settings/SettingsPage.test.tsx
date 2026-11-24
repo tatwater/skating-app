@@ -441,6 +441,50 @@ describe('home and drive time', () => {
     expect(setHome).not.toHaveBeenCalled();
   });
 
+  it('drops a late location once the edit is left by the browser’s Back, or Settings is left', async () => {
+    m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
+    const setHome = mutation('profiles:setHome');
+    const geo = slowGeolocation();
+    const at = (homeView?: 'edit') => (
+      <SettingsPage section="home" {...(homeView ? { homeView } : {})} onNavigate={navigate} />
+    );
+    const { rerender, unmount } = render(at('edit'));
+    const locate = () => screen.getByRole('button', { name: 'Use my current location' });
+    await act(async () => fireEvent.click(locate()));
+    // Back: the search loses `edit` with no Cancel pressed; then forward to the edit again.
+    rerender(at());
+    rerender(at('edit'));
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
+    // Settings' home left altogether while a read is out.
+    await act(async () => fireEvent.click(locate()));
+    unmount();
+    await act(async () => geo.fix(44.1, -71.5));
+    expect(setHome).not.toHaveBeenCalled();
+  });
+
+  it('forgets a failed location when the edit is left, so the next edit starts clean', async () => {
+    m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
+    const geo = {
+      getCurrentPosition: vi.fn((_ok: unknown, no: (e: unknown) => void) => no(new Error('x'))),
+    };
+    Object.defineProperty(navigator, 'geolocation', { value: geo, configurable: true });
+    const at = (homeView?: 'edit') => (
+      <SettingsPage section="home" {...(homeView ? { homeView } : {})} onNavigate={navigate} />
+    );
+    const { rerender } = render(at('edit'));
+    await act(async () =>
+      fireEvent.click(screen.getByRole('button', { name: 'Use my current location' })),
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent(/couldn’t get your location/);
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(navigate).toHaveBeenCalledWith('/settings/home', { replace: true });
+    rerender(at());
+    rerender(at('edit'));
+    expect(screen.getByRole('button', { name: 'Use my current location' })).toBeInTheDocument();
+    expect(screen.queryByText(/couldn’t get your location/)).toBeNull();
+  });
+
   it('a browser with no geolocation says so', async () => {
     m.suggest.mockResolvedValue({ status: 'unavailable', reason: 'off', suggestions: [] });
     Object.defineProperty(navigator, 'geolocation', { value: undefined, configurable: true });

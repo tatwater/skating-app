@@ -192,15 +192,26 @@ function YourProfile({ profile }: { profile: Profile }) {
   );
 }
 
-function Home({
-  profile,
-  view,
-  onNavigate,
-}: {
+interface HomeProps {
   profile: Profile;
   view: HomeView;
   onNavigate: (href: string, options?: { replace?: boolean }) => void;
-}) {
+}
+
+/**
+ * Each stretch of the home form is its own: arriving at the edit or leaving it (Cancel, a save, the
+ * browser's Back), or a home set or cleared, starts the form over. A location read still out goes
+ * with the old form (its controller is disposed as it unmounts, as on leaving Settings' home
+ * altogether), so a prompt answered long after never overwrites the home; and nothing typed, picked
+ * or failed — "We couldn't get your location" included — carries into the next edit.
+ */
+function Home(props: HomeProps) {
+  const stretch =
+    props.view === 'edit' ? 'edit' : props.profile.homeCoord !== undefined ? 'set' : 'unset';
+  return <HomeForm key={stretch} {...props} />;
+}
+
+function HomeForm({ profile, view, onNavigate }: HomeProps) {
   const setHome = useMutation(api.profiles.setHome);
   const suggest = useAction(api.geocode.suggest) as unknown as SuggestFn;
   const [address, setAddress] = useState('');
@@ -213,12 +224,10 @@ function Home({
   // cleared or left since (`useLocateRead`): a slowly answered prompt never overwrites a choice.
   const { locate, start: startLocate, supersede } = useLocateRead((coord) => void save(coord));
 
+  // Out of the edit: a read still out is dropped now, and the form starts over as the view changes
+  // (`Home`'s key).
   const back = () => {
-    // Leaving the edit: a location still being read is dropped with the rest.
     supersede();
-    setAddress('');
-    setChosen(null);
-    setFailed(false);
     onNavigate('/settings/home', { replace: true });
   };
   const save = async (coord: { lat: number; lng: number } | undefined) => {
