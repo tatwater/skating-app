@@ -58,21 +58,19 @@ import { publicAuthor } from './lib/authorView';
 import { NOTIFICATION_PREF_DEFAULTS, NOTIFICATION_PREF_KEYS } from './lib/enums';
 import { loadFeedViewer, toPostCard } from './lib/feedCards';
 import { isLastLedgerEditor, seesLedgerGrants, withoutLedgerGrantsFor } from './lib/ledgerEditors';
-import { DIGEST_TIMEZONE } from './lib/notificationQueue';
 import { refreshPersonRow } from './lib/peopleRows';
+import {
+  assertMayRename,
+  checkUsername,
+  newProfileDefaults,
+  USERNAME_MESSAGES,
+} from './lib/profileIdentity';
 import { loadBlockedAuthorIds, profileAccess } from './lib/reportVisibility';
 import { trustClassFor } from './lib/reputation';
 import { takeCappedResult } from './lib/scan';
 import { recordSignInDay } from './lib/signInDays';
 import { latLng, literals, partialBoolFlags } from './lib/validators';
 import schema from './schema';
-
-/**
- * Notification defaults for a fresh profile — per-key (D16): most types on, but the two opt-in
- * Phase-04 drive-time buckets (`nearbyReportDigest` / `greatReportNearby`) default off (decision #4).
- * Single-sourced in `NOTIFICATION_PREF_DEFAULTS`; copied so a mutation can't mutate the shared map.
- */
-const DEFAULT_NOTIFICATION_PREFS = { ...NOTIFICATION_PREF_DEFAULTS };
 
 /** The signed-in user's own profile, or `null` if not signed in / not yet provisioned. */
 export const current = query({
@@ -242,55 +240,15 @@ export const upsertFromClerk = mutation({
       dateOfBirth: args.dateOfBirth,
       riskAckVersion: args.riskAckVersion,
       riskAckAt: now, // server-stamped, not client-supplied
-      driveTimePrefMinutes: 60,
-      profileVisibility: minor ? 'private' : 'public', // minors forced private (D13/D41)
-      notificationPrefs: DEFAULT_NOTIFICATION_PREFS,
-      reputationPoints: 0,
-      reportCount: 0,
-      commentCount: 0,
-      role: 'member',
-      status: 'active',
-      createdAt: now,
+      // The defaults every new account starts with, minors forced private (D13/D41) — shared with
+      // `consent.acceptTerms` (`lib/profileIdentity`).
+      ...newProfileDefaults(now, minor),
     });
     // The People lists' row (`lib/peopleRows`), with the new account in Everyone and Newest.
     await refreshPersonRow(ctx, created);
     return created;
   },
 });
-
-/** What a refused username is told, one string per reason — shared by every path that sets one. */
-const USERNAME_MESSAGES = {
-  invalid: 'Username must be 3–30 characters: letters, numbers, or underscores',
-  taken: 'Username is already taken',
-} as const;
-
-type UsernameVerdict =
-  | { ok: true; username: string }
-  | { ok: false; username: string; reason: keyof typeof USERNAME_MESSAGES };
-
-/**
- * May `holderClerkId` have this username? **The one rule** (B03 §11): onboarding, the availability
- * query and the rename all ask it, so a name the settings field calls free is a name the save takes.
- *
- * The canonical form first (D37 — the client's normalization is a courtesy), then the shape, then
- * the index: a name is taken when a *different* account holds it. That includes a ghost (D62): the
- * handle is reserved through the deletion window so canceling can give it back, and a tombstone's
- * synthetic sentinel never collides with a valid handle. Your own current name is yours, not taken.
- */
-async function checkUsername(
-  ctx: QueryCtx,
-  raw: string,
-  holderClerkId: string,
-): Promise<UsernameVerdict> {
-  const username = normalizeUsername(raw);
-  if (!isValidUsername(username)) return { ok: false, username, reason: 'invalid' };
-  const owner = await ctx.db
-    .query('profiles')
-    .withIndex('by_username', (q) => q.eq('username', username))
-    .first();
-  if (owner && owner.clerkUserId !== holderClerkId) return { ok: false, username, reason: 'taken' };
-  return { ok: true, username };
-}
 
 /**
  * Is this username free, and allowed (B03 §11, settings 7.x and onboarding)? Answers for the caller:
@@ -355,49 +313,13 @@ export const changeUsername = mutation({
   },
 });
 
-/**
- * How long a rename holds (founder call, 2026-11-07): long enough that a handle is something other
- * skaters can learn and find again, and that renaming can't be a way to shed a reputation.
- */
-export const USERNAME_CHANGE_COOLDOWN_MS = 30 * 24 * 60 * 60 * 1000;
-
-/** When the caller may rename again, or `null` when they may now (never renamed: no cooldown). */
-export function usernameUnlocksAt(
-  profile: Pick<Doc<'profiles'>, 'usernameChangedAt'>,
-): number | null {
-  return profile.usernameChangedAt === undefined
-    ? null
-    : profile.usernameChangedAt + USERNAME_CHANGE_COOLDOWN_MS;
-}
-
-/**
- * Throws the cooldown refusal — `{ code: 'username_cooldown', message, unlocksAt }` — when `profile`
- * renamed itself less than 30 days before `now`. Every path that changes an existing profile's
- * handle calls it (`changeUsername`, and `upsertFromClerk`'s re-sync), so neither is a way round.
- */
-function assertMayRename(
-  profile: Pick<Doc<'profiles'>, 'usernameChangedAt' | 'timezone'>,
-  now: number,
-): void {
-  const unlocksAt = usernameUnlocksAt(profile);
-  if (unlocksAt === null || now >= unlocksAt) return;
-  throw new ConvexError({
-    code: 'username_cooldown',
-    message: usernameCooldownMessage(unlocksAt, profile.timezone ?? DIGEST_TIMEZONE),
-    unlocksAt,
-  });
-}
-
-/** The refusal, with the day it lifts in the skater's own zone (the digest's default without one). */
-export function usernameCooldownMessage(unlocksAt: number, timeZone: string): string {
-  const day = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  }).format(unlocksAt);
-  return `You can change your username once every 30 days. You can change it again on ${day}.`;
-}
+// The rename cooldown lives with the username rule (`lib/profileIdentity`); re-exported for the
+// callers that have always imported it from here.
+export {
+  USERNAME_CHANGE_COOLDOWN_MS,
+  usernameCooldownMessage,
+  usernameUnlocksAt,
+} from './lib/profileIdentity';
 
 /**
  * Re-accept the *current* assumption-of-risk acknowledgment for an already-provisioned
