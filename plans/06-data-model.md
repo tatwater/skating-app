@@ -35,7 +35,9 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `profiles` | one row per person: Clerk mirrors, visibility, role, the per-person invoice-editing grant on an admin (`canEditLedger`, D227), status, DOB (minor status derived at read), the private home coordinate and its cached isochrones (D11, D18), notification prefs, reputation points, the aggregate opt-out — D41, D50, D58 |
+| `profiles` | one row per person: Clerk mirrors, visibility, role, the per-person invoice-editing grant on an admin (`canEditLedger`, D227), status, DOB (minor status derived at read), the private home coordinate and its cached isochrones (D11, D18), notification prefs, reputation points, the aggregate opt-out, and the way in's routing state (the latest terms version and Know Before You Go completion, the pending welcome step; written only by `consent.ts`) — D41, D50, D58, D295–D298 |
+| `termsReadings` | one row per (Clerk subject, terms version) being read: when the reader opened and when its end was on screen, server-stamped, keyed by the subject because a new account has no profile yet; consumed by the acceptance, erased at finalization, pruned 30 days after it opened — D295 (B03 §9) |
+| `consentRecords` | one sealed, append-only row per terms acceptance and per Know Before You Go completion: the identity as attested (full name, email, date of birth), the version and hash, the server's stamps, the season, the client-reported surface and user agent, the IP read from the Clerk session; only fill-once fields change after the insert; severed from the account at finalization and purged six calendar years later (`by_purge` ranges start at `purgeAt ≥ 1`) — D297 (B03 §9) |
 | `pushTokens` | one row per (person, device) that registered for Expo push — A08 |
 | `blocks` | a block is also a mute; it never hides a report, only the person — D32, D3 |
 | `dataExports` | one row per export request; the bundle lives in file storage — D33/D62 |
