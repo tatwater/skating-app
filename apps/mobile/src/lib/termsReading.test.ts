@@ -227,4 +227,43 @@ describe('createTermsReading', () => {
     await flush();
     expect(onRefusal).not.toHaveBeenCalled();
   });
+
+  it('rearm before any scroll only resets', () => {
+    const { reading, reach } = setup();
+    reading.rearm();
+    expect(reading.state().end).toBe('unseen');
+    expect(reach).not.toHaveBeenCalled();
+  });
+
+  it('an opening that fails after a newer one began does not forget the newer one', async () => {
+    const first = deferred();
+    const open = vi.fn().mockReturnValueOnce(first.promise).mockResolvedValue(null);
+    const reading = createTermsReading({
+      open,
+      reach: () => Promise.resolve(null),
+      onRefusal: vi.fn(),
+      onChange: () => {},
+    });
+    reading.start();
+    reading.rearm();
+    reading.observe(at(2400), 2900);
+    first.reject(new Error('late'));
+    await flush();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(reading.state().end).toBe('recorded');
+  });
+
+  it('a change after dispose is kept but not told', () => {
+    const onChange = vi.fn();
+    const reading = createTermsReading({
+      open: () => Promise.resolve(null),
+      reach: () => Promise.resolve(null),
+      onRefusal: vi.fn(),
+      onChange,
+    });
+    reading.dispose();
+    reading.observe(at(1200), 2900);
+    expect(reading.state().progress).toBe(0.5);
+    expect(onChange).not.toHaveBeenCalled();
+  });
 });

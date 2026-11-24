@@ -210,6 +210,13 @@ describe('createAddressLookup', () => {
     expect(seen).toHaveLength(count);
   });
 
+  it('a first answer after dispose is kept quiet, and dispose with nothing pending is safe', async () => {
+    const { seen, lookup } = setup();
+    lookup.dispose();
+    await vi.runAllTimersAsync();
+    expect(seen).toHaveLength(0);
+  });
+
   it('a failed call after newer text is dropped', async () => {
     let fail!: (e: unknown) => void;
     const { lookup } = setup((text) =>
@@ -259,6 +266,9 @@ describe('attributionSpans', () => {
         text: 'OpenStreetMap contributors',
         href: 'https://www.openstreetmap.org/copyright',
       },
+    ]);
+    expect(attributionSpans('Geoapify')).toEqual([
+      { text: 'Geoapify', href: 'https://www.geoapify.com/' },
     ]);
     expect(attributionSpans('See https://evil.example')).toEqual([
       { text: 'See https://evil.example' },
