@@ -132,6 +132,8 @@ export const ONBOARDING_COPY = {
       'Address suggestions aren’t available right now. You can use your current location instead.',
     /** A home the server didn't take (a toast). */
     notSaved: 'Your home wasn’t saved. Try again in a moment.',
+    /** A Clear the server didn't take (a toast; the phone's You tab and Settings). */
+    notCleared: 'Your home wasn’t cleared. Try again in a moment.',
     /** A located home on its way to the server (the phone's You tab's button). */
     saving: 'Saving…',
   },

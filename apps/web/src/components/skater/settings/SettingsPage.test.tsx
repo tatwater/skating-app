@@ -409,14 +409,14 @@ describe('home and drive time', () => {
     expect(screen.queryByText('Traveling')).toBeNull();
   });
 
-  it('says a failed Clear as a toast: the server’s words for a refusal, else the not-saved line', async () => {
+  it('says a failed Clear as a toast: the server’s words for a refusal, else the not-cleared line', async () => {
     const setHome = mutation('profiles:setHome');
     setHome
       .mockRejectedValueOnce(new Error('offline'))
       .mockRejectedValueOnce(new ConvexError('Account is suspended'));
     page('home');
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
-    expect(m.toast).toHaveBeenCalledWith({ title: ONBOARDING_COPY.home.notSaved, tone: 'bad' });
+    expect(m.toast).toHaveBeenCalledWith({ title: ONBOARDING_COPY.home.notCleared, tone: 'bad' });
     await act(async () => fireEvent.click(screen.getByRole('button', { name: 'Clear' })));
     expect(m.toast).toHaveBeenLastCalledWith({ title: 'Account is suspended', tone: 'bad' });
     expect(m.toast).toHaveBeenCalledTimes(2);

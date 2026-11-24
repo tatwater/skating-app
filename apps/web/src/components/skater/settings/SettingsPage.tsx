@@ -247,8 +247,11 @@ function HomeForm({ profile, view, onNavigate }: HomeProps) {
       if (mounted.current) back();
     } catch (error) {
       // A toast, as every refusal is — the server's words for a can't-act refusal, else the
-      // not-saved line — whether the form is still there or the skater has left it.
-      toastSaveRefusal(error, ONBOARDING_COPY.home.notSaved);
+      // not-saved (or not-cleared) line — whether the form is still there or the skater has left it.
+      toastSaveRefusal(
+        error,
+        coord === undefined ? ONBOARDING_COPY.home.notCleared : ONBOARDING_COPY.home.notSaved,
+      );
     } finally {
       if (mounted.current) setSaving(false);
     }

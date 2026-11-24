@@ -193,9 +193,9 @@ function HomeLocation() {
   });
   useFocusEffect(useCallback(() => supersede, [supersede]));
   // A save or a clear the server didn't take: its words for a refusal (the tabs hold suspended,
-  // read-only accounts), else the not-saved line — a toast, as every refusal is.
-  const refused = (error: unknown) =>
-    toast(readSaveRefusal(error, ONBOARDING_COPY.home.notSaved).message);
+  // read-only accounts), else the not-saved or not-cleared line — a toast, as every refusal is.
+  const refused = (error: unknown, line: string = ONBOARDING_COPY.home.notSaved) =>
+    toast(readSaveRefusal(error, line).message);
   async function save(homeCoord: { lat: number; lng: number }) {
     setSaving(true);
     try {
@@ -237,7 +237,7 @@ function HomeLocation() {
             onPress={() => {
               // Cleared: a location still being read never sets it back.
               supersede();
-              void setHome({}).catch(refused);
+              void setHome({}).catch((error) => refused(error, ONBOARDING_COPY.home.notCleared));
             }}
           >
             Clear
