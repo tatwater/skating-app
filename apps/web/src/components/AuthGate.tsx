@@ -1,11 +1,12 @@
 import { useAuth } from '@clerk/tanstack-react-start';
 import { api } from '@skating/convex/api';
-import { resolveAuthRoute } from '@skating/core';
+import { resolveEntryRoute } from '@skating/core';
 import { useRouter, useRouterState } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { type ReactNode, useEffect, useState } from 'react';
 import { authZoneTarget } from '../lib/authZone';
 import { type BootZone, bootCookieString, readBootZone } from '../lib/boot';
+import { useEntryStore } from '../lib/entryHold';
 import { useSheetOwnerBinding } from '../lib/sheetOwner';
 import { AppShell } from './AppShell';
 import { isConsolePath, usesOldShell } from './admin/shell/consoleNav';
@@ -40,14 +41,15 @@ export function isNotFound(state: { matches: ReadonlyArray<{ _notFound?: boolean
 export { usesOldShell };
 
 /**
- * Web counterpart to mobile's `Stack.Protected` gate (D26/D45), driven by the *same* pure
- * `resolveAuthRoute` (shared in `@skating/core`, D7). It resolves the auth/provisioning
- * state from Clerk + the reactive `profiles.current` query, then — because the web is
- * path-based — redirects the user into the right zone when they're in the wrong one. In the
- * signed-in-and-provisioned (`app`) state only the old admin pages (`usesOldShell`) are
- * wrapped in the old `AppShell`; the skater pages, the console, the 404 and the
- * auth/onboarding/re-ack pages render bare. We hold while loading or mid-redirect so we never flash the wrong surface; the
- * hold turns into the offline screen if the socket never opens.
+ * Web counterpart to mobile's `Stack.Protected` gate (D26, D298), driven by the *same* pure
+ * `resolveEntryRoute` (shared in `@skating/core`, D7). It resolves where the skater's way in
+ * stands from Clerk, the reactive `profiles.current` query, the Ice Watch's opening
+ * (`consent.watchAnchor`) and the receipt hold (`lib/entryHold`), then — because the web is
+ * path-based — redirects the user into the right zone when they're in the wrong one
+ * (`lib/authZone`). In the `app` state only the old admin pages (`usesOldShell`) are wrapped in
+ * the old `AppShell`; the skater pages, the console, the 404, the auth pages and the way in render
+ * bare. We hold while loading or mid-redirect so we never flash the wrong surface; the hold turns
+ * into the offline screen if the socket never opens.
  *
  * **What the hold looks like depends on whether this is a cold start** (`lib/boot.ts`). The first
  * load of a browser session gets the splash (8.10), which is what a cold start is. Every load
@@ -63,7 +65,18 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const [booted] = useState<BootZone | null>(readBootZone);
   const { isLoaded, isSignedIn } = useAuth();
   const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip');
-  const route = resolveAuthRoute({ isLoaded, isSignedIn, profile });
+  // The Ice Watch's opening, the season rule's second input (B03 §9.3). Ungated on the server, but
+  // only asked once someone is signed in: a signed-out visitor never waits on it.
+  const watch = useQuery(api.consent.watchAnchor, isSignedIn ? {} : 'skip');
+  const hold = useEntryStore((s) => s.hold);
+  const route = resolveEntryRoute({
+    isLoaded,
+    isSignedIn,
+    profile,
+    // The rule reads only the opening instant; `undefined` is still loading, `null` no season.
+    watch: watch === undefined ? undefined : watch === null ? null : { openedAt: watch.openedAt },
+    hold,
+  });
   // The report sheet is the signed-in author's; a change of account drops it (PR #77 review).
   useSheetOwnerBinding();
 

@@ -1,11 +1,13 @@
-import { RISK_ACK_VERSION } from '@skating/core';
-import { render, screen } from '@testing-library/react';
+import { DELETED_DISPLAY_NAME, KNOW_BEFORE_YOU_GO_EARLY_MS, TERMS } from '@skating/core';
+import { act, render, screen } from '@testing-library/react';
+import { getFunctionName } from 'convex/server';
 import type { ReactNode } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
   auth: { isLoaded: true, isSignedIn: false } as { isLoaded: boolean; isSignedIn: boolean },
   profile: undefined as unknown,
+  watch: null as unknown,
   pathname: '/',
   notFound: false,
   push: vi.fn(),
@@ -13,7 +15,10 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@clerk/tanstack-react-start', () => ({ useAuth: () => mocks.auth }));
 vi.mock('convex/react', () => ({
-  useQuery: (_ref: unknown, args: unknown) => (args === 'skip' ? undefined : mocks.profile),
+  useQuery: (ref: Parameters<typeof getFunctionName>[0], args: unknown) => {
+    if (args === 'skip') return undefined;
+    return getFunctionName(ref) === 'consent:watchAnchor' ? mocks.watch : mocks.profile;
+  },
 }));
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ history: { push: mocks.push } }),
@@ -40,9 +45,19 @@ vi.mock('./skater/BootScreen', () => ({
 }));
 
 import { BOOT_COOKIE, bootCookieString, readBootZoneFromCookie } from '../lib/boot';
+import { finishReceipt, forgetEntry, holdForReceipt, recordReceipt } from '../lib/entryHold';
 import { AuthGate, usesOldShell } from './AuthGate';
 
-const PROVISIONED = { riskAckVersion: RISK_ACK_VERSION, displayName: 'Skater' };
+/** The Ice Watch opened this season (the instant pinned, D243). */
+const OPENED_AT = Date.UTC(2026, 10, 20, 12);
+const WATCH = { season: 'winter-2026-27', label: 'Winter 2026–27', openedAt: OPENED_AT };
+
+/** Through the way in: the current terms, this season's questions, no welcome step left. */
+const PROVISIONED = {
+  displayName: 'Skater',
+  termsVersion: TERMS.version,
+  knowBeforeYouGoAt: OPENED_AT - 1000,
+};
 
 /** jsdom keeps one document per file, and the gate writes a session cookie into it. */
 function clearBootCookie() {
@@ -53,13 +68,18 @@ function clearBootCookie() {
 beforeEach(() => {
   mocks.auth = { isLoaded: true, isSignedIn: false };
   mocks.profile = undefined;
+  mocks.watch = null;
   mocks.pathname = '/';
   mocks.notFound = false;
   mocks.push = vi.fn();
   clearBootCookie();
+  forgetEntry();
 });
 
-afterEach(clearBootCookie);
+afterEach(() => {
+  clearBootCookie();
+  forgetEntry();
+});
 
 describe('AuthGate', () => {
   it('holds on the first-load splash while auth loads', () => {
@@ -207,7 +227,7 @@ describe('the hold while auth resolves', () => {
     expect(mocks.push).toHaveBeenCalledWith('/');
   });
 
-  it.each(['auth', 'onboarding', 'reack'] as const)(
+  it.each(['auth', 'account', 'terms', 'questions', 'welcome', 'receipt'] as const)(
     'stays the splash when the last zone was %s — only the app has a shape to draw',
     (zone) => {
       // biome-ignore lint/suspicious/noDocumentCookie: jsdom has no Cookie Store API; the gate reads and writes document.cookie
@@ -252,7 +272,7 @@ describe('the boot cookie the gate writes', () => {
 
   it.each([
     ['signed out', { isLoaded: true, isSignedIn: false }, undefined, 'auth'],
-    ['with no profile row', { isLoaded: true, isSignedIn: true }, null, 'onboarding'],
+    ['with no profile row', { isLoaded: true, isSignedIn: true }, null, 'account'],
   ])('records %s', (_, auth, profile, zone) => {
     mocks.auth = auth;
     mocks.profile = profile;
@@ -274,6 +294,159 @@ describe('the boot cookie the gate writes', () => {
     mocks.pathname = '/sign-in';
     render(<AuthGate>page</AuthGate>);
     expect(readBootZoneFromCookie(document.cookie)).toBe('auth');
+  });
+});
+
+/**
+ * The way in (B03 §9.3): the gate reads the profile, the Ice Watch and the receipt hold through
+ * core's `resolveEntryRoute`, and sends each state to its one path.
+ */
+describe('the way in', () => {
+  beforeEach(() => {
+    mocks.auth = { isLoaded: true, isSignedIn: true };
+  });
+
+  it('sends a new account (no profile row) to the Account step', () => {
+    mocks.profile = null;
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/onboarding');
+  });
+
+  it('sends a canceled deletion’s emptied row to the Account step', () => {
+    mocks.profile = { ...PROVISIONED, displayName: DELETED_DISPLAY_NAME };
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/onboarding');
+  });
+
+  it('sends an account under the old acknowledgment to the terms', () => {
+    mocks.profile = { displayName: 'Skater' };
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/terms');
+  });
+
+  it('sends an account on an older terms version to the terms', () => {
+    mocks.profile = { ...PROVISIONED, termsVersion: '2020-01-01' };
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/terms');
+  });
+
+  it('sends a never-answered account to the questions, even before any season opens', () => {
+    mocks.profile = { ...PROVISIONED, knowBeforeYouGoAt: undefined };
+    mocks.watch = null;
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/know-before-you-go');
+  });
+
+  it('sends last season’s answers to the questions once the watch opens a new one', () => {
+    mocks.profile = {
+      ...PROVISIONED,
+      knowBeforeYouGoAt: OPENED_AT - KNOW_BEFORE_YOU_GO_EARLY_MS - 1,
+    };
+    mocks.watch = WATCH;
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/know-before-you-go');
+  });
+
+  it('counts answers from the 30 days before the opening toward it', () => {
+    mocks.profile = { ...PROVISIONED, knowBeforeYouGoAt: OPENED_AT - KNOW_BEFORE_YOU_GO_EARLY_MS };
+    mocks.watch = WATCH;
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('page')).toBeInTheDocument();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('sends a welcome step still ahead to /welcome', () => {
+    mocks.profile = { ...PROVISIONED, welcomeStep: 'profile' };
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/welcome');
+  });
+
+  it('lets a pending deletion into the app before any consent check', () => {
+    mocks.profile = { displayName: DELETED_DISPLAY_NAME, deletionRequestedAt: OPENED_AT };
+    mocks.pathname = '/settings/data';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('page')).toBeInTheDocument();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('holds on the splash while the watch is still loading, past the profile’s own rows', () => {
+    mocks.profile = PROVISIONED;
+    mocks.watch = undefined;
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('splash')).toBeInTheDocument();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('never asks a signed-out visitor’s browser for the watch', () => {
+    mocks.auth = { isLoaded: true, isSignedIn: false };
+    mocks.watch = undefined; // would hold forever if it were asked
+    mocks.pathname = '/sign-in';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('page')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The receipt hold: *Record acceptance* changes the profile at once, which would route past the
+ * receipt. The hold keeps the gate where it is until the receipt's own button lets go.
+ */
+describe('the receipt hold', () => {
+  beforeEach(() => {
+    mocks.auth = { isLoaded: true, isSignedIn: true };
+  });
+
+  it('keeps a new account on the Terms step though the profile now says questions are due', () => {
+    holdForReceipt();
+    recordReceipt();
+    mocks.profile = { ...PROVISIONED, knowBeforeYouGoAt: undefined, welcomeStep: 'home' };
+    mocks.pathname = '/onboarding';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('page')).toBeInTheDocument();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('holds while the acceptance is still on its way, so its writes can’t win the race', () => {
+    holdForReceipt();
+    mocks.profile = PROVISIONED; // through, as the profile reads the moment the write lands
+    mocks.pathname = '/terms';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('page')).toBeInTheDocument();
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('holds even while the profile query is reloading', () => {
+    holdForReceipt();
+    mocks.profile = undefined;
+    mocks.pathname = '/terms';
+    render(<AuthGate>page</AuthGate>);
+    expect(screen.getByText('page')).toBeInTheDocument();
+  });
+
+  it('lets go when the receipt’s button is pressed, and the route takes over', () => {
+    holdForReceipt();
+    recordReceipt();
+    mocks.profile = { ...PROVISIONED, knowBeforeYouGoAt: undefined };
+    mocks.pathname = '/terms';
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).not.toHaveBeenCalled();
+    act(() => finishReceipt());
+    expect(mocks.push).toHaveBeenCalledWith('/know-before-you-go');
+  });
+
+  it('is ignored once signed out', () => {
+    holdForReceipt();
+    mocks.auth = { isLoaded: true, isSignedIn: false };
+    mocks.pathname = '/terms';
+    render(<AuthGate>page</AuthGate>);
+    expect(mocks.push).toHaveBeenCalledWith('/sign-in');
+  });
+
+  it('records the receipt as its own zone, never the app’s shape', () => {
+    holdForReceipt();
+    mocks.pathname = '/terms';
+    mocks.profile = PROVISIONED;
+    render(<AuthGate>page</AuthGate>);
+    expect(readBootZoneFromCookie(document.cookie)).toBe('receipt');
   });
 });
 

@@ -14,8 +14,9 @@
  * old page retires.
  */
 
-import { RISK_ACK_VERSION } from '@skating/core';
+import { TERMS } from '@skating/core';
 import { render, screen } from '@testing-library/react';
+import { getFunctionName } from 'convex/server';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -25,7 +26,11 @@ vi.mock('@clerk/tanstack-react-start', () => ({
   useAuth: () => ({ isLoaded: true, isSignedIn: true }),
 }));
 vi.mock('convex/react', () => ({
-  useQuery: () => ({ riskAckVersion: RISK_ACK_VERSION, displayName: 'Teagan' }),
+  // Through the way in: the current terms, the questions answered, no season open to re-ask them.
+  useQuery: (ref: Parameters<typeof getFunctionName>[0]) =>
+    getFunctionName(ref) === 'consent:watchAnchor'
+      ? null
+      : { displayName: 'Teagan', termsVersion: TERMS.version, knowBeforeYouGoAt: 1 },
 }));
 vi.mock('@tanstack/react-router', () => ({
   useRouter: () => ({ history: { push: vi.fn() } }),
