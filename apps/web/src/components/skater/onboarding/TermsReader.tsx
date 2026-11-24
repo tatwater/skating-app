@@ -122,6 +122,7 @@ export function readingRoot(own: HTMLElement | null, page: HTMLElement | null): 
  */
 export function TermsReader({
   read,
+  waiting = false,
   armed,
   disarmed = false,
   onEndGone,
@@ -132,6 +133,11 @@ export function TermsReader({
 }: {
   /** The end has been reached and recorded: the meta line says so. */
   read: boolean;
+  /**
+   * A reached end has waited a while on the server: the full-screen reader's foot says it is still
+   * connecting, as the page does under the agreement, which the open dialog covers.
+   */
+  waiting?: boolean;
   /** Whether reaching the end counts now (off while it's already counted, or being recorded). */
   armed: boolean;
   /** A stamp failed: watch for the end marker to leave the screen (`onEndGone`). */
@@ -266,9 +272,16 @@ export function TermsReader({
             </DialogBody>
             <DialogFooter
               note={
-                <span className="flex items-center gap-2 font-(family-name:--family-mono)">
-                  {termsVersionLabel()}
-                  {read && ` · ${copy.readToEnd}`}
+                <span className="flex items-center gap-2">
+                  <span className="font-(family-name:--family-mono)">
+                    {termsVersionLabel()}
+                    {read && ` · ${copy.readToEnd}`}
+                  </span>
+                  {/* In the foot from the start, empty until the wait is long (a live region mounted
+                      holding its words is often not announced). */}
+                  <span role="status" data-slot="terms-waiting" className="empty:sr-only">
+                    {waiting ? copy.stillConnecting : null}
+                  </span>
                 </span>
               }
             >

@@ -318,11 +318,16 @@ function Reader({
               {agree.after}
             </Paragraph>
           </XStack>
-          {waiting && recording ? (
-            <Text color="foregroundMuted" fontSize={13} accessibilityLiveRegion="polite">
-              {ONBOARDING_COPY.terms.stillConnecting}
-            </Text>
-          ) : null}
+          {/* Always mounted, empty until the wait is long: a live region mounted already holding
+              its words is often not announced. Empty, it is out of the flow (no gap of its own). */}
+          <Text
+            color="foregroundMuted"
+            fontSize={13}
+            accessibilityLiveRegion="polite"
+            position={waiting && recording ? 'relative' : 'absolute'}
+          >
+            {waiting && recording ? ONBOARDING_COPY.terms.stillConnecting : ''}
+          </Text>
           <PrimaryButton disabled={!canRecord} onPress={() => void onRecord()}>
             {ONBOARDING_COPY.terms.submit}
           </PrimaryButton>

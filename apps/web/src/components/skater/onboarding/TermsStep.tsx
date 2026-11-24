@@ -130,11 +130,15 @@ export function TermsStep({
       actions={
         <>
           <AgreeLine locked={!read} checked={checked} onCheckedChange={setChecked} />
-          {waiting && !read && (
-            <p role="status" data-slot="terms-waiting" className="m-0 text-[0.8125rem] text-fg3">
-              {copy.stillConnecting}
-            </p>
-          )}
+          {/* Always in the page, empty until the wait is long: a live region mounted already
+              holding its words is often not announced. Empty, it takes no room. */}
+          <p
+            role="status"
+            data-slot="terms-waiting"
+            className="m-0 text-[0.8125rem] text-fg3 empty:sr-only"
+          >
+            {waiting && !read ? copy.stillConnecting : null}
+          </p>
           <Button
             variant="primary"
             disabled={!ready}
@@ -150,6 +154,7 @@ export function TermsStep({
     >
       <TermsReader
         read={read}
+        waiting={waiting && !read}
         armed={armed}
         disarmed={disarmed}
         onEndGone={onEndGone}

@@ -11,7 +11,15 @@ import {
   TERMS_SHA256,
   TERMS_WAITING_LINE_MS,
 } from '@skating/core';
-import { act, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -867,6 +875,9 @@ describe('a failing end', () => {
         await vi.advanceTimersByTimeAsync(0);
       });
       expect(mutation('consent:openTerms')).toHaveBeenCalledOnce();
+      // The live region is in the page from the start, empty, so its words are announced.
+      const said = screen.getByRole('status');
+      expect(said).toBeEmptyDOMElement();
       await act(async () => {
         await vi.advanceTimersByTimeAsync(TERMS_WAITING_LINE_MS - 1);
       });
@@ -874,7 +885,8 @@ describe('a failing end', () => {
       await act(async () => {
         await vi.advanceTimersByTimeAsync(1);
       });
-      expect(screen.getByRole('status')).toHaveTextContent(ONBOARDING_COPY.terms.stillConnecting);
+      expect(screen.getByRole('status')).toBe(said);
+      expect(said).toHaveTextContent(ONBOARDING_COPY.terms.stillConnecting);
       // Back online: the opening answers, the end is stamped, and the line goes.
       await act(async () => {
         opening.answer(null);
@@ -882,7 +894,53 @@ describe('a failing end', () => {
       });
       expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledOnce();
       expect(screen.queryByText(ONBOARDING_COPY.terms.stillConnecting)).toBeNull();
+      expect(screen.getByRole('status')).toBe(said);
+      expect(said).toBeEmptyDOMElement();
       expect(screen.getByRole('checkbox')).not.toHaveAttribute('aria-disabled');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('an end reached in full-screen, waiting on an unanswered opening, says so in the reader’s foot too', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      Visibility.visible = false;
+      fakes.queries.set('profiles:current', LIVE);
+      const opening = heldOpening();
+      mutation('consent:openTerms').mockImplementationOnce(opening.next);
+      render(<TermsPage />);
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Open in full-screen' }));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      // The foot's live region is there from the dialog's first frame, empty.
+      const said = within(screen.getByRole('dialog')).getByRole('status');
+      expect(said).toBeEmptyDOMElement();
+      await act(async () => Visibility.scroll(true));
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(TERMS_WAITING_LINE_MS - 1);
+      });
+      expect(said).toBeEmptyDOMElement();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(1);
+      });
+      expect(within(screen.getByRole('dialog')).getByRole('status')).toBe(said);
+      expect(said).toHaveTextContent(ONBOARDING_COPY.terms.stillConnecting);
+      // Back online: the end is stamped from the full screen, and the foot's line goes.
+      await act(async () => {
+        opening.answer(null);
+        await vi.advanceTimersByTimeAsync(0);
+      });
+      expect(mutation('consent:reachTermsEnd')).toHaveBeenCalledExactlyOnceWith({
+        termsVersion: TERMS.version,
+        termsHash: TERMS_SHA256,
+        via: 'fullscreen',
+      });
+      expect(said).toBeEmptyDOMElement();
     } finally {
       vi.useRealTimers();
     }
