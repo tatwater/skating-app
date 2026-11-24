@@ -537,14 +537,17 @@ describe('acceptTerms: an existing row', () => {
     const as = caller(t, 'user_bea');
     await readToEnd(as);
     const first = await accept(as);
+    // The first one recorded something; the repeats say they didn't (the web counts the event once).
+    expect(first.repeat).toBe(false);
+    const again = { recordId: first.recordId, repeat: true };
     const jobs = (await scheduled(t)).length;
     const acceptedAt = (await t.run((ctx) => ctx.db.get(id)))?.termsAcceptedAt;
     // A retry after a lost answer (the reading already consumed), and a second tab that read again.
     vi.setSystemTime(T0 + 30_000);
-    expect(await accept(as)).toEqual(first);
+    expect(await accept(as)).toEqual(again);
     await readToEnd(as);
     vi.setSystemTime(T0 + 60_000);
-    expect(await accept(as)).toEqual(first);
+    expect(await accept(as)).toEqual(again);
     expect((await records(t)).map((r) => r._id)).toEqual([first.recordId]);
     // Nothing scheduled: no second copy sent, no second IP lookup.
     expect((await scheduled(t)).length).toBe(jobs);
@@ -688,7 +691,7 @@ describe('completeKnowBeforeYouGo', () => {
     const t = harness();
     const as = await accepted(t);
     vi.setSystemTime(T0 + 5 * 60_000);
-    expect(await complete(as)).toEqual({ season: null });
+    expect(await complete(as)).toEqual({ season: null, repeat: false });
     const profile = await as.query(api.profiles.current, {});
     expect(profile).toMatchObject({
       knowBeforeYouGoAt: T0 + 5 * 60_000,
@@ -726,13 +729,13 @@ describe('completeKnowBeforeYouGo', () => {
       ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2026-27', T0 - 3 * DAY)),
     );
     const as = await accepted(t);
-    expect(await complete(as)).toEqual({ season: 'winter-2026-27' });
+    expect(await complete(as)).toEqual({ season: 'winter-2026-27', repeat: false });
     // The next winter opens; this skater's answers are last season's, so they are due again.
     await t.run((ctx) =>
       ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2027-28', T0 + 360 * DAY)),
     );
     vi.setSystemTime(T0 + 400 * DAY);
-    expect(await complete(as)).toEqual({ season: 'winter-2027-28' });
+    expect(await complete(as)).toEqual({ season: 'winter-2027-28', repeat: false });
     const contexts = (await records(t)).filter((r) => r.kind === 'questions').map((r) => r.context);
     expect(contexts).toEqual(['first_run', 'season']);
   });
@@ -749,7 +752,7 @@ describe('completeKnowBeforeYouGo', () => {
       });
     });
     const as = await accepted(t);
-    expect(await complete(as)).toEqual({ season: 'winter-2025-26' });
+    expect(await complete(as)).toEqual({ season: 'winter-2025-26', repeat: false });
   });
 
   test('a repeat while the questions aren’t due returns the last answer and writes nothing', async () => {
@@ -771,11 +774,12 @@ describe('completeKnowBeforeYouGo', () => {
       ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2027-28', first + 1)),
     );
     vi.setSystemTime(first + 1_000);
-    expect(await complete(as)).toEqual({ season: 'winter-2026-27' });
+    // Said to be a repeat, so a second tab doesn't count the completion again.
+    expect(await complete(as)).toEqual({ season: 'winter-2026-27', repeat: true });
     // A minute on, an hour on, a month on — still not due, still nothing written.
     for (const later of [60_000, 60 * 60_000, 29 * DAY]) {
       vi.setSystemTime(first + later);
-      expect(await complete(as)).toEqual({ season: 'winter-2026-27' });
+      expect(await complete(as)).toEqual({ season: 'winter-2026-27', repeat: true });
     }
     expect(await questions()).toHaveLength(1);
     expect(await scheduledIps()).toBe(ips);
@@ -785,7 +789,7 @@ describe('completeKnowBeforeYouGo', () => {
       ctx.db.insert('imageryIngestSeasons', seasonRow('winter-2028-29', first + 300 * DAY)),
     );
     vi.setSystemTime(first + 301 * DAY);
-    expect(await complete(as)).toEqual({ season: 'winter-2028-29' });
+    expect(await complete(as)).toEqual({ season: 'winter-2028-29', repeat: false });
     expect(await questions()).toHaveLength(2);
   });
 
@@ -848,14 +852,14 @@ describe('completeKnowBeforeYouGo', () => {
     // there never reaches the questions (its gate sends it to the terms, which refuse it), and the
     // questions don't depend on the terms' words.
     const as = await accepted(t);
-    expect(await complete(as, QUESTIONS_CLAIM, OLD_TERMS)).toEqual({ season: null });
+    expect(await complete(as, QUESTIONS_CLAIM, OLD_TERMS)).toEqual({ season: null, repeat: false });
   });
 
   test('an older build’s published questions count, and the record names the words answered', async () => {
     const t = harness();
     const as = await accepted(t);
     // A phone built before the summer's edit: last year's words, by last year's hash.
-    expect(await complete(as, LAST_YEAR)).toEqual({ season: null });
+    expect(await complete(as, LAST_YEAR)).toEqual({ season: null, repeat: false });
     const record = (await records(t)).find((r) => r.kind === 'questions');
     expect(record).toMatchObject({ version: LAST_YEAR.version, contentHash: LAST_YEAR.hash });
     expect((await as.query(api.profiles.current, {}))?.knowBeforeYouGoVersion).toBe(

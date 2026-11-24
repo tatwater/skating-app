@@ -282,6 +282,7 @@ async function checkAccount(
  *   accounts get `requireProfile`'s refusals, and a pending deletion `deletion_pending` (its way back
  *   is the cancel in Settings). A row that has already accepted this version gets its newest
  *   acceptance back and nothing is written: a sealed record is one per acceptance, not per tap.
+ *   The answer says `repeat: true` then, so a client counts the acceptance once.
  *
  * Every time is the server's. The client's `surface` and `userAgent` are stored as client-reported.
  */
@@ -296,7 +297,14 @@ export const acceptTerms = mutation({
     clientSessionId: v.optional(v.string()),
     account: v.optional(accountArgs),
   },
-  handler: async (ctx, args): Promise<{ recordId: Id<'consentRecords'> }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    recordId: Id<'consentRecords'>;
+    /** `true` when this call recorded nothing: the acceptance already there is returned. */
+    repeat: boolean;
+  }> => {
     const identity = await requireIdentity(ctx);
     const subject = identity.subject;
     requireCurrentTerms({ version: args.termsVersion, hash: args.termsHash });
@@ -317,12 +325,14 @@ export const acceptTerms = mutation({
 
     // Already accepted at this version: the acceptance there is, unchanged — no second sealed
     // record, no second email, no Clerk lookup. A double tap, a retry after a lost answer, a second
-    // tab: each gets the first answer, before the reading is even asked for (the first consumed it).
+    // tab: each gets the first answer, before the reading is even asked for (the first consumed it),
+    // marked `repeat` so a client counts the acceptance once.
     if (live !== null && live.termsVersion === TERMS.version) {
       if (args.account !== undefined) refuse('account_unexpected');
       const accepted = await newestRecord(ctx, live._id, 'terms');
-      if (accepted !== null && accepted.version === TERMS.version)
-        return { recordId: accepted._id };
+      if (accepted !== null && accepted.version === TERMS.version) {
+        return { recordId: accepted._id, repeat: true };
+      }
     }
 
     const reading = await currentReading(ctx, subject);
@@ -419,7 +429,7 @@ export const acceptTerms = mutation({
       recordId,
       clerkUserId: subject,
     });
-    return { recordId };
+    return { recordId, repeat: false };
   },
 });
 
@@ -473,7 +483,8 @@ function newestRecord(ctx: QueryCtx, profileId: Id<'profiles'>, kind: 'terms' | 
  * **One completion per asking.** When the questions aren't due — by `knowBeforeYouGoDue`, the season
  * rule the gate routes by, read here off the same profile and watch — the call returns the newest
  * completion's season and writes nothing: a double tap, a retry after a lost answer, a second tab,
- * or a stale screen never seals a second record.
+ * or a stale screen never seals a second record. The answer says `repeat: true` then, so a client
+ * counts the completion once (the acceptance's repeat says the same).
  */
 export const completeKnowBeforeYouGo = mutation({
   args: {
@@ -486,7 +497,14 @@ export const completeKnowBeforeYouGo = mutation({
     userAgent: v.optional(v.string()),
     clientSessionId: v.optional(v.string()),
   },
-  handler: async (ctx, args): Promise<{ season: string | null }> => {
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    season: string | null;
+    /** `true` when this call recorded nothing: the questions weren't due. */
+    repeat: boolean;
+  }> => {
     const profile = await requireContributor(ctx);
     // A canceled deletion's emptied row holds the scrubbed placeholder, not a person to attest.
     if (needsProfileSetup(profile)) refuse('account_required');
@@ -509,7 +527,7 @@ export const completeKnowBeforeYouGo = mutation({
     );
     if (due === null) {
       const last = await newestRecord(ctx, profile._id, 'questions');
-      return { season: last?.season ?? null };
+      return { season: last?.season ?? null, repeat: true };
     }
 
     const now = Date.now();
@@ -541,7 +559,7 @@ export const completeKnowBeforeYouGo = mutation({
       knowBeforeYouGoVersion: args.version,
     });
     await scheduleIp(ctx, recordId, identity, args.clientSessionId);
-    return { season };
+    return { season, repeat: false };
   },
 });
 

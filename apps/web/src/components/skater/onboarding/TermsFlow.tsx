@@ -53,6 +53,7 @@ const TERMS_CLAIM = { termsVersion: TERMS.version, termsHash: TERMS_SHA256 };
  * Any of the three refused `client_outdated` — this tab's bundled terms or notice aren't the
  * server's — stops the step on `OutdatedStep`, which offers a reload: reading the same text again
  * can't fix it, so nothing here re-arms after it.
+ *    The events count only an acceptance this call recorded (`repeat` says when it didn't).
  * 4. The receipt's button lets go, and the gate takes it from there. *Start the questions* opens
  *    them on the first one: the receipt has just said what comes next.
  */
@@ -180,7 +181,7 @@ export function TermsFlow({
     const found = before.current;
     holdForReceipt();
     try {
-      await acceptTerms({
+      const { repeat } = await acceptTerms({
         ...TERMS_CLAIM,
         privacyVersion: PRIVACY_NOTICE_VERSION,
         privacyHash: PRIVACY_NOTICE_SHA256,
@@ -189,6 +190,9 @@ export function TermsFlow({
         ...(account !== null ? { account } : {}),
       });
       recordReceipt();
+      // A repeat (a second tab, a retry after a lost answer) returned the first acceptance: the
+      // receipt draws, but the one sealed record is counted once.
+      if (repeat) return;
       const context = termsAcceptanceContext(
         found === null || found === undefined
           ? { profile: 'none' }

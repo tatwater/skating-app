@@ -150,6 +150,9 @@ beforeEach(() => {
   }));
   vi.stubGlobal('IntersectionObserver', SeenAtOnce);
   fakes.queries.set('consent:watchAnchor', null);
+  // The two writes that seal a record answer as the server does when they recorded one.
+  mutation('consent:acceptTerms').mockResolvedValue({ recordId: 'cr1', repeat: false });
+  mutation('consent:completeKnowBeforeYouGo').mockResolvedValue({ season: null, repeat: false });
 });
 
 afterEach(() => {
@@ -184,7 +187,7 @@ describe('/onboarding', () => {
     await user.click(screen.getByRole('button', { name: 'Continue' }));
     expect(onStep).toHaveBeenCalledWith('terms');
     expect(useEntryStore.getState().account).toEqual(ACCOUNT);
-    expect(fakes.mutations.size).toBe(0);
+    for (const write of fakes.mutations.values()) expect(write).not.toHaveBeenCalled();
   });
 
   it('opens the reading, reaches its end, and records the acceptance with the account', async () => {
@@ -310,6 +313,18 @@ describe('/terms', () => {
     expect(m.capture).not.toHaveBeenCalledWith('onboarding_completed');
   });
 
+  it('draws the receipt for a repeat acceptance, but doesn’t count it again', async () => {
+    // A second tab, or a retry after a lost answer: the server returns the first acceptance.
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, termsVersion: undefined });
+    mutation('consent:acceptTerms').mockResolvedValue({ recordId: 'cr1', repeat: true });
+    render(<TermsPage />);
+    await readAndRecord(user);
+    await waitFor(() => expect(useEntryStore.getState()).toMatchObject({ recorded: true }));
+    expect(m.capture).not.toHaveBeenCalledWith('terms_accepted', expect.anything());
+    expect(m.capture).not.toHaveBeenCalledWith('onboarding_completed');
+  });
+
   it('re-arms the end when the server says it wasn’t read, and lets the hold go', async () => {
     const user = userEvent.setup();
     fakes.queries.set('profiles:current', LIVE);
@@ -414,6 +429,21 @@ describe('/know-before-you-go', () => {
       }),
     );
     expect(m.capture).toHaveBeenCalledWith('know_before_you_go_completed', { flavor: 'first_run' });
+  });
+
+  it('doesn’t count a completion the server says was a repeat', async () => {
+    const user = userEvent.setup();
+    fakes.queries.set('profiles:current', { ...LIVE, knowBeforeYouGoAt: undefined });
+    mutation('consent:completeKnowBeforeYouGo').mockResolvedValue({ season: null, repeat: true });
+    render(<KnowBeforeYouGoPage />);
+    await answerAll(user);
+    await user.click(screen.getByRole('button', { name: 'Continue' }));
+    await waitFor(() => expect(mutation('consent:completeKnowBeforeYouGo')).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(m.capture).not.toHaveBeenCalledWith(
+      'know_before_you_go_completed',
+      expect.anything(),
+    );
   });
 
   it('opens a season’s asking on its card; Not now signs out and counts it', async () => {

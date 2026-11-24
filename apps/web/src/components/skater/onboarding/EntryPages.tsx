@@ -191,7 +191,7 @@ export function KnowBeforeYouGoPage() {
   const onComplete = async () => {
     setBusy(true);
     try {
-      await complete({
+      const { repeat } = await complete({
         version: KNOW_BEFORE_YOU_GO.version,
         hash: KNOW_BEFORE_YOU_GO_SHA256,
         // This tab's terms: with a profile whose acceptance is old, they decide between the terms
@@ -201,9 +201,12 @@ export function KnowBeforeYouGoPage() {
         ...clientReport(),
         ...(sessionId ? { clientSessionId: sessionId } : {}),
       });
-      analytics.capture('know_before_you_go_completed', {
-        flavor: flavor === 'never' ? 'first_run' : 'season',
-      });
+      // A repeat (a second tab, a retry) recorded nothing: the one completion is counted once.
+      if (!repeat) {
+        analytics.capture('know_before_you_go_completed', {
+          flavor: flavor === 'never' ? 'first_run' : 'season',
+        });
+      }
       // Busy until the gate takes the skater on.
     } catch (error) {
       setBusy(false);
