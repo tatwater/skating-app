@@ -103,6 +103,13 @@ describe('entrySessionReducer', () => {
     );
   });
 
+  it('drops the hold when the acceptance is refused, and only the hold', () => {
+    const seen = entrySessionReducer(EMPTY_ENTRY_SESSION, { type: 'accountSeen' });
+    const held = entrySessionReducer(seen, { type: 'accepted', on: 'onboarding' });
+    expect(entrySessionReducer(held, { type: 'acceptFailed' })).toEqual(seen);
+    expect(entrySessionReducer(seen, { type: 'acceptFailed' })).toBe(seen);
+  });
+
   it('marks the account seen once', () => {
     const seen = entrySessionReducer(EMPTY_ENTRY_SESSION, { type: 'accountSeen' });
     expect(entrySessionReducer(seen, { type: 'accountSeen' })).toBe(seen);

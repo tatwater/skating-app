@@ -1,4 +1,3 @@
-import { useAuth } from '@clerk/expo';
 import { FontAwesomeIcon } from '@fortawesome/react-native-fontawesome';
 import { faBell } from '@fortawesome/sharp-light-svg-icons';
 import { api } from '@skating/convex/api';
@@ -34,16 +33,15 @@ import { Avatar } from '../../src/components/ProfileView';
 import { StravaConnect } from '../../src/components/StravaConnect';
 import { TrackHistory } from '../../src/components/TrackHistory';
 import { UnreportedSkates } from '../../src/components/UnreportedSkates';
-import { clearNotificationCache } from '../../src/lib/notificationCache';
 import {
   disablePushOnThisDevice,
   enablePushOnThisDevice,
   isDeviceOptedOut,
   registerIfPermitted,
-  unregisterThisDevice,
 } from '../../src/lib/pushRegistration';
 import { tapTargetSlop } from '../../src/lib/tapTarget';
 import { THEME_PREFERENCE_LABELS } from '../../src/lib/themePreference';
+import { useSignOut } from '../../src/lib/useSignOut';
 import { useThemePreference } from '../../src/providers/ThemeProvider';
 
 /**
@@ -52,31 +50,14 @@ import { useThemePreference } from '../../src/providers/ThemeProvider';
  * account deletion (D33/D62), the license/about link (D43), and sign-out.
  */
 export default function YouScreen() {
-  const { signOut } = useAuth();
   const profile = useQuery(api.profiles.current, {});
   const router = useRouter();
   const theme = useTheme();
   // The bell's dot (A08 §1.3). The tab bar shows the same signal on the You icon from every screen.
   const unread = useQuery(api.notifications.unreadCount, profile ? {} : 'skip') ?? 0;
 
-  // Sign-out takes this phone's push address with it and drops the offline inbox (A08 PR 3): a phone
-  // nobody is signed in on must not keep ringing — or reading back — for the account that left.
-  // Both best-effort and *before* the Clerk sign-out. The release itself needs no session (it's
-  // keyed by the token), so one that's still queued when the session ends still lands; the tabs
-  // layout re-registers on the next sign-in.
-  const registerToken = useMutation(api.pushTokens.register);
-  const unregisterToken = useMutation(api.pushTokens.unregister);
-  const releaseToken = useMutation(api.pushTokens.release);
-  async function onSignOut() {
-    await unregisterThisDevice({
-      register: registerToken,
-      unregister: unregisterToken,
-      release: releaseToken,
-    });
-    clearNotificationCache();
-    await signOut();
-    router.replace('/sign-in');
-  }
+  // Push release + inbox drop + Clerk sign-out, the same from every screen that signs out.
+  const onSignOut = useSignOut();
 
   return (
     <SafeAreaView style={{ flex: 1 }} edges={['top', 'bottom']}>

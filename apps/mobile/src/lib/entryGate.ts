@@ -75,7 +75,14 @@ export const EMPTY_ENTRY_SESSION: EntrySession = {
 
 export type EntrySessionEvent =
   | { type: 'accountSeen' }
+  /**
+   * *Record acceptance* was tapped. The hold is set **before** the call, not after: Convex shows
+   * the new profile no later than it resolves the call, and a gate that saw the row first would
+   * swap the screen away (and lose its state) before the hold could keep it.
+   */
   | { type: 'accepted'; on: ReceiptGroup }
+  /** The acceptance was refused: the screen stays on the reader, so nothing is held. */
+  | { type: 'acceptFailed' }
   | { type: 'released'; startQuestions: boolean }
   | { type: 'signedOut' };
 
@@ -85,6 +92,8 @@ export function entrySessionReducer(state: EntrySession, event: EntrySessionEven
       return state.accountSeen ? state : { ...state, accountSeen: true };
     case 'accepted':
       return { ...state, hold: 'receipt', heldOn: event.on };
+    case 'acceptFailed':
+      return state.hold === null ? state : { ...state, hold: null, heldOn: null };
     case 'released':
       return {
         ...state,

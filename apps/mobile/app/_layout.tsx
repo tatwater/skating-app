@@ -1,13 +1,21 @@
 import { useAuth } from '@clerk/expo';
 import * as Sentry from '@sentry/react-native';
 import { api } from '@skating/convex/api';
-import { resolveAuthRoute } from '@skating/core';
+import { resolveEntryRoute } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
 import { Stack } from 'expo-router';
 import { ShareIntentProvider } from 'expo-share-intent';
-import { useEffect } from 'react';
+import { useEffect, useMemo, useReducer } from 'react';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useTheme } from 'tamagui';
+import { EntrySessionContext } from '../src/components/onboarding/EntrySession';
+import { ToastProvider } from '../src/components/Toast';
+import {
+  EMPTY_ENTRY_SESSION,
+  entryGroup,
+  entrySessionReducer,
+  sessionEnded,
+} from '../src/lib/entryGate';
 import { retryPendingRelease } from '../src/lib/pushRegistration';
 import { initSentry } from '../src/lib/sentry';
 import { Providers } from '../src/providers/Providers';
@@ -16,26 +24,33 @@ import { Providers } from '../src/providers/Providers';
 initSentry();
 
 /**
- * Auth- + provisioning-gated root navigator (D26). Two declarative `Stack.Protected`
- * gates, both driven by reactive state so the tree swaps itself:
- *  1. Clerk `isSignedIn` — signed-out users get the auth flow.
- *  2. A *fully provisioned* profile — a signed-in user is admitted to the tabs only once
- *     their Convex `profiles` row carries a **current** risk acknowledgment (D45). The
- *     other two signed-in states each get their own screen:
- *       - no row yet → **onboarding** (collect profile fields + first consent);
- *       - a row with a missing/stale ack (e.g. after we bump `RISK_ACK_VERSION`) →
- *         **re-ack** (renew consent only — no re-entering profile fields).
- *     Gating on row *existence* alone would let a stale ack sail past, defeating the
- *     versioning, so we check the ack itself.
- * We render a blank frame while Clerk loads or the profile query is still resolving, so
- * we neither flash the sign-in screen at launch nor bounce a returning user through
- * onboarding before their profile has loaded.
+ * The gated root navigator (D26, D298). Core's `resolveEntryRoute` — the same rule the web's gate
+ * uses — picks the route from Clerk, `profiles.current`, the Ice Watch's opening
+ * (`consent.watchAnchor`) and the receipt hold; `src/lib/entryGate.ts` turns it into one open
+ * `Stack.Protected` group, and the tree swaps itself as those change:
+ *
+ * - signed out → `(auth)`;
+ * - no profile row, or a canceled deletion's emptied one → `onboarding` (Account, then Terms);
+ * - a pending deletion → the tabs (read-only), before any consent check;
+ * - terms not accepted at this version → `terms`;
+ * - Know Before You Go due (never answered, or not this season) → `know-before-you-go`;
+ * - a new account's Home and Profile still ahead → `welcome`;
+ * - otherwise → the tabs.
+ *
+ * **The receipt hold** lives here, in the navigator's own state, because *Record acceptance*
+ * changes the profile under the screen that recorded it: while held, the gate keeps that screen
+ * open for the receipt, and its button releases it. A sign-out forgets it. Nothing renders while
+ * Clerk, the profile or the watch is still loading, so a returning skater is never bounced through
+ * a screen that isn't theirs.
  */
 function RootNavigator() {
   const { isLoaded, isSignedIn } = useAuth();
-  // Skip until Clerk confirms a session — unauthenticated the query would just be null.
+  // Skip until Clerk confirms a session — unauthenticated the queries would just be null.
   const profile = useQuery(api.profiles.current, isSignedIn ? {} : 'skip');
+  const anchor = useQuery(api.consent.watchAnchor, isSignedIn ? {} : 'skip');
   const theme = useTheme();
+  const [session, dispatch] = useReducer(entrySessionReducer, EMPTY_ENTRY_SESSION);
+  const entry = useMemo(() => ({ session, dispatch }), [session]);
 
   // A push-token release the last sign-out couldn't finish (offline, or past its bound) is retried
   // here, at the root, so it runs whether or not anyone is signed in — and is queued before the tabs
@@ -45,65 +60,90 @@ function RootNavigator() {
     retryPendingRelease({ release: releaseToken });
   }, [releaseToken]);
 
-  const route = resolveAuthRoute({ isLoaded, isSignedIn, profile });
-  if (route === 'loading') return null;
+  // Whoever signs in next starts with no hold and no "new account" memory.
+  const ended = sessionEnded(isLoaded, isSignedIn);
+  useEffect(() => {
+    if (ended) dispatch({ type: 'signedOut' });
+  }, [ended]);
+
+  const route = resolveEntryRoute({
+    isLoaded,
+    isSignedIn,
+    profile,
+    watch:
+      anchor === undefined ? undefined : anchor === null ? null : { openedAt: anchor.openedAt },
+    hold: session.hold,
+  });
+  const group = entryGroup(route, session.heldOn);
+  if (group === null) return null;
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        // React Navigation ships its own light/dark themes, but adopting them would put a second
-        // palette in the app that knows nothing about `@skating/design` — so the five `headerShown`
-        // modals below are dressed from our tokens instead, the same way the tab bar is. Without
-        // this they render Navigation's default *light* header inside a dark app.
-        headerStyle: { backgroundColor: theme.surface?.val },
-        headerTintColor: theme.foreground?.val,
-        headerTitleStyle: { color: theme.foreground?.val },
-        // The frame behind a screen — visible during push/modal transitions, and the reason a theme
-        // change used to flash white between routes.
-        contentStyle: { backgroundColor: theme.background?.val },
-      }}
-    >
-      <Stack.Protected guard={route === 'app'}>
-        <Stack.Screen name="(tabs)" />
-        {/* Viewable profile (D13) — pushed from an author line, report, or profile search. */}
-        <Stack.Screen
-          name="u/[username]"
-          options={{ presentation: 'modal', headerShown: true, title: 'Profile' }}
-        />
-        <Stack.Screen
-          name="about"
-          options={{ presentation: 'modal', headerShown: true, title: 'About' }}
-        />
-        {/* The inbox (A08 §1.3) — pushed from the bell on the You tab; not a sixth tab (D28). */}
-        <Stack.Screen
-          name="notifications"
-          options={{ presentation: 'modal', headerShown: true, title: 'Notifications' }}
-        />
-        {/* Contact support / report a bug (D35) — a submission path, open even to suspended/banned
+    <EntrySessionContext.Provider value={entry}>
+      <ToastProvider>
+        <Stack
+          screenOptions={{
+            headerShown: false,
+            // React Navigation ships its own light/dark themes, but adopting them would put a second
+            // palette in the app that knows nothing about `@skating/design` — so the five `headerShown`
+            // modals below are dressed from our tokens instead, the same way the tab bar is. Without
+            // this they render Navigation's default *light* header inside a dark app.
+            headerStyle: { backgroundColor: theme.surface?.val },
+            headerTintColor: theme.foreground?.val,
+            headerTitleStyle: { color: theme.foreground?.val },
+            // The frame behind a screen — visible during push/modal transitions, and the reason a theme
+            // change used to flash white between routes.
+            contentStyle: { backgroundColor: theme.background?.val },
+          }}
+        >
+          <Stack.Protected guard={group === 'app'}>
+            <Stack.Screen name="(tabs)" />
+            {/* Viewable profile (D13) — pushed from an author line, report, or profile search. */}
+            <Stack.Screen
+              name="u/[username]"
+              options={{ presentation: 'modal', headerShown: true, title: 'Profile' }}
+            />
+            <Stack.Screen
+              name="about"
+              options={{ presentation: 'modal', headerShown: true, title: 'About' }}
+            />
+            {/* The inbox (A08 §1.3) — pushed from the bell on the You tab; not a sixth tab (D28). */}
+            <Stack.Screen
+              name="notifications"
+              options={{ presentation: 'modal', headerShown: true, title: 'Notifications' }}
+            />
+            {/* Contact support / report a bug (D35) — a submission path, open even to suspended/banned
             users for appeals (support.create doesn't gate on status). */}
-        <Stack.Screen
-          name="support"
-          options={{ presentation: 'modal', headerShown: true, title: 'Contact support' }}
-        />
-        {/* The sheet's two lists (A10-3): the drafts the author is holding and the queue waiting
+            <Stack.Screen
+              name="support"
+              options={{ presentation: 'modal', headerShown: true, title: 'Contact support' }}
+            />
+            {/* The sheet's two lists (A10-3): the drafts the author is holding and the queue waiting
             on signal. Full-screen modals behind the ＋ Report tab's header; a draft reopens on the
             sheet itself. */}
-        <Stack.Screen name="drafts" options={{ presentation: 'modal' }} />
-        <Stack.Screen name="queue" options={{ presentation: 'modal' }} />
-        {/* The library grid (A10-8 §8.5), iOS only — opened from a report's Photos. */}
-        <Stack.Screen name="photo-library" options={{ presentation: 'fullScreenModal' }} />
-      </Stack.Protected>
-      <Stack.Protected guard={route === 'onboarding'}>
-        <Stack.Screen name="onboarding" />
-      </Stack.Protected>
-      <Stack.Protected guard={route === 'reack'}>
-        <Stack.Screen name="reack" />
-      </Stack.Protected>
-      <Stack.Protected guard={route === 'auth'}>
-        <Stack.Screen name="(auth)" />
-      </Stack.Protected>
-    </Stack>
+            <Stack.Screen name="drafts" options={{ presentation: 'modal' }} />
+            <Stack.Screen name="queue" options={{ presentation: 'modal' }} />
+            {/* The library grid (A10-8 §8.5), iOS only — opened from a report's Photos. */}
+            <Stack.Screen name="photo-library" options={{ presentation: 'fullScreenModal' }} />
+          </Stack.Protected>
+          {/* The way in (D298): one screen per route; Account and Terms are one screen's steps. */}
+          <Stack.Protected guard={group === 'onboarding'}>
+            <Stack.Screen name="onboarding" />
+          </Stack.Protected>
+          <Stack.Protected guard={group === 'terms'}>
+            <Stack.Screen name="terms" />
+          </Stack.Protected>
+          <Stack.Protected guard={group === 'know-before-you-go'}>
+            <Stack.Screen name="know-before-you-go" />
+          </Stack.Protected>
+          <Stack.Protected guard={group === 'welcome'}>
+            <Stack.Screen name="welcome" />
+          </Stack.Protected>
+          <Stack.Protected guard={group === 'auth'}>
+            <Stack.Screen name="(auth)" />
+          </Stack.Protected>
+        </Stack>
+      </ToastProvider>
+    </EntrySessionContext.Provider>
   );
 }
 

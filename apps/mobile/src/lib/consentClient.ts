@@ -62,3 +62,18 @@ export function readRefusal(error: unknown): Refusal {
   }
   return { code: null, message: CONSENT_REFUSAL_FALLBACK };
 }
+
+/** The acceptance's refusals that are about the Account step's fields, not the terms. */
+const ACCOUNT_REFUSALS: ReadonlySet<string> = new Set([
+  'account_required',
+  'underage',
+  'name_invalid',
+  'username_invalid',
+  'username_taken',
+  'username_cooldown',
+]);
+
+/** Whether a refusal sends a new account back to the Account step to fix a field. */
+export function isAccountRefusal(code: string | null): boolean {
+  return code !== null && ACCOUNT_REFUSALS.has(code);
+}
