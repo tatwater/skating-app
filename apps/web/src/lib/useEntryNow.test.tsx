@@ -31,6 +31,25 @@ describe('useEntryNow', () => {
     expect(result.current).toBe(T0 + 60_001);
   });
 
+  it('sets its timer again when one fires a hair early, so the end is never missed', () => {
+    const profile = { status: 'suspended' as const, suspendedUntil: T0 + 60_000 };
+    const { result } = renderHook(() => useEntryNow(profile));
+    // The clock steps back 5 ms under the timer (an NTP step, a coarsened `Date.now()`): it fires
+    // on schedule, but the clock it reads says the suspension hasn't quite ended. The wake-up
+    // instant comes out the same as before, and a timer keyed on it alone would never be set again.
+    vi.setSystemTime(T0 - 5);
+    act(() => {
+      vi.advanceTimersByTime(60_001);
+    });
+    expect(result.current).toBe(T0 + 59_996);
+    expect(vi.getTimerCount()).toBe(1);
+    act(() => {
+      vi.advanceTimersByTime(5);
+    });
+    expect(result.current).toBe(T0 + 60_001);
+    expect(vi.getTimerCount()).toBe(0);
+  });
+
   it('sets no timer when nothing in the rule moves with the clock', () => {
     for (const profile of [
       null,
