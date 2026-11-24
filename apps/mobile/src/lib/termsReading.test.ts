@@ -310,3 +310,58 @@ describe('an out-of-date build (client_outdated)', () => {
     expect(onRefusal).toHaveBeenCalledOnce();
   });
 });
+
+describe('a reading the server lost (terms_not_opened)', () => {
+  const NOT_OPENED = new ConvexError({ code: 'terms_not_opened', message: 'Not opened.' });
+
+  it('opens anew and stamps the end once more, instead of reusing the cached opening', async () => {
+    const open = vi.fn(() => Promise.resolve(null));
+    const reach = vi
+      .fn<() => Promise<unknown>>()
+      .mockRejectedValueOnce(NOT_OPENED)
+      .mockResolvedValue(null);
+    const onRefusal = vi.fn();
+    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {} });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(reach).toHaveBeenCalledTimes(2);
+    expect(reading.state().end).toBe('recorded');
+    expect(onRefusal).not.toHaveBeenCalled();
+  });
+
+  it('tries the new opening once: a second refusal is told, and waits for the end to come back', async () => {
+    const open = vi.fn(() => Promise.resolve(null));
+    const reach = vi.fn(() => Promise.reject(NOT_OPENED));
+    const onRefusal = vi.fn();
+    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {} });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(reach).toHaveBeenCalledTimes(2);
+    expect(reading.state().end).toBe('failed');
+    expect(onRefusal).toHaveBeenCalledOnce();
+  });
+
+  it('drops a retry that a newer reading overtook', async () => {
+    const first = deferred();
+    const open = vi.fn(() => Promise.resolve(null));
+    const reach = vi
+      .fn<() => Promise<unknown>>()
+      .mockImplementationOnce(() => first.promise)
+      .mockResolvedValue(null);
+    const onRefusal = vi.fn();
+    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {} });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    await flush();
+    reading.restart();
+    first.reject(NOT_OPENED);
+    await flush();
+    // The stale refusal neither retried nor spoke; the restart's own opening is the only new one.
+    expect(reach).toHaveBeenCalledOnce();
+    expect(onRefusal).not.toHaveBeenCalled();
+  });
+});

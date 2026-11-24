@@ -119,8 +119,17 @@ export function createTermsReading(deps: TermsReadingDeps): TermsReading {
   const record = () => {
     const mine = generation;
     set({ end: 'recording' });
-    ensureOpen()
-      .then(() => deps.reach())
+    const stamp = () => ensureOpen().then(() => deps.reach());
+    stamp()
+      .catch((error: unknown) => {
+        // `terms_not_opened`: the server has no reading under the opening this controller cached
+        // (pruned, or lost to a race). The cached promise would only answer "opened" again, so it
+        // is dropped, the reader opens anew, and the end is stamped once more — once, not forever.
+        const stale = mine !== generation || disposed;
+        if (stale || consentRefusalAction(readRefusal(error).code) !== 'reopen') throw error;
+        opening = null;
+        return stamp();
+      })
       .then(
         () => {
           if (mine === generation) set({ end: 'recorded' });
