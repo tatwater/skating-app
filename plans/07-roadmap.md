@@ -879,7 +879,7 @@ knows what needs them, does it where they found it, and watches the machinery wo
 - Clerk's ban lock reconciled daily (B01-4k, D277): on dev, `convex dev --once`, then — before the next 10:20 UTC tick — one dry run (`convex run clerkReconcile:run '{"dryRun":true}'`), its checked counts read back against the People *Banned* lane and Clerk's banned users, before the cron's first real run; a non-zero repair count on Machinery means one of the two sync gaps happened. Dry run on dev (2026-11-17): 0 banned in Clerk, 0 expected, 0 repairs; the first real run, due 2026-11-18 10:20 UTC, is still to confirm → the plan's *B01-4k*
 
 ## Phase B03 — The skater web app
-🟢 **Complete** 2026-11-07 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244
+🟡 **In progress** 2026-11-24 · PRs #95–#104 · [plan](./phases/B03-skater-web.md) · D237 D238 D239 D240 D241 D242 D243 D244 D294 D295 D296 D297 D298
 
 The skater-facing web app rebuilt on the kit and the tokens: the seven route pages of *Gli · Web app ·
 Review 3* (157 boards) — Explore with the lake sidebar and the re-skinned map, Latest, the New report sheet
@@ -890,6 +890,9 @@ the report draft's photos move to IndexedDB so a reload loses nothing but what a
 PostHog extends the merged D235 (deduped pageviews, masked usernames, a wider taxonomy); Sentry gains
 route-level boundaries. Built by one governor and parallel agents in their own worktrees, four PRs. *A
 skater explores lakes, reads peers' reports, and posts their own from a browser that matches the boards.*
+Reopened 2026-11-24 for one more PR, on web and phone: an 18+ minimum, a five-step onboarding whose terms
+are read to the end and recorded in place of the old acknowledgment, and seven Know Before You Go
+questions asked again each season, all kept in a record that outlives a deleted account by six years.
 
 #### Data runs
 - **2026-11-07 — the phase's two backfills on dev:** `posts:backfillSearchText` and `gpsActivities:backfillGpxProvider`, run against the deployment the app drives; neither needs a re-run
@@ -915,10 +918,15 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - ⚪ **A where drawn as an area** (board 5.13.1) — needs a `Where` geometry shape on both surfaces first → B03 §5
 - ⚪ **A cover photo on a Post** — no model field holds one → B03 §4
 - ⚪ **Towns on search hits** — naming each hit's town is a boundary read per keystroke; hits name the lake's type and state instead → B03 §1
-- ⚪ **The phone Latest's quick-filter chips and a sideways-scrolling Recommended** — not built in the phone pass → B03 §9
-- ⚪ **The weather sentence in the phone instrument strip** — not built in the phone pass → B03 §9
+- ⚪ **The phone Latest's quick-filter chips and a sideways-scrolling Recommended** — not built in the phone pass → B03 §1.7
+- ⚪ **The weather sentence in the phone instrument strip** — not built in the phone pass → B03 §1.7
 - ⚪ **The "Weather from here" ring label** on the map's weather sample rings — not built → B03 §2
-- ⚪ **The phone placing mode** — a full-screen map for shore put-ins and photo placement at phone width; the founder set the direction (2026-11-07), and until it's built both actions say "on a wider screen" → B03 §9
+- ⚪ **The phone placing mode** — a full-screen map for shore put-ins and photo placement at phone width; the founder set the direction (2026-11-07), and until it's built both actions say "on a wider screen" → B03 §1.7
+- ⚪ **A console view of the consent records** — only a CLI lookup by account or email in the onboarding build (D297) → B03 §9.14
+- ⚪ **A legal hold on one record's purge**, and a minimum reading time before the terms' box unlocks → B03 §9.14
+- ⚪ **An in-app Privacy Notice page** — the link opens the repository's file → B03 §9.14
+- ⚪ **The phone's profile-photo step and the phone re-skin of the onboarding** — no avatar upload exists on mobile; the screens ship on the existing tokens (D298) → B03 §9.14
+- ❓ **Four onboarding calls** — the terms text (the mock drops clauses `TERMS.md` holds), Show my town without a stored setting, a privacy-notice change not re-asking, and the season card's last-answered day → B03 §9.15
 
 #### Owed
 - The founder's device and browser pass of the new app (desktop browsers and the Pixel)
@@ -926,6 +934,8 @@ skater explores lakes, reads peers' reports, and posts their own from a browser 
 - The avatar-remove default image: store nothing when Clerk's `has_image` is false, in the webhook and the token claim both
 - A check that the Clerk `convex` JWT template carries `picture` and `updated_at`
 - Mobile's hazards empty state still has the pre-D237 wording (web's was fixed in close-out)
+- The onboarding addition (B03 §9, D294–D298), after merge: `convex dev --once` on dev (two tables, five optional profile fields, two crons; widen-only); one real acceptance on dev checked end to end — the record's IP against the session in Clerk, whether the web's server-side handshake ever becomes the session's latest activity, the emailed copy received; a fresh EAS `preview` build before the Android pass (a pre-merge build cannot onboard); the founder's browser and copy pass; the stale "Resend ships unset" comment in `lib/resend.ts` corrected in the build → B03 §9.16
+- Counsel (L1, L3): a privacy notice agreed to in the terms' line, the six years and tolling, IP as evidence, keeping the record through a deletion request (D297)
 
 ## Phase B04 — Your contributions: find them, correct them, take them back
 ⚪ **Scoped** 2026-11-13 · [plan](./phases/B04-skater-contributions.md)

@@ -50,7 +50,12 @@ and privacy policy that supersede the interim [`TERMS.md`](../TERMS.md) / [`PRIV
 whether the assumption-of-risk acknowledgment (D45) is enforceable as written, and the "peer
 observation, never a guarantee" framing with it; the minor-data posture (D41, L2); the deletion and
 retention wording (D62, L3); the AGPL store exception (D43, L4); and landowner takedown wording
-(D48, L11). **Interim guardrails are live** — 18+ gate (D294), versioned server-stamped risk-ack, interim
+(D48, L11). New with the onboarding (D295–D297, being built): whether one line can have a skater *agree to*
+a privacy notice as well as the terms, and whether read-to-the-end plus a recorded version, stamps and an
+emailed copy make the acceptance enforceable; whether six years after a deletion (Maine's limitation
+period) is the right retention, and what tolling does to it; IP addresses as evidence and as collected
+data; and keeping the record through a deletion request. **Interim guardrails are live** — 18+ gate
+(D294), versioned server-stamped risk-ack (to be replaced by the recorded terms acceptance, D295), interim
 terms and privacy notice — and cover the friends alpha. **Status:** required before any launch past
 the friends alpha; a founder task, not a build.
 
