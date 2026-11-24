@@ -66,14 +66,16 @@ describe('createTermsReading', () => {
     const open = vi.fn(() => Promise.resolve(null));
     const reach = vi.fn(() => Promise.resolve(null));
     const onRefusal = vi.fn();
+    const toTop = vi.fn();
     const states: TermsReadingState[] = [];
     const reading = createTermsReading({
       open: () => open(),
       reach: () => reach(),
       onRefusal,
       onChange: (s) => states.push(s),
+      toTop,
     });
-    return { reading, open, reach, onRefusal, states };
+    return { reading, open, reach, onRefusal, toTop, states };
   }
 
   it('opens, fills the hairline, and records the end once', async () => {
@@ -137,17 +139,48 @@ describe('createTermsReading', () => {
     expect(reading.state().end).toBe('recorded');
   });
 
-  it('a failed opening is toasted and asked again by the next stamp', async () => {
-    const { reading, open, reach, onRefusal } = setup();
+  it('a failed opening is toasted once; its end starts the reading again from the top', async () => {
+    const { reading, open, reach, onRefusal, toTop } = setup();
     open.mockImplementationOnce(() => Promise.reject(new Error('offline')));
     reading.start();
     await flush();
     expect(onRefusal).toHaveBeenCalledTimes(1);
     reading.observe(at(2400), 2900);
     await flush();
+    // No reading on the server: opened anew, from the top, and nothing stamped in the same breath.
+    expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);
+    expect(reach).not.toHaveBeenCalled();
+    expect(reading.state()).toEqual({ end: 'unseen', progress: 0 });
+    // The end counts only when reached again: not on a stale report from before the scroll.
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(reach).not.toHaveBeenCalled();
+    reading.observe(at(0), 2900);
+    reading.observe(at(2400), 2900);
+    await flush();
     expect(reach).toHaveBeenCalledTimes(1);
     expect(reading.state().end).toBe('recorded');
+    expect(onRefusal).toHaveBeenCalledTimes(1);
+  });
+
+  it('an opening that fails while the end waits on it starts the reading again too', async () => {
+    const opened = deferred();
+    const open = vi.fn().mockReturnValueOnce(opened.promise).mockResolvedValue(null);
+    const reach = vi.fn(() => Promise.resolve(null));
+    const toTop = vi.fn();
+    const onRefusal = vi.fn();
+    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {}, toTop });
+    reading.start();
+    reading.observe(at(2400), 2900);
+    expect(reading.state().end).toBe('recording');
+    opened.reject(new Error('offline'));
+    await flush();
+    expect(onRefusal).toHaveBeenCalledOnce();
+    expect(toTop).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(reach).not.toHaveBeenCalled();
+    expect(reading.state().end).toBe('unseen');
   });
 
   it('rearm stamps again at once if the end is still on screen, opening anew', async () => {
@@ -207,6 +240,8 @@ describe('createTermsReading', () => {
       onChange,
     });
     reading.observe(at(2400), 2900);
+    // The stamp is out when the screen goes.
+    await flush();
     const calls = onChange.mock.calls.length;
     reading.dispose();
     reached.reject(new Error('gone'));
@@ -314,24 +349,38 @@ describe('an out-of-date build (client_outdated)', () => {
 describe('a reading the server lost (terms_not_opened)', () => {
   const NOT_OPENED = new ConvexError({ code: 'terms_not_opened', message: 'Not opened.' });
 
-  it('opens anew and stamps the end once more, instead of reusing the cached opening', async () => {
+  it('is said, opens anew from the top, and the end counts only when reached again', async () => {
     const open = vi.fn(() => Promise.resolve(null));
     const reach = vi
       .fn<() => Promise<unknown>>()
       .mockRejectedValueOnce(NOT_OPENED)
       .mockResolvedValue(null);
     const onRefusal = vi.fn();
-    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {} });
+    const toTop = vi.fn();
+    const reading = createTermsReading({ open, reach, onRefusal, onChange: () => {}, toTop });
     reading.start();
     reading.observe(at(2400), 2900);
     await flush();
+    // As on the web: the toast, a new reading, the reader at its top — and no stamp at once, so the
+    // record can never say the terms were opened and finished in the same instant.
+    expect(onRefusal).toHaveBeenCalledOnce();
+    expect(toTop).toHaveBeenCalledOnce();
     expect(open).toHaveBeenCalledTimes(2);
+    expect(reach).toHaveBeenCalledOnce();
+    expect(reading.state()).toEqual({ end: 'unseen', progress: 0 });
+    // A report from before the scroll landed doesn't count; leaving and coming back does.
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(reach).toHaveBeenCalledOnce();
+    reading.observe(at(0), 2900);
+    reading.observe(at(2400), 2900);
+    await flush();
     expect(reach).toHaveBeenCalledTimes(2);
     expect(reading.state().end).toBe('recorded');
-    expect(onRefusal).not.toHaveBeenCalled();
+    expect(onRefusal).toHaveBeenCalledOnce();
   });
 
-  it('tries the new opening once: a second refusal is told, and waits for the end to come back', async () => {
+  it('a server that keeps refusing costs one toast per reading, never a loop', async () => {
     const open = vi.fn(() => Promise.resolve(null));
     const reach = vi.fn(() => Promise.reject(NOT_OPENED));
     const onRefusal = vi.fn();
@@ -339,13 +388,19 @@ describe('a reading the server lost (terms_not_opened)', () => {
     reading.start();
     reading.observe(at(2400), 2900);
     await flush();
-    expect(open).toHaveBeenCalledTimes(2);
-    expect(reach).toHaveBeenCalledTimes(2);
-    expect(reading.state().end).toBe('failed');
+    reading.observe(at(2410), 2900);
+    await flush();
+    expect(reach).toHaveBeenCalledOnce();
     expect(onRefusal).toHaveBeenCalledOnce();
+    reading.observe(at(0), 2900);
+    reading.observe(at(2400), 2900);
+    await flush();
+    expect(reach).toHaveBeenCalledTimes(2);
+    expect(onRefusal).toHaveBeenCalledTimes(2);
+    expect(reading.state().end).toBe('unseen');
   });
 
-  it('drops a retry that a newer reading overtook', async () => {
+  it('drops a refusal that a newer reading overtook', async () => {
     const first = deferred();
     const open = vi.fn(() => Promise.resolve(null));
     const reach = vi
@@ -360,7 +415,8 @@ describe('a reading the server lost (terms_not_opened)', () => {
     reading.restart();
     first.reject(NOT_OPENED);
     await flush();
-    // The stale refusal neither retried nor spoke; the restart's own opening is the only new one.
+    // The stale refusal neither restarted nor spoke; the restart's own opening is the only new one.
+    expect(open).toHaveBeenCalledTimes(2);
     expect(reach).toHaveBeenCalledOnce();
     expect(onRefusal).not.toHaveBeenCalled();
   });

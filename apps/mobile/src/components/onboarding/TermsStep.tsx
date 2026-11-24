@@ -66,7 +66,9 @@ const USER_AGENT = appUserAgent(
  *
  * Refusals are toasts (D268). Some also act, by core's `consentRefusalAction`: a refusal about the
  * Account fields (`username_taken`, the cooldown, a name, username or date the server won't take)
- * returns a new account to the Account step, `terms_not_read` re-arms the end marker, and
+ * returns a new account to the Account step, `terms_not_read` re-arms the end marker, a reading the
+ * server doesn't have (`terms_not_opened`, or a failed opening) starts again from the top and its end
+ * counts only once reached again (`lib/termsReading`, as on the web), and
  * `client_outdated` — this build's terms or notice aren't the server's, which no re-reading fixes —
  * stops the step on `OutdatedScreen`, asking for an update; nothing re-arms after it.
  */
@@ -157,6 +159,9 @@ function Reader({
         }),
       onRefusal: (error) => calls.current.toast(readRefusal(error).message),
       onChange: setState,
+      // A reading started again is read from the top. The marker stays where it was laid out (the
+      // same text), so its position is kept.
+      toTop: () => scrollRef.current?.scrollTo({ y: 0, animated: false }),
     });
     readingRef.current = reading;
     reading.start();
@@ -230,9 +235,8 @@ function Reader({
           onOutdated();
           return;
         case 'reopen':
+          // From the top, and the end counts once it is reached again (the reading's rule).
           setChecked(false);
-          // The marker stays where it was laid out (the same text), so its position is kept.
-          scrollRef.current?.scrollTo({ y: 0, animated: false });
           readingRef.current?.restart();
           break;
         case 'rearm':
