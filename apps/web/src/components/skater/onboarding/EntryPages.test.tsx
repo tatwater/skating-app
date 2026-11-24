@@ -406,6 +406,8 @@ describe('/know-before-you-go', () => {
       expect(mutation('consent:completeKnowBeforeYouGo')).toHaveBeenCalledWith({
         version: KNOW_BEFORE_YOU_GO.version,
         hash: KNOW_BEFORE_YOU_GO_SHA256,
+        termsVersion: TERMS.version,
+        termsHash: TERMS_SHA256,
         surface: 'web',
         userAgent: navigator.userAgent,
         clientSessionId: 'sess_1',

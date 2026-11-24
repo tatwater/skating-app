@@ -321,7 +321,11 @@ export function consentRefusalMessage(code: string | undefined): string {
  * - `outdated` — this build's bundled words aren't the server's (`client_outdated`): re-reading the
  *   same text can't fix it, so the step stops on a blocking screen (the web offers a reload, the
  *   phone asks for an update) and nothing re-arms by itself;
- * - `say` — the toast is all there is to it.
+ * - `say` — the toast is all there is to it. `terms_first` is one: the completion says it only to
+ *   a client whose bundled terms are the server's, about a profile that hasn't accepted them — the
+ *   gate routes by that same version, so it takes the skater to the terms as soon as its profile
+ *   catches up. A client whose bundled terms are old is told `client_outdated` there instead, so an
+ *   older build never ends on a step that only says "accept the terms first".
  */
 export type ConsentRefusalAction = 'account' | 'reopen' | 'rearm' | 'outdated' | 'say';
 

@@ -8,6 +8,8 @@ import {
   type KnowBeforeYouGoDue,
   knowBeforeYouGoDue,
   ONBOARDING_COPY,
+  TERMS,
+  TERMS_SHA256,
   type WelcomeStep,
 } from '@skating/core';
 import { useAction, useMutation, useQuery } from 'convex/react';
@@ -144,7 +146,11 @@ function localZone(): string {
  * the season rule gives — `never` straight on the first question, `season` on the season card.
  * *Continue* on all seven writes the completion; the gate moves on when the profile says so. The
  * server takes any published version of the questions, so only a tab whose words it doesn't know
- * at all is refused (`client_outdated`), and that stops on `OutdatedStep`, offering a reload.
+ * at all is refused (`client_outdated`) — or one whose bundled terms are as old as the profile's
+ * acceptance, which the server has moved past — and that stops on `OutdatedStep`, offering a
+ * reload. `terms_first` (this tab's terms are current but the server's profile hasn't accepted them)
+ * is only said: the gate routes by the same version, and takes the skater to the terms as soon as
+ * its profile catches up.
  */
 export function KnowBeforeYouGoPage() {
   const email = useEmail();
@@ -188,6 +194,10 @@ export function KnowBeforeYouGoPage() {
       await complete({
         version: KNOW_BEFORE_YOU_GO.version,
         hash: KNOW_BEFORE_YOU_GO_SHA256,
+        // This tab's terms: with a profile whose acceptance is old, they decide between the terms
+        // and the update screen.
+        termsVersion: TERMS.version,
+        termsHash: TERMS_SHA256,
         ...clientReport(),
         ...(sessionId ? { clientSessionId: sessionId } : {}),
       });

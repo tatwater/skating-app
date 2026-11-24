@@ -14,6 +14,7 @@ import {
   questionsLastAnswered,
   seasonCardLede,
   TERMS,
+  TERMS_SHA256,
   termsUnchangedSince,
 } from '@skating/core';
 import { useMutation, useQuery } from 'convex/react';
@@ -61,7 +62,11 @@ const USER_AGENT = appUserAgent(
  * sign out* as the way out (no bar on that card). Reached when the gate says `questions`; the gate
  * moves on by itself once the completion lands. The server takes any published version of the
  * questions, so an older build keeps working after the yearly edit; only words it doesn't know at
- * all are refused (`client_outdated`), and the screen stops on `OutdatedScreen`, asking for an update.
+ * all are refused (`client_outdated`) — or a build whose bundled terms are as old as the profile's
+ * acceptance, which the server has moved past (the call carries this build's terms to say so) —
+ * and the screen stops on `OutdatedScreen`, asking for an update. `terms_first` (this build's terms
+ * are current, the server's profile hasn't accepted them) is only said: the gate routes by the
+ * same version and takes the skater to the terms once its profile catches up.
  */
 export default function KnowBeforeYouGoScreen() {
   const { session } = useEntrySession();
@@ -301,7 +306,10 @@ function AllSeven({
 }: {
   showStep: boolean;
   onSignOut: () => void;
-  /** `client_outdated`: words the server doesn't know; answering them again can't help. */
+  /**
+   * `client_outdated`: words the server doesn't know, or terms as old as the profile's acceptance;
+   * answering again can't help.
+   */
   onOutdated: () => void;
 }) {
   const { sessionId } = useAuth();
@@ -318,6 +326,10 @@ function AllSeven({
       await complete({
         version: KNOW_BEFORE_YOU_GO.version,
         hash: KNOW_BEFORE_YOU_GO_SHA256,
+        // This build's terms: with a profile whose acceptance is old, they decide between the terms
+        // and the update notice.
+        termsVersion: TERMS.version,
+        termsHash: TERMS_SHA256,
         surface: SURFACE,
         userAgent: USER_AGENT,
         ...(sessionId ? { clientSessionId: sessionId } : {}),

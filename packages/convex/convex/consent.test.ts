@@ -671,9 +671,14 @@ describe('completeKnowBeforeYouGo', () => {
     await accept(as, { account: { ...ACCOUNT, username: subject.replace('user_', '') } });
     return as;
   }
-  const complete = (as: ReturnType<T['withIdentity']>, claim = QUESTIONS_CLAIM) =>
+  const complete = (
+    as: ReturnType<T['withIdentity']>,
+    claim = QUESTIONS_CLAIM,
+    terms: typeof TERMS_CLAIM = TERMS_CLAIM,
+  ) =>
     as.mutation(api.consent.completeKnowBeforeYouGo, {
       ...claim,
+      ...terms,
       surface: 'ios',
       userAgent: 'Gli/1.0',
       clientSessionId: 'sess_q',
@@ -802,6 +807,7 @@ describe('completeKnowBeforeYouGo', () => {
     await expectRefusal(complete(bea), 'terms_first');
     await t.run((ctx) => ctx.db.patch(beaId, { termsVersion: '2026-01-01' }));
     await expectRefusal(complete(bea), 'terms_first');
+    expect(await records(t)).toEqual([]);
     const as = await accepted(t);
     await expectRefusal(complete(as, { ...QUESTIONS_CLAIM, hash: 'beef' }), 'client_outdated');
     await expectRefusal(
@@ -816,6 +822,33 @@ describe('completeKnowBeforeYouGo', () => {
     expect(await complete(caller(t, 'user_nobody')).catch((e: Error) => e.message)).toMatch(
       /not authenticated/i,
     );
+  });
+
+  test('an older build whose bundled terms are the profile’s old ones is told to update, not sent to the terms', async () => {
+    const t = harness();
+    // Accepted the 2026-01-01 terms on a build that bundled them; the server has moved on since.
+    const OLD_TERMS = { termsVersion: '2026-01-01', termsHash: 'a'.repeat(64) };
+    await existingProfile(t, 'user_bea', { termsVersion: OLD_TERMS.termsVersion });
+    const bea = caller(t, 'user_bea');
+    // That build routes itself to the questions (its version is the profile's). `terms_first`
+    // would send it to terms its own reader can't open: it is told it is out of date instead.
+    await expectRefusal(complete(bea, QUESTIONS_CLAIM, OLD_TERMS), 'client_outdated');
+    // The server's version under another hash is no current claim either, nor the unpublished
+    // sentinel.
+    await expectRefusal(
+      complete(bea, QUESTIONS_CLAIM, { termsVersion: TERMS.version, termsHash: 'beef' }),
+      'client_outdated',
+    );
+    await expectRefusal(
+      complete(bea, QUESTIONS_CLAIM, { termsVersion: TERMS.version, termsHash: 'unpublished' }),
+      'client_outdated',
+    );
+    expect(await records(t)).toEqual([]);
+    // A profile that has accepted the server's terms isn't asked about the client's: an old build
+    // there never reaches the questions (its gate sends it to the terms, which refuse it), and the
+    // questions don't depend on the terms' words.
+    const as = await accepted(t);
+    expect(await complete(as, QUESTIONS_CLAIM, OLD_TERMS)).toEqual({ season: null });
   });
 
   test('an older build’s published questions count, and the record names the words answered', async () => {

@@ -459,9 +459,16 @@ function newestRecord(ctx: QueryCtx, profileId: Id<'profiles'>, kind: 'terms' | 
  * an argument: the client holds them, and a wrong pick has no field anywhere.
  *
  * The account must be set up (a canceled deletion's emptied row is re-introduced first:
- * `account_required`), and the terms come first (`terms_first`): the questions are answered under
- * the current terms, by a named person. Any published version of the questions is taken, and the
- * record names the one answered (`client_outdated` for words nobody published).
+ * `account_required`), and the terms come first: the questions are answered under the current
+ * terms, by a named person. The call carries the client's terms claim, as the reading and the
+ * acceptance do, because which refusal helps depends on it. A profile that hasn't accepted the
+ * server's terms, from a client whose bundled terms are the server's too, is told `terms_first` —
+ * its gate routes by the same version, so only a profile it hasn't caught up with yet sends it
+ * here. From a client whose bundled terms aren't the server's, it is `client_outdated`: an older
+ * build whose bundled version matches the profile's stored (now old) acceptance routes itself to
+ * the questions, and `terms_first` would only send it back to terms it can't open — the update
+ * screen is the way on. Any published version of the questions is taken, and the record names the
+ * one answered (`client_outdated` for words nobody published).
  *
  * **One completion per asking.** When the questions aren't due — by `knowBeforeYouGoDue`, the season
  * rule the gate routes by, read here off the same profile and watch — the call returns the newest
@@ -472,6 +479,9 @@ export const completeKnowBeforeYouGo = mutation({
   args: {
     version: v.string(),
     hash: v.string(),
+    /** The client's bundled terms, as `openTerms` takes them: which refusal helps depends on it. */
+    termsVersion: v.string(),
+    termsHash: v.string(),
     surface: consentSurface,
     userAgent: v.optional(v.string()),
     clientSessionId: v.optional(v.string()),
@@ -480,7 +490,14 @@ export const completeKnowBeforeYouGo = mutation({
     const profile = await requireContributor(ctx);
     // A canceled deletion's emptied row holds the scrubbed placeholder, not a person to attest.
     if (needsProfileSetup(profile)) refuse('account_required');
-    if (profile.termsVersion !== TERMS.version) refuse('terms_first');
+    if (profile.termsVersion !== TERMS.version) {
+      // Current words, an acceptance not yet seen: the terms. Old words: an update, never a loop.
+      refuse(
+        isCurrentTerms({ version: args.termsVersion, hash: args.termsHash })
+          ? 'terms_first'
+          : 'client_outdated',
+      );
+    }
     // Any published version: an older build's words count, and are the ones recorded.
     if (!isPublishedKnowBeforeYouGo({ version: args.version, hash: args.hash })) {
       refuse('client_outdated');
