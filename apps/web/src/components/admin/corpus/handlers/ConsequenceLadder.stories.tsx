@@ -136,6 +136,12 @@ export const Narrow: Story = {
       // Its words start under the value's, past the dot.
       const text = consequence.left + parseFloat(getComputedStyle(cell).paddingInlineStart);
       await expect(Math.abs(text - label.left)).toBeLessThan(1);
+      // …and runs across the row, under the marks too: never held to the value's column.
+      const marks = [
+        ...rung.querySelectorAll('[data-slot="rung-mark"], [data-slot="rung-silent"]'),
+      ];
+      const lastMark = must(marks.at(-1)).getBoundingClientRect();
+      await expect(consequence.right).toBeGreaterThanOrEqual(lastMark.right - 1);
     }
     const wetland = must(rungs[1]);
     const badge = boxOf(wetland, 'rung-suggested');
