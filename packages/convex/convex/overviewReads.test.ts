@@ -630,6 +630,35 @@ describe('console.corpusCounts — the Corpus card’s tasks', () => {
     expect(orphans.map((g) => g.members.length)).toEqual([1, 1]);
   });
 
+  test('the last campaign is a merge or a load, never the retirement that cleans up after one', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const run = (kind: 'canonical_water' | 'absorbed_retire', label: string, startedAt: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('importRuns', {
+          kind,
+          label,
+          deployment: 'dev',
+          isProd: false,
+          status: 'succeeded' as const,
+          startedAt,
+          counts: [],
+          stages: [],
+          failures: [],
+          failuresTotal: 0,
+        }),
+      );
+    await run('canonical_water', 'A07a unified corpus — the master list', NOW - 5 * DAY);
+    // Since B01-6a: its own kind, which the read never asks for.
+    await run('absorbed_retire', 'retire absorbed duplicates', NOW - 2 * DAY);
+    // Before: a `canonical_water` row by its label, applied and dry, newer than the load.
+    await run('canonical_water', 'retire absorbed duplicates', NOW - 4 * DAY);
+    await run('canonical_water', 'retire absorbed duplicates (dry run)', NOW - 3 * DAY);
+
+    const c = await mod.as.query(api.console.corpusCounts, {});
+    expect(c.campaignAt).toBe(NOW - 5 * DAY);
+  });
+
   test('a member is refused', async () => {
     const t = harness();
     const m = await seedUser(t, 'm');

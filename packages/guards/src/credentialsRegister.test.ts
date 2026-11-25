@@ -70,11 +70,21 @@ function ownExample(name: string): string | null {
 }
 
 /**
- * Names that are not configuration: Node's own, Vite's own, and the mobile file's `EXPO_PUBLIC_`
- * prefix read as a bare token by a comment-scanning regex. Nothing project-specific goes here —
- * a project variable belongs in the register, not in an exemption.
+ * Names that are not configuration: the shell's own (`PATH`, which a test extends to put a stand-in
+ * command first), Node's own, Vite's own, and the mobile file's `EXPO_PUBLIC_` prefix read as a bare
+ * token by a comment-scanning regex. Nothing project-specific goes here — a project variable belongs
+ * in the register, not in an exemption.
  */
-const NOT_CONFIG = new Set(['NODE_ENV', 'MODE', 'DEV', 'PROD', 'SSR', 'BASE_URL', 'EXPO_PUBLIC_']);
+const NOT_CONFIG = new Set([
+  'PATH',
+  'NODE_ENV',
+  'MODE',
+  'DEV',
+  'PROD',
+  'SSR',
+  'BASE_URL',
+  'EXPO_PUBLIC_',
+]);
 
 function walk(dir: string): string[] {
   if (!statSync(dir, { throwIfNoEntry: false })) return [];

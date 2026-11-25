@@ -5,7 +5,10 @@
  * should not need `_generated` to be current in order to compile.
  */
 
-/** One member of `IMPORT_RUN_KINDS` (`packages/convex/convex/lib/enums.ts`). Keep in step. */
+/**
+ * One member of `IMPORT_RUN_KINDS` (`packages/convex/convex/lib/enums.ts`). Keep in step —
+ * `packages/guards` checks it.
+ */
 export type ImportRunKind =
   | 'canonical_water'
   /** `scripts/etl merge` — the offline three-archive reconciliation that decides the corpus (A07a). */
@@ -57,7 +60,51 @@ export type ImportRunKind =
   /** `scripts/etl load-landmarks` — the named places a body is steered by (D202). */
   | 'landmark_seed'
   /** `waterBodies:sweepAllBodySummaries` — the full map-card walk that fills the refresh table. */
-  | 'body_summary_backfill';
+  | 'body_summary_backfill'
+  // The corpus campaign's passes that left no row before B01-6a (D218).
+  /** `scripts/admin-areas build-region` — the TIGER region masks the merge clips against. */
+  | 'region_masks'
+  /** `scripts/etl landmarks` — the offline OSM + GNIS match `load-landmarks` loads (D202). */
+  | 'landmark_match'
+  /** `scripts/etl prune-floor` — the rows the area floor refuses, demoted to dormant. */
+  | 'floor_prune'
+  /**
+   * `scripts/etl retire-absorbed` — the merge's absorbed rows folded into their survivors (D136).
+   * Logged as `canonical_water` before B01-6a, which made it read as a campaign's load.
+   */
+  | 'absorbed_retire';
+
+/**
+ * What a run set out to cover (D218): one member of `IMPORT_RUN_SCOPES`
+ * (`packages/convex/convex/lib/enums.ts`). Keep in step — `packages/guards` checks it.
+ */
+export type ImportRunScopePass =
+  | 'full-canonical'
+  | 'single-source'
+  | 'enrichment'
+  | 'seed'
+  | 'rollover'
+  | 'archive'
+  /** Computed from data already held; writes no third-party data into the model. */
+  | 'derived'
+  /** Brings the stored corpus into line with what a campaign decided: demotes or folds. */
+  | 'cleanup';
+
+/**
+ * **What a run set out to cover**, stated once at its start (D218) — so a full re-import and a
+ * gap-fill read differently without inferring it from `kind` and `label`. What the run *achieved*
+ * is its status and coverage, never this.
+ */
+export interface ImportRunScope {
+  pass: ImportRunScopePass;
+  /** The states it covered, two-letter codes. Absent when the pass is not by state. */
+  states?: string[];
+  /**
+   * All of what its pass covers: `false` for a subset of states, a resumed walk, or a merge missing
+   * one of its catalogs.
+   */
+  complete: boolean;
+}
 
 /** A named tally. Each loader names its own; see the table comment for why they aren't columns. */
 export interface RunCount {

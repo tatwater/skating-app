@@ -648,6 +648,8 @@ export const runStandingRollover = internalAction({
         campaignId: rolloverCampaignId(season, apply === true),
         deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
         isProd: isProdDeployment(),
+        // Every active body, every state (D218): the rollover is never partial by design.
+        scope: { pass: 'rollover', complete: true },
         stages: [
           {
             name: 'rollover',

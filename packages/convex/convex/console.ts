@@ -85,6 +85,22 @@ export const overview = query({
 // ── The Corpus card's tasks ─────────────────────────────────────────────────────────────────────
 
 /**
+ * How far back the last campaign's read looks past legacy retire rows. Retirements follow a load one
+ * to a campaign, so a run of more than a couple between two loads would be an operator re-running
+ * it; past this many the read answers `null` for that kind rather than scan.
+ */
+const LEGACY_RETIRE_LOOKBACK = 20;
+
+/**
+ * A `retire-absorbed` row written before it had its own kind: `canonical_water`, labeled by
+ * `scripts/etl/src/retireAbsorbed.ts` (with " (dry run)" after a dry one). It folds rows away, so it
+ * is no campaign's load.
+ */
+function isLegacyRetireRow(run: { kind: string; label: string }): boolean {
+  return run.kind === 'canonical_water' && run.label.startsWith('retire absorbed duplicates');
+}
+
+/**
  * The Corpus card's tasks that `waterBodies.reviewQueueCounts` doesn't count (B01 §5.1). Its own
  * query, not part of `overview`: these change when a campaign runs or a moderator decides, and
  * `overview` re-runs on every flag filed — a body row carries its outline, so re-reading them on
@@ -95,7 +111,8 @@ export const overview = query({
  *   the same as one a campaign flagged.
  * - `chordRefits` — bays whose mouth a moved shoreline re-fitted or left stale (D215), across bodies.
  * - `placeNames` — place names from the email groups still open (D202).
- * - `campaignAt` — when the last corpus run started (a merge or a canonical load).
+ * - `campaignAt` — when the last corpus run started (a merge or a canonical load; never a
+ *   retirement of absorbed rows, which is a cleanup after one).
  * - `preIcePass` and `enrichment` are `null`: no record says when the pre-ice pass was done, and
  *   nothing indexes a body by the enrichment it lacks. Each is drawn *Not recorded yet*, never zero.
  */
@@ -133,13 +150,17 @@ export const corpusCounts = query({
       .withIndex('by_status_messages', (q) => q.eq('status', 'open'))
       .take(COUNT_CAP + 1);
 
+    // The last campaign: its merge or its load. `retire-absorbed` has its own kind since B01-6a
+    // (`absorbed_retire`), so it is not read here; the rows it wrote before that sit under
+    // `canonical_water` with their own label, and are passed over by it (`isLegacyRetireRow`).
     let campaignAt: number | null = null;
     for (const kind of ['corpus_merge', 'canonical_water'] as const) {
-      const last = await ctx.db
+      const recent = await ctx.db
         .query('importRuns')
         .withIndex('by_kind_started', (q) => q.eq('kind', kind))
         .order('desc')
-        .first();
+        .take(LEGACY_RETIRE_LOOKBACK);
+      const last = recent.find((run) => !isLegacyRetireRow(run));
       if (last && (campaignAt === null || last.startedAt > campaignAt)) campaignAt = last.startedAt;
     }
 
