@@ -5,7 +5,7 @@ import {
   type LandmarkKind,
   MAX_REQUEST_NOTE_LENGTH,
 } from '@skating/core';
-import { useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { isFailed } from '@/components/admin/reads/consoleReads';
 import { Tag, TagRun } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
@@ -21,7 +21,6 @@ import { PlaceMark } from '@/components/kit/map-marks';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { RadioGroup, RadioRow } from '@/components/kit/radio';
 import { Section } from '@/components/kit/section-slug';
-import { sayUnavailable, UnavailableButton } from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { statusDate } from '../../frame/bodyModel';
 import { useTabKeys } from '../../frame/tabKeys';
@@ -37,6 +36,7 @@ import {
   type LandmarkRow,
   litId,
   type PlaceAsk,
+  type PlaceNameAsk,
   type PlacesData,
   type ProposalAsk,
   rowsOf,
@@ -55,9 +55,9 @@ import {
  * stopped short ("400+"). Who asked is drawn only for a viewer who can see it.
  *
  * Every control is drawn only when its handler is passed (the wiring passes one only for a viewer
- * with the capability). The map tools — placing a name, adding a proposal, dropping, moving or
- * removing a landmark, drawing one as a bay — are task modes not built yet: drawn as the board
- * draws them, they say so instead of acting.
+ * with the capability). The map's landmark tools (B01-6b) are the wiring's: dropping a landmark,
+ * placing an emailed name and adding a skater's proposal open the drop card (`drop`), which stands
+ * over the list in a landmark card's place; moving one and removing it are its card's.
  */
 
 export type PlacesViewProps = {
@@ -91,12 +91,20 @@ export type PlacesViewProps = {
   onEditLandmark?: (id: string, edit: LandmarkEdit) => unknown;
   /** Draw a landmark as a bay (the Shape tab's task); absent for a viewer who can't draw bays. */
   onDrawAsBay?: (id: string) => void;
-};
-
-const MAP_TOOLS = {
-  place: 'Placing an emailed name on the map comes with the map’s landmark tools.',
-  add: 'Adding a skater’s proposal as a landmark comes with the map’s landmark tools.',
-  drop: 'Dropping a landmark on the map comes with the map’s landmark tools.',
+  /** Drop a new landmark on the map (L): the wiring opens its card in `drop`. */
+  onDropLandmark?: () => void;
+  /** Place the emails' name on the map: the drop card, filled. */
+  onPlaceName?: (ask: PlaceNameAsk) => void;
+  /** Add a skater's proposal as a landmark: the drop card, filled, its point where they put it. */
+  onAddProposal?: (ask: ProposalAsk) => void;
+  /** The landmark being dropped, on its card over the list (the wiring's `LandmarkDrop`). */
+  drop?: ReactNode;
+  /** The landmark the map's point tool is moving. */
+  moving?: string | null;
+  /** Start or stop moving a landmark on the map. */
+  onMoveLandmark?: (id: string) => void;
+  /** Remove a landmark, with its reason. Resolves whether it landed. */
+  onRemoveLandmark?: (id: string, reason: string) => Promise<boolean>;
 };
 
 /** A list's count on its rule: its length, a floor when its read stopped short, none until it lands. */
@@ -132,17 +140,27 @@ export function PlacesView({
   onDecline,
   onEditLandmark,
   onDrawAsBay,
+  onDropLandmark,
+  onPlaceName,
+  onAddProposal,
+  drop = null,
+  moving = null,
+  onMoveLandmark,
+  onRemoveLandmark,
 }: PlacesViewProps) {
   const root = useRef<HTMLDivElement>(null);
-  const selected = selectedLandmark(data, lit);
+  const dropping = drop != null;
+  // The drop card stands where a landmark's card would: one card over the list at a time.
+  const selected = dropping ? null : selectedLandmark(data, lit);
   const landmarks = data === undefined ? [] : rowsOf(data.landmarks);
+  const canDrop = canPlace && onDropLandmark !== undefined;
   useTabKeys(root, [
     {
       key: 'L',
-      run: () => sayUnavailable(MAP_TOOLS.drop),
+      run: () => onDropLandmark?.(),
       // Only while Drop a landmark is drawn: never while the tab loads (the inspector listens then
-      // too), never under a landmark's card.
-      enabled: canPlace && data !== undefined && selected === null,
+      // too), never under a card.
+      enabled: canDrop && data !== undefined && selected === null && !dropping,
     },
   ]);
   // The card's way back hands focus to the row that opened it: the card leaving with focus inside
@@ -166,10 +184,10 @@ export function PlacesView({
   return (
     <div ref={root} className="relative flex min-h-full flex-col" data-slot="places-tab">
       <TabBody
-        data-dimmed={selected !== null ? '' : undefined}
+        data-dimmed={selected !== null || dropping ? '' : undefined}
         // Under a card, the list stays put behind it, dimmed and out of reach (Review 14 #7).
         className="transition-opacity duration-(--duration-fast) ease-standard data-dimmed:pointer-events-none data-dimmed:opacity-(--opacity-dim)"
-        inert={selected !== null}
+        inert={selected !== null || dropping}
       >
         <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
         <Section
@@ -196,6 +214,8 @@ export function PlacesView({
                     onDismissName={onDismissName}
                     onSamePlace={onSamePlace}
                     onDecline={onDecline}
+                    onPlaceName={onPlaceName}
+                    onAddProposal={onAddProposal}
                   />
                 ))}
               </ul>
@@ -208,13 +228,19 @@ export function PlacesView({
           aria-busy={data.landmarks === undefined || undefined}
           data-slot="landmarks"
           end={
-            canPlace ? (
-              <UnavailableButton size="sm" what={MAP_TOOLS.drop}>
+            canDrop ? (
+              <Button
+                size="sm"
+                data-slot="drop-landmark"
+                // A drop under way keeps its button on (the board).
+                aria-pressed={dropping}
+                onClick={onDropLandmark}
+              >
                 Drop a landmark
                 <Kbd variant="dim" aria-hidden="true">
                   L
                 </Kbd>
-              </UnavailableButton>
+              </Button>
             ) : undefined
           }
         >
@@ -240,6 +266,7 @@ export function PlacesView({
           )}
         </Section>
       </TabBody>
+      {drop}
       {selected !== null && (
         <LandmarkCard
           key={selected.id}
@@ -251,6 +278,11 @@ export function PlacesView({
           }}
           onEdit={onEditLandmark ? (edit) => onEditLandmark(selected.id, edit) : undefined}
           onDrawAsBay={onDrawAsBay ? () => onDrawAsBay(selected.id) : undefined}
+          moving={moving === selected.id}
+          onMove={onMoveLandmark ? () => onMoveLandmark(selected.id) : undefined}
+          onRemove={
+            onRemoveLandmark ? (reason) => onRemoveLandmark(selected.id, reason) : undefined
+          }
         />
       )}
     </div>
@@ -334,12 +366,22 @@ function AskRow({
   onDismissName,
   onSamePlace,
   onDecline,
+  onPlaceName,
+  onAddProposal,
 }: {
   ask: PlaceAsk;
   lit: string | null;
   landmarks: readonly LandmarkRow[];
   canPlace: boolean;
-} & Pick<PlacesViewProps, 'onFileAsSpelling' | 'onDismissName' | 'onSamePlace' | 'onDecline'>) {
+} & Pick<
+  PlacesViewProps,
+  | 'onFileAsSpelling'
+  | 'onDismissName'
+  | 'onSamePlace'
+  | 'onDecline'
+  | 'onPlaceName'
+  | 'onAddProposal'
+>) {
   return (
     <li
       data-slot="ask"
@@ -374,6 +416,8 @@ function AskRow({
         onDismissName={onDismissName}
         onSamePlace={onSamePlace}
         onDecline={onDecline}
+        onPlaceName={onPlaceName}
+        onAddProposal={onAddProposal}
       />
     </li>
   );
@@ -418,15 +462,17 @@ function AskActions({
   onDismissName,
   onSamePlace,
   onDecline,
+  onPlaceName,
+  onAddProposal,
 }: Omit<Parameters<typeof AskRow>[0], 'lit'>) {
   const [why, setWhy] = useState<CorpusNameDismissReason>('not_a_place');
   const buttons =
     ask.kind === 'place-name'
       ? [
-          canPlace && !ask.alreadyNamed && (
-            <UnavailableButton key="place" size="sm" what={MAP_TOOLS.place}>
+          canPlace && onPlaceName && !ask.alreadyNamed && (
+            <Button key="place" size="sm" onClick={() => onPlaceName(ask)}>
               Place it
-            </UnavailableButton>
+            </Button>
           ),
           onFileAsSpelling && landmarks.length > 0 && (
             <DropdownMenu key="already">
@@ -476,10 +522,10 @@ function AskActions({
           ),
         ]
       : [
-          canPlace && ask.existingLandmarkId === null && (
-            <UnavailableButton key="add" size="sm" what={MAP_TOOLS.add}>
+          canPlace && onAddProposal && ask.existingLandmarkId === null && (
+            <Button key="add" size="sm" onClick={() => onAddProposal(ask)}>
               Add
-            </UnavailableButton>
+            </Button>
           ),
           onSamePlace && (ask.existingLandmarkId !== null || ask.similar !== null) && (
             <Button key="same" size="sm" onClick={() => onSamePlace(ask)}>

@@ -9,7 +9,8 @@ import { arrivalSearch, validateBodySearch } from '../../frame/bodySearch';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useTabAction } from '../useTabAction';
 import { PlacesView } from './PlacesView';
-import { type PlacesData, placesFrom, placesMapScene, rowsOf } from './placesModel';
+import { litId, type PlacesData, placesFrom, placesMapScene, rowsOf } from './placesModel';
+import { useLandmarkTask } from './useLandmarkTask';
 
 /**
  * The Places tab's reads and its data — the landmarks with when and by whom each was added, the
@@ -59,8 +60,14 @@ export function usePlacesData(bodyId: string): PlacesData | undefined {
  * dismissing an emailed name (`corpusPlaceNames.fileAsSpelling` / `dismiss`,
  * `corpus.placeNames`); answering a proposal with the landmark already there or declining it
  * (`corpusRequests.approve` / `decline`, `inbox.request`). *Draw as a bay* opens the Shape tab's
- * bay task with the landmark (`?promote=`, B01-6a, `body.shape`); moving, dropping and removing a
- * landmark on the map come with B01-6b.
+ * bay task with the landmark (`?promote=`, B01-6a, `body.shape`).
+ *
+ * **The map's landmark tools** (B01-6b, `useLandmarkTask`, `body.places`): dropping a landmark
+ * (`landmarks.create`), placing an emailed name with it (also `corpus.placeNames`, as filing one
+ * is) and adding a skater's proposal (also `inbox.request`, as answering one is) — the server asks
+ * for the same pair — and an Inbox landmark ask arriving to be placed (`?landmarkAsk=`); moving a
+ * landmark (`landmarks.update` with its point, each move saved) and removing it with a reason
+ * (`landmarks.remove`). Each is announced with Undo.
  */
 export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const { data, retry, pending } = usePlacesRead(bodyId);
@@ -72,9 +79,17 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const dismiss = useMutation(api.corpusPlaceNames.dismiss);
   const approve = useMutation(api.corpusRequests.approve);
   const decline = useMutation(api.corpusRequests.decline);
+  const remove = useMutation(api.landmarks.remove);
   const { act } = useTabAction(bodyId);
   const { can } = useRole();
   const navigate = useNavigate();
+  const canPlace = can('body.places');
+  const tools = useLandmarkTask({
+    bodyId,
+    landmarks: rowsOf(data.landmarks),
+    lit,
+    onLitChange,
+  });
 
   const nameOf = (id: string) =>
     rowsOf(data.landmarks).find((l) => l.id === id)?.name ?? 'the landmark';
@@ -89,9 +104,32 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
       onLitChange={onLitChange}
       hovered={hovered}
       onHoverChange={setHovered}
-      canPlace={can('body.places')}
+      canPlace={canPlace}
+      drop={tools.drop}
+      moving={tools.moving}
+      {...(canPlace
+        ? {
+            onDropLandmark: tools.startDrop,
+            onMoveLandmark: tools.toggleMove,
+            onRemoveLandmark: async (id: string, reason: string) => {
+              const name = nameOf(id);
+              const landed = await act(
+                () => remove({ landmarkId: id as Id<'bodyLandmarks'>, reason }),
+                {
+                  title: `Removed · ${name}`,
+                  target: { targetType: 'bodyLandmark', targetId: id },
+                },
+              );
+              // Its card goes with it: nothing is lit that the list no longer holds.
+              if (landed && lit === litId.landmark(id)) onLitChange?.(null);
+              return landed;
+            },
+            ...(can('corpus.placeNames') ? { onPlaceName: tools.placeName } : {}),
+            ...(can('inbox.request') ? { onAddProposal: tools.addProposal } : {}),
+          }
+        : {})}
       onEditLandmark={
-        can('body.places')
+        canPlace
           ? (id, edit) =>
               act(() => update({ landmarkId: id as Id<'bodyLandmarks'>, ...edit }), {
                 title: `Saved · ${'name' in edit ? edit.name : nameOf(id)}`,

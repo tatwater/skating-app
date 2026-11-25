@@ -42,6 +42,8 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/tabs/links/LinksTab.tsx': 'the list queue; sendFor',
   'components/admin/body/tabs/names/NamesTab.tsx': 'the pick store; the list queue; sendFor',
   'components/admin/body/tabs/places/PlacesTab.tsx': 'act (sendFor)',
+  'components/admin/body/tabs/places/useLandmarkTask.tsx':
+    'the landmark tools (drop, move): act (sendFor)',
   'components/admin/body/tabs/shape/ShapeTabRoute.tsx': 'the merge: attempt (sendFor)',
   'components/admin/body/tabs/shape/useBayTask.tsx': 'the bay task: act (sendFor)',
   'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',

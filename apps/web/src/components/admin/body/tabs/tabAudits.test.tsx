@@ -83,6 +83,9 @@ beforeEach(() => {
 
 const inKeys = (node: ReactNode) => <KeysProvider>{node}</KeysProvider>;
 const settle = async () => true;
+/** The landmark tools' entry points (B01-6b): the wiring opens them; here they're only counted. */
+const dropped = vi.fn();
+const moved = vi.fn();
 
 // ── The tabs with every lever ─────────────────────────────────────────────────────────────────
 
@@ -108,10 +111,17 @@ const LEVERS: Record<string, ReactNode> = {
       onSamePlace={() => {}}
       onDecline={settle}
       onEditLandmark={() => {}}
+      onMoveLandmark={moved}
     />
   ),
   'Places, the list': (
-    <PlacesView data={MASCOMA_PLACES} canPlace onLitChange={() => {}} onEditLandmark={() => {}} />
+    <PlacesView
+      data={MASCOMA_PLACES}
+      canPlace
+      onLitChange={() => {}}
+      onEditLandmark={() => {}}
+      onDropLandmark={dropped}
+    />
   ),
   Access: (
     <AccessView
@@ -200,6 +210,7 @@ const PLACES_BARE: PlacesData = {
       kind: 'proposal',
       id: 'ask-bare',
       name: 'the flats',
+      aliases: [],
       point: { lat: 43.64, lng: -72.17 },
       askers: 1,
       asked: null,
@@ -365,8 +376,8 @@ const toldBy = (words: RegExp) => () => toasts.said.length === 1 && words.test(s
 /** Each tab with keys, one of its keys, and how to tell the right tool acted. */
 const KEYED: [string, () => ReactNode, string, () => boolean][] = [
   ['Access', () => LEVERS.Access, 'p', toldBy(/Placing a put-in/)],
-  ['Places', () => LEVERS['Places, the list'], 'l', toldBy(/Dropping a landmark/)],
-  ['a landmark’s card in Places', () => LEVERS.Places, 'm', toldBy(/Moving a landmark/)],
+  ['Places', () => LEVERS['Places, the list'], 'l', () => dropped.mock.calls.length === 1],
+  ['a landmark’s card in Places', () => LEVERS.Places, 'm', () => moved.mock.calls.length === 1],
   [
     'Hazards',
     () => (
@@ -413,6 +424,8 @@ describe('a tab’s keys work however the tab is reached', () => {
   beforeEach(() => {
     marked.mockClear();
     overridden.mockClear();
+    dropped.mockClear();
+    moved.mockClear();
   });
   for (const [tab, node, key, acted] of KEYED) {
     it.each(ARRIVALS)(`${tab}: ${key.toUpperCase()} after %s`, async (_way, arrive) => {
@@ -456,16 +469,25 @@ describe('a tab’s key answers only while its control is drawn', () => {
 describe('a landmark’s card hands focus back to its row', () => {
   function PlacesLit() {
     const [lit, setLit] = useState<string | null>(SELECTED_UPPER);
-    return <PlacesView data={MASCOMA_PLACES} lit={lit} canPlace onLitChange={setLit} />;
+    return (
+      <PlacesView
+        data={MASCOMA_PLACES}
+        lit={lit}
+        canPlace
+        onLitChange={setLit}
+        onDropLandmark={dropped}
+      />
+    );
   }
 
   it('so the tab’s keys answer once the card is gone', async () => {
+    dropped.mockClear();
     const user = userEvent.setup();
     render(<InConsole panel={<PlacesLit />} />);
     await user.keyboard('{Escape}');
     expect(document.activeElement).toHaveAttribute('data-landmark-id', 'lm-upper');
     await user.keyboard('l');
-    expect(said()).toEqual([expect.stringMatching(/Dropping a landmark/)]);
+    expect(dropped).toHaveBeenCalledTimes(1);
   });
 });
 

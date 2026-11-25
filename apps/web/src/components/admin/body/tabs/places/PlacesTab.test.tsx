@@ -4,8 +4,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Body › Places as the console mounts it: six reads (mocked at the Convex hooks), five writes, each
- * behind its capability and announced for undo — the map tools drawn only as entry points that say
- * they aren't here yet, and every read's state said in its place.
+ * behind its capability and announced for undo, and every read's state said in its place. The map's
+ * landmark tools are `LandmarkTools.wiring.test.tsx`'s, through the real console route.
  */
 
 const mocks = vi.hoisted(() => ({
@@ -51,6 +51,8 @@ const router = vi.hoisted(() => ({ navigate: vi.fn() }));
 vi.mock('@tanstack/react-router', async (original) => ({
   ...(await original<typeof import('@tanstack/react-router')>()),
   useNavigate: () => router.navigate,
+  useSearch: () => ({}),
+  useRouter: () => ({ history: { push: vi.fn() } }),
 }));
 vi.mock('@/components/kit/toast', async (original) => ({
   ...(await original<typeof import('@/components/kit/toast')>()),
