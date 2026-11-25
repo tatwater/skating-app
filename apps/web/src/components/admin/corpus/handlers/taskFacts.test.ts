@@ -31,6 +31,7 @@ describe('the facts both handlers say', () => {
 
   it('names the neighbors, an unnamed one as unnamed water', () => {
     expect(neighborsWords([])).toBe('None on file');
+    expect(neighborsWords(null)).toBe('Not computed yet');
     expect(neighborsWords([{ name: 'Taylor Pond' }, { name: '' }])).toBe(
       'Taylor Pond · Unnamed water',
     );

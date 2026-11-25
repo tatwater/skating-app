@@ -125,7 +125,9 @@ export const NotRecorded: Story = {
       // Catalogs and Queued: two facts not recorded; no agreement is claimed.
       await expect(s.getAllByText('Not recorded until the next campaign')).toHaveLength(2);
       await expect(s.queryByText(/agree it is one body/)).toBeNull();
-      await expect(s.getByText('None on file')).toBeVisible();
+      // Neighbors: the geometry facts not computed yet, never read as none.
+      await expect(s.getByText('Not computed yet')).toBeVisible();
+      await expect(s.queryByText('None on file')).toBeNull();
       // Each spelling wears its one catalog, written out with no “via”.
       await expect(s.getByText('USGS Geographic Names')).toBeVisible();
       await expect(s.getByText('OpenStreetMap')).toBeVisible();

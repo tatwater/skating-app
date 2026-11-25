@@ -61,12 +61,12 @@ export const BASIN = {
 
 /**
  * The same task on dev today: a body loaded before the campaign that records each spelling's
- * catalogs — one catalog per spelling, no campaign on file, no neighbors in the geometry facts.
+ * catalogs — one catalog per spelling, no campaign on file, its geometry facts not computed yet.
  */
 export const BASIN_NOT_RECORDED = {
   ...BASIN,
   raisedBy: null,
-  neighbors: [],
+  neighbors: null,
   names: BASIN.names.map((n) => ({
     ...n,
     sources: n.sources.slice(0, 1),

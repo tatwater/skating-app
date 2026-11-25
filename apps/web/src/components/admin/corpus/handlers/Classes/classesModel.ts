@@ -6,8 +6,8 @@ import {
 } from '@skating/core';
 
 import { CATALOG_TAGS } from '../../../body/tabs/names/namesModel';
+import type { CorpusItemOf } from '../../corpusTypes';
 import { acresText, raisedAgainWords, TASK_WORDS } from '../taskFacts';
-import type { CorpusItem } from '../taskItem';
 import { CLASS_WORDS as W } from './classWords';
 
 /**
@@ -17,7 +17,7 @@ import { CLASS_WORDS as W } from './classWords';
  * recorded* — the ladder still draws, without its catalog columns.
  */
 
-export type ClassesItem = Extract<CorpusItem, { lane: 'classConflicts' }>;
+export type ClassesItem = CorpusItemOf<'classConflicts'>;
 export type ClassRung = ClassesItem['ladder'][number];
 
 export type ClassLever = {
@@ -126,10 +126,11 @@ export function headLine(body: ClassesItem['body']): string {
     .join(' · ');
 }
 
-/** *Depth*: the depth on file and where it came from, or none. */
+/** *Depth*: the deepest measure on file ("2.4 m max", else "mean") and where it came from, or none. */
 export function depthWords(depth: ClassesItem['depth']): string {
   if (depth === null) return W.noneOnFile;
-  const m = W.meters(depth.meters.toLocaleString('en-US', { maximumFractionDigits: 1 }));
+  const figure = W.meters(depth.meters.toLocaleString('en-US', { maximumFractionDigits: 1 }));
+  const m = depth.measure === undefined ? figure : `${figure} ${W.measure[depth.measure]}`;
   return depth.source === '' ? m : `${m} · ${depth.source}`;
 }
 
@@ -137,9 +138,13 @@ export function depthWords(depth: ClassesItem['depth']): string {
 export const nameWords = (body: ClassesItem['body']): string =>
   body.name.trim() === '' ? W.noName : body.name;
 
-/** *Nearest*: the first neighbor the geometry facts name. */
+/** *Nearest*: the first neighbor the geometry facts name; *not computed yet* before they are. */
 export const nearestWords = (neighbors: ClassesItem['neighbors']): string =>
-  neighbors[0] === undefined ? W.noneOnFile : waterBodyDisplayName(neighbors[0].name);
+  neighbors === null
+    ? TASK_WORDS.notComputed
+    : neighbors[0] === undefined
+      ? W.noneOnFile
+      : waterBodyDisplayName(neighbors[0].name);
 
 /** The *asked again* note (D305): a catalog's class changed since it was settled. */
 export const raisedAgainNote = (item: Pick<ClassesItem, 'raisedAgain'>, timeZone?: string) =>

@@ -28,6 +28,8 @@ export const CLASS_WORDS = {
   codeNotRecorded: 'its code and area not recorded until the next campaign',
   acres: (ac: string) => `${ac} ac`,
   meters: (m: string) => `${m} m`,
+  /** Which depth is on file: the maximum, else the mean (the Water tab's two columns). */
+  measure: { max: 'max', mean: 'mean' },
   /** What changed when a settled class is asked again (D305). */
   classChanged: 'a catalog’s class',
   bar: 'Class conflict',
