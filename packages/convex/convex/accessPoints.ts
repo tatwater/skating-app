@@ -1247,6 +1247,11 @@ export async function setPutInAccessImpl(
     );
   }
 
+  // A link that will be walked fresh gets its own id, carried by the route it schedules (below).
+  const walked = Boolean(args.parkingAreaId && !args.clearParking && approachRouted === false);
+  const approachLinkId = walked
+    ? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    : undefined;
   await ctx.db.patch(args.putInId, {
     parkingAreaId,
     approachMeters,
@@ -1254,6 +1259,7 @@ export async function setPutInAccessImpl(
     approachRouted,
     approachPath,
     approachKindOverride: override,
+    approachLinkId,
   });
 
   // **The denormalization has two writers, not one.** Everything this mutation touches is an input
@@ -1287,10 +1293,11 @@ export async function setPutInAccessImpl(
 
   // A lot linked (or put back by an undo) is walked fresh, in the background (D300): one ORS
   // `foot-hiking` leg, which lands only if this link still stands when it answers.
-  if (args.parkingAreaId && !args.clearParking) {
+  if (walked && args.parkingAreaId && approachLinkId !== undefined) {
     await ctx.scheduler.runAfter(0, internal.accessPoints.routeLinkedApproach, {
       putInId: args.putInId,
       parkingAreaId: args.parkingAreaId,
+      linkId: approachLinkId,
     });
   }
 }
@@ -1320,10 +1327,20 @@ export function relinkRefusalOf(
 
 /** The pair a link's walk is routed between, as it stands — or `null` when the link is gone. */
 export const linkedPair = internalQuery({
-  args: { putInId: v.id('putIns'), parkingAreaId: v.id('parkingAreas') },
-  handler: async (ctx, { putInId, parkingAreaId }) => {
+  args: {
+    putInId: v.id('putIns'),
+    parkingAreaId: v.id('parkingAreas'),
+    /** The link asked for: a newer link since, and there is nothing to route for this one. */
+    linkId: v.optional(v.string()),
+  },
+  handler: async (ctx, { putInId, parkingAreaId, linkId }) => {
     const putIn = await ctx.db.get(putInId);
-    if (!putIn || putIn.parkingAreaId !== parkingAreaId || putIn.approachRouted !== false) {
+    if (
+      !putIn ||
+      putIn.parkingAreaId !== parkingAreaId ||
+      putIn.approachRouted !== false ||
+      (linkId !== undefined && putIn.approachLinkId !== linkId)
+    ) {
       return null;
     }
     const lot = await ctx.db.get(parkingAreaId);
@@ -1370,14 +1387,19 @@ export async function fetchFootHikingLeg(from: LatLng, to: LatLng): Promise<Appr
  * by `setPutInAccessImpl` whenever a lot is linked — from the console, the old editor or an undo.
  */
 export const routeLinkedApproach = internalAction({
-  args: { putInId: v.id('putIns'), parkingAreaId: v.id('parkingAreas') },
-  handler: async (ctx, { putInId, parkingAreaId }) => {
-    const pair = await ctx.runQuery(internal.accessPoints.linkedPair, { putInId, parkingAreaId });
+  args: { putInId: v.id('putIns'), parkingAreaId: v.id('parkingAreas'), linkId: v.string() },
+  handler: async (ctx, { putInId, parkingAreaId, linkId }) => {
+    const pair = await ctx.runQuery(internal.accessPoints.linkedPair, {
+      putInId,
+      parkingAreaId,
+      linkId,
+    });
     if (pair === null) return;
     const leg = await fetchFootHikingLeg(pair.from, pair.to);
     if (leg === null) return;
     await ctx.runMutation(internal.accessPoints.storeRoutedApproach, {
       putInId,
+      linkId,
       parkingAreaId,
       from: pair.from,
       to: pair.to,
@@ -1390,7 +1412,8 @@ export const routeLinkedApproach = internalAction({
 
 /**
  * Store a routed walk on the link it was asked for — **only while that link stands as it was asked**:
- * the same lot, both ends where they were, and the walk still the flagged straight line the link
+ * the same link (its `approachLinkId`, so not an earlier link to the same lot), the same lot, both
+ * ends where they were, and the walk still the flagged straight line the link
  * wrote. A later link, an unlink, a moved lot or launch, or another answer already landed, and this
  * one is dropped, so a slow answer never overwrites a newer link. No audit row: it is the link's own
  * follow-up, and a row here would overtake the link's undo.
@@ -1398,6 +1421,7 @@ export const routeLinkedApproach = internalAction({
 export const storeRoutedApproach = internalMutation({
   args: {
     putInId: v.id('putIns'),
+    linkId: v.string(),
     parkingAreaId: v.id('parkingAreas'),
     from: latLng,
     to: latLng,
@@ -1413,6 +1437,7 @@ export const storeRoutedApproach = internalMutation({
       !putIn ||
       !lot ||
       putIn.parkingAreaId !== args.parkingAreaId ||
+      putIn.approachLinkId !== args.linkId ||
       putIn.approachRouted !== false ||
       !same(putIn.coord, args.to) ||
       !same(lot.coord, args.from)

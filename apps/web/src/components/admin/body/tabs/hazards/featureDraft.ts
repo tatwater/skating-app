@@ -222,7 +222,31 @@ export function withPaste(draft: FeatureDraft, paste: string): FeatureDraft {
       refusal: `A known feature is pasted as a Polygon, a MultiPolygon or a LineString, not a ${g.type}.`,
     };
   }
+  if (!wellFormed(g)) {
+    return {
+      ...draft,
+      paste,
+      geometry: null,
+      refusal: `That ${g.type} is missing its coordinates, or some aren’t numbers.`,
+    };
+  }
   return { ...draft, paste, geometry: g, refusal: null };
+}
+
+const isPosition = (p: unknown): boolean =>
+  Array.isArray(p) && p.length >= 2 && p.every((n) => typeof n === 'number' && Number.isFinite(n));
+const isLine = (l: unknown): boolean => Array.isArray(l) && l.every(isPosition);
+const isRings = (r: unknown): boolean => Array.isArray(r) && r.length > 0 && r.every(isLine);
+
+/**
+ * Whether a pasted geometry has the coordinates its type says, positions of finite numbers — so the
+ * shape checks after it read a structure, never a missing one (`{"type":"LineString"}`).
+ */
+function wellFormed(g: GeoJSON.Polygon | GeoJSON.MultiPolygon | GeoJSON.LineString): boolean {
+  const c = (g as { coordinates?: unknown }).coordinates;
+  if (g.type === 'LineString') return isLine(c);
+  if (g.type === 'Polygon') return isRings(c);
+  return Array.isArray(c) && c.length > 0 && c.every(isRings);
 }
 
 /** The shape's kind as saved: a pasted line is a line, any other paste an outline. */

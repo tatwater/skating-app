@@ -1159,7 +1159,11 @@ const undoParkingArea: UndoHandler = {
         const lake = await resolveSurvivor(ctx, id);
         if (lake !== null && !lakes.includes(lake._id)) lakes.push(lake._id);
       }
-      if (lakes.length === 0) throw new ConvexError('Every lake this lot served is gone.');
+      // A lot that served lakes and has none left would come back serving nothing it served; one
+      // placed serving none comes back as it was.
+      if (lakes.length === 0 && (m.waterBodyIds ?? []).length > 0) {
+        throw new ConvexError('Every lake this lot served is gone.');
+      }
       await setOfficialParkingImpl(ctx, actor, {
         coord: m.coord,
         ...(m.name !== undefined ? { name: m.name } : {}),

@@ -368,6 +368,24 @@ describe('undo: a lot placed by hand (D300)', () => {
     expect(links.map((l) => l.waterBodyId)).toEqual([survivor]);
   });
 
+  test('a lot placed serving no lake comes back serving none', async () => {
+    const t = convexTest(schema, modules);
+    await seedBody(t);
+    const mod = await seedUser(t, 'mod');
+    const lotId = await mod.as.mutation(api.accessPoints.setOfficialParking, {
+      coord: { lat: 0.5, lng: -0.001 },
+      name: 'Lonely lot',
+      amenities: [],
+      waterBodyIds: [],
+    });
+    const row = await newestOn(t, 'parkingArea', lotId);
+    await mod.as.mutation(api.undo.run, { actionId: row._id, reason: 'wrong lot' });
+    const removal = await newestOn(t, 'parkingArea', lotId);
+    await mod.as.mutation(api.undo.run, { actionId: removal._id });
+    const lots = await t.run((ctx) => ctx.db.query('parkingAreas').collect());
+    expect(lots.map((l) => l.name)).toEqual(['Lonely lot']);
+  });
+
   test('refused once a put-in links to it, or a skater filed an alert on it', async () => {
     const linked = await lotPlaced();
     const putInId = await linked.mod.as.mutation(api.putIns.setOfficial, {
@@ -597,6 +615,10 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
   }
 
   /** An ORS answer: `meters` walked, `ascent` climbed, along `n` three-ordinate positions. */
+  /** The link id a console link minted, which its route carries. */
+  const linkIdOf = async (t: T, putInId: Id<'putIns'>) =>
+    (await t.run((ctx) => ctx.db.get(putInId)))?.approachLinkId ?? 'none';
+
   function orsAnswer(meters: number, ascent: number, n = 3) {
     const coordinates = Array.from({ length: n }, (_, i) => [
       -0.001 + (0.001 * i) / (n - 1),
@@ -621,7 +643,11 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
     expect(await scheduledNames(t)).toContain('accessPoints:routeLinkedApproach');
     vi.stubEnv('ORS_API_KEY', 'test-key');
     const fetchMock = stubOrs(200, orsAnswer(312.4, 6.6));
-    await t.action(internal.accessPoints.routeLinkedApproach, { putInId, parkingAreaId: lotId });
+    await t.action(internal.accessPoints.routeLinkedApproach, {
+      putInId,
+      parkingAreaId: lotId,
+      linkId: await linkIdOf(t, putInId),
+    });
     expect(fetchMock).toHaveBeenCalledOnce();
     const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://api.openrouteservice.org/v2/directions/foot-hiking/geojson');
@@ -645,7 +671,11 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
     const { t, putInId, lotId } = await linked(-0.02);
     vi.stubEnv('ORS_API_KEY', 'test-key');
     stubOrs(200, orsAnswer(2_600, 40, 12));
-    await t.action(internal.accessPoints.routeLinkedApproach, { putInId, parkingAreaId: lotId });
+    await t.action(internal.accessPoints.routeLinkedApproach, {
+      putInId,
+      parkingAreaId: lotId,
+      linkId: await linkIdOf(t, putInId),
+    });
     const row = await t.run((ctx) => ctx.db.get(putInId));
     expect(row?.approachRouted).toBe(true);
     expect(row?.approachPath?.length).toBeGreaterThan(1);
@@ -664,7 +694,11 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
       vi.unstubAllEnvs();
       if (key) vi.stubEnv('ORS_API_KEY', key);
       const fetchMock = stubOrs(status, body);
-      await t.action(internal.accessPoints.routeLinkedApproach, { putInId, parkingAreaId: lotId });
+      await t.action(internal.accessPoints.routeLinkedApproach, {
+        putInId,
+        parkingAreaId: lotId,
+        linkId: await linkIdOf(t, putInId),
+      });
       if (!key) expect(fetchMock).not.toHaveBeenCalled();
       expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachRouted).toBe(false);
     }
@@ -675,8 +709,49 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
       'fetch',
       vi.fn(async () => Promise.reject(new Error('offline'))),
     );
-    await t.action(internal.accessPoints.routeLinkedApproach, { putInId, parkingAreaId: lotId });
+    await t.action(internal.accessPoints.routeLinkedApproach, {
+      putInId,
+      parkingAreaId: lotId,
+      linkId: await linkIdOf(t, putInId),
+    });
     expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachRouted).toBe(false);
+  });
+
+  test('an answer for an earlier link to the same lot never lands on the newer one', async () => {
+    const { t, waterBodyId, mod, putInId, lotId } = await linked();
+    const first = await linkIdOf(t, putInId);
+    const pair = await t.query(internal.accessPoints.linkedPair, { putInId, parkingAreaId: lotId });
+    // Switched to B, then back to A (as an undo does) while A's first answer is still out.
+    const other = await mod.as.mutation(api.accessPoints.setOfficialParking, {
+      coord: { lat: 0.5, lng: -0.0005 },
+      amenities: [],
+      waterBodyIds: [waterBodyId],
+    });
+    await mod.as.mutation(api.accessPoints.setPutInAccess, { putInId, parkingAreaId: other });
+    await mod.as.mutation(api.accessPoints.setPutInAccess, { putInId, parkingAreaId: lotId });
+    const again = await linkIdOf(t, putInId);
+    expect(again).not.toBe(first);
+    const answer = {
+      putInId,
+      parkingAreaId: lotId,
+      from: pair?.from ?? { lat: 0, lng: 0 },
+      to: pair?.to ?? { lat: 0, lng: 0 },
+    };
+    expect(
+      await t.mutation(internal.accessPoints.storeRoutedApproach, {
+        ...answer,
+        linkId: first,
+        meters: 111,
+      }),
+    ).toBe(false);
+    expect(
+      await t.mutation(internal.accessPoints.storeRoutedApproach, {
+        ...answer,
+        linkId: again,
+        meters: 222,
+      }),
+    ).toBe(true);
+    expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachMeters).toBe(222);
   });
 
   test('a stale answer never overwrites a newer link', async () => {
@@ -692,6 +767,7 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
     await mod.as.mutation(api.accessPoints.setPutInAccess, { putInId, parkingAreaId: other });
     const stored = await t.mutation(internal.accessPoints.storeRoutedApproach, {
       putInId,
+      linkId: 'the first link',
       parkingAreaId: lotId,
       from: pair?.from ?? { lat: 0, lng: 0 },
       to: pair?.to ?? { lat: 0, lng: 0 },
@@ -711,6 +787,7 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
     });
     const args = {
       putInId,
+      linkId: await linkIdOf(t, putInId),
       parkingAreaId: other,
       from: current?.from ?? { lat: 0, lng: 0 },
       to: current?.to ?? { lat: 0, lng: 0 },
@@ -727,6 +804,10 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
     expect(
       await t.query(internal.accessPoints.linkedPair, { putInId, parkingAreaId: other }),
     ).toBeNull();
-    await t.action(internal.accessPoints.routeLinkedApproach, { putInId, parkingAreaId: other });
+    await t.action(internal.accessPoints.routeLinkedApproach, {
+      putInId,
+      parkingAreaId: other,
+      linkId: 'gone',
+    });
   });
 });

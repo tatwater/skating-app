@@ -186,6 +186,16 @@ describe('the paste', () => {
     expect(saveBlocker(paste('{"type":"Point","coordinates":[0,0]}'))).toBe(
       'A known feature is pasted as a Polygon, a MultiPolygon or a LineString, not a Point.',
     );
+    // A geometry without its coordinates says so, and never reaches the shape checks.
+    for (const text of [
+      '{"type":"LineString"}',
+      '{"type":"Polygon","coordinates":[]}',
+      '{"type":"MultiPolygon","coordinates":[[]]}',
+      '{"type":"LineString","coordinates":[[0,"a"],[1,1]]}',
+    ]) {
+      expect(() => saveBlocker(paste(text))).not.toThrow();
+      expect(saveBlocker(paste(text))).toMatch(/missing its coordinates/);
+    }
     const cleared = withPaste(paste('{'), '  ');
     expect(cleared.refusal).toBeNull();
     expect(saveBlocker(cleared)).toBe('Nothing pasted yet');
