@@ -13,6 +13,7 @@ import {
   MIN_SURFACE_AREA_SQM,
   meetsAreaFloor,
   parseOsmDepthMeters,
+  toCanonicalBody,
   transformFeatures,
 } from './transform';
 import type { CanonicalBody, OsmWaterFeature } from './types';
@@ -70,6 +71,55 @@ function importedBody(feature: OsmWaterFeature): CanonicalBody {
   if (body === BELOW_AREA_FLOOR) throw new Error('expected a body, got an area-floor skip');
   return body;
 }
+
+describe('toCanonicalBody: the claims and refusals on the wire (B01-6a)', () => {
+  const geometry = waterFeature({}).geometry as Polygon;
+  const base = {
+    source: 'nhd' as const,
+    externalId: 'n1',
+    name: 'Test Pond',
+    type: 'lakePond' as const,
+    geometry,
+  };
+
+  it('emits the refusals the merge passes, each with its token and area', () => {
+    const record = toCanonicalBody({
+      ...base,
+      classRefusals: [{ source: 'osm', token: 'osm:natural=water', areaSqM: 12_000 }],
+    });
+    expect(record.classRefusals).toEqual([
+      { source: 'osm', token: 'osm:natural=water', areaSqM: 12_000 },
+    ]);
+  });
+
+  it('emits `[]` when the merge says none refused — never omitted, unlike the claims', () => {
+    expect(toCanonicalBody({ ...base, classRefusals: [] })).toHaveProperty('classRefusals', []);
+  });
+
+  it('omits it for a caller that can’t know (the OSM-only lane), so the import keeps what is stored', () => {
+    expect(toCanonicalBody(base)).not.toHaveProperty('classRefusals');
+    expect(importedBody(waterFeature({ name: 'Test Pond' }))).not.toHaveProperty('classRefusals');
+  });
+
+  it('carries each class claim’s token and area, and each name claim’s catalogs', () => {
+    const record = toCanonicalBody({
+      ...base,
+      classClaims: [{ source: 'nhd', value: 'wetland', token: 'nhd:fcode=46600', areaSqM: 28_000 }],
+      nameClaims: [
+        { source: 'nhd', value: 'Test Pond', sources: ['nhd', '3dhp'] },
+        { source: 'user', value: 'Our Pond' },
+      ],
+    });
+    expect(record.classClaims).toEqual([
+      { source: 'nhd', value: 'wetland', token: 'nhd:fcode=46600', areaSqM: 28_000 },
+    ]);
+    expect(record.nameClaims).toEqual([
+      { source: 'nhd', value: 'Test Pond', sources: ['nhd', '3dhp'] },
+      { source: 'user', value: 'Our Pond' },
+    ]);
+    expect(record.nameClaims?.[1]).not.toHaveProperty('sources');
+  });
+});
 
 describe('featureToCanonicalBody', () => {
   it('classifies, simplifies, and derives bbox/centroid/area from the stored geometry', () => {

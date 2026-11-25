@@ -42,6 +42,7 @@ import {
   writeAudit,
 } from './audit';
 import { hasCapability } from './auth';
+import { goneBecause, reasonOfLane, reopenTask } from './corpusTasks';
 import { flagSubject } from './flagSubject';
 import {
   closeFlagsUnder,
@@ -1214,6 +1215,81 @@ const undoRequestReopen: UndoHandler = {
   },
 };
 
+// ── The Corpus tasks: a settled intake question (B01-6a) ───────────────────────────────────────────────────
+
+/** A settle whose task no row records (none was filed, or it was written by hand). */
+export const SETTLE_NOT_FOUND = 'Nothing records the question this settled.';
+/** The question the settle answered has since been asked again — a campaign's new evidence (D305). */
+export const SETTLE_ASKED_AGAIN = 'This question was asked again since; decide it from its lane.';
+/** The task the settle decided is no longer decided by it (it left with its body, or was reopened). */
+export const SETTLE_CLOSED = 'This question has closed since, so there is nothing to reopen.';
+
+/**
+ * Whether a settle still stands: its task decided by it, its body still in the corpus and still
+ * recording this decision as the reason's settle, and no open task asking the same question again.
+ * The offer's check (History, the toast), case for case where the reopen itself (`reopenTask`, the
+ * writer's) answers `'none'` or `'overtaken'` — so History never offers an undo the run refuses.
+ */
+export function settleStandsRefusal(
+  row: Doc<'moderationActions'>,
+  task: Doc<'corpusTasks'> | null,
+  body: Doc<'waterBodies'> | null,
+  askedAgain: boolean,
+): string | null {
+  if (task === null) return SETTLE_NOT_FOUND;
+  if (task.status !== 'decided' || body === null || goneBecause(body) !== null) {
+    return SETTLE_CLOSED;
+  }
+  const reason = reasonOfLane(task.lane);
+  const entry = (body.reviewSettled ?? []).find((s) => s.reason === reason);
+  return entry?.actionId !== row._id || askedAgain ? SETTLE_ASKED_AGAIN : null;
+}
+
+/**
+ * settle_review_reason → the question asked again: the task reopens, its reason back on the body and
+ * its settled entry gone (`reopenTask`, the writer's), recorded as `unsettle_review_reason`. A *Keep*
+ * changed nothing else, so the reopen is the whole undo. Refused once the question moved on without
+ * it — a later campaign asked it again on new evidence (D305), or the body left with its task; a
+ * later write on the body overtakes it as any row is overtaken.
+ */
+const undoSettle: UndoHandler = {
+  undoTakesAway: () => UNDO_POLICY.unsettle_review_reason.takesAway(),
+  // The task (a few ids and literals), the body, and one probe for an open task on the same key.
+  refusalCost: () => ({ bytes: ROW_MAX.waterBody + 2 * ROW_MAX.small, reads: 3 }),
+  refusal: async (ctx, row, read) => {
+    const [task] = await read.take('small', 1, () =>
+      ctx.db
+        .query('corpusTasks')
+        .withIndex('by_decision_action', (q) => q.eq('decisionActionId', row._id))
+        .take(1),
+    );
+    if (task === undefined || task.status !== 'decided') {
+      return settleStandsRefusal(row, task ?? null, null, false);
+    }
+    const [again] = await read.take('small', 1, () =>
+      ctx.db
+        .query('corpusTasks')
+        .withIndex('by_key', (q) => q.eq('key', task.key).eq('status', 'open'))
+        .take(1),
+    );
+    const body = await read.row('waterBody', task.waterBodyId);
+    return settleStandsRefusal(row, task, body, again !== undefined);
+  },
+  run: async ({ ctx, actor, row, reason }) => {
+    const outcome = await reopenTask(ctx, row._id);
+    if (outcome === 'overtaken') throw new ConvexError(SETTLE_ASKED_AGAIN);
+    if (outcome === 'none') throw new ConvexError(SETTLE_NOT_FOUND);
+    await writeAudit(ctx, {
+      actorId: actor._id,
+      action: 'unsettle_review_reason',
+      targetType: row.targetType,
+      targetId: row.targetId,
+      reason,
+      metadata: { taskId: meta(row).taskId, reviewReason: meta(row).reviewReason },
+    });
+  },
+};
+
 /** Verb-level handlers (verbs only this area writes). */
 export const CORPUS_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   grant_role: undoRoleChange,
@@ -1239,6 +1315,7 @@ export const CORPUS_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>
   unsuppress_recurrence: undoUnsuppress,
   merge_hazards: undoMerge,
   merge_waterbody: undoBodyMerge,
+  settle_review_reason: undoSettle,
 };
 
 /** `hide` / `remove` / `restore` for the target kinds this area owns. */

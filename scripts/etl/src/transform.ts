@@ -155,9 +155,19 @@ export function toCanonicalBody(input: {
   confidence?: CanonicalBody['confidence'];
   reviewReasons?: readonly string[] | undefined;
   /** Every publisher's name, the losers included — see `CanonicalBody.nameClaims`. */
-  nameClaims?: readonly { source: string; value: string }[] | undefined;
-  /** Every catalog's class (B01-3d) — see `CanonicalBody.classClaims`. */
-  classClaims?: readonly { source: string; value: string }[] | undefined;
+  nameClaims?:
+    | readonly { source: string; value: string; sources?: readonly string[] | undefined }[]
+    | undefined;
+  /** Every catalog's class (B01-3d), with its token and area (B01-6a) — see `CanonicalBody.classClaims`. */
+  classClaims?:
+    | readonly { source: string; value: string; token?: string; areaSqM?: number }[]
+    | undefined;
+  /**
+   * The catalogs that refused this water (B01-6a) — see `CanonicalBody.classRefusals`. The merge
+   * always passes it, `[]` when none refused; a caller that can't know (the OSM-only lane sees one
+   * catalog) leaves it out, and the record omits it.
+   */
+  classRefusals?: readonly { source: string; token: string; areaSqM?: number }[] | undefined;
 }): CanonicalBody {
   const { stats, interiorPoint, polygon, centroid } = prepareBodyGeometry(input.geometry);
   return {
@@ -187,8 +197,21 @@ export function toCanonicalBody(input: {
     ...(input.reviewReasons?.length ? { reviewReasons: [...input.reviewReasons] } : {}),
     // Omitted rather than stored empty, like every other optional above: an unnamed body has no
     // claims, and a row carrying `[]` reads as "we looked and found none" rather than "no name".
-    ...(input.nameClaims?.length ? { nameClaims: input.nameClaims.map((c) => ({ ...c })) } : {}),
+    ...(input.nameClaims?.length
+      ? {
+          nameClaims: input.nameClaims.map(({ sources, ...c }) => ({
+            ...c,
+            ...(sources !== undefined ? { sources: [...sources] } : {}),
+          })),
+        }
+      : {}),
     ...(input.classClaims?.length ? { classClaims: input.classClaims.map((c) => ({ ...c })) } : {}),
+    // **Emitted empty, unlike the claims above** (B01-6a): `[]` is the merge's answer — it looked and
+    // no catalog refused — which the import stores as such, while an absent list is a record that
+    // doesn't know (an older loader's, or the OSM-only lane's), and the import keeps what is stored.
+    ...(input.classRefusals !== undefined
+      ? { classRefusals: input.classRefusals.map((r) => ({ ...r })) }
+      : {}),
     ...(interiorPoint ? { interiorPoint } : {}),
     ...stats,
   };
