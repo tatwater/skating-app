@@ -478,6 +478,14 @@ describe('the list’s keys and pointer', () => {
     expect(tab).toHaveFocus();
   });
 
+  it('/ from the rows goes to the search too: it is no type-ahead letter', () => {
+    h.search = { lane: 'name-conflicts' };
+    mount();
+    act(() => grid().focus());
+    fireEvent.keyDown(grid(), { key: '/' });
+    expect(searchbox()).toHaveFocus();
+  });
+
   it('a press on a row opens it', () => {
     const seen = goes();
     h.search = { lane: 'name-conflicts' };

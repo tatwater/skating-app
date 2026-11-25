@@ -175,6 +175,8 @@ export function TaskTable({
       return;
     }
     if (event.key.length !== 1) return;
+    // / is the page's (to the search), never a type-ahead letter.
+    if (event.key === '/') return;
     // G and ? belong to the keyboard layer unless a type-ahead run is under way.
     if (!running && /^[g?]$/i.test(event.key)) return;
     event.preventDefault();
