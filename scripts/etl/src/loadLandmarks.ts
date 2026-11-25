@@ -28,6 +28,7 @@ import {
   type TransformSummary,
   withOneRetry,
 } from './landmarkLines';
+import { landmarkLoadScope } from './runScopes';
 
 const DEFAULT_INPUT = join(
   fileURLToPath(new URL('..', import.meta.url)),
@@ -110,6 +111,8 @@ function main(): void {
     target,
     call: convexRun,
     stages: [],
+    // What the match it loads covered (D218).
+    scope: landmarkLoadScope(summary),
     notes: [
       'Matched to bodies offline against landmarks:listBodyGeometry; written per body by landmarks:importBatch.',
     ],

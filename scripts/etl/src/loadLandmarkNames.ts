@@ -8,11 +8,13 @@
  * left it (the mutation's rules, tested there). A few hundred rows, so one call per hundred.
  */
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import type { TransformSummary } from './landmarkLines';
+import { landmarkLoadScope } from './runScopes';
 
 const DEFAULT_INPUT = join(
   fileURLToPath(new URL('..', import.meta.url)),
@@ -23,6 +25,16 @@ const DEFAULT_INPUT = join(
 const BATCH = 100;
 
 type Counts = { created: number; refreshed: number; unchanged: number; decidedHeld: number };
+
+/** The match's `summary.json`, or `undefined` when it is absent or unreadable — never a throw. */
+function readSummary(path: string): TransformSummary | undefined {
+  if (!existsSync(path)) return undefined;
+  try {
+    return JSON.parse(readFileSync(path, 'utf8')) as TransformSummary;
+  } catch {
+    return undefined;
+  }
+}
 
 function main(): void {
   const args = process.argv.slice(2);
@@ -50,6 +62,8 @@ function main(): void {
     target,
     call: convexRun,
     stages: [],
+    // What the match that left these names covered (D218), from its summary beside them.
+    scope: landmarkLoadScope(readSummary(join(dirname(inputPath), 'summary.json'))),
     dryRun: !apply,
   });
   logger.start();

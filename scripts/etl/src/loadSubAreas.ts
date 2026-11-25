@@ -107,6 +107,8 @@ function main(): void {
     campaignId: campaignId ?? found?.manifest.campaignId,
     target,
     stages: found?.manifest.stages ?? [],
+    // The bays the merge emitted cover what the merge did (D218); with no manifest, not recorded.
+    ...(found?.manifest.scope !== undefined && { scope: found.manifest.scope }),
     call: convexRun,
     dryRun: !apply,
     notes: [
