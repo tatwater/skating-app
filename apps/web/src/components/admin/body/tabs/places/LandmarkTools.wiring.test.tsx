@@ -281,6 +281,27 @@ describe('dropping a landmark', () => {
     expect(mocks.writes).toEqual([]);
   });
 
+  it('Esc in a field leaves the field and keeps the drop; the next Esc leaves the card', async () => {
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await user.click(await screen.findByRole('button', { name: /Drop a landmark/ }));
+    const name = within(card()).getAllByRole('textbox')[0] as HTMLElement;
+    await user.click(name);
+    await user.type(name, 'Shaker cove');
+    await user.keyboard('{Escape}');
+    expect(card()).toBeVisible();
+    expect(name).toHaveValue('Shaker cove');
+    expect(name).not.toHaveFocus();
+    expect(mocks.claim).not.toBeNull();
+    // Focus is on the card now, outside a field: Esc goes back.
+    within(card())
+      .getByRole('button', { name: /Back to landmarks/ })
+      .focus();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('region', { name: 'Back to landmarks' })).toBeNull();
+    expect(mocks.writes).toEqual([]);
+  });
+
   it('a viewer who can’t place landmarks is offered none of the tools', async () => {
     mocks.denied = new Set(['body.places']);
     render(<Mounted />);

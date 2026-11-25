@@ -30,7 +30,7 @@ import { formatPoint } from './placesModel';
  * *Add to the map*. The map holds the point tool meanwhile: a click places the point, and another
  * click or a drag moves it. An emailed name or a skater's proposal arrives here filled, its note
  * saying what the save answers. ⏎ in the name, or ⌘S anywhere in the card, adds it; the card's head
- * (or Esc) leaves without saving.
+ * (or Esc, from outside a field — in one it only leaves the field) leaves without saving.
  *
  * Props only: the tab holds the draft (`landmarkDraft`) and the map's claim.
  */
@@ -44,6 +44,9 @@ export interface LandmarkDropProps {
   onSave: () => void;
   onDiscard: () => void;
 }
+
+/** What an Esc belongs to before the card does. */
+const FIELD = 'input, textarea, [contenteditable="true"]';
 
 const KIND_ITEMS = Object.fromEntries(LANDMARK_KINDS.map((k) => [k, LANDMARK_KIND_LABELS[k]]));
 
@@ -82,6 +85,12 @@ export function LandmarkDrop({
         if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') {
           e.preventDefault();
           trySave();
+        }
+        // Esc in a field is the field's: it leaves the field, and never throws away the drop and
+        // what was typed (the card's own Esc, and the map tool's, go back only from outside one).
+        if (e.key === 'Escape' && e.target instanceof HTMLElement && e.target.closest(FIELD)) {
+          e.preventDefault();
+          e.target.blur();
         }
       }}
       className="absolute -inset-x-(--space-2) -top-(--space-3) bottom-(--space-3)"
