@@ -30,9 +30,9 @@ import {
  * role and the read layer stood in, plus the mutations, the theme and the live map's canvas): a
  * `place` item opens this handler, not the placeholder; *Same place* calls `corpusRequests.approve`
  * with the item's first ask and the lookalike as `sameAs`; *Approve* and *Decline* call theirs with
- * the ask's id; *Draw in Body →* opens a bay ask in the Body console (a landmark ask in the old
- * editor, in a new tab); a refusal reaches a toast; a
- * decided item drops the bar; and on a narrow page the map is view-only.
+ * the ask's id; *Draw in Body →* opens the ask in the Body console, its tool armed (a bay ask in
+ * Shape, a landmark ask in Places); a refusal reaches a toast; a decided item drops the bar; and on
+ * a narrow page the map is view-only.
  */
 
 const writes = vi.hoisted(() => ({
@@ -217,8 +217,10 @@ describe('a place item, through the route and the view', () => {
     opened.mockRestore();
   });
 
-  it('Draw in Body opens a landmark ask in the old editor, in a new tab, until the landmark tools land', () => {
+  it('Draw in Body opens a landmark ask in the Body console’s Places, in this tab, to come back here', () => {
     const opened = vi.spyOn(window, 'open').mockImplementation(() => null);
+    const went: Record<string, unknown>[] = [];
+    h.navigate = (opts) => void went.push(opts as unknown as Record<string, unknown>);
     open({
       ...NARROWS,
       lookalikes: [],
@@ -227,11 +229,14 @@ describe('a place item, through the route and the view', () => {
     } as unknown as InboxItemView);
     mount();
     fireEvent.click(within(inspector()).getByRole('button', { name: /Draw in Body/ }));
-    expect(opened).toHaveBeenCalledWith(
-      `/admin/water/${NARROWS.body.waterBodyId}`,
-      '_blank',
-      'noopener',
-    );
+    expect(went).toEqual([
+      {
+        to: '/admin/body/$id',
+        params: { id: NARROWS.body.waterBodyId },
+        search: { tab: 'places', landmarkAsk: NARROWS.primaryRequestId, from: h.here },
+      },
+    ]);
+    expect(opened).not.toHaveBeenCalled();
     expect(writes.calls).toEqual([]);
     opened.mockRestore();
   });

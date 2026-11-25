@@ -1,5 +1,6 @@
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 
+import { arrivalSearch } from '../../../body/frame/bodySearch';
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
 import { InspectorFrame } from '../../inspector/InspectorFrame';
 import { useInspectorContext } from '../../inspector/inspectorContext';
@@ -12,8 +13,9 @@ import { usePlaceServer, usePlaceWrites } from './usePlaceWrites';
  * **The place handler** (board 2.4), registered for the `place` key (`register.tsx`): a landmark
  * or a bay ask drawn inside `InspectorFrame`, its writes bound (`usePlaceWrites` →
  * `corpusRequests.approve` / `decline`), *Open in Body →* to the body's Places tab, *Draw in Body →*
- * — a bay ask to the Body console's bay task in this tab (`?task=`, B01-6a), a landmark ask to the
- * old editor in a new tab until B01-6b — the bar's keys on the inspector pane, and the item's map
+ * to the Body console in this tab, its tool armed — a bay ask to the Shape tab's bay task
+ * (`?task=`, B01-6a), a landmark ask to the Places tab's drop card (`?landmarkAsk=`, B01-6b), each
+ * coming back here once it saves — the bar's keys on the inspector pane, and the item's map
  * (`ItemMap`).
  */
 export function PlaceHandler({ item, locked, now }: InboxHandlerProps) {
@@ -35,18 +37,18 @@ export function PlaceHandler({ item, locked, now }: InboxHandlerProps) {
         search={{ tab: 'places', from: here }}
       />
     ),
-    editorHref: `/admin/water/${encodeURIComponent(place.body.waterBodyId)}`,
-    // A bay ask is drawn in the Body console (B01-6a), and its save comes back here.
-    ...(place.placeKind === 'name_bay'
-      ? {
-          onDraw: () =>
-            void navigate({
-              to: '/admin/body/$id',
-              params: { id: place.body.waterBodyId },
-              search: { task: place.primaryRequestId, from: here },
-            } as never),
-        }
-      : {}),
+    // Drawn in the Body console (B01-6), and its save comes back here.
+    onDraw: () =>
+      void navigate({
+        to: '/admin/body/$id',
+        params: { id: place.body.waterBodyId },
+        search: arrivalSearch(
+          { from: here },
+          place.placeKind === 'name_bay'
+            ? { task: place.primaryRequestId }
+            : { landmarkAsk: place.primaryRequestId },
+        ),
+      } as never),
     onSamePlace: samePlace,
     onApprove: approve,
     onDecline: decline,
