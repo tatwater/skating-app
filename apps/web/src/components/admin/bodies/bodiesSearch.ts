@@ -1,6 +1,7 @@
 import { SEARCH_MIN_CHARS } from '@skating/core';
 import { z } from 'zod';
-
+import { taskLaneById } from '../corpus/taskLanes';
+import { ITEM_MAX_CHARS, TAB_MAX_CHARS, taskQueryOf, taskSearchFor } from '../corpus/taskSearch';
 import {
   BODY_COLUMNS,
   type BodyColumnId,
@@ -68,7 +69,11 @@ const facetFields = Object.fromEntries(FACET_IDS.map((id) => [id, facetList(id)]
 export const bodiesSearchSchema = z.object({
   lane: z
     .string()
-    .refine((id) => BODY_LANES.some((l) => l.id === id) && id !== DEFAULT_LANE_ID)
+    .refine(
+      (id) =>
+        (BODY_LANES.some((l) => l.id === id) && id !== DEFAULT_LANE_ID) ||
+        taskLaneById(id) !== null,
+    )
     .optional()
     .catch(() => undefined),
   /** The body in the preview. */
@@ -88,13 +93,26 @@ export const bodiesSearchSchema = z.object({
     .optional()
     .catch(() => undefined),
   ...facetFields,
+  /** A task lane's tab: one of its facets (never `notRecorded`) or `decided`; else dropped. */
+  tab: optionalText(TAB_MAX_CHARS),
+  /** The task in the inspector: a `corpusTasks` id or `body:<id>`; anything else dropped. */
+  item: optionalText(ITEM_MAX_CHARS),
 });
 
 export type BodiesSearch = z.infer<typeof bodiesSearchSchema>;
 
 /** The route's `validateSearch`. */
 export function validateBodiesSearch(raw: Record<string, unknown>): BodiesSearch {
-  return stripUndefined(bodiesSearchSchema.parse(raw));
+  const parsed = stripUndefined(bodiesSearchSchema.parse(raw));
+  const task = taskQueryOf(parsed);
+  if (task === null) {
+    // A library lane: a task lane's tab and item mean nothing here.
+    const { tab: _tab, item: _item, ...library } = parsed;
+    return library;
+  }
+  // A task lane: the library's body, state tab, order and facets mean nothing here; its own tab
+  // and item are kept only where they name one of its tabs and a task.
+  return stripUndefined({ ...taskSearchFor(task) }) as BodiesSearch;
 }
 
 function stripUndefined<T extends Record<string, unknown>>(value: T): T {
