@@ -2,9 +2,10 @@ import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { OPERATOR_PUT_IN_SNAP_MAX_M } from '@skating/core';
 import { useMutation } from 'convex/react';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 
 import { type MapToolClaim, useClaimMapTool } from '../../frame/mapTool';
+import { heldEngine, useTaskDraft } from '../../frame/taskDraft';
 import { useTabAction } from '../useTabAction';
 import { AccessTask } from './AccessTask';
 import {
@@ -62,9 +63,9 @@ export function useAccessTask({
   linkLot: (putIn: LinkTarget) => void;
 } {
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const [draft, setDraft] = useState<AccessDraft | null>(null);
-  const [saving, setSaving] = useState(false);
-  const discard = useCallback(() => setDraft(null), []);
+  // Held still while a save is out: its edits wait (`useTaskDraft`).
+  const { draft, setDraft, edit, saving, setSaving } = useTaskDraft<AccessDraft>();
+  const discard = useCallback(() => setDraft(null), [setDraft]);
   // The latest lots, for a click's pick: the claim's callbacks are read through the engine's ref.
   const lotsRef = useRef(lots);
   lotsRef.current = lots;
@@ -73,7 +74,7 @@ export function useAccessTask({
     if (draft === null || (draft.kind === 'putIn' && parent === null)) return null;
     const bar = modeBarOf(draft);
     const onPick = (p: { lat: number; lng: number }, scale?: { metersPerPixel?: number }) =>
-      setDraft((d) => (d === null ? d : withPick(d, p, lotsRef.current, scale?.metersPerPixel)));
+      edit((d) => withPick(d, p, lotsRef.current, scale?.metersPerPixel));
     // A link's mark sits on the lot picked: the drawing starts over on each pick (and each miss, so
     // a click beside every lot doesn't leave the mark there).
     const lot = pickedLot(draft, lots);
@@ -84,7 +85,7 @@ export function useAccessTask({
         : `access:${draft.session}`;
     return {
       session,
-      engine: {
+      engine: heldEngine(saving, {
         kind: 'point',
         ...(point !== undefined ? { point } : {}),
         // Snapped while hovering, as the server snaps — within the server's reach only, so a click
@@ -93,7 +94,7 @@ export function useAccessTask({
           ? { snapTo: parent, snapWithinM: OPERATOR_PUT_IN_SNAP_MAX_M }
           : {}),
         onPick,
-      },
+      }),
       mode: bar.mode,
       line: bar.line,
       step: bar.step,
@@ -105,7 +106,7 @@ export function useAccessTask({
           : null,
       onExit: discard,
     };
-  }, [draft, parent, lots, discard]);
+  }, [draft, parent, lots, discard, edit, saving]);
   useClaimMapTool(claim);
 
   const setOfficial = useMutation(api.putIns.setOfficial);
@@ -202,17 +203,13 @@ export function useAccessTask({
         draft={draft}
         lots={lots}
         saving={saving}
-        onName={(name) => setDraft((d) => (d === null || d.kind === 'link' ? d : { ...d, name }))}
+        onName={(name) => edit((d) => (d.kind === 'link' ? d : { ...d, name }))}
         onNoParking={() =>
           // The hike-in checkbox goes with the lot: back to what the put-in has, so a box ticked
           // and then hidden is never what the save sends.
-          setDraft((d) =>
-            d === null || d.kind !== 'link' ? d : { ...d, choice: 'none', hikeIn: d.putIn.hikeIn },
-          )
+          edit((d) => (d.kind !== 'link' ? d : { ...d, choice: 'none', hikeIn: d.putIn.hikeIn }))
         }
-        onHikeIn={(hikeIn) =>
-          setDraft((d) => (d === null || d.kind !== 'link' ? d : { ...d, hikeIn }))
-        }
+        onHikeIn={(hikeIn) => edit((d) => (d.kind !== 'link' ? d : { ...d, hikeIn }))}
         onSave={() => void save()}
         onDiscard={discard}
       />

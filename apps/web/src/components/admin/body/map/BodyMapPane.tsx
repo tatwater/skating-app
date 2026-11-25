@@ -119,7 +119,18 @@ export interface BodyMapPaneProps {
    * The tool a tab holds on the map (B01-6): its mode bar across the top — the mode, what to do
    * next, where it stands — with the Esc cap that leaves it. The rack drops below it.
    */
-  tool?: { mode: string; line?: string; step?: string; onExit: () => void } | null;
+  tool?: {
+    mode: string;
+    line?: string;
+    step?: string;
+    onExit: () => void;
+    /**
+     * The tool takes the map's clicks and drags (every engine but `none`): the scene's marks let
+     * the pointer through to it, so a click on a lot picks it and a landmark's own mark doesn't
+     * cover the drag handle the tool draws under it. Their hover plates wait until it's put away.
+     */
+    takesPointer?: boolean;
+  } | null;
   className?: string;
 }
 
@@ -146,8 +157,11 @@ export function BodyMapPane({
   const [pointerHover, setPointerHover] = useState<string | null>(null);
   // A mark that leaves the scene under the pointer (its layer switched off) never hears the pointer
   // leave: forget it, or it comes back hovered with no pointer on it.
+  // So does a mark a tool's pointer passes through (`takesPointer`).
   const pointerHoverShown =
-    pointerHover !== null && drawn.points.some((p) => p.id === pointerHover);
+    pointerHover !== null &&
+    tool?.takesPointer !== true &&
+    drawn.points.some((p) => p.id === pointerHover);
   useEffect(() => {
     if (pointerHover !== null && !pointerHoverShown) setPointerHover(null);
   }, [pointerHover, pointerHoverShown]);
@@ -233,6 +247,7 @@ export function BodyMapPane({
               dim={plateId !== null && plateId !== p.id && p.id !== drawn.lit}
               hovered={hoverId === p.id}
               onHover={(on) => setPointerHover(on ? p.id : null)}
+              passThrough={tool?.takesPointer === true}
             />
           ))}
         </div>
@@ -330,6 +345,7 @@ function ScenePoint({
   dim,
   hovered,
   onHover,
+  passThrough,
 }: {
   point: MapPoint;
   at: { x: number; y: number };
@@ -337,6 +353,8 @@ function ScenePoint({
   dim: boolean;
   hovered: boolean;
   onHover: (on: boolean) => void;
+  /** A tool holds the map: the mark is drawn but the pointer goes through it, to the tool. */
+  passThrough: boolean;
 }) {
   return (
     <div
@@ -345,7 +363,10 @@ function ScenePoint({
       data-mark={point.mark}
       data-lit={lit ? '' : undefined}
       // A mark answers a hover with its plate; the inspector's list is how a keyboard reaches it.
-      className="pointer-events-auto absolute top-0 left-0"
+      className={cn(
+        'absolute top-0 left-0',
+        passThrough ? 'pointer-events-none' : 'pointer-events-auto',
+      )}
       style={{
         transform: `translate(${at.x - HALF}px, ${at.y - HALF}px)`,
         // A hazard's pin fades as its dot field would (`fieldOpacity`): confidence, never safety.

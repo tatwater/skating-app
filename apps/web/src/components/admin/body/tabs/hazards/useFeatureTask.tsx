@@ -1,10 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef } from 'react';
 
 import type { BBoxLike } from '@/lib/mapSurface';
 import { type MapToolClaim, useClaimMapTool } from '../../frame/mapTool';
+import { heldEngine, useTaskDraft } from '../../frame/taskDraft';
 import { useTabAction } from '../useTabAction';
 import { FeatureTask } from './FeatureTask';
 import {
@@ -58,17 +59,16 @@ export function useFeatureTask({
   redraw: (featureId: string) => void;
 } {
   const waterBodyId = bodyId as Id<'waterBodies'>;
-  const [draft, setDraft] = useState<FeatureDraft | null>(null);
-  const [saving, setSaving] = useState(false);
-  const step = (f: (d: FeatureDraft) => FeatureDraft) => setDraft((d) => (d === null ? d : f(d)));
+  // Held still while a save is out: its edits wait (`useTaskDraft`).
+  const { draft, setDraft, edit: step, saving, setSaving } = useTaskDraft<FeatureDraft>();
 
-  const discard = useCallback(() => setDraft(null), []);
+  const discard = useCallback(() => setDraft(null), [setDraft]);
 
   const claim = useMemo((): MapToolClaim | null => {
     if (draft === null) return null;
     const bar = featureModeBar(draft);
     const g = draft.geometry;
-    const unavailable = () => setDraft((d) => (d === null ? d : { ...d, unavailable: true }));
+    const unavailable = () => step((d) => ({ ...d, unavailable: true }));
     const engine: MapToolClaim['engine'] =
       draft.way === 'point'
         ? {
@@ -77,33 +77,33 @@ export function useFeatureTask({
             ...(g?.type === 'Point'
               ? { point: { lng: g.coordinates[0] as number, lat: g.coordinates[1] as number } }
               : {}),
-            onPick: (p) => setDraft((d) => (d === null ? d : withPoint(d, p))),
+            onPick: (p) => step((d) => withPoint(d, p)),
           }
         : draft.way === 'line' && !draft.unavailable
           ? {
               kind: 'line',
               ...(g?.type === 'LineString' ? { line: g } : {}),
-              onChange: (line) => setDraft((d) => (d === null ? d : withTraced(d, line))),
+              onChange: (line) => step((d) => withTraced(d, line)),
               onUnavailable: unavailable,
             }
           : draft.way === 'polygon' && !draft.unavailable
             ? {
                 kind: 'ring',
                 ...(g?.type === 'Polygon' ? { polygon: g } : {}),
-                onChange: (polygon) => setDraft((d) => (d === null ? d : withTraced(d, polygon))),
+                onChange: (polygon) => step((d) => withTraced(d, polygon)),
                 onUnavailable: unavailable,
               }
             : { kind: 'none' };
     return {
       session: `feature:${draft.session}:${draft.unavailable ? 'paste' : draft.way}`,
-      engine,
+      engine: heldEngine(saving, engine),
       mode: bar.mode,
       line: bar.line,
       draft: featurePreview(draft),
       focus: draft.focus,
       onExit: discard,
     };
-  }, [draft, discard]);
+  }, [draft, discard, step, saving]);
   useClaimMapTool(claim);
 
   const create = useMutation(api.bodyFeatures.create);

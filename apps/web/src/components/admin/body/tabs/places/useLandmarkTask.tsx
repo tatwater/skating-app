@@ -9,6 +9,7 @@ import { isFailed, loaded, read, useConsoleReads } from '@/components/admin/read
 import { sayRefusal } from '@/components/admin/said';
 import { returnPathOf, validateBodySearch } from '../../frame/bodySearch';
 import { type MapToolClaim, useClaimMapTool } from '../../frame/mapTool';
+import { heldEngine, useTaskDraft } from '../../frame/taskDraft';
 import { useTabAction } from '../useTabAction';
 import { LandmarkDrop } from './LandmarkDrop';
 import {
@@ -77,8 +78,8 @@ export function useLandmarkTask({
   const search = useMemo(() => validateBodySearch(raw), [raw]);
   const navigate = useNavigate();
   const router = useRouter();
-  const [draft, setDraft] = useState<LandmarkDraft | null>(null);
-  const [saving, setSaving] = useState(false);
+  // Held still while a save is out: its edits wait (`useTaskDraft`).
+  const { draft, setDraft, edit, saving, setSaving } = useTaskDraft<LandmarkDraft>();
   /** An Inbox arrival: the save goes back to where it came from. */
   const [returnAfter, setReturnAfter] = useState(false);
   const [movingId, setMovingId] = useState<string | null>(null);
@@ -153,7 +154,7 @@ export function useLandmarkTask({
   const discard = useCallback(() => {
     setDraft(null);
     setReturnAfter(false);
-  }, []);
+  }, [setDraft]);
   const stopMove = useCallback(() => setMovingId(null), []);
 
   // A move belongs to the lit landmark's card: the card closing, or the landmark leaving the list
@@ -194,12 +195,12 @@ export function useLandmarkTask({
       const bar = dropModeBar(draft);
       return {
         session: `landmark:drop:${draft.session}`,
-        engine: {
+        engine: heldEngine(saving, {
           kind: 'point',
           // The point as it stands, so a map re-created mid-task (a theme switch) puts it back.
           ...(draft.point !== null ? { point: draft.point } : {}),
-          onPick: (p) => setDraft((d) => (d === null ? d : withPoint(d, p))),
-        },
+          onPick: (p) => edit((d) => withPoint(d, p)),
+        }),
         mode: bar.mode,
         line: bar.line,
         focus: draft.focus,
@@ -221,7 +222,7 @@ export function useLandmarkTask({
       };
     }
     return null;
-  }, [draft, movingRow, discard, stopMove, move, refusedMoves]);
+  }, [draft, movingRow, discard, stopMove, move, refusedMoves, edit, saving]);
   useClaimMapTool(claim);
 
   // A save outlives its card (`act` settles after the tab unmounts, by design): what it does after
@@ -293,9 +294,9 @@ export function useLandmarkTask({
       <LandmarkDrop
         draft={draft}
         saving={saving}
-        onName={(name) => setDraft((d) => (d === null ? d : { ...d, name }))}
-        onAliases={(aliases) => setDraft((d) => (d === null ? d : { ...d, aliases }))}
-        onKind={(kind) => setDraft((d) => (d === null ? d : { ...d, kind }))}
+        onName={(name) => edit((d) => ({ ...d, name }))}
+        onAliases={(aliases) => edit((d) => ({ ...d, aliases }))}
+        onKind={(kind) => edit((d) => ({ ...d, kind }))}
         onSave={() => void save()}
         onDiscard={discard}
       />

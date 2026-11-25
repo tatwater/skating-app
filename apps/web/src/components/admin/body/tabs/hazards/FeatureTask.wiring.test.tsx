@@ -298,6 +298,31 @@ describe('the feature task — a new feature', () => {
     expect(mocks.claim).not.toBeNull();
   });
 
+  it('holds still while its save is out: the map stands down, an edit waits, and a refusal gives both back', async () => {
+    let refuse: (e: Error) => void = () => {};
+    mocks.answer[getFunctionName(api.bodyFeatures.create)] = () =>
+      new Promise((_resolve, reject) => {
+        refuse = reject;
+      });
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await addFeature(user);
+    pick();
+    const note = within(task()).getByRole('textbox', { name: 'Note' });
+    await user.type(note, 'Outlet');
+    await user.click(within(task()).getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(claim().engine.kind).toBe('none'));
+    // A keystroke while the save is out changes nothing the save would then clear.
+    await user.type(note, ' moved');
+    expect(note).toHaveValue('Outlet');
+    await act(async () => refuse(new ConvexError('A known feature has to be on its lake')));
+    await waitFor(() => expect(claim().engine.kind).toBe('point'));
+    // The point comes back where it was placed, and the fields take edits again.
+    expect(claim().engine).toMatchObject({ point: AT });
+    await user.type(note, '!');
+    expect(note).toHaveValue('Outlet!');
+  });
+
   it('Discard and Esc both leave the task and let go of the map', async () => {
     const user = userEvent.setup();
     render(<Mounted />);
