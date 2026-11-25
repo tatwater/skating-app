@@ -1,6 +1,13 @@
 import type { DeploymentTarget } from './deployment';
 import type { ConvexCaller } from './runLogger';
-import type { ImportRunCoverage, ImportRunKind, RunCount, RunFailure, RunStage } from './types';
+import type {
+  ImportRunCoverage,
+  ImportRunKind,
+  ImportRunScope,
+  RunCount,
+  RunFailure,
+  RunStage,
+} from './types';
 
 export interface RunReceipt {
   kind: ImportRunKind;
@@ -14,6 +21,8 @@ export interface RunReceipt {
   failures?: RunFailure[];
   failuresTotal?: number;
   coverage?: ImportRunCoverage;
+  /** What the run set out to cover (D218) — see `ImportRunScope`. */
+  scope?: ImportRunScope;
   error?: string;
   notes?: string[];
   /** Override the row's deployment label, not the destination of the write. */
@@ -38,6 +47,7 @@ export function writeRunReceipt(
       isProd: receipt.isProd ?? target.isProd,
       stages: receipt.stages ?? [],
       notes: receipt.notes,
+      scope: receipt.scope,
     }),
   );
 

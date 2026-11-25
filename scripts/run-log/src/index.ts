@@ -1,4 +1,4 @@
-export type { ImportRunKind, RunStage } from './types';
+export type { ImportRunKind, ImportRunScope, ImportRunScopePass, RunStage } from './types';
 
 export { batchNdjson } from './batchNdjson';
 export { convexRun } from './convexRun';
