@@ -6381,6 +6381,10 @@ export async function setWaterBodyNameImpl(
           moderatorAliases: body.moderatorAliases,
         }),
       });
+      // A name conflict's tab is read from the shown name against the claims: it follows at once.
+      await syncBodyTasks(ctx, waterBodyId, {
+        body: { ...body, name: restored, nameClaims: catalog.length > 0 ? catalog : undefined },
+      });
       await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
@@ -6425,6 +6429,7 @@ export async function setWaterBodyNameImpl(
           moderatorAliases: body.moderatorAliases,
         }),
       });
+      await syncBodyTasks(ctx, waterBodyId, { body: { ...body, name: chosen, nameClaims: next } });
       await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
@@ -6460,6 +6465,9 @@ export async function setWaterBodyNameImpl(
         nameClaims: next,
         moderatorAliases: body.moderatorAliases,
       }),
+    });
+    await syncBodyTasks(ctx, waterBodyId, {
+      body: { ...body, name: match.value, nameClaims: next },
     });
     await writeAudit(ctx, {
       actorId: actor._id,

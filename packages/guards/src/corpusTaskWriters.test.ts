@@ -9,6 +9,8 @@
  *
  * - an `insert(…)`, `patch(…)` or `replace(…)` whose text names `reviewReasons`, `reviewReason` or
  *   `reviewSettled`, and every `...mergeFields(` spread (the import's: it carries all three);
+ * - a `patch(…)` or `replace(…)` whose text names `nameClaims`: a body's names, which a name
+ *   conflict's tab is read from (an insert is a new body, whose reasons the first clause sees);
  * - a delete of a `waterBodies` row: a `db.delete(` or a `.delete('waterBodies'` in a function that
  *   names the `'waterBodies'` table by its literal (a type argument, `Doc<'waterBodies'>`, doesn't
  *   count) —
@@ -39,6 +41,8 @@ const CONVEX = resolve(__dirname, '../../convex/convex');
 const SOURCE_WRITERS: Record<string, string> = {
   'waterBodies.ts#importCanonical':
     'the import: reasons asserted, dropped, held or asked again (D305), insert and patch',
+  'waterBodies.ts#setWaterBodyNameImpl':
+    'a moderator’s name pick or clear: the shown name and its claims, a name conflict’s tab',
 };
 
 /** Functions that delete a `waterBodies` row: each calls the writer… */
@@ -60,6 +64,8 @@ const DELETE_NOT_BODIES: Record<string, string> = {
 
 const ENTRY = /\b(syncBodyTasks|leaveBodyTasks|leaveTask|settleReason|reopenTask)\(/;
 const SOURCE_FIELD = /\b(reviewReasons|reviewReason|reviewSettled)\b/;
+/** A body's names, which a task's tab is read from: watched on a patch or replace. */
+const NAME_FIELD = /\bnameClaims\b/;
 const BODY_TABLE = /(?<!(?:Doc|Id|TableNames)<)'waterBodies'/;
 const BODY_DELETE = /\bdb\.delete\(|\.delete\('waterBodies'/;
 
@@ -130,7 +136,11 @@ function scanText(
   const callsWriter = (fn: Fn | undefined) =>
     fn ? ENTRY.test(bare.slice(fn.start, fn.end)) : false;
   for (const m of text.matchAll(/\b(insert|patch|replace)\(|\.\.\.mergeFields\(/g)) {
-    if (!m[0].startsWith('...') && !SOURCE_FIELD.test(callAt(text, m.index))) continue;
+    if (!m[0].startsWith('...')) {
+      const call = callAt(text, m.index);
+      const names = m[1] !== 'insert' && NAME_FIELD.test(call);
+      if (!SOURCE_FIELD.test(call) && !names) continue;
+    }
     const fn = enclosing(fns, m.index);
     const key = `${where}#${fn?.name ?? '?'}`;
     writes.set(key, (writes.get(key) ?? true) && callsWriter(fn));
@@ -164,7 +174,7 @@ test('every write of a Corpus task’s source calls the one writer, and the writ
   expect(Object.keys(DELETE_WRITERS).filter((k) => deletes.get(k) !== true)).toEqual([]);
 });
 
-test('the lint sees a writer that skips the hook, a spread of mergeFields, and a body deleted', () => {
+test('the lint sees a writer that skips the hook, a spread of mergeFields, a rename, and a body deleted', () => {
   const text = [
     'export const sneaky = mutation({',
     '  handler: async (ctx, { id }) => {',
@@ -174,6 +184,16 @@ test('the lint sees a writer that skips the hook, a spread of mergeFields, and a
     'export const spread = mutation({',
     '  handler: async (ctx, { id, item }) => {',
     '    await ctx.db.patch(id, { ...mergeFields(item) });',
+    '  },',
+    '});',
+    'export const rename = mutation({',
+    '  handler: async (ctx, { id }) => {',
+    "    await ctx.db.patch(id, { name: 'Mud Pond', nameClaims: [] });",
+    '  },',
+    '});',
+    'export const drawn = mutation({',
+    '  handler: async (ctx) => {',
+    "    await ctx.db.insert('waterBodies', { name: 'Mud Pond', nameClaims: [] });",
     '  },',
     '});',
     'export const drop = mutation({',
@@ -189,7 +209,12 @@ test('the lint sees a writer that skips the hook, a spread of mergeFields, and a
   const writes = new Map<string, boolean>();
   const deletes = new Map<string, boolean>();
   scanText('x.ts', text, writes, deletes);
-  expect(Object.fromEntries(writes)).toEqual({ 'x.ts#sneaky': false, 'x.ts#spread': false });
+  // A rename's patch is a writer; a new body's insert names no reason, so it asks nothing yet.
+  expect(Object.fromEntries(writes)).toEqual({
+    'x.ts#sneaky': false,
+    'x.ts#spread': false,
+    'x.ts#rename': false,
+  });
   // A type argument alone names no table: `typed` deletes something it was handed.
   expect(Object.fromEntries(deletes)).toEqual({ 'x.ts#drop': false });
 });

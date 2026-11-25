@@ -11,7 +11,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { countKeysOf, settleReason } from './lib/corpusTasks';
+import { countKeysOf, settleReason, syncBodyTasks } from './lib/corpusTasks';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -484,6 +484,35 @@ describe('the body’s other writers', () => {
     for (const task of await tasksOf(t, loser)) {
       expect(task).toMatchObject({ status: 'left', leftBecause: 'deleted' });
     }
+    await expectCountsTally(t);
+  });
+
+  test('a rename in the Body console moves its name conflict’s tab and counts at once', async () => {
+    const { t, mod, survivor: id } = await two();
+    // Shown "Mud Pond" (NHD) against 3DHP's "Big Mud Pond": a qualifier. Shown "Mad Pond" (OSM),
+    // the other is NHD's "Mud Pond": one letter.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(id, {
+        name: 'Mud Pond',
+        nameClaims: [
+          { source: 'nhd', value: 'Mud Pond' },
+          { source: '3dhp', value: 'Big Mud Pond' },
+          { source: 'osm', value: 'Mad Pond' },
+        ],
+      });
+      await syncBodyTasks(ctx, id);
+    });
+    const facet = async () => (await openOf(t, id)).find((x) => x.lane === 'nameConflicts')?.facet;
+    expect(await facet()).toBe('qualifier');
+    await expectCountsTally(t);
+
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: id, name: 'Mad Pond' });
+    expect(await facet()).toBe('oneLetter');
+    await expectCountsTally(t);
+
+    // The clear puts the catalogs' first name back, and the tab with it.
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: id, name: null });
+    expect(await facet()).toBe('qualifier');
     await expectCountsTally(t);
   });
 
