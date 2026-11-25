@@ -385,6 +385,20 @@ const canonicalBody = v.object({
       }),
     ),
   ),
+  /**
+   * The features the merge folded into this body as one catalog's duplicates (B01-6a) — see the
+   * schema note on `absorbedFeatures`. Accepted here so the campaign that first carries it is not
+   * refused; the import stores it once `importCanonical` spreads it.
+   */
+  absorbedFeatures: v.optional(
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        externalId: v.string(),
+        areaSqM: v.number(),
+      }),
+    ),
+  ),
   // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
   // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
   interiorPoint: v.optional(latLng),

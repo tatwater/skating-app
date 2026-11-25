@@ -103,6 +103,8 @@ export const recompute = internalAction({
       kind: 'region_stats',
       label: 'regionStats deciles',
       campaignId,
+      // Derived from the corpus already held, over every body (D218).
+      scope: { pass: 'derived', complete: true },
       deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
       // An action has no view of which deployment it is: it *is* the deployment. A prod row is
       // therefore identified by its own URL rather than by a `--prod` flag nobody passed.
