@@ -120,6 +120,12 @@ export interface CanonicalBody {
    */
   classRefusals?: { source: string; token: string; areaSqM?: number }[];
   /**
+   * **The features the merge folded into this body** as one catalog's duplicates (B01-6a, D309):
+   * each absorbed member's catalog, its id as `absorbed.ndjson` names it (`refOf`), and its area —
+   * at most 32 (`masterList.ABSORBED_FEATURES_MAX`). Omitted when the body absorbed nothing.
+   */
+  absorbedFeatures?: { source: string; externalId: string; areaSqM: number }[];
+  /**
    * A point genuinely inside the water (A06c) — see `waterBodies.interiorPoint`. Absent only when
    * the geometry has no locatable interior, which is a body the transform is about to skip anyway.
    */
