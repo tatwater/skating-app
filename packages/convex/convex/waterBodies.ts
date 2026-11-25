@@ -344,11 +344,46 @@ const canonicalBody = v.object({
   ),
   /** Why this body wants a human (D110). Empty is normal and is omitted rather than stored. */
   reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
-  /** Every publisher's name for this water, winner included — see the schema note on `nameClaims`. */
-  nameClaims: v.optional(v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() }))),
-  /** Every catalog's class for this water (B01-3d) — see the schema note on `classClaims`. */
+  /**
+   * Every publisher's name for this water, winner included, with every catalog publishing each
+   * spelling from B01-6a — see the schema note on `nameClaims`.
+   */
+  nameClaims: v.optional(
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        value: v.string(),
+        sources: v.optional(v.array(literals(CLAIM_SOURCES))),
+      }),
+    ),
+  ),
+  /**
+   * Every catalog's class for this water (B01-3d), with each catalog's own token and area from
+   * B01-6a — see the schema note on `classClaims`.
+   */
   classClaims: v.optional(
-    v.array(v.object({ source: literals(CLAIM_SOURCES), value: literals(WATER_BODY_CLASSES) })),
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        value: literals(WATER_BODY_CLASSES),
+        token: v.optional(v.string()),
+        areaSqM: v.optional(v.number()),
+      }),
+    ),
+  ),
+  /**
+   * The catalogs that refused this water outright (B01-6a) — see the schema note on
+   * `classRefusals`. The validator is exact, so a loader that sends it before this deploys is
+   * refused: the deploy comes first.
+   */
+  classRefusals: v.optional(
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        token: v.string(),
+        areaSqM: v.optional(v.number()),
+      }),
+    ),
   ),
   // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
   // before it was simplified. All optional: a body whose geometry defeats one of them still loads.

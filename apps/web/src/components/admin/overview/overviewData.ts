@@ -402,6 +402,10 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   create_landmark: 'Named landmark',
   edit_landmark: 'Edited landmark',
   promote_landmark: 'Promoted landmark',
+  // T0 PLACEHOLDER (B01-6a): the Corpus settle and its undo, words for the copy pass; W1 owns them
+  // from here.
+  settle_review_reason: 'Settled review question',
+  unsettle_review_reason: 'Reopened review question',
 };
 
 /**

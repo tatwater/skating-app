@@ -50,7 +50,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `waterBodies` | the corpus: outline, our key + every catalog's claim, class, name + aliases, area, depth with provenance (D68), elevation, wind rose (D90), display score (A06c §4.2), public-access verdict (A06f), standing fields (D176) — D14, D93–D137 |
+| `waterBodies` | the corpus: outline, our key + every catalog's claim, class, name + aliases, area, depth with provenance (D68), elevation, wind rose (D90), display score (A06c §4.2), public-access verdict (A06f), standing fields (D176), the intake reasons and the questions a moderator settled with their evidence (`reviewSettled`, D305), each catalog's class claim and refusal with its token (B01-6a) — D14, D93–D137 |
 | `waterBodyCells` | the ladder-grid spatial index: one row per (body, cell) — the read path every viewport and "near" query walks — D5 as rebuilt in A01 |
 | `waterBodySubAreas` | a named region inside one polygon — a bay, an arm — with aliases for the ten spellings of Malletts Bay; a place in its own right since A09; since D201 usually derived from a stored `mouth` (two shoreline points, a side, a sagitta) — D60 |
 | `waterBodySubAreaCells` | the same cell index for bays — A09 |
@@ -177,6 +177,9 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `inboxItemMembers` | the source rows an Inbox item holds (a flag, a request, a drawn body, a ticket), who filed each (D289) and which decision closed it, so an undo reopens exactly what one decision closed — B01-5 |
 | `inboxCounts` | the Inbox's stored counts — each lane's and tab's open items and the decided total — moved by the item writer with each row, so a count is the tally of the rows; the Overview's Inbox card reads them — B01-5 |
 | `inboxJobRuns` | where the Inbox's chained jobs stand — the items backfill, the drift repair, the dev seed's clear: the phase, the cursor, whether it is done — B01-5 |
+| `corpusTasks` | Corpus's task row: one per question a machine raised about a body — in B01-6a an intake reason (`name-conflict`, `class-conflict`) on one body — with its lane, tab, rank and status (`open`, `decided` by a person, or `left` when the question went away), and once decided who, when, what and the decision's audit row; written only by `lib/corpusTasks.ts` — B01-6, D305 |
+| `corpusTaskCounts` | Corpus's stored task counts — each lane's and tab's open tasks — moved by the task writer with each row, so a count is the tally of the rows; Corpus's sidebar and the Overview's Corpus card read them — B01-6 |
+| `corpusTaskJobRuns` | where the Corpus tasks' chained jobs stand — the backfill and the drift repair: the phase, the cursor, whether it is done — B01-6 |
 | `metricSnapshots` | pre-aggregated numbers every `/admin` chart reads, one row per (metric, day) — charts never scan the corpus — 07-2 |
 
 ---

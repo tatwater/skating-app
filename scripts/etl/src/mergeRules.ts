@@ -38,6 +38,7 @@ import {
   exceedsAreaCeiling,
   expandBBox,
   HARD_MIN_SURFACE_AREA_SQM,
+  NAME_SOURCE_RANK,
   OCEAN_NAME_VETO_MIN_ACRES,
   type OsmTagBag,
   pointInPolygon,
@@ -574,42 +575,6 @@ export function nameClaimsOf(
     claims.sort((a, b) => NAME_SOURCE_RANK[a.source] - NAME_SOURCE_RANK[b.source]),
   );
 }
-
-/**
- * Whose name wins when two catalogs both have one — **authority, not length**.
- *
- * The rule this replaced was longest-wins, and its own docstring defended it as *"right when the
- * catalogs disagree about which lake this is"*. That is backwards: if the catalogs disagree about
- * which lake this is, the merge is already wrong and preferring the longer string entrenches the
- * error under a more confident-looking label. Length is not evidence of anything.
- *
- * The order is the order of authority over US place names:
- *
- * | rank | source | what its name actually is |
- * | --- | --- | --- |
- * | 0 | `gnis` | the gazetteer, from the body that assigns the names |
- * | 1 | `nhd` | NHD's `gnis_name` column — **which IS GNIS**, joined at publication |
- * | 2 | `3dhp` | `gnisidlabel`, the same gazetteer one release later |
- * | 3 | `osm` | a mapper's free text: local, often better, and unaccountable |
- *
- * **OSM ranking last is a real trade and worth naming.** OSM frequently carries the name a local
- * would use where the gazetteer carries an official one, and we lose that. What we buy is that the
- * stored name is always traceable to a publisher, which is the property a name-conflict queue needs
- * in order to be worth opening — and the OSM name survives on the row as `osmId`'s feature, so it is
- * recoverable rather than gone.
- */
-export const NAME_SOURCE_RANK: Readonly<Record<ClaimSource, number>> = {
-  // A moderator has looked at it, which ends the question — the same precedence `scoreAttribute`
-  // gives `user`. No merged feature carries this source today; it is here so that the day one does,
-  // the rule is already right rather than quietly outranked by a gazetteer.
-  user: -1,
-  gnis: 0,
-  nhd: 1,
-  '3dhp': 2,
-  osm: 3,
-  // Not a catalog: `name` is a keyword read off a string a catalog already supplied.
-  name: 4,
-};
 
 /**
  * Pick the class for a merged group, or `null` if the group is not water we cover.

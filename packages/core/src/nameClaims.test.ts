@@ -1,12 +1,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { CLAIM_SOURCES } from './confidence';
 import {
   aliasesFor,
   bodyAliasesFor,
   bodySearchTextFor,
   composeNameClaims,
   distinctNameClaims,
+  NAME_SOURCE_RANK,
   type NameClaim,
   searchTextFor,
 } from './nameClaims';
@@ -175,5 +176,13 @@ describe('bodyAliasesFor (B01-3h: one rule for every search)', () => {
         expect(keys).not.toContain(name.trim().toLowerCase());
       }),
     );
+  });
+});
+
+describe('NAME_SOURCE_RANK (moved from the ETL, B01-6a)', () => {
+  it('ranks every claim source, by authority over US names, a moderator above every catalog', () => {
+    expect(Object.keys(NAME_SOURCE_RANK).sort()).toEqual([...CLAIM_SOURCES].sort());
+    const order = [...CLAIM_SOURCES].sort((a, b) => NAME_SOURCE_RANK[a] - NAME_SOURCE_RANK[b]);
+    expect(order).toEqual(['user', 'gnis', 'nhd', '3dhp', 'osm', 'name']);
   });
 });

@@ -37,10 +37,55 @@
 
 import type { ClaimSource } from './confidence';
 
+/**
+ * Whose name wins when two catalogs both have one — **authority, not length**.
+ *
+ * The rule this replaced was longest-wins, and its own docstring defended it as *"right when the
+ * catalogs disagree about which lake this is"*. That is backwards: if the catalogs disagree about
+ * which lake this is, the merge is already wrong and preferring the longer string entrenches the
+ * error under a more confident-looking label. Length is not evidence of anything.
+ *
+ * The order is the order of authority over US place names:
+ *
+ * | rank | source | what its name actually is |
+ * | --- | --- | --- |
+ * | 0 | `gnis` | the gazetteer, from the body that assigns the names |
+ * | 1 | `nhd` | NHD's `gnis_name` column — **which IS GNIS**, joined at publication |
+ * | 2 | `3dhp` | `gnisidlabel`, the same gazetteer one release later |
+ * | 3 | `osm` | a mapper's free text: local, often better, and unaccountable |
+ *
+ * **OSM ranking last is a real trade and worth naming.** OSM frequently carries the name a local
+ * would use where the gazetteer carries an official one, and we lose that. What we buy is that the
+ * stored name is always traceable to a publisher, which is the property a name-conflict queue needs
+ * in order to be worth opening — and the OSM name survives on the row as `osmId`'s feature, so it is
+ * recoverable rather than gone.
+ *
+ * Moved here from the ETL's `mergeRules.ts` (B01-6a), which imports it: the merge ranks the claims by
+ * it, and the Corpus Name conflicts lane says each catalog's rank in words from the same table.
+ */
+export const NAME_SOURCE_RANK: Readonly<Record<ClaimSource, number>> = {
+  // A moderator has looked at it, which ends the question — the same precedence `scoreAttribute`
+  // gives `user`. No merged feature carries this source today; it is here so that the day one does,
+  // the rule is already right rather than quietly outranked by a gazetteer.
+  user: -1,
+  gnis: 0,
+  nhd: 1,
+  '3dhp': 2,
+  osm: 3,
+  // Not a catalog: `name` is a keyword read off a string a catalog already supplied.
+  name: 4,
+};
+
 /** One publisher's name for a body, kept whether or not it won. */
 export interface NameClaim {
   readonly source: ClaimSource;
   readonly value: string;
+  /**
+   * Every catalog publishing this spelling, in rank order, `source` first (B01-6a). Absent on a
+   * claim stored before the campaign that records it, and on a moderator's own claim. After T0 the
+   * ETL's `nameClaimsOf` and `distinctNameClaims` carry it (S2's).
+   */
+  readonly sources?: ClaimSource[];
 }
 
 /** Case-insensitive, whitespace-insensitive key. Not `sameName` — see `distinctNameClaims`. */

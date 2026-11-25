@@ -53,6 +53,15 @@ describe('actionLabel', () => {
       expect(label[0]).toBe(label[0]?.toUpperCase());
     }
   });
+
+  it('says a Corpus settle and its undo as a question about the body (B01-6a)', () => {
+    expect(actionLabel('settle_review_reason', 'waterbody')).toBe(
+      'Settled a body’s review question',
+    );
+    expect(actionLabel('unsettle_review_reason', 'waterbody')).toBe(
+      'Reopened a body’s review question',
+    );
+  });
 });
 
 describe('actorWords', () => {
