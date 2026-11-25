@@ -81,7 +81,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const decline = useMutation(api.corpusRequests.decline);
   const remove = useMutation(api.landmarks.remove);
   const { act } = useTabAction(bodyId);
-  const { can } = useRole();
+  const { can, isLoading: roleLoading } = useRole();
   const navigate = useNavigate();
   const canPlace = can('body.places');
   const tools = useLandmarkTask({
@@ -89,6 +89,8 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
     landmarks: rowsOf(data.landmarks),
     lit,
     onLitChange,
+    // An Inbox ask arriving to be placed takes what *Add* on a proposal takes, as the server does.
+    canAnswerAsk: roleLoading ? undefined : canPlace && can('inbox.request'),
   });
 
   const nameOf = (id: string) =>

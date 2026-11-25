@@ -207,9 +207,9 @@ export function useMapToolEngine(
             }
           : {}),
         color: palette.lit.line,
-        onPick: (p) => {
+        onPick: (p, scale) => {
           const live = claimRef.current?.engine;
-          if (live?.kind === 'point') live.onPick(p);
+          if (live?.kind === 'point') live.onPick(p, scale);
         },
       });
       return () => {

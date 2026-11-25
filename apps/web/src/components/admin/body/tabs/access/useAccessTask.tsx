@@ -72,8 +72,8 @@ export function useAccessTask({
   const claim = useMemo((): MapToolClaim | null => {
     if (draft === null || (draft.kind === 'putIn' && parent === null)) return null;
     const bar = modeBarOf(draft);
-    const onPick = (p: { lat: number; lng: number }) =>
-      setDraft((d) => (d === null ? d : withPick(d, p, lotsRef.current)));
+    const onPick = (p: { lat: number; lng: number }, scale?: { metersPerPixel?: number }) =>
+      setDraft((d) => (d === null ? d : withPick(d, p, lotsRef.current, scale?.metersPerPixel)));
     // A link's mark sits on the lot picked: the drawing starts over on each pick (and each miss, so
     // a click beside every lot doesn't leave the mark there).
     const lot = pickedLot(draft, lots);
@@ -162,19 +162,26 @@ export function useAccessTask({
       } else if (d.kind === 'link' && d.choice !== null) {
         const choice = d.choice;
         const putInId = d.putIn.id as Id<'putIns'>;
+        // *No parking* sends no assertion: its checkbox is hidden, so nothing it holds is sent.
         const assert =
-          d.hikeIn === d.putIn.hikeIn
+          choice === 'none' || d.hikeIn === d.putIn.hikeIn
             ? {}
             : d.hikeIn
               ? { approachKindOverride: 'hike_in' as const }
               : { clearApproachOverride: true };
+        // The lot it has already, with only the assertion changed: the lot isn't sent again, so the
+        // walk already measured from it (routed, with its line) is kept rather than reset to a
+        // straight line and walked again.
+        const sameLot = choice !== 'none' && choice.lotId === d.putIn.lotId;
         landed = await act(
           () =>
             setPutInAccess({
               putInId,
               ...(choice === 'none'
                 ? { clearParking: true }
-                : { parkingAreaId: choice.lotId as Id<'parkingAreas'> }),
+                : sameLot
+                  ? {}
+                  : { parkingAreaId: choice.lotId as Id<'parkingAreas'> }),
               ...assert,
             }),
           { title, target: { targetType: 'putIn', targetId: d.putIn.id } },
@@ -197,7 +204,11 @@ export function useAccessTask({
         saving={saving}
         onName={(name) => setDraft((d) => (d === null || d.kind === 'link' ? d : { ...d, name }))}
         onNoParking={() =>
-          setDraft((d) => (d === null || d.kind !== 'link' ? d : { ...d, choice: 'none' }))
+          // The hike-in checkbox goes with the lot: back to what the put-in has, so a box ticked
+          // and then hidden is never what the save sends.
+          setDraft((d) =>
+            d === null || d.kind !== 'link' ? d : { ...d, choice: 'none', hikeIn: d.putIn.hikeIn },
+          )
         }
         onHikeIn={(hikeIn) =>
           setDraft((d) => (d === null || d.kind !== 'link' ? d : { ...d, hikeIn }))

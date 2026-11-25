@@ -4,7 +4,7 @@ import type { ChordMap, ChordMapEvent } from './chordDraw';
 
 /**
  * The point tool (B01-6b, D300): one mark placed by a click, or moved by a click elsewhere or by
- * dragging it. A landmark dropped or moved, a put-in or a lot placed, a known feature's centre.
+ * dragging it. A landmark dropped or moved, a put-in or a lot placed, a known feature's center.
  *
  * - **A click places**, anywhere on the map; the cursor is a crosshair the whole time the tool is
  *   armed, so a click reads as an action and never as the start of a pan (the founder's call: the
@@ -26,8 +26,23 @@ export interface PointDrawOptions {
   snap?: (p: LatLng) => LatLng;
   /** The mark's ink (the console's lit ink). */
   color: string;
-  /** A click, or a drag's release: the mark is here now. */
-  onPick: (point: LatLng) => void;
+  /**
+   * A click, or a drag's release: the mark is here now, with the map's scale there (meters per
+   * screen pixel) when the map can say — what a pick that means "the thing under the pointer" (a lot)
+   * measures its reach in.
+   */
+  onPick: (point: LatLng, scale: PickScale) => void;
+}
+
+/** The map's scale at a pick: meters per screen pixel, absent when the map can't say. */
+export interface PickScale {
+  metersPerPixel?: number;
+}
+
+/** MapLibre's 512 px tiles: the equator's length over the world's width in pixels at a zoom. */
+const EQUATOR_M = 40_075_016.686;
+export function metersPerPixel(lat: number, zoom: number): number {
+  return (EQUATOR_M * Math.cos((lat * Math.PI) / 180)) / (512 * 2 ** zoom);
 }
 
 export interface PointDrawControl {
@@ -51,11 +66,18 @@ const collection = (points: readonly LatLng[]): GeoJSON.FeatureCollection => ({
   features: points.map(feature),
 });
 
-export function createPointDraw(map: ChordMap, options: PointDrawOptions): PointDrawControl {
+export function createPointDraw(
+  map: ChordMap & { getZoom?: () => number },
+  options: PointDrawOptions,
+): PointDrawControl {
+  const scaleAt = (p: LatLng): PickScale =>
+    map.getZoom ? { metersPerPixel: metersPerPixel(p.lat, map.getZoom()) } : {};
   const snap = options.snap ?? ((p: LatLng) => p);
   let mark: LatLng | null = options.point ?? null;
   let dragging = false;
   let overMark = false;
+  /** Where the mark was when the press on it began: a release that never moved it is no pick. */
+  let pressedAt: LatLng | null = null;
 
   for (const id of SOURCES) map.addSource(id, { type: 'geojson', data: collection([]) });
   map.addLayer({
@@ -104,11 +126,12 @@ export function createPointDraw(map: ChordMap, options: PointDrawOptions): Point
     if (overMark) return; // a press on the mark is a drag, not a place
     mark = snap(at(e));
     render();
-    options.onPick(mark);
+    options.onPick(mark, scaleAt(mark));
   };
   const onMarkDown = (e: ChordMapEvent) => {
     e.preventDefault?.();
     dragging = true;
+    pressedAt = mark;
     map.dragPan.disable();
     setData(GHOST, []);
     cursor('grabbing');
@@ -118,7 +141,13 @@ export function createPointDraw(map: ChordMap, options: PointDrawOptions): Point
     dragging = false;
     map.dragPan.enable();
     cursor(overMark ? 'grab' : 'crosshair');
-    if (mark) options.onPick(mark);
+    // A press on the mark released where it began is a click on it, not a move: reporting it would
+    // save the point it already has (a landmark's move writes an edit for every pick).
+    const moved =
+      mark !== null &&
+      (pressedAt === null || mark.lat !== pressedAt.lat || mark.lng !== pressedAt.lng);
+    pressedAt = null;
+    if (mark && moved) options.onPick(mark, scaleAt(mark));
   };
   const onEnterMark = () => {
     overMark = true;

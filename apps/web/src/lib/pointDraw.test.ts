@@ -6,7 +6,7 @@
 import type { LatLng } from '@skating/core';
 import { describe, expect, it, vi } from 'vitest';
 import type { ChordMap, ChordMapEvent } from './chordDraw';
-import { createPointDraw } from './pointDraw';
+import { createPointDraw, metersPerPixel } from './pointDraw';
 
 class FakeMap implements ChordMap {
   handlers = new Map<string, Set<(e: ChordMapEvent) => void>>();
@@ -67,6 +67,23 @@ const P = (lat: number, lng: number): LatLng => ({ lat, lng });
 const coords = (map: FakeMap, id: string) =>
   map.features(id).map((f) => (f.geometry as GeoJSON.Point).coordinates);
 
+describe('the map’s scale at a pick', () => {
+  it('is MapLibre’s: ~0.2 m a pixel at zoom 18 on the 44th parallel, halving the zoom doubles it', () => {
+    expect(metersPerPixel(44, 18)).toBeCloseTo(0.2148, 3);
+    expect(metersPerPixel(44, 10) / metersPerPixel(44, 11)).toBeCloseTo(2, 9);
+    expect(metersPerPixel(0, 0)).toBeCloseTo(78271.5, 0);
+  });
+
+  it('rides with each pick, when the map can say', () => {
+    const map = new FakeMap() as FakeMap & { getZoom?: () => number };
+    map.getZoom = () => 12;
+    const onPick = vi.fn();
+    createPointDraw(map, { color: '#0af', onPick });
+    map.fire('click', P(44, -73));
+    expect(onPick).toHaveBeenCalledWith(P(44, -73), { metersPerPixel: metersPerPixel(44, 12) });
+  });
+});
+
 describe('the point tool', () => {
   it('places on a click, under a crosshair, and reports it once', () => {
     const map = new FakeMap();
@@ -79,7 +96,7 @@ describe('the point tool', () => {
     expect(onPick).not.toHaveBeenCalled();
     map.fire('click', P(44.5, -73.1));
     expect(onPick).toHaveBeenCalledTimes(1);
-    expect(onPick).toHaveBeenCalledWith(P(44.5, -73.1));
+    expect(onPick).toHaveBeenCalledWith(P(44.5, -73.1), {});
     expect(coords(map, 'point-tool-mark')).toEqual([[-73.1, 44.5]]);
   });
 
@@ -89,7 +106,7 @@ describe('the point tool', () => {
     createPointDraw(map, { point: P(44, -73), color: '#0af', onPick });
     expect(coords(map, 'point-tool-mark')).toEqual([[-73, 44]]);
     map.fire('click', P(44.2, -73.2));
-    expect(onPick).toHaveBeenLastCalledWith(P(44.2, -73.2));
+    expect(onPick).toHaveBeenLastCalledWith(P(44.2, -73.2), {});
     expect(coords(map, 'point-tool-mark')).toEqual([[-73.2, 44.2]]);
   });
 
@@ -108,7 +125,7 @@ describe('the point tool', () => {
     expect(onPick).not.toHaveBeenCalled();
     map.fire('mouseup', P(44.3, -73.3));
     expect(onPick).toHaveBeenCalledTimes(1);
-    expect(onPick).toHaveBeenCalledWith(P(44.3, -73.3));
+    expect(onPick).toHaveBeenCalledWith(P(44.3, -73.3), {});
     expect(map.dragPan.enable).toHaveBeenCalled();
     // The pointer is still over the mark: grab, not the crosshair.
     expect(map.canvas.style.cursor).toBe('grab');
@@ -119,6 +136,25 @@ describe('the point tool', () => {
     expect(map.canvas.style.cursor).toBe('crosshair');
   });
 
+  it('a press on the mark released where it began reports nothing: it is a click, not a move', () => {
+    const map = new FakeMap();
+    const onPick = vi.fn();
+    createPointDraw(map, { point: P(44, -73), color: '#0af', onPick });
+    map.fire('mouseenter', P(44, -73), 'point-tool-mark');
+    map.fire('mousedown', P(44, -73), 'point-tool-mark');
+    map.fire('mouseup', P(44, -73));
+    map.fire('click', P(44, -73));
+    expect(onPick).not.toHaveBeenCalled();
+    expect(map.dragPan.enable).toHaveBeenCalled();
+    expect(coords(map, 'point-tool-mark')).toEqual([[-73, 44]]);
+    // A drag that comes back to where it began moved nothing either.
+    map.fire('mousedown', P(44, -73), 'point-tool-mark');
+    map.fire('mousemove', P(44.1, -73.1));
+    map.fire('mousemove', P(44, -73));
+    map.fire('mouseup', P(44, -73));
+    expect(onPick).not.toHaveBeenCalled();
+  });
+
   it('snaps the ghost and the pick to where the mark would land', () => {
     const map = new FakeMap();
     const onPick = vi.fn();
@@ -126,7 +162,7 @@ describe('the point tool', () => {
     map.fire('mousemove', P(44.5, -73.1));
     expect(coords(map, 'point-tool-ghost')).toEqual([[-73.1, 0]]);
     map.fire('click', P(44.5, -73.1));
-    expect(onPick).toHaveBeenCalledWith(P(0, -73.1));
+    expect(onPick).toHaveBeenCalledWith(P(0, -73.1), {});
   });
 
   it('set moves the mark without reporting; destroy detaches everything and the cursor', () => {

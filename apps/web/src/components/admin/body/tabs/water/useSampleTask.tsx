@@ -98,8 +98,13 @@ export function useSampleTask({
     setSaving(true);
     try {
       const landed = await send(d.points, d.expected);
-      // A suggestion re-run since the send is a new one: it stays up.
-      if (landed && openSession.current === d.session) setDraft(null);
+      // Nothing to step once the task (or the tab) is gone.
+      if (!landed || openSession.current === null) return;
+      // A suggestion re-run since the send is a new one: it stays up, and its own save now replaces
+      // the points just saved, not the ones the task opened over (else the server refuses it).
+      setDraft((cur) =>
+        cur === null || cur.session === d.session ? null : { ...cur, expected: d.points },
+      );
     } finally {
       setSaving(false);
     }

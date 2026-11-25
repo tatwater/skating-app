@@ -58,27 +58,40 @@ export const startLink = (putIn: LinkTarget): DraftOf<'link'> => ({
 });
 
 /**
- * How near a click must land to a lot to pick it: a lot's marker is a few pixels across at the
- * body's zoom, and lots that share a car park sit tens of meters apart, so the nearest wins.
+ * How near a click must land to a lot to pick it: at least this on the ground, and at least
+ * {@link LOT_PICK_RADIUS_PX} on screen — zoomed out to find a far trailhead, a marker a few pixels
+ * off covers hundreds of meters. Lots that share a car park sit tens of meters apart: the nearest
+ * wins.
  */
 export const LOT_PICK_RADIUS_M = 150;
+export const LOT_PICK_RADIUS_PX = 14;
 
-/** The nearest lot within {@link LOT_PICK_RADIUS_M} of a click, or `null`. */
-export function nearestLot(lots: readonly LotRow[], at: LatLng): LotRow | null {
+/** The nearest lot within reach of a click (see {@link LOT_PICK_RADIUS_M}), or `null`. */
+export function nearestLot(
+  lots: readonly LotRow[],
+  at: LatLng,
+  metersPerPixel?: number,
+): LotRow | null {
+  const reach = Math.max(LOT_PICK_RADIUS_M, (metersPerPixel ?? 0) * LOT_PICK_RADIUS_PX);
   let best: { lot: LotRow; d: number } | null = null;
   for (const lot of lots) {
     const d = haversineMeters(at, lot.at);
-    if (d <= LOT_PICK_RADIUS_M && (best === null || d < best.d)) best = { lot, d };
+    if (d <= reach && (best === null || d < best.d)) best = { lot, d };
   }
   return best?.lot ?? null;
 }
 
 /** A click on the map, as the task takes it. */
-export function withPick<D extends AccessDraft>(draft: D, at: LatLng, lots: readonly LotRow[]): D {
+export function withPick<D extends AccessDraft>(
+  draft: D,
+  at: LatLng,
+  lots: readonly LotRow[],
+  metersPerPixel?: number,
+): D {
   // Each branch keeps the draft's own kind, so a caller's narrowed draft stays narrowed.
   const d: AccessDraft = draft;
   if (d.kind !== 'link') return { ...d, point: at } as D;
-  const lot = nearestLot(lots, at);
+  const lot = nearestLot(lots, at, metersPerPixel);
   return (lot === null ? { ...d, misses: d.misses + 1 } : { ...d, choice: { lotId: lot.id } }) as D;
 }
 

@@ -51,11 +51,17 @@ export function useLandmarkTask({
   landmarks,
   lit,
   onLitChange,
+  canAnswerAsk,
 }: {
   bodyId: string;
   landmarks: readonly LandmarkRow[];
   lit: string | null;
   onLitChange: ((lit: string | null) => void) | undefined;
+  /**
+   * The viewer may place a skater's ask (`body.places` and `inbox.request`, as the server asks):
+   * an Inbox arrival opens its card only then. `undefined` while the role is read.
+   */
+  canAnswerAsk: boolean | undefined;
 }): {
   draft: LandmarkDraft | null;
   drop: ReactNode;
@@ -103,6 +109,17 @@ export function useLandmarkTask({
         },
         replace: true,
       } as never);
+    // Until the role is read, wait; a viewer who couldn't save it isn't handed a card to fill.
+    if (canAnswerAsk === undefined) return;
+    if (!canAnswerAsk) {
+      sayRefusal({
+        title: 'Nothing to place',
+        description:
+          'Placing a skater’s ask takes both the Places and the Inbox permissions, and this account doesn’t have both.',
+      });
+      drop();
+      return;
+    }
     if (asksFailed) {
       sayRefusal({
         title: 'Nothing to place',
@@ -131,7 +148,7 @@ export function useLandmarkTask({
       setReturnAfter(search.from !== undefined);
     }
     drop();
-  }, [search.landmarkAsk, asks, asksFailed]);
+  }, [search.landmarkAsk, asks, asksFailed, canAnswerAsk]);
 
   const discard = useCallback(() => {
     setDraft(null);
@@ -155,12 +172,19 @@ export function useLandmarkTask({
 
   /** The point the move started from: the camera goes there once, not after every move. */
   const startedAt = useRef<string | null>(null);
+  /**
+   * Bumped when a move doesn't land: the point the server holds didn't change, so the drawing starts
+   * over from it — the mark goes back to where the landmark is, not left where the refused move put it.
+   */
+  const [refusedMoves, setRefusedMoves] = useState(0);
 
   const move = useCallback(
     (row: LandmarkRow, point: LatLng) =>
       void act(() => update({ landmarkId: row.id as Id<'bodyLandmarks'>, point }), {
         title: `Moved · ${row.name}`,
         target: { targetType: 'bodyLandmark', targetId: row.id },
+      }).then((landed) => {
+        if (!landed) setRefusedMoves((n) => n + 1);
       }),
     [act, update],
   );
@@ -187,17 +211,17 @@ export function useLandmarkTask({
       const key = pointKey(movingRow.point);
       return {
         // The landmark's point as the server holds it: a move landing, or an Undo, puts the mark
-        // where the landmark now is.
-        session: `landmark:move:${movingRow.id}:${key}`,
+        // where the landmark now is — and a move refused puts it back there too.
+        session: `landmark:move:${movingRow.id}:${key}:${refusedMoves}`,
         engine: { kind: 'point', point: movingRow.point, onPick: (p) => move(movingRow, p) },
         mode: bar.mode,
         line: bar.line,
-        focus: startedAt.current === key ? { point: movingRow.point } : null,
+        focus: startedAt.current === `${key}:${refusedMoves}` ? { point: movingRow.point } : null,
         onExit: stopMove,
       };
     }
     return null;
-  }, [draft, movingRow, discard, stopMove, move]);
+  }, [draft, movingRow, discard, stopMove, move, refusedMoves]);
   useClaimMapTool(claim);
 
   // A save outlives its card (`act` settles after the tab unmounts, by design): what it does after
@@ -304,7 +328,7 @@ export function useLandmarkTask({
       const row = landmarks.find((l) => l.id === landmarkId);
       if (row === undefined) return;
       discard();
-      startedAt.current = pointKey(row.point);
+      startedAt.current = `${pointKey(row.point)}:${refusedMoves}`;
       setMovingId(landmarkId);
     },
   };

@@ -377,6 +377,37 @@ describe('Access: a lot linked to a put-in on the map', () => {
   });
 });
 
+describe('Access: a link that changes only the assertion', () => {
+  it('its own lot with the hike-in ticked sends the assertion alone, keeping the walk it has', async () => {
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await user.click(await screen.findByRole('button', { name: 'Change lot' }));
+    pick(LOT_RAMP.coord);
+    await user.click(within(task()).getByRole('checkbox', { name: /It’s a hike-in/ }));
+    await user.click(saveButton());
+    await waitFor(() => expect(sent(api.accessPoints.setPutInAccess)).toHaveLength(1));
+    expect(sent(api.accessPoints.setPutInAccess)[0]?.args).toEqual({
+      putInId: OFFICIAL.id,
+      approachKindOverride: 'hike_in',
+    });
+  });
+
+  it('a hike-in ticked and then hidden by No parking is never sent', async () => {
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await user.click(await screen.findByRole('button', { name: 'Change lot' }));
+    pick(LOT_BESIDE.coord);
+    await user.click(within(task()).getByRole('checkbox', { name: /It’s a hike-in/ }));
+    await user.click(within(task()).getByRole('button', { name: 'No parking' }));
+    await user.click(saveButton());
+    await waitFor(() => expect(sent(api.accessPoints.setPutInAccess)).toHaveLength(1));
+    expect(sent(api.accessPoints.setPutInAccess)[0]?.args).toEqual({
+      putInId: OFFICIAL.id,
+      clearParking: true,
+    });
+  });
+});
+
 describe('Access: without the lever', () => {
   it('a viewer who can’t place access is offered none of it', async () => {
     mocks.denied = new Set(['body.access']);

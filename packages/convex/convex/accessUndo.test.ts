@@ -335,6 +335,39 @@ describe('undo: a lot placed by hand (D300)', () => {
     expect(await links(t, lots[0]?._id as Id<'parkingAreas'>)).toHaveLength(1);
   });
 
+  test('a lot put back by undoing its removal keeps its capacity and fee', async () => {
+    const t = convexTest(schema, modules);
+    const waterBodyId = await seedBody(t);
+    const mod = await seedUser(t, 'mod');
+    const lotId = await mod.as.mutation(api.accessPoints.setOfficialParking, {
+      coord: { lat: 0.5, lng: -0.001 },
+      name: 'Town lot',
+      amenities: [],
+      capacity: 12,
+      fee: true,
+      waterBodyIds: [waterBodyId],
+    });
+    const row = await newestOn(t, 'parkingArea', lotId);
+    await mod.as.mutation(api.undo.run, { actionId: row._id, reason: 'wrong lot' });
+    const removal = await newestOn(t, 'parkingArea', lotId);
+    expect(removal.metadata).toMatchObject({ capacity: 12, fee: true });
+    await mod.as.mutation(api.undo.run, { actionId: removal._id });
+    const lots = await t.run((ctx) => ctx.db.query('parkingAreas').collect());
+    expect(lots).toHaveLength(1);
+    expect(lots[0]).toMatchObject({ name: 'Town lot', capacity: 12, fee: true });
+  });
+
+  test('a lot put back after its lake was merged away goes to the lake that survived', async () => {
+    const { t, waterBodyId, mod, row } = await lotPlaced();
+    await mod.as.mutation(api.undo.run, { actionId: row._id, reason: 'wrong lot' });
+    const removal = await newestOn(t, 'parkingArea', row.targetId as Id<'parkingAreas'>);
+    const survivor = await seedBody(t);
+    await t.run((ctx) => ctx.db.patch(waterBodyId, { mergedIntoId: survivor }));
+    await mod.as.mutation(api.undo.run, { actionId: removal._id });
+    const links = await t.run((ctx) => ctx.db.query('parkingAreaBodies').collect());
+    expect(links.map((l) => l.waterBodyId)).toEqual([survivor]);
+  });
+
   test('refused once a put-in links to it, or a skater filed an alert on it', async () => {
     const linked = await lotPlaced();
     const putInId = await linked.mod.as.mutation(api.putIns.setOfficial, {

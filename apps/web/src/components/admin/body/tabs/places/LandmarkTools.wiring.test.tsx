@@ -408,6 +408,17 @@ describe('an Inbox landmark ask arriving', () => {
     expect(toasts).toEqual([]);
   });
 
+  it('a viewer who couldn’t save it is told so, and handed no card to fill', async () => {
+    mocks.denied = new Set(['inbox.request']);
+    mocks.search = { tab: 'places', landmarkAsk: 'rq2', from: INBOX };
+    render(<Mounted />);
+    await waitFor(() => expect(toasts.map((t) => t.title)).toContain('Nothing to place'));
+    expect(toasts[0]?.description).toMatch(/Places and the Inbox permissions/);
+    expect(mocks.claim).toBeNull();
+    expect(screen.queryByRole('region', { name: 'Back to landmarks' })).toBeNull();
+    expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ replace: true }));
+  });
+
   it('an ask no longer open says so, and arms nothing', async () => {
     mocks.search = { tab: 'places', landmarkAsk: 'rq7' };
     render(<Mounted />);
@@ -489,6 +500,22 @@ describe('a landmark on its card', () => {
     await waitFor(() => expect(claim().session).not.toBe(before));
     expect(claim().engine).toMatchObject({ point: SPOT });
     // The camera went to the landmark once; a later move doesn't take it there again.
+    expect(claim().focus).toBeNull();
+  });
+
+  it('a move refused starts the drawing over at the landmark’s point, the camera left alone', async () => {
+    mocks.answer[getFunctionName(api.landmarks.update)] = () => {
+      throw new ConvexError('That is the same place as the Flats');
+    };
+    mocks.search = { tab: 'places', lit: 'landmark:lm-dam' };
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await user.click(await screen.findByRole('button', { name: /^Move/ }));
+    const before = claim().session;
+    pick(SPOT);
+    await waitFor(() => expect(toasts.length).toBeGreaterThan(0));
+    await waitFor(() => expect(claim().session).not.toBe(before));
+    expect(claim().engine).toMatchObject({ kind: 'point', point: DAM });
     expect(claim().focus).toBeNull();
   });
 

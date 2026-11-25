@@ -86,6 +86,7 @@ import {
   setWeatherSamplePointsImpl,
 } from '../waterBodies';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
+import { resolveSurvivor } from './bodies';
 import { NAMES_NEED_THE_BAY, nameListRefusal } from './bodyNames';
 import { reopenFlagsClosedBy } from './inboxFlags';
 import {
@@ -1139,6 +1140,8 @@ const undoParkingArea: UndoHandler = {
       name?: string;
       waterBodyIds?: Id<'waterBodies'>[];
       amenities?: Doc<'parkingAreas'>['amenities'];
+      capacity?: number;
+      fee?: boolean;
       prev: LinkPrev | null;
     };
     if (kind === 'lotPlaced') {
@@ -1150,11 +1153,20 @@ const undoParkingArea: UndoHandler = {
       return;
     }
     if (kind === 'lotRemoved') {
+      // The lakes it served, as they stand: one merged away since is its survivor; one gone, dropped.
+      const lakes: Id<'waterBodies'>[] = [];
+      for (const id of (m.waterBodyIds ?? []) as Id<'waterBodies'>[]) {
+        const lake = await resolveSurvivor(ctx, id);
+        if (lake !== null && !lakes.includes(lake._id)) lakes.push(lake._id);
+      }
+      if (lakes.length === 0) throw new ConvexError('Every lake this lot served is gone.');
       await setOfficialParkingImpl(ctx, actor, {
         coord: m.coord,
         ...(m.name !== undefined ? { name: m.name } : {}),
         amenities: m.amenities ?? [],
-        waterBodyIds: m.waterBodyIds ?? [],
+        ...(m.capacity !== undefined ? { capacity: m.capacity } : {}),
+        ...(m.fee !== undefined ? { fee: m.fee } : {}),
+        waterBodyIds: lakes,
         reason,
       });
       return;

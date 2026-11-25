@@ -78,8 +78,8 @@ export type MapToolEngine =
        * the server's own "too far from the water" refusal is the one that answers (a put-in).
        */
       snapWithinM?: number;
-      /** A click, or a drag's release: the mark is here now. */
-      onPick: (point: LatLng) => void;
+      /** A click, or a drag's release: the mark is here now, with the map's scale there. */
+      onPick: (point: LatLng, scale?: { metersPerPixel?: number }) => void;
     }
   /** Nothing to draw with: the shape comes from elsewhere (a paste, a grid), and the map shows it. */
   | { kind: 'none' };

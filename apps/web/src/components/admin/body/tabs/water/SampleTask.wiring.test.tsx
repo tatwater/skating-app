@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import type { ReactNode } from 'react';
@@ -198,6 +198,30 @@ describe('the sample-point task', () => {
     await user.keyboard('{Meta>}s{/Meta}');
     await waitFor(() => expect(sent(api.waterBodies.setWeatherSamplePoints)).toHaveLength(1));
     expect(sent(api.waterBodies.setWeatherSamplePoints)[0]?.args.points).toEqual(grid);
+  });
+
+  it('a grid suggested again while a save is out stays up, and its save expects the points just saved', async () => {
+    let release: (v: unknown) => void = () => {};
+    mocks.answer[getFunctionName(api.waterBodies.setWeatherSamplePoints)] = () =>
+      new Promise((resolve) => {
+        release = resolve;
+      });
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await user.click(await screen.findByRole('button', { name: 'Suggest a grid' }));
+    const first = suggestSamplePoints(OUTLINE, 11).points;
+    await user.click(within(task()).getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(sent(api.waterBodies.setWeatherSamplePoints)).toHaveLength(1));
+    const spacing = within(task()).getByRole('spinbutton', { name: 'Spacing in km' });
+    await user.clear(spacing);
+    // The button rests while the save is out; ⏎ in the field still suggests.
+    await user.type(spacing, '1{Enter}');
+    await act(async () => release(MASCOMA_ID));
+    expect(task()).toBeVisible();
+    mocks.answer[getFunctionName(api.waterBodies.setWeatherSamplePoints)] = () => MASCOMA_ID;
+    await user.click(within(task()).getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(sent(api.waterBodies.setWeatherSamplePoints)).toHaveLength(2));
+    expect(sent(api.waterBodies.setWeatherSamplePoints)[1]?.args.expected).toEqual(first);
   });
 
   it('keeps the grid when the save is refused, and says why in a toast', async () => {

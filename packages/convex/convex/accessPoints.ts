@@ -1133,6 +1133,9 @@ export async function removeOfficialLotImpl(
       ...(lot.name !== undefined ? { name: lot.name } : {}),
       waterBodyIds,
       amenities: lot.amenities,
+      // Every field a placement writes, so undoing this places the same lot again, not a lesser one.
+      ...(lot.capacity !== undefined ? { capacity: lot.capacity } : {}),
+      ...(lot.fee !== undefined ? { fee: lot.fee } : {}),
       removed: true,
       prev: null,
     },

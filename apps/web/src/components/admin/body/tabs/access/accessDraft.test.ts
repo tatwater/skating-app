@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { metersPerPixel } from '@/lib/pointDraw';
 
 import {
   draftShape,
@@ -95,6 +96,17 @@ describe('linking a lot', () => {
     });
     expect(draftShape(picked, LOTS)).toMatchObject({ type: 'MultiPoint' });
     expect((draftShape(picked, LOTS) as GeoJSON.MultiPoint).coordinates).toHaveLength(2);
+  });
+
+  it('reaches as far on screen as on the ground: zoomed out, a few pixels off a lot still picks it', () => {
+    const lot = LOTS[0];
+    if (!lot) throw new Error('no lot');
+    // ~400 m north of the lot: past the ground reach, a miss at a close zoom…
+    const off = { lat: lot.at.lat + 0.0036, lng: lot.at.lng };
+    expect(nearestLot([lot], off)).toBeNull();
+    expect(nearestLot([lot], off, metersPerPixel(off.lat, 16))).toBeNull();
+    // …and a hit zoomed out to zoom 10, where 14 px is ~770 m.
+    expect(nearestLot([lot], off, metersPerPixel(off.lat, 10))?.id).toBe(lot.id);
   });
 
   it('measures the straight line, and asks for the hike-in past the D144 line', () => {
