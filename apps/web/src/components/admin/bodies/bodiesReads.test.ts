@@ -252,6 +252,29 @@ describe('the list from its pages', () => {
         ['Removed', 0, false, []],
       ],
     );
+    // Each lane with more matches than rows drawn is a way to the rest, in its own list; a lane
+    // whose matches are all drawn is none.
+    expect(othersFrom(o).map((g) => g.more)).toEqual([
+      [{ lane: 'active', count: 2, capped: false }],
+      [
+        { lane: 'not_in_campaign', count: 3, capped: false },
+        { lane: 'moderator', count: 50, capped: true },
+      ],
+      [],
+    ]);
+    expect(
+      othersFrom({
+        ...o,
+        groups: [
+          {
+            lane: 'removed',
+            count: 1,
+            capped: false,
+            rows: [libraryRow({ id: 'r1' } as Partial<LibraryRow>)],
+          },
+        ],
+      })[0]?.more,
+    ).toEqual([]);
     const list = listFrom({
       rows: [],
       status: 'Exhausted',

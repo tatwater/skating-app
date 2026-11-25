@@ -335,6 +335,27 @@ export const WeatherMissing: Story = {
   },
 };
 
+/**
+ * The estimate declined for the thaw: its words are longer than the stat's column, so they wrap in
+ * the cell rather than run under the map beside it.
+ */
+export const WeatherThawDeclined: Story = {
+  args: { ...SAFETY_ARGS, weather: { ...WEATHER, stefan: { declined: 'thaw' } } },
+  play: async ({ canvasElement }) => {
+    const cell = slot(canvasElement, 'weather-stefan');
+    await expect(cell).toHaveTextContent('Too much thaw in the last 60 days for the estimate');
+    const value = slot(cell, 'value');
+    // Layout, read until it settles: a measure taken before the fonts land is a fallback's.
+    await waitFor(() => {
+      expect(value.getBoundingClientRect().right).toBeLessThanOrEqual(
+        cell.getBoundingClientRect().right + 0.5,
+      );
+      expect(value.scrollWidth).toBeLessThanOrEqual(value.clientWidth + 0.5);
+    });
+    await expectNoSidewaysScroll(pane(canvasElement));
+  },
+};
+
 /** No weather kept for the body at all. */
 export const WeatherNotRecorded: Story = {
   args: { ...SAFETY_ARGS, weather: null },

@@ -18,6 +18,7 @@ import {
   useState,
 } from 'react';
 
+import { Button } from '@/components/kit/button';
 import { ListEnd } from '@/components/kit/list-end';
 import { RetryNote } from '@/components/kit/retry-note';
 import { SearchMark } from '@/components/kit/search-mark';
@@ -29,7 +30,7 @@ import { KEYS_PASS_THROUGH } from '@/lib/keys';
 import { useLoadAhead } from '@/lib/loadAhead';
 import { cn } from '@/lib/utils';
 import { countText } from '../overview/overviewModel';
-import { allRows, type BodiesListData } from './bodiesData';
+import { allRows, type BodiesListData, type GroupMore } from './bodiesData';
 import {
   acresText,
   asksText,
@@ -43,8 +44,8 @@ import {
   statesText,
 } from './bodiesModel';
 import { isSearch } from './bodiesSearch';
-import { type BodyLane, laneStanding } from './bodyLanes';
-import { notListedWords, OTHERS_FAILED } from './listWords';
+import { BODY_LANES, type BodyLane, laneStanding } from './bodyLanes';
+import { NOTHING_HERE_MATCHES, notListedWords, OTHERS_FAILED, seeAllWords } from './listWords';
 import { spacedRows, withPinned } from './virtualRows';
 
 /**
@@ -59,8 +60,9 @@ import { spacedRows, withPinned } from './virtualRows';
  * - **One tab stop for the rows**: the body is a `grid` with a cursor (`aria-activedescendant`), so
  *   Tab goes on to the preview. ↑↓ move the cursor, Home/End jump, typing jumps to the next name
  *   that starts with what was typed (a letter again cycles); **⏎ or Space opens** the row in the
- *   preview and moves focus there; a click opens it where you are. G and ? pass through to the
- *   keyboard layer; / goes to the search.
+ *   preview and moves focus there; a click opens it where you are. **⏎ on the row already open**
+ *   opens its body (`onOpenBody`, the preview's *Open in Body ⏎*), so a clicked row is one ⏎ from
+ *   its console, not two. G and ? pass through to the keyboard layer; / goes to the search.
  * - **Pages arrive as it scrolls**: near the end it asks for more, so the server is asked for a page
  *   at a time, never for the corpus — and only while the list is in sight and measured
  *   (`useLoadAhead`): a list a narrow screen hid, or not yet laid out, asks for nothing until it
@@ -103,7 +105,22 @@ const MONO: ReadonlySet<BodyColumnId> = new Set(['acres', 'asks', 'reports', 'ch
 type Entry =
   | { kind: 'row'; row: BodyRow; other: boolean }
   /** `count` as drawn: "50+" when the server's count stopped at its bound (a floor, never a total). */
-  | { kind: 'group'; key: string; label: string; count: string };
+  | { kind: 'group'; key: string; label: string; count: string }
+  /** A group's way to the rest of one lane's matches, under its rows. */
+  | { kind: 'more'; key: string; laneId: string; words: string };
+
+/** A lane's matches past a group's rows, as the way to them: its list, and the words. */
+function moreEntry(more: GroupMore): Entry | null {
+  const lane = BODY_LANES.find((l) => l.read.kind === 'library' && l.read.lane === more.lane);
+  if (lane === undefined) return null;
+  const count = `${more.count.toLocaleString('en-US')}${more.capped ? '+' : ''}`;
+  return {
+    kind: 'more',
+    key: `more-${more.lane}`,
+    laneId: lane.id,
+    words: seeAllWords(count, lane.label),
+  };
+}
 
 type CellCtx = { q: string; now: number; showStanding: (row: BodyRow) => boolean };
 
@@ -185,6 +202,11 @@ type BodiesTableProps = {
   onSelect: (id: string) => void;
   /** ⏎ or Space on a row: open it and move focus into the preview. */
   onOpen: (id: string) => void;
+  /**
+   * ⏎ on the row already open in the preview: open its body. Left out while the preview can't open
+   * it (still loading, failed, unavailable) — ⏎ then only opens the row, as on any other.
+   */
+  onOpenBody?: (id: string) => void;
   /** Near the end with more to come. */
   onLoadMore?: () => void;
   /** The list is hidden (a narrow screen's open body has the page): it asks for no page. */
@@ -193,6 +215,8 @@ type BodiesTableProps = {
   onRetry?: () => void;
   /** Re-runs a failed other-standings read. */
   onRetryOthers?: () => void;
+  /** A group's *See all*: the same search, in that lane's own list. */
+  onSeeAll?: (laneId: string) => void;
   /** This list, as it stands — the scroll is remembered under it. */
   memoryKey: string;
   /** / was pressed in the rows. */
@@ -210,10 +234,12 @@ export function BodiesTable({
   onSort,
   onSelect,
   onOpen,
+  onOpenBody,
   onLoadMore,
   paused = false,
   onRetry,
   onRetryOthers,
+  onSeeAll,
   memoryKey,
   onSearchKey,
   gridRef,
@@ -251,6 +277,8 @@ export function BodiesTable({
   const table = useTable({ features, columns, data, getRowId: (row) => row.id });
   const rowById = new Map(table.getRowModel().rows.map((r) => [r.id, r]));
 
+  // Whether the groups offer *See all*, by value: the handler is new each render.
+  const seeAll = onSeeAll !== undefined;
   const entries = useMemo<Entry[]>(
     () => [
       ...list.rows.map((row) => ({ kind: 'row' as const, row, other: false })),
@@ -262,9 +290,16 @@ export function BodiesTable({
           count: `${(g.count ?? g.rows.length).toLocaleString('en-US')}${g.capped ? '+' : ''}`,
         },
         ...g.rows.map((row) => ({ kind: 'row' as const, row, other: true })),
+        // The server sends each standing's best few: past them, the way to the rest.
+        ...(seeAll
+          ? (g.more ?? []).flatMap((m) => {
+              const entry = moreEntry(m);
+              return entry === null ? [] : [entry];
+            })
+          : []),
       ]),
     ],
-    [list.rows, list.others],
+    [list.rows, list.others, seeAll],
   );
   const rowEntries = useMemo(
     () => entries.flatMap((e) => (e.kind === 'row' ? [e.row] : [])),
@@ -291,7 +326,7 @@ export function BodiesTable({
     estimateSize: (i) => (entries[i]?.kind === 'group' ? 40 : 32),
     getItemKey: (i) => {
       const e = entries[i];
-      return e === undefined ? i : e.kind === 'row' ? e.row.id : `group-${e.key}`;
+      return e === undefined ? i : e.kind === 'row' ? e.row.id : `${e.kind}-${e.key}`;
     },
     overscan: 12,
     // The cursor's row stays rendered, so `aria-activedescendant` always names an element and
@@ -344,6 +379,11 @@ export function BodiesTable({
 
   const onKeyDown = (event: KeyboardEvent<HTMLTableElement>) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    // A group's *See all* is a button of its own inside the grid: its ⏎ and Space press it, and
+    // never open the row under the cursor (or that row's body).
+    if (event.target instanceof Element && event.target.closest('[data-slot="bodies-more"]')) {
+      return;
+    }
     const at = rowEntries.findIndex((r) => r.id === cursor);
     const step = (to: number) => {
       event.preventDefault();
@@ -356,6 +396,10 @@ export function BodiesTable({
     if (event.key === 'Enter' || event.key === ' ') {
       if (event.shiftKey || cursor === null) return;
       event.preventDefault();
+      if (event.key === 'Enter' && cursor === selectedId && onOpenBody !== undefined) {
+        onOpenBody(cursor);
+        return;
+      }
       onOpen(cursor);
       return;
     }
@@ -400,6 +444,17 @@ export function BodiesTable({
           label={entry.label}
           count={entry.count}
         />
+      );
+    }
+    if (entry.kind === 'more') {
+      return (
+        <tr key={`more-${entry.key}`} ref={measure} data-index={index} data-slot="bodies-more">
+          <td colSpan={lane.columns.length} className="px-(--gap-gutter) py-(--space-2)">
+            <Button variant="link" size="row" onClick={() => onSeeAll?.(entry.laneId)}>
+              {entry.words}
+            </Button>
+          </td>
+        </tr>
       );
     }
     const { row, other } = entry;
@@ -451,7 +506,6 @@ export function BodiesTable({
 
   const laid = virtual ? spacedRows(virtualizer.getVirtualItems(), virtualizer.getTotalSize()) : [];
   const loading = status === 'loading';
-  const rowsTotal = rowEntries.length;
 
   return (
     <div data-slot="bodies-table" className="flex min-h-0 flex-1 flex-col">
@@ -553,7 +607,8 @@ export function BodiesTable({
         >
           {list.othersFailed !== undefined ? OTHERS_FAILED : null}
         </RetryNote>
-        <ListFoot list={list} rows={rowsTotal} q={q} onRetry={onRetry} />
+        {/* The list's end is the lane's: the other standings' rows under it are not its own. */}
+        <ListFoot list={list} rows={list.rows.length} q={q} onRetry={onRetry} />
       </div>
     </div>
   );
@@ -583,7 +638,11 @@ function ListFoot({
         return 'Loading more';
       case 'done':
         if (rows === 0) {
-          return list.serves.search && isSearch(q) ? `Nothing matches “${q.trim()}”` : 'None here';
+          if (!list.serves.search || !isSearch(q)) return 'None here';
+          // Matches drawn above from other standings: this lane's list is the one with none.
+          return (list.others ?? []).some((g) => g.rows.length > 0)
+            ? NOTHING_HERE_MATCHES(q.trim())
+            : `Nothing matches “${q.trim()}”`;
         }
         // Every row is in: a total the summary stopped counting at ("500+") gives way to the
         // rows' own exact count.

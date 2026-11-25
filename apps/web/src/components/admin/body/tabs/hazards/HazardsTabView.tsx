@@ -37,7 +37,6 @@ import { RetryNote, type RetryNoteProps } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonBlock } from '@/components/kit/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
-import { Toolbar, ToolbarButton } from '@/components/kit/toolbar';
 import {
   sayUnavailable,
   UNAVAILABLE,
@@ -137,8 +136,6 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
    * whether it landed: a refusal is a toast, and the dialog stays open over the reason.
    */
   onDemote?: (id: string, reason: string) => Promise<boolean>;
-  /** Mark a hazard by hand (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
-  onMarkHazard?: (() => void) | typeof UNAVAILABLE;
   /** Add a known feature (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
   onAddFeature?: (() => void) | typeof UNAVAILABLE;
   /** Redraw a feature's footprint (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
@@ -149,7 +146,6 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
 
 /** What each unbuilt tool will do, for its *Not available yet*. */
 const TOOLS = {
-  mark: 'Marking a hazard by hand comes with the map’s hazard tools.',
   add: 'Drawing a known feature comes with the map’s hazard tools.',
   edit: 'Redrawing a known feature’s footprint comes with the map’s hazard tools.',
 };
@@ -171,7 +167,6 @@ export function HazardsTabView({
   retryPending = false,
   onOpenRecurrence,
   onDemote,
-  onMarkHazard,
   onAddFeature,
   onEditShape,
   lit,
@@ -182,19 +177,12 @@ export function HazardsTabView({
   const pane = useRef<HTMLDivElement>(null);
   const current = season === currentSeason;
   // A past winter is a record: nothing on it acts.
-  const mark = current ? onMarkHazard : undefined;
   const add = current ? onAddFeature : undefined;
   const demote = current ? onDemote : undefined;
   const edit = current ? onEditShape : undefined;
   const [demoting, setDemoting] = useState<FeatureRowWithGlyph | null>(null);
 
   useTabKeys(pane, [
-    {
-      key: 'M',
-      run: () => (mark === UNAVAILABLE ? sayUnavailable(TOOLS.mark) : mark?.()),
-      enabled: mark !== undefined,
-      label: 'Mark a hazard',
-    },
     {
       key: 'F',
       run: () => (add === UNAVAILABLE ? sayUnavailable(TOOLS.add) : add?.()),
@@ -237,11 +225,7 @@ export function HazardsTabView({
       <div
         ref={pane}
         data-slot="hazards-tab"
-        className={cn(
-          'flex flex-col gap-(--space-5_5)',
-          mark !== undefined && 'pb-(--space-14)',
-          className,
-        )}
+        className={cn('flex flex-col gap-(--space-5_5)', className)}
         {...props}
       >
         <SeasonBar season={season} currentSeason={currentSeason} onSeasonChange={onSeasonChange} />
@@ -360,20 +344,6 @@ export function HazardsTabView({
               </p>
             )}
           </Section>
-        )}
-
-        {mark !== undefined && (
-          <Toolbar floating full aria-label="Hazards">
-            {mark === UNAVAILABLE ? (
-              <UnavailableButton what={TOOLS.mark}>
-                Mark a hazard <Kbd variant="dim">M</Kbd>
-              </UnavailableButton>
-            ) : (
-              <ToolbarButton onClick={mark}>
-                Mark a hazard <Kbd variant="dim">M</Kbd>
-              </ToolbarButton>
-            )}
-          </Toolbar>
         )}
 
         {demote !== undefined && (

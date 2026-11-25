@@ -181,6 +181,9 @@ export function BodiesView({
       enabled: list.serves.facets.length > 0,
     },
   ]);
+  // The preview can open its body: one rule for ⏎ in the pane and ⏎ on its row in the list.
+  const canOpenBody =
+    query.bodyId !== null && preview != null && preview !== 'error' && preview !== 'unavailable';
   usePaneKeys(inspector, [
     {
       key: 'Enter',
@@ -188,11 +191,7 @@ export function BodiesView({
       run: () => {
         if (query.bodyId !== null) onOpenBody(query.bodyId);
       },
-      enabled:
-        query.bodyId !== null &&
-        preview != null &&
-        preview !== 'error' &&
-        preview !== 'unavailable',
+      enabled: canOpenBody,
     },
     { key: 'Shift+Enter', label: BACK_TO_LIST, run: backToList },
   ]);
@@ -319,10 +318,21 @@ export function BodiesView({
               set({ bodyId }, { replace: true });
               inspector.current?.focus();
             }}
+            {...(canOpenBody && { onOpenBody })}
             {...(onLoadMore !== undefined && { onLoadMore })}
             paused={narrow && bodyOpen}
             {...(onRetryList !== undefined && { onRetry: onRetryList })}
             {...(onRetryOthers !== undefined && { onRetryOthers })}
+            // The rest of a standing's matches, in its own list: the same search and state tab, as
+            // the groups were counted — without the lane's facets, which they don't apply.
+            onSeeAll={(id) =>
+              onQueryChange({
+                ...query,
+                lane: laneById(id, lanes),
+                facets: {},
+                sort: { column: 'match' },
+              })
+            }
             memoryKey={listKey(query)}
             onSearchKey={() => search.current?.focus()}
             gridRef={grid}

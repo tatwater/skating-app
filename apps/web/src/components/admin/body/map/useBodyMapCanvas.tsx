@@ -54,6 +54,8 @@ export interface BodyMapCanvas {
   aerialCredit: string | null;
   /** Where the summer aerial stands while it is on (loading, in, not all of it came); `null` off. */
   aerialLoad: AerialLoadView | null;
+  /** The live map, or `null` while it is down: what a tool attaches to (`useMapToolEngine`). */
+  liveMap: () => maplibregl.Map | null;
 }
 
 /** A box `factor` of its own size larger on each side: how far the camera may wander. */
@@ -209,6 +211,7 @@ export function useBodyMapCanvas({
     atMaxZoom: map !== null && zoom >= map.getMaxZoom() - 1e-6,
     aerialCredit,
     aerialLoad,
+    liveMap,
   };
 }
 

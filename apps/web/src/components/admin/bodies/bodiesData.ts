@@ -1,5 +1,5 @@
 import type { api } from '@skating/convex/api';
-import type { DepthSource } from '@skating/core';
+import type { DepthSource, LibraryLane } from '@skating/core';
 import type { FunctionReturnType } from 'convex/server';
 import type { Removal } from '../body/frame/bodyModel';
 import type { Count } from '../overview/overviewModel';
@@ -55,6 +55,20 @@ export interface BodyGroup {
   /** How many match in all, counted to the server's bound; `capped`: a floor ("50+"). */
   count?: number;
   capped?: boolean;
+  /**
+   * The server lanes in the group with more matches than the rows shown: each is a way to the
+   * rest, in that lane's own list (*See all 26 in Dormant · inactive*). None when every match is
+   * drawn.
+   */
+  more?: readonly GroupMore[];
+}
+
+/** One lane's matches past the rows a group shows. */
+export interface GroupMore {
+  lane: LibraryLane;
+  count: number;
+  /** The count stopped at the server's bound: a floor ("50+"). */
+  capped: boolean;
 }
 
 export interface BodiesListData {

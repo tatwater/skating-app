@@ -1,7 +1,7 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { searchQueryArg } from '@skating/core';
-import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { Link, useSearch } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
 import { useEffect, useState } from 'react';
 
@@ -30,13 +30,15 @@ import {
   shapeOutline,
   touchingNotComputed,
 } from './shapeModel';
+import { type BayToolRow, useBayTask } from './useBayTask';
 
 /**
  * The Shape tab, wired: the body (`waterBodies.get`), its bays (`subAreas.listForBody`, with when
  * each was made) and how each was made (`bodyConsole.bayProvenance`), and the bodies that touch it
  * (`bodyConsole.consoleExtras`, with each neighbor's name) — the frame reads the same, so the
- * client shares each subscription. Adding a bay hands off to the old editor, which has the chord, freehand and
- * paste tools, until the console's bay mode lands (map modes wait, the founder's Review 12 call).
+ * client shares each subscription. Bays are drawn here, on the console map (`useBayTask`, B01-6a):
+ * a new one by chord, freehand or paste, a lit one redrawn or its mouth moved, an Inbox ask or a
+ * landmark arriving as a task — for a viewer with `body.shape`.
  *
  * **The merge**, for a viewer with `corpus.duplicates`: the survivor picked among the touching bodies
  * or found by name (`waterBodies.searchByName`, bodies only, once typing rests), the server's preview
@@ -78,12 +80,21 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
   const mergeWrite = useMutation(MERGE_WRITE);
   const record = loaded(r.body);
   const bodyName = record?.available ? record.body.name : '';
-  const navigate = useNavigate();
   const { from } = useSearch({ strict: false }) as { from?: string };
   const made = loaded(r.made);
   const merge = canRead ? shapeMergeOf(readState(r.extras, touchingNotComputed)) : undefined;
   const touching =
     merge === undefined || merge === null || isFailed(merge) ? [] : (loaded(merge.touching) ?? []);
+  // The bay task (B01-6a): drawn on the console map, saved from the task block.
+  const bays = useBayTask({
+    bodyId,
+    parent: record?.available
+      ? (record.body.polygon as GeoJSON.Polygon | GeoJSON.MultiPolygon)
+      : null,
+    rows: loaded(r.subAreas) as readonly BayToolRow[] | undefined,
+    onLitChange: (next) => onLitChange?.(next),
+  });
+  const canShape = can('body.shape');
   // **One piece of state for the survivor picked**: the map lights from it, whichever way it was
   // picked (a touching row, a search hit, *Pick another*). A bay lit meanwhile is left alone unless
   // a touching body takes its place.
@@ -165,7 +176,10 @@ export function ShapeTabRoute({ bodyId, lit = null, onLitChange }: BodyTabProps)
         : {})}
       lit={lit}
       onLitChange={(next) => onLitChange?.(next)}
-      onAddBay={() => void navigate({ to: '/admin/water/$id', params: { id: bodyId } })}
+      task={bays.task}
+      {...(canShape
+        ? { onAddBay: bays.startNew, onRedrawBay: bays.redraw, onBayMouth: bays.mouth }
+        : {})}
     />
   );
 }

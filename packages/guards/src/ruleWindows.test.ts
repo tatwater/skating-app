@@ -115,6 +115,10 @@ const WINDOW_EXCEPTIONS: Record<string, string> = {
     '(b) while pending, an ask at a time, `unchecked` past OWN_ASKS_READ or the budget — the decision refuses on `unchecked` (ALONGSIDE_UNCHECKED)',
   'lib/undoHandlersBody.ts#undoPutIn':
     '(b) SUPPRESSION_ROWS_READ + 1 read; `launchRefusalOf` refuses past SUPPRESSION_ROWS_READ (SUPPRESSION_UNCHECKED — inboxReopenRule.test.ts)',
+  'lib/undoHandlersBody.ts#restoreLandmarksRetiredBy':
+    '(c) a bay retires at most a lake’s live landmarks (MAX_LANDMARKS_PER_BODY, held by create and restore), all in its own write, so they lead the oldest-first read of removals since it; each landmark’s newest row is an exact `.first()` — landmarks.test.ts',
+  'lib/undoHandlersBody.ts#reRetireLandmarksRestoredWith':
+    '(c) one undo writes a restore per landmark the bay retired (≤ MAX_LANDMARKS_PER_BODY) and a few rows of its own, all at one clock, so the same-instant read holds them; each landmark’s newest row is an exact `.first()` — landmarks.test.ts',
   'putIns.ts#launchRefusal':
     '(b) SUPPRESSION_ROWS_READ + 1 read; `launchRefusalOf` refuses past SUPPRESSION_ROWS_READ (SUPPRESSION_UNCHECKED — inboxReopenRule.test.ts)',
 };

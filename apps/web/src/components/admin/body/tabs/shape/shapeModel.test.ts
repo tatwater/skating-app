@@ -79,6 +79,7 @@ describe('the bays', () => {
         acres: '612',
         sub: 'Seeded · 2 Sep · Teagan',
         attention: null,
+        hasMouth: false,
       },
       {
         id: 'bay:bay-south',
@@ -86,6 +87,7 @@ describe('the bays', () => {
         acres: '531',
         sub: 'Seeded · 2 Sep · Teagan',
         attention: null,
+        hasMouth: false,
       },
     ]);
   });

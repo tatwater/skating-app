@@ -9009,6 +9009,33 @@ gates drift.
 
 **Related:** D13, D26, D41, D45, D294, D295, D296, D297, B03 §9.
 
+## D299 — The console draws and places on its own map; hazards are marked only from the skater apps (B01)
+
+**Decided (2026-11-25, founder; the governor's rulings on what he didn't spell out are marked).**
+Every drawing and placing action a moderator takes on a body happens in the Body console, on its map,
+never in the old editor (`/admin/water/$id`):
+- **In scope: drawing and placing.** Bays by chord, freehand or pasted GeoJSON, a bay redrawn or its
+  mouth edited; a landmark dropped or moved, an emailed name or a skater's proposal placed, a landmark
+  drawn as a bay; a put-in or a lot placed, a lot linked to a put-in; a known feature drawn or its
+  shape redrawn; the weather sample points. The Inbox's *Draw in Body →* opens the Body console with
+  its tool armed.
+- **Not in scope: the non-map edits** (aliases, class, depth, survey filing, the imagery override,
+  posted rules) and deleting the old editor. The Body console's link to the old editor stays, for
+  those, until they move (the governor's ruling).
+- **A hazard is marked only from the skater apps.** The console offers no *Mark a hazard*: no server
+  write exists for a moderator-authored hazard, and one would need its own answers to whose name it
+  carries, whether it decays like a skater's, and how it is worded under D3. The Hazards tab's
+  *Not available yet* button comes out.
+- **A landmark drawn as a bay goes away.** A bay and a landmark pin for the same water would be two
+  answers to one question; the bay retires the landmark in the same write (D202's
+  `promoteLandmarkId`, already built).
+
+**Why.** The B01 brief re-homes every lever, none lost; the founder's test pass found the Shape tab's
+*Draw by chord* sending him to the old editor. Moderator-marked hazards were never a lever the old
+editor had, so leaving them out loses nothing.
+
+**Related:** D3, D51, D201, D202, D215, D221, D226, B01's *The map's tools (B01-6, the design)*.
+
 ## D299 — Corpus's tasks land lane by lane, each whole, and a sidebar entry appears only for a built lane (B01)
 
 **Decided (2026-11-24, founder).** The whole Corpus task design (§4) is built, one lane at a time:

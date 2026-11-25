@@ -1,13 +1,15 @@
 import { type ReactNode, useMemo, useState } from 'react';
 import { type BBoxLike, fitCamera, stillSurface } from '@/lib/mapSurface';
+import { useMapToolClaim } from '../frame/mapTool';
 import { useAerialSwitch } from './aerialSwitch';
 import { BodyMapPane } from './BodyMapPane';
 import { BodyMapStill } from './BodyMapStill';
-import type { BodyMapMode } from './bodyMapPalette';
+import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import { drawScene, layerSwitches, rackRows } from './bodyScene';
 import { type AerialLoad, aerialCredit, useStillAerialLoad } from './consoleAerial';
 import type { BodyMapLayer, BodyMapScene } from './mapDescriptors';
 import { FIT_PADDING, useBodyMapCanvas } from './useBodyMapCanvas';
+import { useMapToolEngine } from './useMapToolEngine';
 
 /**
  * The console map, whole: a scene in, the map drawn. `BodyMap` is the app's (a live MapLibre
@@ -66,8 +68,22 @@ export function BodyMap({
   const { drawn, rack, onLayerChange } = useRack(scene, resetKey);
   const [aerial, setAerial] = useAerialSwitch();
   const canvas = useBodyMapCanvas({ bbox, mode, drawn, aerial });
+  // The tool a tab claimed (B01-6): its engine on this map, its mode bar over it.
+  const tool = useMapToolClaim();
+  const palette = useMemo(() => bodyMapPalette(mode), [mode]);
+  useMapToolEngine(canvas.liveMap, tool, palette);
   return (
     <BodyMapPane
+      tool={
+        tool === null
+          ? null
+          : {
+              mode: tool.mode,
+              ...(tool.line !== undefined ? { line: tool.line } : {}),
+              ...(tool.step !== undefined ? { step: tool.step } : {}),
+              onExit: tool.onExit,
+            }
+      }
       className={className}
       surface={canvas.surface}
       ground={canvas.ground}

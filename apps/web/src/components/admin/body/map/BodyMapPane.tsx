@@ -12,6 +12,7 @@ import {
   MapDock,
   MapHoverPlate,
   MapLayerRack,
+  MapModeBar,
   MapPane,
   MapScaleBar,
   MapZoom,
@@ -111,6 +112,11 @@ export interface BodyMapPaneProps {
   credit?: string | null;
   /** Where the summer aerial stands (loading, in, or not all of it came); in, unless said. */
   aerialLoad?: AerialLoadView | null;
+  /**
+   * The tool a tab holds on the map (B01-6): its mode bar across the top — the mode, what to do
+   * next, where it stands — with the Esc cap that leaves it. The rack drops below it.
+   */
+  tool?: { mode: string; line?: string; step?: string; onExit: () => void } | null;
   className?: string;
 }
 
@@ -130,6 +136,7 @@ export function BodyMapPane({
   aerial,
   credit = null,
   aerialLoad = null,
+  tool = null,
   className,
 }: BodyMapPaneProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
@@ -225,6 +232,17 @@ export function BodyMapPane({
             />
           ))}
         </div>
+      )}
+      {tool !== null && (
+        <MapModeBar
+          data-map-ui=""
+          mode={tool.mode}
+          step={tool.step}
+          onExit={tool.onExit}
+          exitLabel={`Leave ${tool.mode.toLowerCase()}`}
+        >
+          {tool.line}
+        </MapModeBar>
       )}
       {rack !== false && (
         // The summer aerial's row names itself in two words, a step past the kit rack's 8rem: the

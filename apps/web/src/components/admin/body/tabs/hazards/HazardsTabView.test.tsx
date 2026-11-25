@@ -41,7 +41,6 @@ const base: HazardsTabViewProps = {
   onOpenRecurrence: vi.fn(),
   onDemote: vi.fn(async () => true),
   onRetry: vi.fn(),
-  onMarkHazard: vi.fn<() => void>(),
   onAddFeature: vi.fn<() => void>(),
   onEditShape: vi.fn<(id: string) => void>(),
   lit: null,
@@ -92,7 +91,7 @@ describe('HazardsTabView — the default board', () => {
     expect(document.querySelector('[data-slot="hazards-winters-loading"]')).not.toBeNull();
   });
 
-  it('draws the known features with their tools, the promotion count and Mark a hazard', async () => {
+  it('draws the known features with their tools and the promotion count, and no Mark a hazard', async () => {
     const onEditShape = vi.fn();
     const onOpenRecurrence = vi.fn();
     render(
@@ -114,7 +113,8 @@ describe('HazardsTabView — the default board', () => {
     expect(screen.getByText('2 patterns on Mascoma wait in the pre-ice pass')).toBeVisible();
     await userEvent.click(screen.getByRole('button', { name: /Recurrence/ }));
     expect(onOpenRecurrence).toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /Mark a hazard/ })).toBeVisible();
+    // Hazards are marked from the skater apps alone (D299).
+    expect(screen.queryByRole('button', { name: /Mark a hazard/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Add a feature/ })).toBeVisible();
     expect(document.querySelectorAll('[data-slot="feature-glyph"] rect').length).toBeGreaterThan(0);
   });
@@ -124,7 +124,6 @@ describe('HazardsTabView — the default board', () => {
       <HazardsTabView
         {...base}
         onDemote={undefined}
-        onMarkHazard={undefined}
         onAddFeature={undefined}
         onEditShape={undefined}
         patternsWaiting={null}
@@ -634,39 +633,28 @@ describe('HazardsTabView — the winters, a day at a time', () => {
 });
 
 describe('HazardsTabView — tools not built yet', () => {
-  it('draws Mark a hazard, Add a feature and Edit shape, each saying it is not available yet', () => {
-    render(
-      <HazardsTabView
-        {...base}
-        onMarkHazard={UNAVAILABLE}
-        onAddFeature={UNAVAILABLE}
-        onEditShape={UNAVAILABLE}
-      />,
+  it('draws Add a feature and Edit shape, each saying it is not available yet — never Mark a hazard', () => {
+    render(<HazardsTabView {...base} onAddFeature={UNAVAILABLE} onEditShape={UNAVAILABLE} />);
+    expect(screen.getByRole('button', { name: /Add a feature/ })).toHaveAttribute(
+      'aria-disabled',
+      'true',
     );
-    for (const name of [/Mark a hazard/, /Add a feature/]) {
-      expect(screen.getByRole('button', { name })).toHaveAttribute('aria-disabled', 'true');
-    }
+    // Hazards are marked from the skater apps alone (D299).
+    expect(screen.queryByRole('button', { name: /Mark a hazard/ })).toBeNull();
     for (const b of screen.getAllByRole('button', { name: 'Edit shape' })) {
       expect(b).toHaveAttribute('data-unavailable');
     }
   });
 
   it('their keys act only while the pane has focus: the built ones run, the unbuilt ones say so', async () => {
-    const onMarkHazard = vi.fn<() => void>();
     const onAddFeature = vi.fn<() => void>();
-    const { rerender } = render(
-      <HazardsTabView {...base} onMarkHazard={onMarkHazard} onAddFeature={onAddFeature} />,
-    );
+    const { rerender } = render(<HazardsTabView {...base} onAddFeature={onAddFeature} />);
     act(() => screen.getByRole('button', { name: '2026–27' }).focus());
-    await userEvent.keyboard('m');
     await userEvent.keyboard('f');
-    expect(onMarkHazard).toHaveBeenCalledTimes(1);
     expect(onAddFeature).toHaveBeenCalledTimes(1);
-    rerender(<HazardsTabView {...base} onMarkHazard={UNAVAILABLE} onAddFeature={UNAVAILABLE} />);
+    rerender(<HazardsTabView {...base} onAddFeature={UNAVAILABLE} />);
     act(() => screen.getByRole('button', { name: '2026–27' }).focus());
-    await userEvent.keyboard('m');
     await userEvent.keyboard('f');
-    expect(onMarkHazard).toHaveBeenCalledTimes(1);
     expect(onAddFeature).toHaveBeenCalledTimes(1);
   });
 
@@ -675,7 +663,6 @@ describe('HazardsTabView — tools not built yet', () => {
       <HazardsTabView
         {...base}
         season={SEASON - 1}
-        onMarkHazard={UNAVAILABLE}
         onAddFeature={UNAVAILABLE}
         onEditShape={UNAVAILABLE}
       />,

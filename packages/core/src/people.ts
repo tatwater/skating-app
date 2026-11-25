@@ -149,8 +149,35 @@ export function effectiveBountyLimitOf(limit: number | undefined | null): number
  */
 export const AVATAR_URL_MAX_BYTES = MAX_URL_CHARS;
 
-/** `url` if a profile may store it as an avatar, else `undefined` ({@link AVATAR_URL_MAX_BYTES}). */
+/**
+ * Whether `url` is Clerk's **generated** avatar — the silhouette every account without a photo of
+ * its own is given, not a picture of anyone. Clerk's image URLs carry their kind as base64url JSON in
+ * the path (`img.clerk.com/<{"type":"default",…}>`); an uploaded or OAuth photo is `"proxy"`. One
+ * silhouette for everyone makes every person look alike (a colleague's face read as your own), so it
+ * is never stored and the person shows their initials.
+ */
+export function isGeneratedAvatar(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  if (parsed.hostname !== 'img.clerk.com') return false;
+  const token = parsed.pathname.split('/').filter(Boolean).pop() ?? '';
+  try {
+    const json = atob(token.replace(/-/g, '+').replace(/_/g, '/'));
+    return (JSON.parse(json) as { type?: unknown }).type === 'default';
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * `url` if a profile may store it as an avatar, else `undefined`: not past
+ * {@link AVATAR_URL_MAX_BYTES}, and not Clerk's generated silhouette ({@link isGeneratedAvatar}).
+ */
 export function storableAvatarUrl(url: string | undefined): string | undefined {
-  if (url === undefined) return undefined;
+  if (url === undefined || isGeneratedAvatar(url)) return undefined;
   return new TextEncoder().encode(url).length <= AVATAR_URL_MAX_BYTES ? url : undefined;
 }

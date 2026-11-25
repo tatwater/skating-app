@@ -104,6 +104,7 @@ vi.mock('../map/useBodyMapCanvas', () => ({
       atMinZoom: false,
       atMaxZoom: false,
       aerialCredit: options.aerial ? 'Aerial · NAIP' : null,
+      liveMap: () => null,
     };
   },
 }));

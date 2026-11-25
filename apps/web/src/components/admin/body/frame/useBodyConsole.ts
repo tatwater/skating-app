@@ -1,6 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { polygonBBox, waterBodyClassLabel, waterBodyDisplayName } from '@skating/core';
+import {
+  drawableMouth,
+  polygonBBox,
+  waterBodyClassLabel,
+  waterBodyDisplayName,
+} from '@skating/core';
 import { useMemo } from 'react';
 import {
   isFailed,
@@ -208,7 +213,7 @@ export function useBodyConsole(bodyId: string, timeZone?: string): BodyConsoleDa
           id: s._id,
           name: s.name,
           polygon: s.polygon as GeoJSON.Polygon | GeoJSON.MultiPolygon,
-          mouth: s.mouth ? { a: s.mouth.a, b: s.mouth.b } : null,
+          mouth: drawableMouth(s) ?? null,
         })),
       landmarks: (landmarks ?? [])
         .filter((l) => l.removedAt === undefined)

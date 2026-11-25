@@ -56,8 +56,9 @@ import {
  *   (`recurrence.listForBodyAdmin`, `body.read`).
  *
  * Demote writes `bodyFeatures.demote` (`corpus.preIce`) with its reason, announced to the shell's
- * Undo (which says when there is none). Mark a hazard, Add a feature and Edit shape have no writer
- * yet: for a viewer who could use them, each is drawn and says *Not available yet*.
+ * Undo (which says when there is none). Add a feature and Edit shape are drawn and say *Not available
+ * yet* until the map's tools reach this tab (B01-6b). A hazard is never marked here: hazards come
+ * from the skater apps alone (D299).
  *
  * Every read is keyed on its values and comes back as a value, a wait or a failure, which the view
  * draws in its own place with *Try again*; the tab opens on the current winter, empty or not, and
@@ -171,7 +172,6 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
       onOpenRecurrence={() => void navigate({ to: '/admin/recurrence' })}
       {...(featureTools
         ? {
-            onMarkHazard: UNAVAILABLE,
             onAddFeature: UNAVAILABLE,
             onEditShape: UNAVAILABLE,
             onDemote: (featureId: string, reason: string) =>
