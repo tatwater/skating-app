@@ -28,7 +28,7 @@ describe('a task row, as the list draws it', () => {
         { text: 'Lake Auburn', mark: null },
       ],
       place: 'Auburn, ME',
-      middle: ['Different'],
+      middle: [{ tag: null, text: 'Different' }],
       acres: '2,263',
       decision: null,
     });
@@ -56,9 +56,12 @@ describe('a task row, as the list draws it', () => {
   it('a class conflict: the body, then each catalog’s class — or that it isn’t recorded', () => {
     const row = taskRowView(hatch as (typeof CLASS_ROWS)[number], NOW);
     expect(row.names).toEqual([{ text: 'Hatch Pond', mark: null }]);
-    expect(row.middle).toEqual(['OSM Lake or pond', 'NHD Wetland']);
+    expect(row.middle).toEqual([
+      { tag: 'OSM', text: 'Lake or pond' },
+      { tag: 'NHD', text: 'Wetland' },
+    ]);
     expect(taskRowView(ossipee as (typeof CLASS_ROWS)[number], NOW).middle).toEqual([
-      'Not recorded',
+      { tag: null, text: 'Not recorded' },
     ]);
     // An unnamed body says so, never a blank row.
     const hatchRow = hatch as (typeof CLASS_ROWS)[number];

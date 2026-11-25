@@ -80,9 +80,6 @@ export const COLUMN_HEADS: Record<CorpusTaskLane, readonly [string, string, stri
   classConflicts: ['Body', 'The catalogs say', 'Acres'],
 };
 
-/** A body stored with no name (`''`). */
-export const UNNAMED = 'Unnamed water';
-
 /** The end tab under every open row: "All 412". */
 export const allOf = (n: number) => `All ${n.toLocaleString('en-US')}`;
 /** Where a list stopped at the search's bound: more may match (the Inbox's words). */

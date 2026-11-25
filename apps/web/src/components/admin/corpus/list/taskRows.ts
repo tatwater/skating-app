@@ -1,4 +1,4 @@
-import { WATER_BODY_CLASS_LABELS } from '@skating/core';
+import { WATER_BODY_CLASS_LABELS, waterBodyDisplayName } from '@skating/core';
 
 import { ageInWords } from '@/lib/ages';
 
@@ -9,7 +9,6 @@ import {
   DECISION_WORDS,
   NOT_RECORDED,
   TAB_LABELS,
-  UNNAMED,
 } from '../words/corpusWords';
 
 /**
@@ -27,6 +26,9 @@ import {
 /** A name as a cell draws it: its text, and the letter to mark (where two names part), if any. */
 export type MarkedName = { text: string; mark: number | null };
 
+/** A line of the middle column: a catalog's tag before its class (*NHD* · *Wetland*), or words. */
+export type MiddleLine = { tag: string | null; text: string };
+
 export type TaskRowView = {
   id: string;
   /** What type-ahead matches: the row's first name. */
@@ -34,8 +36,8 @@ export type TaskRowView = {
   /** The first cell's names: the shown and the other (names), the body alone (classes). */
   names: readonly MarkedName[];
   place: string;
-  /** The middle column's lines: the kind, or each catalog's class. */
-  middle: readonly string[];
+  /** The middle column's lines: the kind, or each catalog's class after its tag. */
+  middle: readonly MiddleLine[];
   /** The acres as the column writes them, or `null` where the body has none recorded. */
   acres: string | null;
   /** Decided (a tail row): "renamed · by Avery Lindqvist · 2 h"; `null` while open. */
@@ -57,15 +59,18 @@ export function partingLetter(a: string, b: string): [number | null, number | nu
   return [i < x.length ? i : null, i < y.length ? i : null];
 }
 
-/** What the catalogs say a body is, a line each: "NHD Wetland". */
-export function claimLines(row: Extract<CorpusRowView, { lane: 'classConflicts' }>): string[] {
-  if (row.claims === null) return [NOT_RECORDED];
-  return row.claims.map((c) => `${c.source.toUpperCase()} ${WATER_BODY_CLASS_LABELS[c.cls]}`);
+/** What the catalogs say a body is, a line each: *NHD* · *Wetland*. */
+export function claimLines(row: Extract<CorpusRowView, { lane: 'classConflicts' }>): MiddleLine[] {
+  if (row.claims === null) return [{ tag: null, text: NOT_RECORDED }];
+  return row.claims.map((c) => ({
+    tag: c.source.toUpperCase(),
+    text: WATER_BODY_CLASS_LABELS[c.cls],
+  }));
 }
 
 function namesOf(row: CorpusRowView): MarkedName[] {
   if (row.lane === 'classConflicts') {
-    return [{ text: row.body.name === '' ? UNNAMED : row.body.name, mark: null }];
+    return [{ text: waterBodyDisplayName(row.body.name), mark: null }];
   }
   if (row.other === '') return [{ text: row.shown, mark: null }];
   // Only a one-letter conflict marks its letter: elsewhere the names differ whole.
@@ -76,12 +81,12 @@ function namesOf(row: CorpusRowView): MarkedName[] {
   ];
 }
 
-function middleOf(row: CorpusRowView): string[] {
+function middleOf(row: CorpusRowView): MiddleLine[] {
   if (row.lane === 'classConflicts') return claimLines(row);
   const labels = TAB_LABELS.nameConflicts as Record<string, string>;
   // A facet with no tab (not recorded) has no kind to say.
   const kind = labels[row.facet];
-  return kind === undefined ? [] : [kind];
+  return kind === undefined ? [] : [{ tag: null, text: kind }];
 }
 
 export function taskRowView(row: CorpusRowView, now: number): TaskRowView {

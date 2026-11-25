@@ -91,8 +91,8 @@ const TYPE_AHEAD_MS = 500;
 
 /** Each lane's column widths, after the first (which takes the rest). */
 const WIDTHS: Record<CorpusTaskLane, readonly [string, string]> = {
-  nameConflicts: ['5.5rem', '4.5rem'],
-  classConflicts: ['9rem', '4.5rem'],
+  nameConflicts: ['5.5rem', '4rem'],
+  classConflicts: ['8.5rem', '3.5rem'],
 };
 
 export function TaskTable({
@@ -244,15 +244,17 @@ export function TaskTable({
         <TableCell role="gridcell" className="min-w-0 align-top">
           <div data-slot="corpus-row-names" className="flex min-w-0 flex-col gap-(--space-0_5)">
             {row.names.map((name, i) => (
+              // A name wraps rather than lose its end: the console's column is narrower than the
+              // board's, and a cut name can't be told from another.
               <span
                 key={name.text}
-                className={cn('truncate', i === 0 ? 'font-medium text-fg' : 'text-fg2')}
+                className={cn('break-words', i === 0 ? 'font-medium text-fg' : 'text-fg2')}
               >
                 <Name name={name} q={q} />
               </span>
             ))}
             {row.place !== '' && (
-              <span className="truncate text-meta leading-list text-fg3">{row.place}</span>
+              <span className="break-words text-meta leading-list text-fg3">{row.place}</span>
             )}
             {row.decision !== null && (
               <span data-slot="corpus-row-decision" className="truncate text-meta text-fg3">
@@ -264,8 +266,16 @@ export function TaskTable({
         <TableCell role="gridcell" className="align-top">
           <div data-slot="corpus-row-middle" className="flex min-w-0 flex-col gap-(--space-0_5)">
             {row.middle.map((line) => (
-              <span key={line} className="truncate text-meta text-fg2">
-                {line}
+              <span key={`${line.tag}:${line.text}`} className="flex min-w-0 items-baseline">
+                {line.tag !== null && (
+                  <span
+                    data-slot="corpus-row-tag"
+                    className="w-(--space-8) shrink-0 font-(family-name:--family-mono) text-kick tracking-kick text-fg3 uppercase"
+                  >
+                    {line.tag}
+                  </span>
+                )}
+                <span className="truncate text-meta text-fg2">{line.text}</span>
               </span>
             ))}
           </div>
