@@ -1,5 +1,5 @@
 import { api } from '@skating/convex/api';
-import { Link, useNavigate } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useMemo, useRef, useState } from 'react';
 
 import { routerTarget } from '@/lib/routerTarget';
@@ -7,6 +7,7 @@ import { useRole } from '@/lib/useRole';
 
 import { type ListSummary, laneCountsFrom } from '../bodies/bodiesReads';
 import { BODY_LANES } from '../bodies/bodyLanes';
+import { safeReturnPath } from '../body/frame/bodySearch';
 import { LOCK_START, lockSeenOf, nextLock } from '../inspector/lockModel';
 import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { useClockFor } from '../reads/readArgs';
@@ -32,11 +33,15 @@ import { useCorpusSidebar } from './useCorpusSidebar';
  *   that came by a link (`placeAfter`); a search, and opening a task beside one already open,
  *   replace the entry rather than stacking it.
  * - **Every read waits on `corpus.read`**; a viewer without it reads nothing of the tasks.
+ * - **A link into the Body console carries the task's own address back** (`taskLinkTarget`), so the
+ *   console's return control and ⇧⏎ land on this task, as the library's and the Inbox's links do.
  */
 export function CorpusTaskRoute({ query }: { query: TaskQuery }) {
   const navigate = useNavigate();
   const { can } = useRole();
   const now = useMinuteNow();
+  // The task's own address, whole (lane, tab, search, open item): the Body console's way back.
+  const here = useRouterState({ select: (s) => s.location.href });
   const canRead = can('corpus.read');
   const key = taskListKey(query);
   const listNow = useClockFor(key);
@@ -85,7 +90,7 @@ export function CorpusTaskRoute({ query }: { query: TaskQuery }) {
       search: taskSearchFor(next) as never,
       ...(replace && { replace: true }),
     });
-  const linkFor = useMemo(() => (path: string) => <Link {...routerTarget(path)} />, []);
+  const linkFor = useMemo(() => (path: string) => <Link {...taskLinkTarget(path, here)} />, [here]);
 
   return (
     <CorpusTaskView
@@ -127,6 +132,22 @@ export function CorpusTaskRoute({ query }: { query: TaskQuery }) {
       inspectorRef={inspectorRef}
     />
   );
+}
+
+/**
+ * A link out of a task, as the router takes it (`routerTarget`). One into the Body console
+ * (*Open in Body →*, *History →*) carries `here`, the task's address, as `from` — validated as the
+ * console validates it (`safeReturnPath`), so only a console list's path rides along. Any other
+ * link goes as it is.
+ */
+export function taskLinkTarget(
+  path: string,
+  here: string,
+): { to: string; search?: Record<string, string> } {
+  const target = routerTarget(path);
+  if (!target.to.startsWith('/admin/body/')) return target;
+  const from = safeReturnPath(here);
+  return from === null ? target : { ...target, search: { ...target.search, from } };
 }
 
 /**

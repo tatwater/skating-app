@@ -21,6 +21,7 @@ import {
   harness as h,
   installCorpusRouteMocks,
   lastArgs,
+  linkPlace,
   must,
   resetHarness,
 } from './testing/routeHarness';
@@ -185,9 +186,10 @@ describe('a task lane', () => {
     );
     expect(facts.textContent).toContain('OSM Lake or pond · NHD Wetland');
     expect(within(inspector()).queryByRole('toolbar')).toBeNull();
+    // The placeholder's link carries the task back too: the harness's place is the bare list.
     expect(
-      inspector().querySelector('[data-slot="corpus-open-in-body"]')?.getAttribute('href'),
-    ).toBe(`/admin/body/${CLASS_ITEM.body.id}`);
+      linkPlace(must(inspector().querySelector('[data-slot="corpus-open-in-body"]'), 'the link')),
+    ).toEqual({ path: `/admin/body/${CLASS_ITEM.body.id}`, search: { from: '/admin/corpus' } });
   });
 
   it('asks a body ref with its lane', () => {
@@ -594,5 +596,33 @@ describe('a narrow screen (the console’s master–detail rule)', () => {
     expect(seen).toEqual([
       { to: '/admin/corpus', search: { lane: 'name-conflicts' }, replace: true },
     ]);
+  });
+});
+
+describe('a link out of a task', () => {
+  it('carries the task to the Body console only, and only a console list’s path', async () => {
+    const { taskLinkTarget } = await import('./CorpusTaskRoute');
+    const here = '/admin/corpus?lane=name-conflicts&tab=oneLetter&q=basin&item=t1';
+    expect(taskLinkTarget('/admin/body/b1?tab=names', here)).toEqual({
+      to: '/admin/body/b1',
+      search: { tab: 'names', from: here },
+    });
+    expect(taskLinkTarget('/admin/body/b1', here)).toEqual({
+      to: '/admin/body/b1',
+      search: { from: here },
+    });
+    // Not the console: as it is.
+    expect(taskLinkTarget('/admin/inbox?lane=x', here)).toEqual({
+      to: '/admin/inbox',
+      search: { lane: 'x' },
+    });
+    // A place the console wouldn't go back to is never carried.
+    for (const bad of [
+      '//evil.example/admin/corpus',
+      'https://evil.example/admin/corpus',
+      '/admin/people',
+    ]) {
+      expect(taskLinkTarget('/admin/body/b1', bad)).toEqual({ to: '/admin/body/b1' });
+    }
   });
 });

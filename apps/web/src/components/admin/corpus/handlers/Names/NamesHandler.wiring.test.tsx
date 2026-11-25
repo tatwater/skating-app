@@ -7,6 +7,7 @@ import {
   argSets,
   harness as h,
   installCorpusRouteMocks,
+  linkPlace,
   must,
   resetHarness,
   writesTo,
@@ -53,16 +54,18 @@ function open(item: NamesItem) {
 
 describe('the Name conflicts handler, wired', () => {
   it('draws the task in this handler, not the placeholder, with the body’s Names tab linked', () => {
+    // The task as the operator has it: a tab, a search, the open item.
+    h.here = `/admin/corpus?lane=name-conflicts&tab=oneLetter&q=basin&item=${BASIN.taskId}`;
     open(BASIN);
     const pane = inspector();
     expect(pane.querySelector('[data-slot="corpus-placeholder-facts"]')).toBeNull();
     expect(pane.querySelector('[data-slot="names-facts"]')).not.toBeNull();
     expect(within(pane).getByRole('radio', { name: 'The Basin' })).toBeChecked();
-    expect(
-      within(pane)
-        .getByRole('link', { name: /Open in Body/ })
-        .getAttribute('href'),
-    ).toBe(`/admin/body/${BASIN.body.id}?tab=names`);
+    // Its way back is this task, whole, so the console's return lands on it.
+    expect(linkPlace(within(pane).getByRole('link', { name: /Open in Body/ }))).toEqual({
+      path: `/admin/body/${BASIN.body.id}`,
+      search: { tab: 'names', from: h.here },
+    });
     // The head map asks the body's outline and each neighbor's, one read each.
     expect(argSets('waterBodies:get')).toEqual(
       [BASIN.body.id, ...must(BASIN.neighbors, 'neighbors').map((n) => n.id)].map((id) =>
@@ -105,12 +108,19 @@ describe('the Name conflicts handler, wired', () => {
   });
 
   it('a decided task opens locked: no bar, nothing to send', () => {
+    h.here = `/admin/corpus?lane=name-conflicts&tab=decided&item=${BASIN_DECIDED.taskId}`;
     open(BASIN_DECIDED);
     const pane = inspector();
     expect(within(pane).queryByRole('button', { name: /Keep “/ })).toBeNull();
     expect(within(pane).queryByRole('button', { name: /instead/ })).toBeNull();
     expect(within(pane).getAllByText(/Kate Donovan/).length).toBeGreaterThan(0);
     expect(h.writes).toEqual([]);
+    // The lock's History → goes to the body's console, and back to this task.
+    const history = must(pane.querySelector('[data-slot="corpus-history"]'), 'History');
+    expect(linkPlace(history)).toEqual({
+      path: `/admin/body/${BASIN_DECIDED.body.id}`,
+      search: { from: h.here },
+    });
   });
 
   it('neighbors not computed yet: said so, and the map asks the body alone', () => {

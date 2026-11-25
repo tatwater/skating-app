@@ -134,6 +134,7 @@ import {
   REMOVAL_SENTENCE_SHORTENED,
 } from './bodyFixtures';
 import type { HistoryAction } from './bodyModel';
+import { validateBodySearch } from './bodySearch';
 import { registerBodyTabs } from './tabRegistry';
 
 type Ref = Parameters<typeof getFunctionName>[0];
@@ -401,6 +402,18 @@ describe('BodyConsoleRoute', () => {
     screen.getByRole('tab', { name: /Shape/ }).focus();
     await user.keyboard('{Shift>}{Enter}{/Shift}');
     expect(mocks.push).toHaveBeenCalledWith('/admin/corpus?q=mascoma');
+  });
+
+  it('goes back to a Corpus task whole on ⇧⏎: its lane, tab, search and open item', async () => {
+    const user = userEvent.setup();
+    // As a task's *Open in Body →* sends it, and as the route's `validateSearch` keeps it.
+    const task = '/admin/corpus?lane=name-conflicts&tab=oneLetter&q=basin&item=k57abc';
+    mocks.search = validateBodySearch({ tab: 'names', from: task });
+    expect(mocks.search).toEqual({ tab: 'names', from: task });
+    render(<Mounted />);
+    screen.getByRole('tab', { name: /Names/ }).focus();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(mocks.push).toHaveBeenCalledWith(task);
   });
 
   it('goes back to the list on ⇧⏎ from a bay row, without lighting the bay', async () => {

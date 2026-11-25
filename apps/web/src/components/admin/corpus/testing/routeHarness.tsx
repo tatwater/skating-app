@@ -223,6 +223,15 @@ export function hrefOf(
   return qs === '' ? path : `${path}?${qs}`;
 }
 
+/**
+ * A link's place, read back: its path and its search as an object. `from` is the Body console's way
+ * back, which a task's links carry whole.
+ */
+export function linkPlace(link: Element): { path: string; search: Record<string, string> } {
+  const url = new URL(link.getAttribute('href') ?? '', 'https://console.invalid');
+  return { path: url.pathname, search: Object.fromEntries(url.searchParams) };
+}
+
 /** The arguments the newest read of `name` was asked with. */
 export const lastArgs = (name: string): Record<string, unknown> | undefined =>
   [...harness.asked].reverse().find((a) => a.name === name)?.args;

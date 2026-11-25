@@ -7,6 +7,7 @@ import {
   argSets,
   harness as h,
   installCorpusRouteMocks,
+  linkPlace,
   must,
   resetHarness,
   writesTo,
@@ -54,17 +55,19 @@ function open(item: ClassesItem) {
 
 describe('the Class conflicts handler, wired', () => {
   it('draws the task in this handler, not the placeholder, with the body’s Names tab linked', () => {
+    // The task as the operator has it: a tab, a search, the open item.
+    h.here = `/admin/corpus?lane=class-conflicts&tab=wetlandLake&q=groton&item=${GROTON.taskId}`;
     open(GROTON);
     const pane = inspector();
     expect(pane.querySelector('[data-slot="corpus-placeholder-facts"]')).toBeNull();
     expect(pane.querySelector('[data-slot="classes-handler"]')).not.toBeNull();
     // The catalogs' suggestion is the default pick.
     expect(within(pane).getByRole('radio', { name: 'Wetland' })).toBeChecked();
-    expect(
-      within(pane)
-        .getByRole('link', { name: /Open in Body/ })
-        .getAttribute('href'),
-    ).toBe(`/admin/body/${GROTON.body.id}?tab=names`);
+    // Its way back is this task, whole, so the console's return lands on it.
+    expect(linkPlace(within(pane).getByRole('link', { name: /Open in Body/ }))).toEqual({
+      path: `/admin/body/${GROTON.body.id}`,
+      search: { tab: 'names', from: h.here },
+    });
     expect(argSets('waterBodies:get')).toEqual(
       [GROTON.body.id, ...must(GROTON.neighbors, 'neighbors').map((n) => n.id)].map((id) =>
         JSON.stringify({ waterBodyId: id }),
