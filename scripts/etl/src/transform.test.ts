@@ -104,9 +104,7 @@ describe('toCanonicalBody: the claims and refusals on the wire (B01-6a)', () => 
   it('carries each class claim’s token and area, and each name claim’s catalogs', () => {
     const record = toCanonicalBody({
       ...base,
-      classClaims: [
-        { source: 'nhd', value: 'wetland', token: 'nhd:fcode=46600', areaSqM: 28_000 },
-      ],
+      classClaims: [{ source: 'nhd', value: 'wetland', token: 'nhd:fcode=46600', areaSqM: 28_000 }],
       nameClaims: [
         { source: 'nhd', value: 'Test Pond', sources: ['nhd', '3dhp'] },
         { source: 'user', value: 'Our Pond' },
