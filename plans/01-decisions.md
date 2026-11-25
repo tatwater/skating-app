@@ -9032,7 +9032,8 @@ editor had, so leaving them out loses nothing.
   `updateShape` does (on the lake, under the position cap).
 - **A landmark moves by a click or a drag**, in move mode, each saved with Undo.
 - **The map's cursor is a crosshair whenever a click will place something**; a mark that can be
-  dragged shows the grab cursor only under the pointer (the skater apps' placing modes follow, B04).
+  dragged shows the grab cursor only under the pointer. (The skater web map's placing mode already
+  does; the phone has no cursor.)
 - **The weather sample points stay the old tool's** (the governor's ruling): suggest a grid, save,
   clear; points placed one by one are later.
 - **The governor's rulings:** a put-in's spot is shown snapped to the shore while hovering; placing

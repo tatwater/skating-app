@@ -13079,7 +13079,7 @@ founder's answers, recorded as D300:
 - **A known feature is drawn as any of its three shapes** (a polygon, a point with a radius, a line
   with a width), and redrawn the same way; `create` checks the shape as `updateShape` does.
 - **A landmark moves by a click or a drag** in move mode.
-- **A crosshair whenever a click places** (the skater apps' placing modes are B04's).
+- **A crosshair whenever a click places** (the skater web map's placing mode already has one).
 - The governor's rulings: the sample points stay the old tool's (suggest a grid, save, clear); a
   put-in's spot shows snapped while hovering; placing an emailed name or a proposal is gated on the
   server as the tab gates it; a landmark's undo doesn't reopen its ask; removing a landmark is in;
