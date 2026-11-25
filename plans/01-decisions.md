@@ -9326,3 +9326,46 @@ while the rest of dev is test traffic prod starts without.
 **Related:** D37, D226, D305, D309, [`07-roadmap`](./07-roadmap.md) deferred register (*The prod
 cutover*; *Dev's corpus decisions carried to prod*), [`phase-B01`](./phases/B01-admin-console.md)
 *The Corpus tasks (B01-6, the design)*.
+
+## D311 — The console map has an unmasked summer aerial, switched by any console staffer on every Body console tab (B01)
+
+**Decided (2026-11-25, founder; the governor's rulings on what he didn't spell out are marked).** In
+his words: *"Yes we need an unmasked summer aerial satellite layer in our map component. Side note:
+we should have that layer toggleable for admins in the Body Console at any time, that will help with
+marking & verifying the placement of marks so much!"*; and, on who gets the switch: *"I meant all
+admin dashboard staff – admins and moderators! Sorry for the confusion. If I say "for admins"
+there's a good chance I just don't want the average skater to see it"*.
+- **The layer.** One raster for every console map: USGS NAIP (0.3 m, flown leaf-on), from
+  `USGSNAIPPlus`'s `exportImage` on `imagery.nationalmap.gov`, no key, every request a grid cell so
+  the service's CDN answers a repeat (A06e's `useImageryReveal`, in its unmasked mode, the old lake
+  editor's). **Unmasked**: the whole view, not clipped to the body, so the shore and the ground
+  round it (a put-in, a lot, whether a mark sits on the water) can be read. It goes in the console's
+  raster band, over the body's fill and under the hazard fields, every line and any winter pass, and
+  is dimmed toward the mode's ground so the console's inks stay legible. Its credit names the program
+  and, when the service's identify call answers, the month it was flown.
+- **The Body console's switch.** A *Summer aerial* row at the foot of the map's rack, on every tab,
+  for anyone who can open the Body console — moderators and admins, no capability gate. It is never
+  disabled and never reset by a tab change; it is remembered per viewer in this browser's local
+  storage (a blocked store reads as off).
+- **Where it is drawn without a switch** (the governor's): on, under the outlines, on Class
+  conflicts' head map (board 4.3's *Aerial · NAIP*). Corpus's head maps frame closer so a small body
+  fills the photograph (a 100 m least frame in place of the Inbox's 400 m, and a zoom ceiling of 19
+  in place of the console's 17). Not on Name conflicts' head map, which board 4.2 draws without one;
+  not yet on the Inbox's embeds (the register's In30).
+- **The lake on Google Maps** (the founder's second aside: *"I'd like a quick link to open the lake
+  in Google Maps in a new tab (probably from the Links panel of the Body Console)"*). A last row in
+  the Links tab's *Built from the lake*, for staff only (never in the skater's lake sheet): Google
+  Maps' documented map URL, no key, nothing about the viewer, centered on the body's stored interior
+  point (the box's middle without one), zoomed to frame the whole body, opened in a new tab.
+
+**Why.** Placing and checking marks (put-ins, lots, landmarks, bays) against the shore is the
+console's daily work, and the vector basemap can't show where a path meets the water; the old lake
+editor already drew NAIP unmasked for that. D146 is untouched: the skater apps still reveal imagery
+one body at a time, clipped to it, and nothing a skater sees changes. NAIP is a summer photograph on a
+two-to-three-year cycle and can never show ice (D147); the layer and its credit say only what was
+flown and when (D3). Both asides were built in B01-6a, the governor's call, since they sit in the
+Corpus domain and the aerial was already joining 6a for board 4.3.
+
+**Related:** D3, D146, D147, D217, [`04-integrations`](./04-integrations.md) (NAIP),
+[`phase-B01`](./phases/B01-admin-console.md) *What the build found (B01-6a)*, the register's In30
+and Co15–Co18.

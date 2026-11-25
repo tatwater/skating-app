@@ -13144,14 +13144,15 @@ needs you*.
 | In27 | Asks a script filed are decided in the old editor | §7 ruling 6 | Corpus | nothing | open |
 | In28 | *Open in Reports* and *Reports →* are *Coming soon* or not drawn | *The boards, mapped*; *Board 2.8 versus the build* | Reports | nothing | open |
 | In29 | `BayRequestQueue`, `LandmarkTool`, `useReviewWatch`, `ReviewClosedNotice` and `corpusRequests.reviewState` stay with the old editor | the close-out's (b); Bo23 | task modes | nothing | open |
-| In30 | No aerial on `itemMap`; no NAIP for catalog candidates | *What the build found (PR 1)* | a later mode | nothing | open |
+| In30 | No aerial on `itemMap`; no NAIP for catalog candidates. From B01-6a the console map has an unmasked summer aerial (D311) and `InboxMap` takes it (`aerial`), drawn so far on Class conflicts' head map only | *What the build found (PR 1)*; D311 | a later mode | nothing | open |
 | In31 | Nearby drawings, a drawing's distance and a skate's distance aren't served on the drawn-body item | *B01-5c: the server integrated* | a later mode | nothing | open |
 
 #### The Corpus wave's rows (2026-11-24)
 
 What the founder's rulings on the Corpus design (B01-6) left owed outside the wave's four PRs, or
 waiting on him. The design and its briefs are *The Corpus tasks (B01-6, the design)*. Co5–Co12 came
-from 6a's build (2026-11-25, *What the build found (B01-6a)*).
+from 6a's build (2026-11-25, *What the build found (B01-6a)*); Co5 and Co6 were ruled the same day,
+and Co13–Co20 came from the round that built them (*The last round*).
 
 | # | Item | Where recorded | Who can act | Blocks | Status |
 |---|---|---|---|---|---|
@@ -13159,14 +13160,22 @@ from 6a's build (2026-11-25, *What the build found (B01-6a)*).
 | Co2 | A cross-lake list of the season's automatic hazard merges, with *Unmerge*: fork 14 moved *Unmerge* to the Body console's Hazards tab and History, and `/admin/recurrence`'s list goes with 6d | fork 14; *Legacy retirement* | Machinery (its hazard-identity job) | nothing | open |
 | Co3 | Fork 10's reading: Known features as a lane inside the Pre-Season Pass group, never in *Views* — or no cross-lake lane at all | D308 | the founder (a confirmation) | 6d's Known features | open |
 | Co4 | The next full campaign (merge and load): without it Class conflicts' rows sit under *All* with the catalogs *not recorded*, and Co1 can't be looked at | *What the founder sees on dev after 6a* | the founder | Co1; Class conflicts' tabs | open |
-| Co5 | The task lanes' columns: the console's tokens 236 \| 340 (fork 19, the governor's) wrap the tabs; the boards draw 212 \| 420 | *What the build found (B01-6a)*, *Board differences* | the founder | 6a's PR | open |
-| Co6 | Which of 6a's open board gaps join it before its PR: the aerial, neighbor distance and bearing, the off-frame pointer, the rows' consequence line and per-name catalog tags, the silent-catalog column, the *Acres* sort, the *Filter* menu. The governor frames it as Class conflicts' gaps. Any the founder leaves out stay owed here | *What the build found (B01-6a)*, *Board differences* | the founder, then a build | 6a's PR | open |
-| Co7 | The copy pass over 6a's invented words (`corpus/words/corpusWords.ts`): "More may match: narrow the search", and History's raw class values ("Kept the class lakePond", "Set the class to …") | *What the build found (B01-6a)* | the founder | nothing | open |
+| Co5 | The task lanes' columns: the console's tokens 236 \| 340 (fork 19, the governor's) wrap the tabs; the boards draw 212 \| 420 | *What the build found (B01-6a)*, *Board differences*; *Ruled on 2026-11-25, second batch* | the founder | 6a's PR | closed 2026-11-25: the lanes keep 236, the list takes 420 (fork 19, amended); built in 6a |
+| Co6 | Which of 6a's open board gaps join it before its PR: the aerial, neighbor distance and bearing, the off-frame pointer, the rows' consequence line and per-name catalog tags, the silent-catalog column, the *Acres* sort, the *Filter* menu. The governor frames it as Class conflicts' gaps. Any the founder leaves out stay owed here | *What the build found (B01-6a)*, *Board differences*; *Ruled on 2026-11-25, second batch* | the founder, then a build | 6a's PR | closed 2026-11-25: (b), the aerial (D311), the distance and bearing and the rows' consequence line built in 6a; what stays owed is Co13 and Co14 |
+| Co7 | The copy pass over 6a's invented words (`corpus/words/corpusWords.ts`): "More may match: narrow the search", and History's raw class values ("Kept the class lakePond", "Set the class to …"); and the Body console rack's two rows, *Aerial* (Imagery's winter pass) and *Summer aerial* (D311), which read as one thing twice | *What the build found (B01-6a)*, *The last round* | the founder | nothing | open |
 | Co8 | The load's time per batch on the cloud: the local proof's 496–749 ms real can't be checked against the 1 s limit, because the local backend doesn't enforce it | *What the build found (B01-6a)*, *The load proof*; *After merge, on dev*, step 8 | dev, during Co4 | nothing | open |
 | Co9 | `load.ts`' scope line is untested: the file runs `main()` on import | *What the build found (B01-6a)*, *Known and left* | a build | nothing | open |
 | Co10 | `displayScore` is rewritten by `transitionStanding` and `backfillCells` without a task sync, so a task's rank is stale until the drift repair re-ranks it | *Known and left* (6a) | a build, or accept | nothing | open |
 | Co11 | `bodyConsole`'s `outlineTrustedSince` reads the campaign's first `importRuns` row, which is now `build-region`'s, not the load's | *Known and left* (6a) | a build (`lib/campaignRuns.ts`'s rule) | nothing | open |
 | Co12 | `decideName` and `decideClass` refuse a bad task id before the capability check, against `taskAndBody`'s own comment | *Known and left* (6a) | a build | nothing | open |
+| Co13 | *Nearest* is the closest of the **touching** neighbors (outlines within 30 m), so board 4.3's *"Osmore Pond · 1.1 mi north"* for a body that touches nothing, and its off-frame pointer, can't be drawn: they need a new stored fact, the nearest named body touching or not (computed by `bodyGeo`), and the map reporting its visible frame | *The last round* (6a) | a build (schema, a `bodyGeo` recompute) | nothing | open |
+| Co14 | Class conflicts' board gaps left out of 6a by the founder's (b): the silent-catalog column and the second (NHD) outline (not stored: a body keeps one outline), and, which (b) didn't name, the rows' per-name catalog tags, the *Acres* sort and the *Filter* menu | *Ruled on 2026-11-25, second batch*; *Board differences* | a build (the outline: a stored fact) | nothing | open |
+| Co15 | The summer aerial's cold first view takes over 45 s (each new grid cell is a fresh render; a repeat is the CDN's). 6a adds a loading and a failed state; a faster or tiled source is owed | *The last round* (6a); D311 | a build (a source to find) | nothing | open |
+| Co16 | The map's quiet labels read ~2.4–2.8:1 over the summer aerial | *The last round* (6a); D311 | a build | nothing | open |
+| Co17 | The basemap's roads and labels are hidden under the summer aerial | *The last round* (6a); D311 | a build | nothing | open |
+| Co18 | The summer aerial's flight date is sometimes missing: the identify call comes back without CORS headers and the browser refuses it, so the credit reads *Aerial · NAIP* alone | *The last round* (6a); D311 | a build (a proxy, or accept) | nothing | open |
+| Co19 | The skater app's `useImageryReveal` gained three optional parameters for the console (`minZoom`, `anchor`, `paint`), defaults unchanged: an admin PR touching a skater-side seam | *The last round* (6a) | 6a's review | nothing | open |
+| Co20 | No board draws the narrow consequence ladder (under a 36rem inspector) or the Body console's rack at 9rem with its *Summer aerial* row | *The last round* (6a) | the founder (a look, or boards) | nothing | open |
 
 Skater-app questions are on B04's running list: a report's photo cap (2026-11-22) and the phone's
 cached copy of a taken-down photo (2026-11-23).
@@ -14470,8 +14479,9 @@ group (fork 13).
 
 ##### The layout the boards share
 
-Three columns — the lanes, the lane's list, the inspector — on the console's tokens (`--size-lanes` 236,
-`--size-list` 340, the rest; the boards draw 212 | 420, fork 19, ruled: the tokens) and the console's one narrow rule
+Three columns — the lanes, the lane's list, the inspector — the lanes on the console's `--size-lanes`
+236, the list at the boards' 420, the inspector the rest (the boards draw 212 | 420; fork 19, ruled
+the tokens, then amended by the founder on 2026-11-25: the list at 420, the lanes kept at 236) and the console's one narrow rule
 (`useColumnsFit`, `usePaneFocus`). The list's head is the lane's page word and kicker (*Name conflicts ·
 412 bodies*), the search, the facet tabs and *Filter ▾* (the kit `FacetMenu`), then the rows, with the
 decided tail as the Inbox's. The inspector is the Inbox's `InspectorFrame` (a 36 px pane head with *Open
@@ -14538,8 +14548,8 @@ per-winter counts, are drawn from 6c (D307) — 6a's Name conflicts draws none a
 on a re-fit recorded before the wave; 4.4's *Remove* is drawn for admins only, with *Set dormant* for
 moderators (fork 4, ruled (b)), and its facets wait on the founder's look at real rows (D306); the
 sidebar puts the pass group first where the boards draw *Tasks* first (fork 18); *Place it in
-Body →* and *Redraw in Body →* say *Not available yet* (D303); the boards' 212 | 420 columns are the
-console's 236 | 340 (fork 19, ruled).
+Body →* and *Redraw in Body →* say *Not available yet* (D303); the boards' 212 | 420 columns are
+236 | 420, the lanes kept at the console's width (fork 19, amended by the founder on 2026-11-25).
 
 ##### Where the Overview and Inbox Zero link
 
@@ -14806,7 +14816,7 @@ shape of Contested as water, which he rules on the next campaign's real rows bef
 | 16 | Audit links for a body's parts | the governor: `FeedTarget` gains the body id in 6b | 6b |
 | 17 | Four PRs or three | the governor (the founder told): **four**; and the founder took the measured size (~90,000–100,000 lines) and 6a as one PR (**D299, amended**) | *The slices* |
 | 18 | The sidebar's order, and when the dress is picked | the founder: order **(a)**, *"At the top!"* — Pre-Season Pass, Tasks, Views, Standing; the dress **the bracketed card**, *"I prefer the bracketed card, #2!"* (**D301, amended**); and on 2026-11-25 a done pass's collapsed line at the sidebar's foot, back at the top when a pass opens or reopens (**D301, amended again**) | `bodyLanes.ts`' group order (W1, as data); *The dress*; 6d |
-| 19 | The boards' columns | the governor: **the console's tokens** (236 \| 340), named as a board difference | every render-compare in *Briefs (B01-6a)* |
+| 19 | The boards' columns | the governor: **the console's tokens** (236 \| 340), named as a board difference. **Amended by the founder on 2026-11-25** (Co5, once the wrap was seen): the lanes keep 236, the list takes the boards' 420, the inspector the rest (*Ruled on 2026-11-25, second batch*, below) | every render-compare in *Briefs (B01-6a)*; `CorpusTaskView` |
 | 20 | A capability for settling | the governor: **`corpus.intake`** (moderator) | core's capability map, at 6a's T0 |
 
 **Also ruled on 2026-11-24:**
@@ -14862,6 +14872,37 @@ shape of Contested as water, which he rules on the next campaign's real rows bef
    disposable: the pre-campaign snapshot export is a must. The carry and the dev→prod actor mapping
    are owed and undesigned (the roadmap's deferred register, beside the prod cutover); how actors are
    re-attributed (by email match, or otherwise) is an open founder question.
+
+**Ruled on 2026-11-25, second batch** (the three calls 6a's build put to the founder before its PR;
+his words are quoted, every *why* not his is marked as the governor's):
+
+1. **The task lanes' columns (Co5, closed; fork 19, amended).** The founder: *"Let's keep the lanes
+   sidebar as you have it in code (wider than the mock), but widen the list pane to be as wide as the
+   one in the mock (reducing the body content pane's width only)"*. Built: `CorpusTaskView` sets
+   `--size-list` to 26.25rem (420) on its own page, as the Inbox sets its own pair, so
+   `useColumnsFit` measures the same; the console's token, and the library's and People's lists,
+   stay 340. The lanes keep 236; the inspector takes the rest, 720 at 1440, and the three columns
+   hold down to an 1,100 px page (the inspector's 380 at the narrowest). A mechanic, so no D#: the
+   fork table's row 19 carries it.
+2. **Which board gaps join 6a (Co6, closed).** The founder: *"B!"* — option (b): **the aerial, the
+   nearest neighbor's distance and bearing, and the list rows' consequence line join 6a; the
+   second (NHD) outline and the silent catalogs stay owed.** Owed with them, since (b) didn't name
+   them: the off-frame pointer (not buildable without a new stored fact, Co13), the rows' per-name
+   catalog tags, the *Acres* sort and the *Filter* menu (Co14). On the aerial he went further, and
+   added a second aside, both built in 6a (the governor's call, since both sit in Corpus's domain):
+   *"Yes we need an unmasked summer aerial satellite layer in our map component. Side note: we
+   should have that layer toggleable for admins in the Body Console at any time, that will help with
+   marking & verifying the placement of marks so much! And another aside: I'd like a quick link to
+   open the lake in Google Maps in a new tab (probably from the Links panel of the Body Console). I
+   know neither of these have to do with the new Corpus list views, but they are within the Corpus
+   domain so figured I should mention them now!"* — and, on who gets the switch: *"I meant all admin
+   dashboard staff – admins and moderators! Sorry for the confusion. If I say "for admins" there's a
+   good chance I just don't want the average skater to see it"*. **D311** records the layer, its
+   switch and the Google Maps row.
+3. **The rows' wording.** The founder chose (a): a row reads *"Refused if a wetland"*, not the board's
+   *"Leaves if wetland"*. *Why (the governor's):* it matches the ladder's *"Refused by the size
+   rules"*, and the floor's prune can still keep a body the rules refuse (its own exemptions), so
+   *Leaves* would overstate it.
 
 #### Briefs (B01-6a)
 
@@ -15876,25 +15917,30 @@ Asked of the governor; the founder answered those that were his.
 
 #### What the build found (B01-6a)
 
-Built on `phase-b01-corpus` through `90f205d78` (2026-11-25), on main at `28a6934c6`: 58 commits
-and the integration merges. The PR isn't open yet. It waits on two founder calls, Co5 and Co6
-(*Board differences* below).
+Built on `phase-b01-corpus` through `231d561ef` (2026-11-25), on main at `28a6934c6`: 66 commits
+and the integration merges. The first record stopped at `90f205d78`, waiting on two founder calls;
+both were ruled the same day (Co5 and Co6, *Ruled on 2026-11-25, second batch*), and a last round
+built them (*The last round*, below). Every gate is green at the head — types 18/18, lint, and
+18/18 test tasks (convex 4,706 tests, web 7,962, core 3,879), the web unit suite also under GMT-14
+and GMT+11 — and the PR is about to open.
 
 ##### Size
 
-`git diff --shortstat origin/main...HEAD`, `plans/` excluded: **22,520 insertions and 979 deletions
-over 249 files.** Of the insertions, 11,021 (49%) are tests and stories. By area: `packages/convex`
-8,219, `apps/web` 11,457, and `scripts/`, `packages/core` and `packages/guards` 2,836. `plans/` adds
-2,349 more over 6 files.
+`git diff --shortstat origin/main...HEAD`, `plans/` excluded: **24,979 insertions and 1,026
+deletions over 272 files.** Of the insertions, 12,531 (50%) are tests and stories. By area:
+`packages/convex` 8,436, `apps/web` 13,382, `scripts/`, `packages/core` and `packages/guards` 3,153,
+and 8 in `docs/` and `.gitignore`. The last round added 2,612 of them over 51 files. `plans/` adds
+2,517 more over 6 files, before this record.
 
 | Estimate | Lines | Landed × the estimate |
 |---|---|---|
-| The design (*Size, honestly*: ~6,500 before the rulings; the slices table's ~5,700 after) | 6,500 / 5,700 | 3.5 / 4.0 |
-| The brief, after the rulings | 25,000–28,000 over ~160–190 files | 0.80–0.90 (and 1.3–1.6× the files) |
-| The brief with D309's unmeasured ~3,000–6,000 | ~28,000–34,000 | 0.66–0.80 |
+| The design (*Size, honestly*: ~6,500 before the rulings; the slices table's ~5,700 after) | 6,500 / 5,700 | 3.8 / 4.4 |
+| The brief, after the rulings | 25,000–28,000 over ~160–190 files | 0.89–1.0 (and 1.4–1.7× the files) |
+| The brief with D309's unmeasured ~3,000–6,000 | ~28,000–34,000 | 0.73–0.89 |
 
-The Inbox wave's PRs ran 1.1–3.3× over their briefs; this one landed under its brief. It is still
-about four times the ~5,000-line guideline, as one PR (D299, amended).
+The Inbox wave's PRs ran 1.1–3.3× over their briefs; this one landed at its brief's floor, with the
+last round's two founder additions (D311) inside it. It is about five times the ~5,000-line
+guideline, as one PR (D299, amended).
 
 ##### What shipped
 
@@ -15911,7 +15957,12 @@ about four times the ~5,000-line guideline, as one PR (D299, amended).
     two handlers' inspectors;
   - the Overview's Corpus card, on `corpusTasks.lanes`, with *Contested as water* split out to the
     old review page;
-  - Inbox Zero's *Corpus →*.
+  - Inbox Zero's *Corpus →*;
+  - from the last round: the list at the boards' 420 (Co5), Class conflicts' nearest neighbor with
+    its distance and bearing, each row's consequence line, and its head map over the summer aerial
+    (Co6).
+- **The summer aerial and the Google Maps row (D311):** the console map's unmasked NAIP layer, its
+  *Summer aerial* rack row on every Body console tab, and the Links tab's staff-only Google Maps row.
 - **The campaign's record (D309):**
   - each run's scope and its heartbeat (`importRuns.scope`, the server-stamped `progressAt`);
   - run rows for the three passes that wrote none: `build-region`, the landmark match and
@@ -15965,6 +16016,54 @@ about four times the ~5,000-line guideline, as one PR (D299, amended).
 - **No D218 scope fit the passes that load no corpus of their own**, so D218 gained `derived` and
   `cleanup` (above).
 
+##### The last round (after Co5 and Co6, `9d7f47666`–`0ab9e0eeb`)
+
+- **The columns** (Co5): as ruled, above. The tabs fit one row at 420 and the search hint is no
+  longer cut.
+- **Nearest is the closest of the touching neighbors, not of all named bodies.** The stored
+  neighbors (`bodyGeo`'s, at most three shown) are bodies whose outlines come within 30 m of the
+  body's (`TOUCH_METERS`). Each now carries its offset, point to point: from the body's stored
+  `interiorPoint` to a point inside the neighbor's stored ring (core's `ringInsidePoint`, the rule
+  `interiorPoint` is computed by), never a centroid, and none when either point is missing. No read
+  was added. *Nearest* names the neighbor whose middle is closest, as *"Osmore Pond · 1.1 mi
+  north"* (miles to a tenth under ten, eight directions, no direction under a tenth of a mile); just
+  the name where no offset is on file. So board 4.3's *"Osmore Pond · 1.1 mi north"* for a body that
+  touches nothing, and its off-frame pointer, need a stored fact that doesn't exist: the nearest
+  named body, touching or not, computed by `bodyGeo`, and a map that reports its visible frame
+  (Co13).
+- **One consequence rule feeds the ladder and the rows.** Core's `classConsequenceLine` runs
+  `classConsequence` itself over the claimed classes other than the body's own and keeps the
+  heaviest (a refusal by the size rules over a wait for a parent); the server reads both from one
+  body shape (`consequenceBodyOf`). A class the body would stay under gets no line, so a river reach
+  the rules admit gets none; the board's *"Stays, as moving water under the ice"* was not brought
+  back (D3). The rows read *"Refused if a wetland"* (the founder's (a), above) and *"Waits for a
+  parent if a bay"*. A ladder rung's lead words are now their own field, so the ladder brightens a
+  refusal's lead alone.
+- **A small body sat small on the head map because of the 400 m least frame** (the Inbox's, sized
+  for a lone point). Corpus's head maps now frame from 100 m (`HEAD_MAP_MIN_SPAN_M`), and the zoom
+  ceiling is a caller's option (`maxZoom`, default 17; the head maps 19, `HEAD_MAP_MAX_ZOOM`), so a
+  five-acre pond fills its band over the aerial.
+- **The narrow ladder.** Under a 36rem container each consequence goes under its row's value and
+  marks, the head drops, and a badge sits under the value's words, so no column is squeezed to a
+  word a line. No board draws it (Co20).
+- **The summer aerial (D311).** Its known defects, each a register row:
+  - **a cold first view takes over 45 s** (the service renders each new cell on demand; a repeat is
+    the CDN's). 6a adds a loading and a failed state before its PR; a faster or tiled source is
+    owed (Co15);
+  - **the quiet labels read ~2.4–2.8:1 over the photograph** (Co16);
+  - **the basemap's roads and labels are hidden under it** (Co17);
+  - **the flight date is sometimes missing:** the identify call comes back without CORS headers, the
+    browser refuses it, and the credit reads *Aerial · NAIP* alone (Co18);
+  - **the rack's two rows, *Aerial* (Imagery's winter pass) and *Summer aerial*,** want the copy
+    pass (Co7);
+  - **the skater app's `useImageryReveal` gained three optional parameters** (`minZoom`, `anchor`,
+    `paint`), defaults unchanged, so an admin PR touches a skater-side seam (Co19);
+  - **the rack widens to 9rem when it holds the row** (*Summer aerial* ran past the kit rack's 8rem
+    at 1440 × 900; a class on the console's rack, the kit untouched). No board draws it (Co20).
+- **The Google Maps row (D311).** The interior point, the box's middle without one (never
+  `centroid` or `representativePoint`, which sit on the shore of a curved lake), at the zoom that
+  frames the whole body; its line reads *"The interior point, the whole lake · Staff only"*.
+
 ##### The load proof
 
 The governor ran it on an anonymous local backend with real merge lines, down the heaviest path, and
@@ -15982,18 +16081,18 @@ re-measured it at the final head. It wasn't re-run for this record.
 
 | Difference | Where it stands |
 |---|---|
-| The columns are the console's tokens, 236 \| 340, where the boards draw 212 \| 420, so the tabs wrap | **the founder's call** (Co5). Fork 19, the governor's ruling, took the tokens before the wrap was seen |
-| No aerial on the head map (the shared map's gap, In30) | **the founder's call** (Co6): whether it joins 6a |
-| No neighbor distance or bearing, and no off-frame pointer | the same (Co6) |
-| No consequence line and no per-name catalog tags on the list rows | the same (Co6) |
-| No silent-catalog column | the same (Co6) |
-| No *Acres* sort and no *Filter* menu | the same (Co6) |
-| No per-catalog (NHD) outline | **not stored**: a body keeps one outline (as 4.5's *as NHD draws it*) |
+| The columns were the console's tokens, 236 \| 340, where the boards draw 212 \| 420, so the tabs wrapped | **built** (Co5, closed): 236 \| 420, the lanes kept wider than the boards' 212 by the founder's call |
+| No aerial on the head map (the shared map's gap, In30) | **built** (Co6, closed; D311): Class conflicts' head map draws the summer aerial; Names' draws none, as 4.2; the Inbox's embeds still don't (In30) |
+| No neighbor distance or bearing | **built** (Co6), for the touching neighbors only: a body that touches nothing reads *Not computed yet* or *None on file*, never 4.3's *1.1 mi north* to a farther body (Co13) |
+| No off-frame pointer | **owed** (Co13): needs the nearest named body stored and the map's visible frame |
+| No consequence line on the list rows | **built** (Co6), worded *"Refused if a wetland"*, not 4.3's *"Leaves if wetland"* (the founder's (a)) |
+| No per-name catalog tags on the list rows | **owed** (Co14) |
+| No silent-catalog column | **owed** (Co14; the founder's (b)) |
+| No *Acres* sort and no *Filter* menu | **owed** (Co14) |
+| No per-catalog (NHD) outline | **not stored**: a body keeps one outline (as 4.5's *as NHD draws it*); owed with Co14 (the founder's (b)) |
 | No catalog edit dates | **not stored**: the ETL reads none, and 2026-11-24's question 2 didn't offer them |
 | Names has no emails and no *Suggested* | **6c** (D307) |
-
-Co6 is the founder's call on which of the open gaps join 6a. The governor frames it as Class
-conflicts' gaps. Any he leaves out stay owed under Co6.
+| The narrow ladder, and the rack at 9rem with its *Summer aerial* row | **no board** (Co20) |
 
 ##### Known and left
 
