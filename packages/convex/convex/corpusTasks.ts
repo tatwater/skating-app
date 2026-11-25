@@ -29,13 +29,13 @@ import { ConvexError, v } from 'convex/values';
 import type { DataModel, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
+import { corpusTasksPending, countKeysOf, readTaskCount } from './lib/corpusTasks';
 import {
   type CorpusLanesView,
   type CorpusListPage,
   CorpusReader,
   type CorpusRowView,
   type CorpusTaskItemRead,
-  corpusTasksPending,
   itemOf,
   MAX_PAGE,
   rowOf,
@@ -76,15 +76,6 @@ const tabsOf = (lane: CorpusTaskLane): readonly string[] =>
 
 // ── The counts ───────────────────────────────────────────────────────────────────────────────────
 
-/** A count row's figure: exact, and `0` for a key no task has moved yet. */
-async function countOf(ctx: QueryCtx, key: string): Promise<number> {
-  const row = await ctx.db
-    .query('corpusTaskCounts')
-    .withIndex('by_key', (q) => q.eq('key', key))
-    .first();
-  return row?.count ?? 0;
-}
-
 /**
  * **Every task lane's open count and each tab's**, exact from the count rows (`open:<lane>`,
  * `open:<lane>:<facet>`) — no cap, so *Name conflicts 412* reads 412. One point read per key: two
@@ -96,9 +87,13 @@ export const lanes = query({
     await requireCapability(ctx, 'corpus.read');
     const out = {} as CorpusLanesView['lanes'];
     for (const lane of CORPUS_TASK_LANES) {
+      // The writer's own keys (`countKeysOf`): an open task stands in its lane's row and its tab's.
+      const keysOf = (facet: string) => countKeysOf({ status: 'open', lane, facet });
       const facets: Record<string, number> = {};
-      for (const facet of tabsOf(lane)) facets[facet] = await countOf(ctx, `open:${lane}:${facet}`);
-      out[lane] = { open: await countOf(ctx, `open:${lane}`), facets };
+      for (const facet of tabsOf(lane)) {
+        facets[facet] = await readTaskCount(ctx, keysOf(facet)[1] ?? '');
+      }
+      out[lane] = { open: await readTaskCount(ctx, keysOf(CORPUS_NOT_RECORDED)[0] ?? ''), facets };
     }
     return { lanes: out, pending: await corpusTasksPending(ctx) };
   },
@@ -207,7 +202,10 @@ export const listPage = query({
     const lane = args.lane;
     const tab = tabOf(lane, args.tab);
     const asked = args.pageSize ?? CORPUS_PAGE_SIZE;
-    const pageSize = Math.min(Math.max(1, Math.floor(Number.isFinite(asked) ? asked : 1)), MAX_PAGE);
+    const pageSize = Math.min(
+      Math.max(1, Math.floor(Number.isFinite(asked) ? asked : 1)),
+      MAX_PAGE,
+    );
     const pending = await corpusTasksPending(ctx);
     const r = new CorpusReader(ctx, viewer);
 
@@ -233,7 +231,9 @@ export const listPage = query({
         x.eq('status', 'open').eq('lane', lane).eq('facet', tab),
       );
     } else {
-      ranged = tasks.withIndex('by_status_lane_rank', (x) => x.eq('status', 'open').eq('lane', lane));
+      ranged = tasks.withIndex('by_status_lane_rank', (x) =>
+        x.eq('status', 'open').eq('lane', lane),
+      );
     }
     const endCursor = args.endCursor ?? null;
     const page = await ranged.paginate({

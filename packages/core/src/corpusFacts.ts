@@ -1,7 +1,7 @@
 /**
  * **The words a Corpus task's facts are said in** (B01-6a): what each class would do with a body
  * (board 4.3's ladder), a catalog's rank as a name authority, and how two names differ (board 4.2's
- * tabs). The reads (`convex/corpusTasks.ts`) say every fact through these, so a word means one
+ * tabs, by the writer's own rule in `corpusFacets.ts`). The reads (`convex/corpusTasks.ts`) say every fact through these, so a word means one
  * thing wherever it is drawn.
  *
  * **No word here says or implies anything about the ice** (D3): a class's consequence is what the
@@ -10,7 +10,8 @@
  */
 
 import type { ClaimSource } from './confidence';
-import { NAME_SOURCE_RANK, type NameClaim } from './nameClaims';
+import { type NameFacet, splitOfNames } from './corpusFacets';
+import { NAME_SOURCE_RANK } from './nameClaims';
 import {
   belongsInCorpus,
   HARD_MIN_SURFACE_AREA_ACRES,
@@ -80,7 +81,10 @@ function refusedAs(body: { name: string; areaSqM: number }, cls: WaterBodyClass)
 export function classConsequence(body: ConsequenceBody, cls: WaterBodyClass): ClassConsequence {
   const area = body.surfaceAreaSqM;
   if (area === null || !Number.isFinite(area)) {
-    return { kind: 'stays', words: `Stays, as ${STAYS_AS[cls]}: no area is on file for the size rules` };
+    return {
+      kind: 'stays',
+      words: `Stays, as ${STAYS_AS[cls]}: no area is on file for the size rules`,
+    };
   }
   const byRule = belongsInCorpus({ name: body.name, surfaceAreaSqM: area, type: cls });
   if (!byRule && body.includedByRequest !== true) {
@@ -91,15 +95,18 @@ export function classConsequence(body: ConsequenceBody, cls: WaterBodyClass): Cl
   }
   const asked = byRule ? '' : ': someone asked for it';
   if (cls === 'bay') {
-    return { kind: 'waitsForParent', words: `Waits for a parent: a bay needs a lake to hold it${asked}` };
+    return {
+      kind: 'waitsForParent',
+      words: `Waits for a parent: a bay needs a lake to hold it${asked}`,
+    };
   }
   return { kind: 'stays', words: `Stays, as ${STAYS_AS[cls]}${asked}` };
 }
 
 // ── How two names differ ───────────────────────────────────────────────────────────────────────
 
-/** How two names differ, the Name conflicts lane's tabs. */
-export type NameSplit = 'different' | 'oneLetter' | 'qualifier';
+/** How two names differ, the Name conflicts lane's tabs (S1's `NameFacet`, one type). */
+export type NameSplit = NameFacet;
 
 /** Each split as the lane's tabs and rows say it. */
 export const NAME_SPLIT_WORDS: Readonly<Record<NameSplit, string>> = {
@@ -109,108 +116,13 @@ export const NAME_SPLIT_WORDS: Readonly<Record<NameSplit, string>> = {
 };
 
 /**
- * The words that qualify a name rather than make it: what kind of water, which end, which size, an
- * article. Two names whose other words are the same differ by a *qualifier* ("Kezar Pond" and
- * "Upper Kezar Pond", "Lake Auburn" and "Auburn Lake").
- */
-export const NAME_QUALIFIER_WORDS: ReadonlySet<string> = new Set([
-  'the',
-  'of',
-  'lake',
-  'lakes',
-  'pond',
-  'ponds',
-  'pool',
-  'reservoir',
-  'basin',
-  'bay',
-  'cove',
-  'flowage',
-  'upper',
-  'lower',
-  'middle',
-  'north',
-  'south',
-  'east',
-  'west',
-  'big',
-  'little',
-  'great',
-]);
-
-/**
- * A name folded for comparing: lower case, accents dropped, an apostrophe or a period dropped
- * ("Harvey's" and "Harveys" are one word), any other punctuation a space, spaces collapsed.
- */
-function folded(name: string): string {
-  return name
-    .normalize('NFKD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/['’.]/g, '')
-    .replace(/[^a-z0-9]+/g, ' ')
-    .trim();
-}
-
-/** Whether `a` becomes `b` by at most one inserted, deleted or changed character. */
-function withinOneEdit(a: string, b: string): boolean {
-  if (a === b) return true;
-  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
-  if (long.length - short.length > 1) return false;
-  let i = 0;
-  while (i < short.length && short[i] === long[i]) i++;
-  // Past the first difference the rest must match: a change skips one of each, an insert one of the longer.
-  const skip = short.length === long.length ? 1 : 0;
-  return short.slice(i + skip) === long.slice(i + 1);
-}
-
-/** A name's own words, its qualifiers aside, in order of spelling (so word order is no difference). */
-function coreWords(name: string): string[] {
-  return folded(name)
-    .split(' ')
-    .filter((w) => w !== '' && !NAME_QUALIFIER_WORDS.has(w))
-    .sort();
-}
-
-/**
- * How the shown name and the other claim differ — the lane's tabs, one rule:
- *
- * - `oneLetter`: one letter apart once case, accents, apostrophes and spacing are set aside
- *   ("Damariscotta" and "Damariscota"; two spellings that fold to the same are one letter apart too);
- * - `qualifier`: the same words but for {@link NAME_QUALIFIER_WORDS}, in any order ("Lake Auburn"
- *   and "Auburn Lake", "Kezar Pond" and "Upper Kezar Pond") — and at least one word of its own;
- * - `different`: anything else ("The Basin" and "Lake Auburn").
- *
- * Symmetric: the order the two are given in never changes the answer.
+ * How the shown name and the other claim differ: **the rule the writer files a task's tab by**
+ * (`corpusFacets.splitOfNames`), so a row's tab and the words its inspector says can't disagree.
+ * *Qualifier*: every word of the shorter is in the longer; *One letter*: one letter added, dropped or
+ * changed; else *Different*. Symmetric in its two names.
  */
 export function nameSplit(shown: string, other: string): NameSplit {
-  const a = folded(shown);
-  const b = folded(other);
-  if (withinOneEdit(a, b)) return 'oneLetter';
-  const ca = coreWords(shown);
-  const cb = coreWords(other);
-  if (ca.length > 0 && ca.length === cb.length && ca.every((w, i) => w === cb[i])) {
-    return 'qualifier';
-  }
-  return 'different';
-}
-
-/**
- * The name a body could show instead: the best-ranked catalog claim (`NAME_SOURCE_RANK`) whose
- * spelling isn't the shown one, case and spacing aside. A moderator's own claim is never the other
- * name — it is a choice already made. `null` when no catalog claims another spelling.
- */
-export function otherNameOf(shown: string, claims: readonly NameClaim[] | undefined): string | null {
-  const key = (s: string) => s.trim().toLowerCase();
-  const shownKey = key(shown);
-  let best: NameClaim | null = null;
-  for (const claim of claims ?? []) {
-    if (claim.source === 'user' || claim.value.trim() === '' || key(claim.value) === shownKey) {
-      continue;
-    }
-    if (best === null || NAME_SOURCE_RANK[claim.source] < NAME_SOURCE_RANK[best.source]) best = claim;
-  }
-  return best === null ? null : best.value.trim();
+  return splitOfNames(shown, other);
 }
 
 // ── A catalog's rank, in words ────────────────────────────────────────────────────────────────

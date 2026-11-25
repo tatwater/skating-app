@@ -2,14 +2,13 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import { CLAIM_SOURCES, type ClaimSource } from './confidence';
+import { splitOfNames } from './corpusFacets';
 import {
   type ClassConsequence,
   classConsequence,
-  NAME_QUALIFIER_WORDS,
   NAME_SPLIT_WORDS,
   nameRankWords,
   nameSplit,
-  otherNameOf,
 } from './corpusFacts';
 import { CORPUS_TASK_FACETS } from './corpusTasks';
 import { NAME_SOURCE_RANK } from './nameClaims';
@@ -128,93 +127,29 @@ describe('classConsequence: what each class would do (board 4.3)', () => {
 });
 
 describe('nameSplit: the Name conflicts tabs', () => {
-  it('reads the board examples', () => {
-    expect(nameSplit('The Basin', 'Lake Auburn')).toBe('different');
-    expect(nameSplit('Damariscotta Lake', 'Damariscota Lake')).toBe('oneLetter');
-    expect(nameSplit("Harvey's Lake", 'Harveys Lake')).toBe('oneLetter');
-    expect(nameSplit('Kezar Pond', 'Upper Kezar Pond')).toBe('qualifier');
-    expect(nameSplit('Lake Auburn', 'Auburn Lake')).toBe('qualifier');
-    expect(nameSplit('Long Pond', 'Long Lake')).toBe('qualifier');
-  });
-
-  it('sets case, accents, spacing and punctuation aside', () => {
-    expect(nameSplit('Lac Brébeuf', 'lac brebeuf')).toBe('oneLetter');
-    expect(nameSplit('Mill  Pond', 'Mill Pond')).toBe('oneLetter');
-    expect(nameSplit('St. Mary Lake', 'St Mary Lake')).toBe('oneLetter');
-  });
-
-  it('one letter means one: an insert, a drop or a change, never two', () => {
-    expect(nameSplit('Mud Pond', 'Mad Pond')).toBe('oneLetter');
-    expect(nameSplit('Mud Pond', 'Muds Pond')).toBe('oneLetter');
-    expect(nameSplit('Mud Pond', 'Md Pond')).toBe('oneLetter');
-    expect(nameSplit('Mud Pond', 'Mod Pand')).toBe('different');
-    expect(nameSplit('Echo Lake', 'Ecco Lak')).toBe('different');
-  });
-
-  it('needs a word of its own to be a qualifier', () => {
-    // Nothing but qualifiers on either side: nothing says they name the same water.
-    expect(nameSplit('The Pond', 'Upper Lake')).toBe('different');
-    expect(nameSplit('Pond', 'Upper Lake Pond')).toBe('different');
-  });
-
-  it('splits into exactly the lane facets', () => {
-    expect(Object.keys(NAME_SPLIT_WORDS).sort()).toEqual([...CORPUS_TASK_FACETS.nameConflicts].sort());
-    for (const word of Object.values(NAME_SPLIT_WORDS)) expect(word).not.toMatch(BANNED);
-  });
-
-  it('is symmetric, and blind to case (fast-check)', () => {
-    const word = fc.stringMatching(/^[A-Za-z]{1,8}$/);
-    const name = fc
-      .array(fc.oneof(word, fc.constantFrom(...NAME_QUALIFIER_WORDS)), { minLength: 1, maxLength: 4 })
-      .map((ws) => ws.join(' '));
+  it('is the rule the writer files a task under (one rule, not two)', () => {
     fc.assert(
-      fc.property(name, name, (a, b) => {
-        expect(nameSplit(a, b)).toBe(nameSplit(b, a));
-        expect(nameSplit(a.toUpperCase(), b)).toBe(nameSplit(a, b));
-        expect(nameSplit(a, a)).toBe('oneLetter');
+      fc.property(fc.string({ maxLength: 24 }), fc.string({ maxLength: 24 }), (a, b) => {
+        expect(nameSplit(a, b)).toBe(splitOfNames(a, b));
       }),
     );
+    for (const [a, b] of [
+      ['The Basin', 'Lake Auburn'],
+      ['Lake Sunapee', 'Little Lake Sunapee'],
+      ['Tuttle Pond', 'Turtle Pond'],
+    ] as const) {
+      expect(nameSplit(a, b)).toBe(splitOfNames(a, b));
+    }
+    expect(nameSplit('The Basin', 'Lake Auburn')).toBe('different');
+    expect(nameSplit('Lake Sunapee', 'Little Lake Sunapee')).toBe('qualifier');
+    expect(nameSplit('Tuttle Pond', 'Turtle Pond')).toBe('oneLetter');
   });
 
-  it('a qualifier added to a name with a word of its own is a qualifier, or one letter (fast-check)', () => {
-    fc.assert(
-      fc.property(
-        fc.stringMatching(/^[a-z]{4,10}$/).filter((w) => !NAME_QUALIFIER_WORDS.has(w)),
-        fc.constantFrom(...NAME_QUALIFIER_WORDS),
-        fc.boolean(),
-        (core, qualifier, before) => {
-          const longer = before ? `${qualifier} ${core}` : `${core} ${qualifier}`;
-          expect(['qualifier', 'oneLetter']).toContain(nameSplit(core, longer));
-        },
-      ),
+  it('has a word for exactly each lane facet, none about the ice', () => {
+    expect(Object.keys(NAME_SPLIT_WORDS).sort()).toEqual(
+      [...CORPUS_TASK_FACETS.nameConflicts].sort(),
     );
-  });
-});
-
-describe('otherNameOf: the name the body could show instead', () => {
-  it('is the best-ranked catalog spelling that is not the shown one', () => {
-    const claims = [
-      { source: 'nhd' as const, value: 'The Basin' },
-      { source: 'osm' as const, value: 'Lake Auburn' },
-      { source: '3dhp' as const, value: 'Basin Lake' },
-    ];
-    expect(otherNameOf('The Basin', claims)).toBe('Basin Lake');
-    expect(otherNameOf('the basin ', claims)).toBe('Basin Lake');
-    expect(otherNameOf('Lake Auburn', claims)).toBe('The Basin');
-  });
-
-  it("never offers a moderator's own claim, a blank, or nothing as a name", () => {
-    expect(
-      otherNameOf('Lake Auburn', [
-        { source: 'user', value: 'Auburn Water' },
-        { source: 'osm', value: '  ' },
-        { source: 'osm', value: 'Lake Auburn' },
-      ]),
-    ).toBeNull();
-    expect(otherNameOf('Lake Auburn', undefined)).toBeNull();
-    expect(otherNameOf('Lake Auburn', [{ source: 'osm', value: ' Auburn Pond ' }])).toBe(
-      'Auburn Pond',
-    );
+    for (const word of Object.values(NAME_SPLIT_WORDS)) expect(word).not.toMatch(BANNED);
   });
 });
 
@@ -263,7 +198,8 @@ describe('the D3 words test', () => {
           }
         }
       }
-      for (const cls of WATER_BODY_CLASSES) out.push(classConsequence({ name, surfaceAreaSqM: null }, cls));
+      for (const cls of WATER_BODY_CLASSES)
+        out.push(classConsequence({ name, surfaceAreaSqM: null }, cls));
     }
     for (const c of out) expect(c.words).not.toMatch(BANNED);
   });

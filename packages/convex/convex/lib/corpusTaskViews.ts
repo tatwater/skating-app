@@ -110,7 +110,10 @@ export type CorpusRowView = RowBase &
     | {
         lane: 'nameConflicts';
         shown: string;
-        /** The best-ranked catalog spelling that isn't the shown one (`''` when none is stored). */
+        /**
+         * The best-ranked catalog name that reads differently from the shown one (core's
+         * `otherNameOf`, the writer's rule); `''` when no catalog claim differs.
+         */
         other: string;
       }
     // `claims: null`: not recorded (a body imported before its campaign carried them).
@@ -204,15 +207,6 @@ export const RAISED_AGAIN_READ = 5;
 export const TASKS_PER_BODY = 10;
 
 // ── Shared reads ────────────────────────────────────────────────────────────────────────────────
-
-/** The backfill hasn't said it is done: every count and list is partial (`corpusTaskJobs:backfill`). */
-export async function corpusTasksPending(ctx: QueryCtx): Promise<boolean> {
-  const run = await ctx.db
-    .query('corpusTaskJobRuns')
-    .withIndex('by_job', (q) => q.eq('job', 'backfill'))
-    .first();
-  return run?.done !== true;
-}
 
 /**
  * One request's reads of what several rows share: each profile and body once. A list's deciders
@@ -313,7 +307,10 @@ async function rowBaseOf(
  * A list row: the task's labels, resolved at read. `null` for a task whose body is gone (a hard
  * delete the task outlived, decided before it): there is nothing to draw or open.
  */
-export async function rowOf(r: CorpusReader, task: Doc<'corpusTasks'>): Promise<CorpusRowView | null> {
+export async function rowOf(
+  r: CorpusReader,
+  task: Doc<'corpusTasks'>,
+): Promise<CorpusRowView | null> {
   const body = await r.ctx.db.get(task.waterBodyId);
   if (body === null) return null;
   const geo = await geoFactsOf(r.ctx, body._id);
@@ -324,7 +321,7 @@ export async function rowOf(r: CorpusReader, task: Doc<'corpusTasks'>): Promise<
         ...base,
         lane: 'nameConflicts',
         shown: body.name,
-        other: otherNameOf(body.name, body.nameClaims) ?? '',
+        other: otherNameOf(body) ?? '',
       };
     case 'classConflicts':
       return { ...base, lane: 'classConflicts', claims: classClaimsOf(body) };
@@ -433,7 +430,9 @@ async function attachedOf(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
 }
 
 /** The touching bodies the geometry facts stored, at most {@link NEIGHBORS_SHOWN}; `null` before they're computed. */
-function neighborsOf(geo: Doc<'bodyGeoFacts'> | null): { id: Id<'waterBodies'>; name: string }[] | null {
+function neighborsOf(
+  geo: Doc<'bodyGeoFacts'> | null,
+): { id: Id<'waterBodies'>; name: string }[] | null {
   if (geo === null || geo.neighbors === undefined) return null;
   return geo.neighbors.slice(0, NEIGHBORS_SHOWN).map((n) => ({ id: n.waterBodyId, name: n.name }));
 }
@@ -542,7 +541,7 @@ function splitOf(task: Doc<'corpusTasks'>, body: Doc<'waterBodies'>): NameSplit 
   if (task.facet === 'different' || task.facet === 'oneLetter' || task.facet === 'qualifier') {
     return task.facet;
   }
-  return nameSplit(body.name, otherNameOf(body.name, body.nameClaims) ?? '');
+  return nameSplit(body.name, otherNameOf(body) ?? '');
 }
 
 /** An item as its inspector draws it; `null` for a task whose body is gone. */
