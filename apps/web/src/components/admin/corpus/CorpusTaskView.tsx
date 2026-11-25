@@ -11,31 +11,36 @@ import { useColumnsFit, usePaneFocus } from '../shell/columnsFit';
 import type { CorpusLanesView } from './corpusTypes';
 import { CorpusInspector, type CorpusInspectorState } from './inspector/CorpusInspector';
 import type { CorpusHandler } from './inspector/handlerRegistry';
-import { TaskList, type TaskListData, type TaskTail } from './list/TaskList';
+import { TaskSearch } from './list/TaskSearch';
+import { type TaskListData, TaskTable, type TaskTail } from './list/TaskTable';
 import { DECIDED_TAB, type TaskQuery, type TaskTab } from './taskSearch';
 import {
   BACK_TO_LIST,
   bodiesCount,
   DECIDED_THIS_WEEK,
   INSPECTOR_LABEL,
+  LANE_WHAT,
   LIST_LABEL,
   LIST_PENDING,
   NOTHING_DECIDED,
   NOTHING_MATCHES,
   NOTHING_OPEN,
+  SEARCH_HINT,
   TAB_ALL,
 } from './words/corpusWords';
 
 /**
  * **A Corpus task lane** (boards 4.2, 4.3) as the console mounts it, from what the route hands it —
  * three columns: **the lanes** (the one Corpus sidebar, `sidebar`, the same column the library
- * mounts), **the list** (the lane's word and count, its tabs, the rows, the decided tail) and **the
- * inspector** (the open task, drawn by its lane's handler from the registry, or the placeholder).
- * The route (`CorpusTaskRoute`) wires it to the router and Convex; a story draws the same page.
+ * mounts), **the list** (the lane's page word and count, the line the board says under it, the
+ * search, the tabs, then the table with its decided tail) and **the inspector** (the open task,
+ * drawn by its lane's handler from the registry, or the placeholder). The route
+ * (`CorpusTaskRoute`) wires it to the router and Convex; a story draws the same page.
  *
- * - **Keys.** Tab moves between the columns, ↑↓ within one, typing jumps in the list. ⏎ or Space
- *   on a row opens it and moves focus into the inspector, where the handler's single-letter keys act
- *   — only there. ⇧⏎ (or Esc) in the inspector goes back to the list.
+ * - **Keys.** Tab moves between the columns, ↑↓ within one, typing jumps in the list, / goes to
+ *   the search from anywhere in the list's column but a field. ⏎ or Space on a row opens it and
+ *   moves focus into the inspector, where the handler's single-letter keys act — only there. ⇧⏎
+ *   (or Esc) in the inspector goes back to the list.
  * - **The narrow rule** (`useColumnsFit`, the console's one): below the three columns' summed widths
  *   the open task takes the page with *Back to the list*, and with none open the lanes sit over the
  *   list.
@@ -45,7 +50,7 @@ import {
  */
 
 export type CorpusTaskViewProps = {
-  /** The Corpus sidebar (`CorpusLanes`), mounted by both views. */
+  /** The Corpus sidebar (`useCorpusSidebar`), mounted by both views. */
   sidebar: ReactNode;
   query: TaskQuery;
   /** A change of place: another tab, a search. */
@@ -77,6 +82,9 @@ export type CorpusTaskViewProps = {
 /** The three columns' width tokens: below their sum, one pane at a time. */
 const COLUMNS = ['--size-lanes', '--size-list', '--size-inspector'] as const;
 
+/** Where a search is typed: the lane and its tab (typing is dropped when either moves). */
+const searchPlace = (query: TaskQuery) => JSON.stringify([query.lane.id, query.tab]);
+
 export function CorpusTaskView({
   sidebar,
   query,
@@ -99,12 +107,12 @@ export function CorpusTaskView({
   const page = useRef<HTMLDivElement>(null);
   const ownInspector = useRef<HTMLElement | null>(null);
   const pane = inspectorRef ?? ownInspector;
+  const grid = useRef<HTMLTableElement>(null);
+  const search = useRef<HTMLInputElement>(null);
   const narrow = !useColumnsFit(page, COLUMNS);
   const itemOpen = inspector.kind !== 'none';
   const shown = !narrow ? 'all' : itemOpen ? 'detail' : 'list';
-  const listPane = useRef<HTMLElement>(null);
-  const focusList = () =>
-    listPane.current?.querySelector<HTMLElement>('[role="listbox"]')?.focus() ?? undefined;
+  const focusList = () => grid.current?.focus();
   const panes = usePaneFocus({
     page,
     shown,
@@ -129,6 +137,7 @@ export function CorpusTaskView({
       : bodiesCount(
           query.tab === null ? figures.open : (figures.facets[query.tab] ?? figures.open),
         );
+  const what = LANE_WHAT[lane.task];
   const selectedId = inspector.kind === 'item' ? inspector.item.taskId : query.item;
   const setTab = (tab: TaskTab | null) => onQueryChange({ ...query, tab });
 
@@ -159,43 +168,71 @@ export function CorpusTaskView({
       </section>
 
       <section
-        ref={listPane}
         data-pane="middle"
         aria-label={LIST_LABEL}
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          // / goes to the search from anywhere in the list's column but a field (which types it).
+          if (event.key !== '/' || event.defaultPrevented || isTextEntry(event.target as Element)) {
+            return;
+          }
+          event.preventDefault();
+          search.current?.focus();
+        }}
         className={cn(
-          'flex min-h-0 min-w-0 flex-col border-0 border-solid border-line',
+          'flex min-h-0 min-w-0 flex-col border-0 border-solid border-line outline-none',
           narrow ? cn('flex-1', itemOpen && 'hidden') : 'border-r',
         )}
       >
         <div
           data-slot="corpus-head"
-          className="flex min-w-0 shrink-0 items-end gap-(--space-3_5) border-0 border-b border-solid border-line px-gutter pt-(--space-4) pb-(--space-3)"
+          className="flex min-w-0 shrink-0 flex-col gap-(--space-2) border-0 border-b border-solid border-line px-gutter pt-(--space-4) pb-(--space-3)"
         >
-          <h1
-            data-slot="page-word"
-            className="m-0 text-disp leading-none font-semibold tracking-disp whitespace-nowrap text-fg uppercase"
-          >
-            {lane.label}
-          </h1>
-          {kicker !== null && (
-            <span
-              data-slot="corpus-kicker"
-              className="min-w-0 pb-(--space-0_5) text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg3 uppercase"
+          <div className="flex min-w-0 items-end gap-(--space-3_5)">
+            <h1
+              data-slot="page-word"
+              className="m-0 text-disp leading-none font-semibold tracking-disp whitespace-nowrap text-fg uppercase"
             >
-              {kicker}
-            </span>
+              {lane.label}
+            </h1>
+            {kicker !== null && (
+              <span
+                data-slot="corpus-kicker"
+                className="min-w-0 truncate pb-(--space-0_5) text-kick leading-none font-medium tracking-kick text-fg3 uppercase"
+              >
+                {kicker}
+              </span>
+            )}
+          </div>
+          {what !== null && (
+            <p data-slot="corpus-what" className="m-0 truncate text-row leading-none text-fg2">
+              {what}
+            </p>
           )}
         </div>
         <div
           data-slot="corpus-tools"
-          className="flex min-w-0 shrink-0 items-center gap-(--space-2_5) border-0 border-b border-solid border-line px-gutter py-(--space-3)"
+          className="flex min-w-0 shrink-0 flex-col gap-(--space-2_5) px-gutter pt-(--space-2) pb-(--space-3)"
         >
+          <TaskSearch
+            q={query.q}
+            place={searchPlace(query)}
+            onSearch={(q) => onQueryChange({ ...query, q })}
+            placeholder={SEARCH_HINT[lane.task]}
+            inputRef={search}
+          />
           <ToggleGroup
             aria-label="Tab"
             className="max-w-full flex-wrap gap-y-px"
             value={query.tab ?? ''}
             onValueChange={(value) =>
-              setTab(value === '' ? null : (lane.tabs.find((t) => t.id === value)?.id ?? null))
+              setTab(
+                value === ''
+                  ? null
+                  : value === DECIDED_TAB
+                    ? DECIDED_TAB
+                    : (lane.tabs.find((t) => t.id === value)?.id ?? null),
+              )
             }
           >
             <ToggleGroupItem value="">{TAB_ALL}</ToggleGroupItem>
@@ -209,27 +246,34 @@ export function CorpusTaskView({
         {list.pending && list.status !== 'loading' && (
           <div
             data-slot="corpus-notes"
-            className="shrink-0 border-0 border-b border-solid border-line px-gutter py-(--space-3)"
+            className="shrink-0 border-0 border-t border-solid border-line px-gutter py-(--space-3)"
           >
             <Note data-slot="corpus-pending">{LIST_PENDING}</Note>
           </div>
         )}
-        <TaskList
-          label={lane.label}
-          list={list}
-          emptyWords={
-            query.tab === DECIDED_TAB
-              ? NOTHING_DECIDED
-              : query.q.trim() !== ''
-                ? NOTHING_MATCHES
-                : NOTHING_OPEN
-          }
-          tail={tail === null ? null : { ...tail, title: DECIDED_THIS_WEEK }}
-          selectedId={selectedId}
-          onOpen={onOpenItem}
-          {...(onLoadMore !== undefined && { onLoadMore })}
-          {...(onRetryList !== undefined && { onRetry: onRetryList })}
-        />
+        <div className="flex min-h-0 flex-1 flex-col border-0 border-t border-solid border-line">
+          <TaskTable
+            lane={lane.task}
+            label={lane.label}
+            list={list}
+            emptyWords={
+              query.tab === DECIDED_TAB
+                ? NOTHING_DECIDED
+                : query.q.trim() !== ''
+                  ? NOTHING_MATCHES
+                  : NOTHING_OPEN
+            }
+            tail={tail === null ? null : { ...tail, title: DECIDED_THIS_WEEK }}
+            selectedId={selectedId}
+            q={query.q}
+            now={now}
+            onOpen={onOpenItem}
+            paused={narrow && itemOpen}
+            gridRef={grid}
+            {...(onLoadMore !== undefined && { onLoadMore })}
+            {...(onRetryList !== undefined && { onRetry: onRetryList })}
+          />
+        </div>
       </section>
 
       <section

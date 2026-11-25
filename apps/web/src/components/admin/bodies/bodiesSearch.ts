@@ -155,6 +155,11 @@ export function queryOf(
   return { lane, bodyId: search.body ?? null, q, state: search.state ?? null, facets, sort };
 }
 
+/** A library lane opened fresh: no body, no search, no state tab or facets, the lane's own order. */
+export function laneStart(lane: BodyLane): BodiesQuery {
+  return { lane, bodyId: null, q: '', state: null, facets: {}, sort: lane.sort };
+}
+
 /**
  * The order the list is in: the match only while a search runs. A search too short to run ranks
  * nothing, so the lane keeps its own order — the order the read is asked for and the heading lit.

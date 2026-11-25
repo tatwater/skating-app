@@ -1,15 +1,22 @@
-import { fireEvent, screen, within } from '@testing-library/react';
-import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { act, fireEvent, screen, within } from '@testing-library/react';
+import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { stubJsdomAnimations } from '../body/tabs/jsdomStubs';
 import {
   bodyId,
+  CLASS_ITEM,
   DECIDED_BY_COLLEAGUE,
   DECIDED_BY_ME,
+  NAME_DECIDED_ROW,
   NAME_ITEM,
   NAME_ITEM_DECIDED,
+  NAME_ROWS,
+  page,
 } from './corpusFixtures';
 import type { CorpusTaskItemView } from './corpusTypes';
+import type { CorpusHandlerProps } from './inspector/handlerRegistry';
+import { PlaceholderHandler } from './inspector/PlaceholderHandler';
+import { TASK_SEARCH_DEBOUNCE_MS } from './list/TaskSearch';
 import {
   harness as h,
   installCorpusRouteMocks,
@@ -22,9 +29,25 @@ import {
  * **A task lane through the real route and view** (the shared harness: only the router, the role,
  * the read layer and the mutation hook stood in): `BodiesRoute` dispatches a task lane to
  * `CorpusTaskRoute`, which asks the task reads with the place in the URL, draws the list with its
- * count, opens `?item=` in its lane's handler (the placeholder until one is registered) and runs the
- * decided-only lock over the item's live read.
+ * count, opens `?item=` in its lane's handler (the placeholder where none is registered) and runs
+ * the decided-only lock over the item's live read.
+ *
+ * The registry is stood in here — a stub for Name conflicts, none for Class conflicts — so the frame's
+ * dispatch is tested apart from the handlers (each has its own wiring test beside it).
  */
+
+/** The stub handler: the placeholder's facts in a frame of its own, so the lock still draws. */
+function StubHandler(props: CorpusHandlerProps) {
+  return (
+    <div data-slot="stub-handler">
+      <PlaceholderHandler {...props} />
+    </div>
+  );
+}
+vi.doMock('./inspector/handlerRegistry', async (orig) => ({
+  ...(await orig<typeof import('./inspector/handlerRegistry')>()),
+  CORPUS_HANDLERS: new Map([['nameConflicts', StubHandler]]),
+}));
 
 const { mount } = await installCorpusRouteMocks();
 
@@ -59,6 +82,13 @@ const navigations = () => {
 const listArgs = () =>
   [...h.asked].reverse().find((a) => a.name === 'corpusTasks:listPage' && a.args.tab !== 'decided')
     ?.args;
+/** A read that failed, as the read layer hands it over. */
+const failed = () => ({
+  failed: true,
+  error: new Error('refused'),
+  pending: false,
+  retry: () => {},
+});
 const openItem = (item: CorpusTaskItemView) => {
   h.answers['corpusTasks:item'] = () => ({ item, pending: false });
 };
@@ -119,21 +149,35 @@ describe('a task lane', () => {
     expect(seen.at(-1)).toEqual({});
   });
 
-  it('opens `item` in its lane’s handler — the placeholder, with no handler registered', () => {
+  it('opens `item` in the handler registered for its lane', () => {
     h.search = { lane: 'name-conflicts', item: NAME_ITEM.taskId };
     openItem(NAME_ITEM);
     mount();
     expect(lastArgs('corpusTasks:item')).toMatchObject({ ref: NAME_ITEM.taskId });
     expect(lastArgs('corpusTasks:item')).not.toHaveProperty('lane');
+    expect(inspector().querySelector('[data-slot="stub-handler"]')).not.toBeNull();
+    // The open row is the list's selected one.
+    const grid = screen.getByRole('grid', { name: 'Name conflicts' });
+    const chosen = within(grid)
+      .getAllByRole('row')
+      .find((r) => r.getAttribute('aria-selected') === 'true');
+    expect(chosen?.textContent).toContain('The Basin');
+  });
+
+  it('opens a lane no handler claims in the placeholder: the facts, read only', () => {
+    h.search = { lane: 'class-conflicts', item: CLASS_ITEM.taskId };
+    openItem(CLASS_ITEM);
+    mount();
+    expect(inspector().querySelector('[data-slot="stub-handler"]')).toBeNull();
     const facts = must(
       inspector().querySelector('[data-slot="corpus-placeholder-facts"]'),
       'the placeholder',
     );
-    expect(facts.textContent).toContain('“The Basin” · “Lake Auburn”');
+    expect(facts.textContent).toContain('OSM Lake or pond · NHD Wetland');
     expect(within(inspector()).queryByRole('toolbar')).toBeNull();
     expect(
       inspector().querySelector('[data-slot="corpus-open-in-body"]')?.getAttribute('href'),
-    ).toBe(`/admin/body/${NAME_ITEM.body.id}`);
+    ).toBe(`/admin/body/${CLASS_ITEM.body.id}`);
   });
 
   it('asks a body ref with its lane', () => {
@@ -188,13 +232,129 @@ describe('a task lane', () => {
   });
 });
 
+describe('the list', () => {
+  it('a search writes `q` in place, asks the page with it, and marks it in the names', () => {
+    vi.useFakeTimers();
+    try {
+      const seen: { search: Record<string, unknown>; replace?: boolean }[] = [];
+      h.navigate = (opts) => {
+        seen.push(opts as (typeof seen)[number]);
+      };
+      h.search = { lane: 'name-conflicts' };
+      const first = mount();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Find a body' }), {
+        target: { value: ' basin ' },
+      });
+      expect(seen).toEqual([]);
+      act(() => vi.advanceTimersByTime(TASK_SEARCH_DEBOUNCE_MS));
+      expect(seen.at(-1)).toMatchObject({
+        search: { lane: 'name-conflicts', q: 'basin' },
+        replace: true,
+      });
+      first.unmount();
+      h.search = { lane: 'name-conflicts', q: 'basin' };
+      mount();
+      expect(listArgs()).toMatchObject({ lane: 'nameConflicts', q: 'basin' });
+      const marks = [...document.querySelectorAll('[data-slot="corpus-task-grid"] mark')];
+      expect(marks.map((m) => m.textContent)).toContain('Basin');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('opens a row from the keyboard, the tail running on under the open rows', () => {
+    const seen = navigations();
+    h.answers['corpusTasks:listPage'] = (args) =>
+      page(args.tab === 'decided' ? [NAME_DECIDED_ROW] : NAME_ROWS.slice(0, 2));
+    h.search = { lane: 'name-conflicts' };
+    mount();
+    const grid = screen.getByRole('grid', { name: 'Name conflicts' });
+    expect(within(grid).getByText('Decided lately')).toBeInTheDocument();
+    expect(within(grid).getByText('All 2')).toBeInTheDocument();
+    grid.focus();
+    fireEvent.keyDown(grid, { key: 'End' });
+    // Space opens, as ⏎ does, outside a type-ahead run.
+    fireEvent.keyDown(grid, { key: ' ' });
+    expect(seen.at(-1)).toEqual({ lane: 'name-conflicts', item: NAME_DECIDED_ROW.taskId });
+    // Type-ahead by the first name, from the cursor on.
+    fireEvent.keyDown(grid, { key: 's' });
+    fireEvent.keyDown(grid, { key: 'Enter' });
+    expect(seen.at(-1)).toEqual({ lane: 'name-conflicts', item: NAME_ROWS[1]?.taskId });
+  });
+
+  it('says a failed page with Try again, and a failed tail under a list that is all in', () => {
+    h.answers['corpusTasks:listPage'] = () => failed();
+    h.search = { lane: 'name-conflicts' };
+    const first = mount();
+    expect(document.querySelector('[data-slot="corpus-list-error"]')?.textContent).toContain(
+      'The list couldn’t be read',
+    );
+    first.unmount();
+    h.answers['corpusTasks:listPage'] = (args) =>
+      args.tab === 'decided' ? failed() : page(NAME_ROWS);
+    mount();
+    expect(document.querySelector('[data-slot="corpus-list-error"]')?.textContent).toBe('');
+    expect(document.querySelector('[data-slot="corpus-tail-error"]')?.textContent).toContain(
+      'The decided tasks couldn’t be read',
+    );
+  });
+
+  it('stops a search at its scan bound with More to read and Read on', () => {
+    h.answers['corpusTasks:listPage'] = (args) =>
+      args.tab === 'decided'
+        ? page([])
+        : page(NAME_ROWS, { isDone: false, continueCursor: 'c1', scanBudgetSpent: true });
+    h.search = { lane: 'name-conflicts', q: 'lake' };
+    mount();
+    expect(document.querySelector('[data-slot="corpus-end"]')?.textContent).toBe('More to read');
+    expect(screen.getByRole('button', { name: 'Read on' })).toBeInTheDocument();
+  });
+
+  it('says the server is still filing, and draws no count it can’t vouch for', () => {
+    h.lanes = {
+      lanes: { nameConflicts: { open: 3, facets: {} }, classConflicts: { open: 0, facets: {} } },
+      pending: true,
+    };
+    h.answers['corpusTasks:listPage'] = () => page(NAME_ROWS, { pending: true });
+    h.search = { lane: 'name-conflicts' };
+    mount();
+    expect(document.querySelector('[data-slot="corpus-pending"]')).not.toBeNull();
+    expect(document.querySelector('[data-slot="corpus-kicker"]')).toBeNull();
+    expect(within(sidebar()).queryByText('3')).toBeNull();
+  });
+
+  it('a failed lanes read is said at the sidebar’s foot, never drawn as zero', () => {
+    h.answers['corpusTasks:lanes'] = () => failed();
+    h.search = { lane: 'name-conflicts' };
+    mount();
+    expect(document.querySelector('[data-slot="counts-error"]')?.textContent).toContain(
+      'Counts couldn’t be read',
+    );
+    expect(document.querySelector('[data-slot="corpus-kicker"]')).toBeNull();
+  });
+});
+
 describe('a library lane', () => {
-  it('still draws the library, and asks no task read', () => {
+  it('still draws the library, under the same sidebar, asking only the task lanes’ counts', () => {
     h.search = { lane: 'removed' };
     mount();
     expect(document.querySelector('[data-slot="bodies-page"]')).not.toBeNull();
     expect(document.querySelector('[data-slot="corpus-task-page"]')).toBeNull();
-    expect(h.asked.filter((a) => a.name.startsWith('corpusTasks:'))).toEqual([]);
+    expect([
+      ...new Set(h.asked.filter((a) => a.name.startsWith('corpusTasks:')).map((a) => a.name)),
+    ]).toEqual(['corpusTasks:lanes']);
     expect(lastArgs('bodies:listPage')).toMatchObject({ lane: 'removed' });
+    // The task lanes sit above the library's, counted.
+    const lanes = within(sidebar());
+    expect(lanes.getByText('Name conflicts')).toBeInTheDocument();
+    expect(lanes.getByText('412')).toBeInTheDocument();
+  });
+
+  it('opens a task lane fresh from the library’s sidebar', () => {
+    const seen = navigations();
+    h.search = { lane: 'removed', q: 'echo' };
+    mount();
+    fireEvent.click(within(sidebar()).getByText('Class conflicts'));
+    expect(seen.at(-1)).toEqual({ lane: 'class-conflicts' });
   });
 });

@@ -1,11 +1,11 @@
 import { type ReactElement, type ReactNode, useRef, useState } from 'react';
 
 import { Button } from '@/components/kit/button';
-import { Lanes } from '@/components/kit/lanes';
 import { isTextEntry, usePaneKeys } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
-import { type Count, countText } from '../overview/overviewModel';
+import { CorpusLanes } from '../corpus/CorpusLanes';
+import type { Count } from '../overview/overviewModel';
 import { type Loadable, loaded } from '../reads/consoleReads';
 import { ConsoleStatus } from '../shell/ConsoleShell';
 import { useColumnsFit, usePaneFocus } from '../shell/columnsFit';
@@ -18,9 +18,9 @@ import {
   type RemovedPreviewData,
 } from './bodiesData';
 import { laneKicker, nextSort } from './bodiesModel';
-import { type BodiesQuery, listKey, listSort } from './bodiesSearch';
+import { type BodiesQuery, laneStart, listKey, listSort } from './bodiesSearch';
 import { appliedOptions, chipWords, toggleOption } from './bodyFacets';
-import { BODY_LANES, type BodyLane, laneById, laneGroups } from './bodyLanes';
+import { BODY_LANES, type BodyLane, laneById } from './bodyLanes';
 import { ListTools } from './ListTools';
 import { BACK_TO_LIST } from './listWords';
 
@@ -88,10 +88,11 @@ export type BodiesViewProps = {
   /** The page's status-bar groups ("Last campaign 12 Oct"). */
   status?: readonly ReactNode[];
   /**
-   * The counts' failure note, drawn at the lanes' foot (the counts are theirs) — a note and its
-   * *Try again* are a block, which the one-line status bar would clip.
+   * The one Corpus sidebar (`useCorpusSidebar`: the task lanes and the library's, with its counts'
+   * failure note at its foot), which the route mounts for both views. Without one — a story, a test
+   * of the library alone — the library's own lanes are drawn, counted from `laneCounts`.
    */
-  countsNote?: ReactNode;
+  sidebar?: ReactNode;
   className?: string;
 };
 
@@ -119,7 +120,7 @@ export function BodiesView({
   openLabel = OPEN_LABEL,
   onOpenBody,
   status = [],
-  countsNote,
+  sidebar,
   className,
 }: BodiesViewProps) {
   const middle = useRef<HTMLElement>(null);
@@ -232,36 +233,18 @@ export function BodiesView({
           narrow ? cn('shrink-0 border-b', bodyOpen && 'hidden') : 'border-r',
         )}
       >
-        <Lanes
-          label="Corpus"
-          selected={lane.id}
-          onSelect={(id) => {
-            // The lane on screen again keeps its place; another lane opens fresh.
-            if (id === lane.id) return;
-            const next = laneById(id, lanes);
-            onQueryChange({
-              lane: next,
-              bodyId: null,
-              q: '',
-              state: null,
-              facets: {},
-              sort: next.sort,
-            });
-          }}
-          groups={laneGroups(lanes).map((g) => ({
-            label: g.label,
-            lanes: g.lanes.map((l) => {
-              const count = laneCounts[l.id] ?? null;
-              return {
-                id: l.id,
-                label: l.label,
-                ...(count !== null && { count: countText(count) }),
-                ...(count !== null && count.count === 0 && !count.capped && { dim: true }),
-              };
-            }),
-          }))}
-        />
-        {countsNote}
+        {sidebar ?? (
+          <CorpusLanes
+            lanes={lanes.map((l) => ({
+              id: l.id,
+              group: l.group,
+              label: l.label,
+              count: laneCounts[l.id] ?? null,
+            }))}
+            selected={lane.id}
+            onSelect={(id) => onQueryChange(laneStart(laneById(id, lanes)))}
+          />
+        )}
       </section>
 
       <section

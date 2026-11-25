@@ -202,6 +202,8 @@ export const NAME_ITEM: CorpusItemOf<'nameConflicts'> = {
 export const CLASS_ITEM: CorpusItemOf<'classConflicts'> = {
   ...(CLASS_ROWS[0] as CorpusRowOf<'classConflicts'>),
   ...ITEM_EXTRAS,
+  // Its geometry facts aren't computed yet: no neighbors to name, never "none".
+  neighbors: null,
   depth: null,
   ladder: [
     {

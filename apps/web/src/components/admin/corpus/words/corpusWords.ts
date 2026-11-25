@@ -46,11 +46,49 @@ export const TAB_LABELS: {
   classConflicts: { wetlandOrLake: 'Wetland or lake', otherPairs: 'Other pairs' },
 };
 
+/** "2,263", "0.4" — acres as the list's column writes them: a tenth under ten, whole above. */
+export function acresFigure(acres: number): string {
+  const n = acres < 10 ? Math.round(acres * 10) / 10 : Math.round(acres);
+  return n.toLocaleString('en-US');
+}
+
 /** "2,263 ac", "0.4 ac" — an area as the boards write it, from the server's acres. */
 export function acresText(acres: number): string {
-  const n = acres < 10 ? Math.round(acres * 10) / 10 : Math.round(acres);
-  return `${n.toLocaleString('en-US')} ac`;
+  return `${acresFigure(acres)} ac`;
 }
+
+/**
+ * The line under each lane's page word, where the board draws one (4.3's): what the lane is, said
+ * plainly, since navigation carries no tooltips. `null`: the board draws none.
+ */
+export const LANE_WHAT: Record<CorpusTaskLane, string | null> = {
+  nameConflicts: null,
+  classConflicts: 'The catalogs disagree on the kind of water',
+};
+
+/** The search's hint in each lane (the boards' words: names are found by either). */
+export const SEARCH_HINT: Record<CorpusTaskLane, string> = {
+  nameConflicts: 'Find a body by either name',
+  classConflicts: 'Find a body by name, id or external id',
+};
+/** The search field's accessible name. */
+export const SEARCH_LABEL = 'Find a body';
+
+/** The list's column heads, per lane (the boards'; the order column is the server's, unsorted). */
+export const COLUMN_HEADS: Record<CorpusTaskLane, readonly [string, string, string]> = {
+  nameConflicts: ['Shown / the other', 'Kind', 'Acres'],
+  classConflicts: ['Body', 'The catalogs say', 'Acres'],
+};
+
+/** A body stored with no name (`''`). */
+export const UNNAMED = 'Unnamed water';
+
+/** The end tab under every open row: "All 412". */
+export const allOf = (n: number) => `All ${n.toLocaleString('en-US')}`;
+/** Where a list stopped at the search's bound: more may match (the Inbox's words). */
+export const MORE_TO_READ = 'More to read';
+/** The next page, on its way (the Inbox's words). */
+export const LOADING_MORE = 'Loading more';
 
 /** The tab over every open task of the lane. */
 export const TAB_ALL = 'All';

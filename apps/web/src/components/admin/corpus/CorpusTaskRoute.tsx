@@ -6,36 +6,32 @@ import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
 
 import { type ListSummary, laneCountsFrom } from '../bodies/bodiesReads';
-import { BODY_LANES, DEFAULT_LANE_ID } from '../bodies/bodyLanes';
+import { BODY_LANES } from '../bodies/bodyLanes';
 import { LOCK_START, lockSeenOf, nextLock } from '../inspector/lockModel';
-import type { Count } from '../overview/overviewModel';
-import { isFailed, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
-import { ReadNote } from '../reads/ReadNote';
+import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { useClockFor } from '../reads/readArgs';
 import { useMinuteNow } from '../shell/presence';
-import { CorpusLanes, type SidebarLane } from './CorpusLanes';
 import { CorpusTaskView } from './CorpusTaskView';
-import type { CorpusLanesView } from './corpusTypes';
 import type { CorpusInspectorState } from './inspector/CorpusInspector';
-import { useCorpusLanes, useTaskItem, useTaskPages, useTaskTail } from './list/taskReads';
-import { TASK_LANE_LIST, taskLaneById } from './taskLanes';
+import { useTaskItem, useTaskPages, useTaskTail } from './list/taskReads';
 import { placeAfter, type TaskQuery, taskListKey, taskSearchFor } from './taskSearch';
-import { COUNTS_FAILED } from './words/corpusWords';
+import { useCorpusSidebar } from './useCorpusSidebar';
 
 /**
  * **A Corpus task lane, wired** — `BodiesRoute` draws it for a lane whose read is a task's
- * (`?lane=name-conflicts`), beside the same sidebar the library mounts. Its place comes from the URL
- * (validated by `validateBodiesSearch`, which takes `taskSearch`'s `tab` and `item`); the lanes'
- * counts, the lane's pages, its decided tail and the open task all come through the console's one
- * read layer; and the decided-only lock runs as a state machine over the open task's live read
- * (`admin/inspector/lockModel`), as the Inbox's does.
+ * (`?lane=name-conflicts`), beside the same sidebar the library mounts (`useCorpusSidebar`). Its
+ * place comes from the URL (validated by `validateBodiesSearch`, which takes `taskSearch`'s `tab`
+ * and `item`); the lanes' counts, the lane's pages, its decided tail and the open task all come
+ * through the console's one read layer; and the decided-only lock runs as a state machine over the
+ * open task's live read (`admin/inspector/lockModel`), as the Inbox's does.
  *
  * - **The list is read against the list's clock**: the minute it was opened, held while it stays
  *   open, so a new minute never restarts the paging.
  * - **Every change of place is a navigation**, so the back button, a reload and a shared link put
  *   the page back as it was. Another tab or search closes a task opened from the list and keeps one
- *   that came by a link (`placeAfter`); opening a task beside one already open replaces the entry.
- * - **Every read waits on `corpus.read`**; a viewer without it reads nothing.
+ *   that came by a link (`placeAfter`); a search, and opening a task beside one already open,
+ *   replace the entry rather than stacking it.
+ * - **Every read waits on `corpus.read`**; a viewer without it reads nothing of the tasks.
  */
 export function CorpusTaskRoute({ query }: { query: TaskQuery }) {
   const navigate = useNavigate();
@@ -48,8 +44,13 @@ export function CorpusTaskRoute({ query }: { query: TaskQuery }) {
   // The task last opened from the list; any other open task came by a link.
   const openedFromList = useRef<string | null>(null);
 
-  const lanesRead = useCorpusLanes(listNow, canRead);
   const library = useLibraryCounts(listNow, can('body.read'));
+  const { sidebar, tasks } = useCorpusSidebar({
+    selected: query.lane.id,
+    now: listNow,
+    library: laneCountsFrom(library.counts, BODY_LANES),
+    libraryReads: library.state === null ? [] : [library.state],
+  });
   const pages = useTaskPages(
     canRead
       ? { lane: query.lane.task, tab: query.tab, q: query.q, now: listNow, memoryKey: key }
@@ -84,43 +85,18 @@ export function CorpusTaskRoute({ query }: { query: TaskQuery }) {
       search: taskSearchFor(next) as never,
       ...(replace && { replace: true }),
     });
-  const openLane = (id: string) => {
-    const task = taskLaneById(id);
-    void navigate({
-      to: '/admin/corpus',
-      search: (task !== null
-        ? taskSearchFor({ lane: task, tab: null, item: null, q: '' })
-        : id === DEFAULT_LANE_ID
-          ? {}
-          : { lane: id }) as never,
-    });
-  };
-
   const linkFor = useMemo(() => (path: string) => <Link {...routerTarget(path)} />, []);
 
   return (
     <CorpusTaskView
-      sidebar={
-        <CorpusLanes
-          lanes={sidebarLanes(lanesRead.shown, library)}
-          selected={query.lane.id}
-          onSelect={openLane}
-          countsNote={
-            <ReadNote
-              data-slot="counts-error"
-              className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
-              reads={[lanesRead.state]}
-            >
-              {COUNTS_FAILED}
-            </ReadNote>
-          }
-        />
-      }
+      sidebar={sidebar}
       query={query}
-      onQueryChange={(next) =>
-        go(placeAfter(query, next, query.item !== null && openedFromList.current === query.item))
-      }
-      lanes={lanesRead.shown}
+      onQueryChange={(next) => {
+        const fromList = query.item !== null && openedFromList.current === query.item;
+        // A search moves within the list: it replaces the entry, as the library's does.
+        go(placeAfter(query, next, fromList), next.q !== query.q);
+      }}
+      lanes={tasks.shown}
       list={{
         status: pages.status,
         rows: pages.rows,
@@ -155,35 +131,18 @@ export function CorpusTaskRoute({ query }: { query: TaskQuery }) {
 
 /**
  * The library lanes' counts beside a task lane: All's summary, as the library reads them on a lane
- * no server read lists. `undefined` while it loads, fails, or for a viewer without the library.
+ * no server read lists. No counts while it loads or fails, or for a viewer without the library
+ * (whose `state` is `null`: nothing asked, nothing to fail).
  */
-function useLibraryCounts(now: number, enabled: boolean): ListSummary | undefined {
+function useLibraryCounts(
+  now: number,
+  enabled: boolean,
+): { counts: ListSummary | undefined; state: Loadable<ListSummary> | null } {
   const { reads } = useConsoleReadSet({
     summary: enabled ? read(api.bodies.listSummary, { lane: 'all', now }) : null,
   });
-  return loaded(reads.summary);
-}
-
-/** The sidebar's lanes: the task lanes first, then the library's, each with its count. */
-export function sidebarLanes(
-  tasks: CorpusLanesView | undefined,
-  library: ListSummary | undefined,
-): SidebarLane[] {
-  const libraryCounts = laneCountsFrom(library, BODY_LANES);
-  const taskCount = (open: number | undefined): Count | null =>
-    open === undefined || tasks?.pending === true ? null : { count: open, capped: false };
-  return [
-    ...TASK_LANE_LIST.map((l) => ({
-      id: l.id,
-      group: l.group,
-      label: l.label,
-      count: taskCount(tasks?.lanes[l.task].open),
-    })),
-    ...BODY_LANES.map((l) => ({
-      id: l.id,
-      group: l.group,
-      label: l.label,
-      count: libraryCounts[l.id] ?? null,
-    })),
-  ];
+  return {
+    counts: enabled ? loaded(reads.summary) : undefined,
+    state: enabled ? reads.summary : null,
+  };
 }

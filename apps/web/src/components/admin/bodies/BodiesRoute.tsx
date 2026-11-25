@@ -17,6 +17,7 @@ import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
 import { CorpusTaskRoute } from '../corpus/CorpusTaskRoute';
 import { taskQueryOf } from '../corpus/taskSearch';
+import { useCorpusSidebar } from '../corpus/useCorpusSidebar';
 import { searchFor as inboxSearchFor } from '../inbox/inboxSearch';
 import {
   isFailed,
@@ -26,7 +27,6 @@ import {
   read,
   useConsoleReadSet,
 } from '../reads/consoleReads';
-import { ReadNote } from '../reads/ReadNote';
 import { ID_SHAPE, useClockFor } from '../reads/readArgs';
 import { useMinuteNow } from '../shell/presence';
 import { BodiesView, type BodiesViewProps } from './BodiesView';
@@ -164,15 +164,23 @@ function LibraryRoute({
 
   // A failed or retrying summary shows no count at all — never a zero, never the last one held.
   const counted = isFailed(summary.state) ? undefined : summary.held;
+  const laneCounts = {
+    ...laneCountsFrom(counted, BODY_LANES),
+    ...(opened?.list.status === 'done' && { [query.lane.id]: opened.list.total }),
+  };
+  // The one sidebar, with the task lanes above the library's; its foot says when a count failed.
+  const { sidebar } = useCorpusSidebar({
+    selected: query.lane.id,
+    now: listNow,
+    library: laneCounts,
+    libraryReads: [summary.state],
+  });
   const view: Omit<BodiesViewProps, 'list'> = {
     query,
     onQueryChange: go,
     // A failed other-standings read is said in the groups' place, never drawn as none there.
     ...(isFailed(othersRead) && { onRetryOthers: othersRead.retry }),
-    laneCounts: {
-      ...laneCountsFrom(counted, BODY_LANES),
-      ...(opened?.list.status === 'done' && { [query.lane.id]: opened.list.total }),
-    },
+    laneCounts,
     corpus: counted?.corpus ?? null,
     preview: preview.data,
     previewRemoved: preview.removed,
@@ -183,17 +191,7 @@ function LibraryRoute({
     askLink,
     onOpenBody: (id) => void navigate({ to: bodyPath(id), search: { from } }),
     ...(openLabel !== undefined && { openLabel }),
-    // Mounted whatever the counts' state, so its words are announced when they come; at the
-    // lanes' foot, a block the one-line status bar would clip.
-    countsNote: (
-      <ReadNote
-        data-slot="counts-error"
-        className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
-        reads={[summary.state]}
-      >
-        Counts couldn’t be read
-      </ReadNote>
-    ),
+    sidebar,
   };
 
   if (opened !== null) {
