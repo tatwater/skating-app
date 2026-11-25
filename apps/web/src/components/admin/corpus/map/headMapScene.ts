@@ -86,11 +86,7 @@ export function headMapScene({
   const reachCoords = drawnNeighbors.flatMap((n) => outlineCoords(n.outline));
   const reach =
     reachCoords.length > 0
-      ? frameBox([
-          [frame.minLng, frame.minLat],
-          [frame.maxLng, frame.maxLat],
-          ...reachCoords,
-        ])
+      ? frameBox([[frame.minLng, frame.minLat], [frame.maxLng, frame.maxLat], ...reachCoords])
       : null;
   const legend: InboxLegendRow[] =
     outlineLabel === undefined
@@ -110,8 +106,9 @@ export function embedOutline(
   geometry: { type: string; coordinates?: unknown } | null | undefined,
 ): GeoJSON.Polygon | GeoJSON.MultiPolygon | null {
   if (geometry == null) return null;
-  if (geometry.type === 'Polygon' || geometry.type === 'MultiPolygon') {
-    return geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
-  }
-  return null;
+  if (geometry.type !== 'Polygon' && geometry.type !== 'MultiPolygon') return null;
+  if (!Array.isArray(geometry.coordinates)) return null;
+  const outline = geometry as GeoJSON.Polygon | GeoJSON.MultiPolygon;
+  // An outline with no points draws nothing (the scene needs one to frame on).
+  return outlineCoords(outline).length > 0 ? outline : null;
 }

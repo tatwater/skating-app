@@ -8,9 +8,9 @@ import { useTheme } from '@/components/theme-provider';
 import { cn } from '@/lib/utils';
 import type { BodyDoc } from '../../bodies/bodiesReads';
 import { CATALOG_TAGS } from '../../body/tabs/names/namesModel';
-import { useInspectorContext } from '../../inspector/inspectorContext';
 import { InboxMap } from '../../inbox/map/InboxMap';
 import type { EmbedBody, InboxMapView } from '../../inbox/map/inboxMapScene';
+import { useInspectorContext } from '../../inspector/inspectorContext';
 import { isFailed, type Loadable, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { embedOutline, type HeadMapInput, headMapScene } from './headMapScene';
 import { HEAD_MAP_WORDS as W } from './headMapWords';
@@ -41,8 +41,7 @@ export function embedBodyOf(doc: Pick<BodyDoc, '_id' | 'name' | 'polygon'>): Emb
 
 /** `waterBodies.get`'s answer, as the stored record it holds (gone or unlisted: none). */
 type GetAnswer = { available: false } | { available: true; body: BodyDoc } | null;
-const docOf = (answer: GetAnswer): BodyDoc | null =>
-  answer !== null && answer.available ? answer.body : null;
+const docOf = (answer: GetAnswer): BodyDoc | null => (answer?.available ? answer.body : null);
 
 /** The legend's words for the body's outline: whose drawing it is. */
 export function outlineLabelOf(doc: Pick<BodyDoc, 'geometrySource'>): string {
@@ -111,9 +110,7 @@ export function CorpusHeadMap({
       square={square}
       onRetry={retry}
       retrying={pending}
-      renderMap={(view) => (
-        <InboxMap view={view} mode={mode} height={height} viewOnly={narrow} />
-      )}
+      renderMap={(view) => <InboxMap view={view} mode={mode} height={height} viewOnly={narrow} />}
     />
   );
 }
@@ -140,12 +137,21 @@ export function CorpusHeadMapView({
   const size = square ? { width: height, height } : { height };
   if (state === undefined) {
     return (
-      <SkeletonBlock data-slot="head-map-loading" aria-label={W.loading} className={box} style={size} />
+      <SkeletonBlock
+        data-slot="head-map-loading"
+        aria-label={W.loading}
+        className={box}
+        style={size}
+      />
     );
   }
   if (isFailed(state)) {
     return (
-      <div data-slot="head-map-failed" className={cn(box, 'flex items-center px-gutter')} style={size}>
+      <div
+        data-slot="head-map-failed"
+        className={cn(box, 'flex items-center px-gutter')}
+        style={size}
+      >
         <RetryNote onRetry={onRetry} pending={retrying}>
           {W.failed}
         </RetryNote>

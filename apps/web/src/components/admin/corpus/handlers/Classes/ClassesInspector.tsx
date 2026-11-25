@@ -77,7 +77,8 @@ export type ClassesInspectorProps = {
 /** The map band's height (the board's 250 px). */
 export const CLASSES_MAP_HEIGHT = 250;
 
-const MICRO = 'text-kick leading-none font-medium tracking-kick uppercase text-fg2 truncate min-w-0';
+const MICRO =
+  'text-kick leading-none font-medium tracking-kick uppercase text-fg2 truncate min-w-0';
 
 function Part({ className, ...props }: ComponentProps<'div'>) {
   return <div className={cn('px-(--space-5) pt-(--space-5_5)', className)} {...props} />;
@@ -96,8 +97,7 @@ export function ClassesInspector({
 }: ClassesInspectorProps) {
   const [picked, setPicked] = useState<{ task: string; value: WaterBodyClass } | null>(null);
   const decided = locked !== null || item.decided !== null;
-  const ownPick =
-    picked !== null && picked.task === item.taskId ? picked.value : defaultPick(item);
+  const ownPick = picked !== null && picked.task === item.taskId ? picked.value : defaultPick(item);
   const pick = decided ? null : ownPick;
   const lever = decided ? null : leverOf(item, pick);
   const busy = pending !== null;

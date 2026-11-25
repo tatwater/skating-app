@@ -108,7 +108,10 @@ export function ChoiceRows<V extends string = string>({
             'data-readonly:cursor-default data-readonly:lit:bg-transparent',
           )}
         >
-          <span data-slot="choice-head" className="flex min-h-(--size-pill) min-w-0 items-center gap-(--space-2_5)">
+          <span
+            data-slot="choice-head"
+            className="flex min-h-(--size-pill) min-w-0 items-center gap-(--space-2_5)"
+          >
             <span data-slot="choice-dot" className={DOT}>
               <RadioPrimitive.Indicator className="absolute inset-[2px] rounded-full bg-(--rim)" />
             </span>

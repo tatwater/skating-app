@@ -6,8 +6,8 @@ import {
 } from '@skating/core';
 
 import { CATALOG_TAGS } from '../../../body/tabs/names/namesModel';
-import type { CorpusItem } from '../taskItem';
 import { acresText, raisedAgainWords, TASK_WORDS } from '../taskFacts';
+import type { CorpusItem } from '../taskItem';
 import { CLASS_WORDS as W } from './classWords';
 
 /**

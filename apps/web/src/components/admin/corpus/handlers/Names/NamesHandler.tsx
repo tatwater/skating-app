@@ -1,8 +1,8 @@
 import { useInspectorContext } from '../../../inspector/inspectorContext';
 import { CorpusHeadMap } from '../../map/CorpusHeadMap';
 import { bodyNamesPath } from '../bodyPath';
-import { NAMES_MAP_SIZE, NamesInspector } from './NamesInspector';
 import type { HandlerProps } from '../taskItem';
+import { NAMES_MAP_SIZE, NamesInspector } from './NamesInspector';
 import type { NamesItem } from './namesModel';
 import { useNameServer, useNameWrites } from './useNameWrites';
 

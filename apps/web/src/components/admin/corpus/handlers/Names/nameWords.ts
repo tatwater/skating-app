@@ -25,7 +25,8 @@ export const NAME_WORDS = {
   rank: 'Rank',
   elsewhere: 'Elsewhere',
   onlyOne: 'The only body named this',
-  othersCarry: (n: string) => (n === '1' ? '1 other body carries it' : `${n} other bodies carry it`),
+  othersCarry: (n: string) =>
+    n === '1' ? '1 other body carries it' : `${n} other bodies carry it`,
   onceShows: (name: string) => `Once ${name} shows`,
   displays: 'Displays',
   alias: 'Alias',
@@ -62,8 +63,7 @@ export const NAME_WORDS = {
   theDecision: 'The decision',
   /** The pictures of the skater app (alt text). */
   appTitle: (name: string) => `The skater app’s title for the body: ${name}`,
-  appSearch: (typed: string, name: string) =>
-    `The skater app’s search: “${typed}” finds ${name}`,
+  appSearch: (typed: string, name: string) => `The skater app’s search: “${typed}” finds ${name}`,
   also: 'Also',
 } as const;
 

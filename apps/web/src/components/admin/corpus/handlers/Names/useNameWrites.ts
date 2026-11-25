@@ -1,8 +1,8 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
 import { waterBodyDisplayName } from '@skating/core';
-import type { FunctionReturnType } from 'convex/server';
 import { useMutation } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { useCallback, useMemo } from 'react';
 
 import { useDecisionRunner } from '../../../actions/useDecisionRunner';
@@ -48,7 +48,10 @@ export function useNameWrites(
         act: lever.verb,
         what: W.theDecision,
         write: async () =>
-          landedOn(item.body.id, await server.decideName({ taskId: item.taskId, pick: lever.pick })),
+          landedOn(
+            item.body.id,
+            await server.decideName({ taskId: item.taskId, pick: lever.pick }),
+          ),
         receipt:
           lever.verb === 'keepName'
             ? { title: W.receiptKeeps(lever.name), description: W.receiptSettled }

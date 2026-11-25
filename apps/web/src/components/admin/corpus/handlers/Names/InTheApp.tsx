@@ -1,5 +1,5 @@
-import { faMagnifyingGlass } from '@fortawesome/sharp-regular-svg-icons';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMagnifyingGlass } from '@fortawesome/sharp-regular-svg-icons';
 
 import { cn } from '@/lib/utils';
 import { NAME_WORDS as W } from './nameWords';

@@ -62,8 +62,7 @@ const HEAD =
   'text-kick leading-none font-semibold tracking-kick text-fg3 uppercase whitespace-nowrap truncate';
 
 /** The value column, each source's, then the consequence: one template for the heads and every row. */
-const template = (n: number) =>
-  `minmax(0,12.5rem) ${'minmax(0,6.25rem) '.repeat(n)}minmax(0,1fr)`;
+const template = (n: number) => `minmax(0,12.5rem) ${'minmax(0,6.25rem) '.repeat(n)}minmax(0,1fr)`;
 
 export function ConsequenceLadder<V extends string = string>({
   rungs,

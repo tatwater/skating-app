@@ -1,8 +1,8 @@
 import { type ClaimSource, waterBodyClassLabel } from '@skating/core';
 
 import { CATALOG_NAMES, CATALOG_TAGS } from '../../../body/tabs/names/namesModel';
-import type { CorpusItem } from '../taskItem';
 import { acresText, raisedAgainWords, TASK_WORDS } from '../taskFacts';
+import type { CorpusItem } from '../taskItem';
 import { NAME_WORDS as W } from './nameWords';
 
 /**
@@ -106,7 +106,8 @@ const CATALOGS: ReadonlySet<ClaimSource> = new Set(['gnis', 'nhd', '3dhp', 'osm'
  * catalogs are recorded; before the campaign that records them, *not recorded*.
  */
 export function catalogsWords(item: Pick<NamesItem, 'names'>): string {
-  if (item.names.length === 0 || item.names.some((n) => !n.sourcesRecorded)) return TASK_WORDS.notRecorded;
+  if (item.names.length === 0 || item.names.some((n) => !n.sourcesRecorded))
+    return TASK_WORDS.notRecorded;
   const all = new Set(item.names.flatMap((n) => n.sources).filter((s) => CATALOGS.has(s)));
   if (all.size < 2) return TASK_WORDS.notRecorded;
   return W.allAgree(all.size);

@@ -115,8 +115,7 @@ export function NamesInspector({
   // The pick is this task's: another task opens on its own default.
   const [picked, setPicked] = useState<{ task: string; value: string } | null>(null);
   const decided = locked !== null || item.decided !== null;
-  const ownPick =
-    picked !== null && picked.task === item.taskId ? picked.value : defaultPick(item);
+  const ownPick = picked !== null && picked.task === item.taskId ? picked.value : defaultPick(item);
   const pick = decided ? null : ownPick;
   const lever = decided ? null : leverOf(item, pick);
   const busy = pending !== null;
@@ -125,15 +124,22 @@ export function NamesInspector({
   };
   const unbound = useRef<HTMLElement | null>(null);
   usePaneKeys(pane ?? unbound, [
-    { key: 'Enter', run: apply, enabled: pane !== undefined && lever !== null && !busy, label: lever?.label },
+    {
+      key: 'Enter',
+      run: apply,
+      enabled: pane !== undefined && lever !== null && !busy,
+      label: lever?.label,
+    },
   ]);
 
   const name = waterBodyDisplayName(item.body.name);
   const shown = item.names.find((n) => n.shown);
   // What “Once … shows” and *In the app* describe: the pick's future, else (decided, or nothing
   // pickable) the name shown now.
-  const future: Pick<NameLever, 'verb' | 'name'> =
-    lever ?? { verb: 'keepName', name: shown?.value ?? name };
+  const future: Pick<NameLever, 'verb' | 'name'> = lever ?? {
+    verb: 'keepName',
+    name: shown?.value ?? name,
+  };
   const alias = item.names.find((n) => n.value !== future.name)?.value ?? null;
   const again = raisedAgainNote(item, timeZone);
   const refused = refusalSaid(item);
@@ -258,7 +264,11 @@ export function NamesInspector({
             <FactList
               rows={onceRows(item, future).map((r) => ({
                 label: r.label,
-                value: r.strong ? <strong className="font-medium text-fg">{r.value}</strong> : r.value,
+                value: r.strong ? (
+                  <strong className="font-medium text-fg">{r.value}</strong>
+                ) : (
+                  r.value
+                ),
               }))}
             />
           </Section>
