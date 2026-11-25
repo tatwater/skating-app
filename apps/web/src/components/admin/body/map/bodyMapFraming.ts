@@ -58,6 +58,11 @@ export function frameInRealBox(
   framed: { current: string | null },
   /** A wider box the operator may see whole (the floor reaches it); the frame's own otherwise. */
   reach: BBoxLike | null = null,
+  /**
+   * The ceiling: {@link MAX_ZOOM} unless the caller says (a Corpus head map over the aerial goes
+   * closer, so a five-acre pond fills its band). The framing is capped at it too.
+   */
+  maxZoom: number = MAX_ZOOM,
 ): 'owed' | 'framed' | 'floor' {
   const key = boundsKeyOf(bbox);
   const box = map.getContainer();
@@ -71,14 +76,14 @@ export function frameInRealBox(
   const camera = fitCamera(bbox, box.clientWidth, box.clientHeight, padding);
   // The ceiling first, then a floor never above it: MapLibre throws on a floor over the ceiling,
   // and a pond small enough to frame past it would take the whole load down with it.
-  map.setMaxZoom(MAX_ZOOM);
+  map.setMaxZoom(maxZoom);
   const reachZoom =
     reach === null ? null : fitCamera(reach, box.clientWidth, box.clientHeight, padding).zoom;
-  map.setMinZoom(Math.min(MAX_ZOOM, Math.max(0, floorZoom(camera.zoom, reachZoom))));
+  map.setMinZoom(Math.min(maxZoom, Math.max(0, floorZoom(camera.zoom, reachZoom))));
   if (framed.current === key) return 'floor';
   map.jumpTo({
     center: [camera.center.lng, camera.center.lat],
-    zoom: Math.min(MAX_ZOOM, camera.zoom),
+    zoom: Math.min(maxZoom, camera.zoom),
   });
   framed.current = key;
   return 'framed';

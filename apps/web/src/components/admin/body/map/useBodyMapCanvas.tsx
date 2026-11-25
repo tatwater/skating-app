@@ -7,9 +7,10 @@ import { env } from '@/lib/env';
 import { MAP_CONTAINER_CLASS, useMapCanvas } from '@/lib/mapCanvas';
 import type { BBoxLike, MapSurface, Padding } from '@/lib/mapSurface';
 import { DEMO_PMTILES_URL, MAP_FLAVORS } from '@/lib/waterMap';
-import { frameInRealBox } from './bodyMapFraming';
+import { frameInRealBox, MAX_ZOOM } from './bodyMapFraming';
 import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
+import { useAerialCredit, useConsoleAerial } from './consoleAerial';
 import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE, rasterAnchor } from './glLayers';
 
 /**
@@ -49,6 +50,8 @@ export interface BodyMapCanvas {
   zoomOut: () => void;
   atMinZoom: boolean;
   atMaxZoom: boolean;
+  /** The summer aerial's credit while it is on ("Aerial · NAIP Jun 2023"); `null` while off. */
+  aerialCredit: string | null;
 }
 
 /** A box `factor` of its own size larger on each side: how far the camera may wander. */
@@ -67,6 +70,8 @@ export function useBodyMapCanvas({
   drawn,
   padding = FIT_PADDING,
   reach: reachBox = null,
+  aerial = false,
+  maxZoom = MAX_ZOOM,
 }: {
   bbox: BBoxLike;
   mode: BodyMapMode;
@@ -79,6 +84,10 @@ export function useBodyMapCanvas({
    * Without one, the fence is the frame's.
    */
   reach?: BBoxLike | null;
+  /** The summer aerial (`consoleAerial`) under the console's lines, while on. */
+  aerial?: boolean;
+  /** The camera's ceiling: the console's {@link MAX_ZOOM} unless a caller goes closer. */
+  maxZoom?: number;
 }): BodyMapCanvas {
   const flavor = mode === 'light' ? MAP_FLAVORS.light : MAP_FLAVORS.dark;
   const palette = useMemo(() => bodyMapPalette(mode), [mode]);
@@ -101,6 +110,8 @@ export function useBodyMapCanvas({
   paddingRef.current = padding;
   const reachRef = useRef(reachBox);
   reachRef.current = reachBox;
+  const maxZoomRef = useRef(maxZoom);
+  maxZoomRef.current = maxZoom;
   const { containerRef, liveMap } = useMapCanvas({
     pmtilesUrl: env.pmtilesUrl || DEMO_PMTILES_URL,
     worldPmtilesUrl: env.worldPmtilesUrl,
@@ -116,7 +127,14 @@ export function useBodyMapCanvas({
       for (const layer of glLayers(paletteRef.current)) map.addLayer(layer);
       // Framed inside the chrome's room, then held there: one step and a half out, no further —
       // if its box is real; a hidden pane's fit waits for the resize below.
-      frameInRealBox(map, bboxRef.current, paddingRef.current, framedRef, reachRef.current);
+      frameInRealBox(
+        map,
+        bboxRef.current,
+        paddingRef.current,
+        framedRef,
+        reachRef.current,
+        maxZoomRef.current,
+      );
     },
   });
 
@@ -127,7 +145,14 @@ export function useBodyMapCanvas({
     const map = liveMap();
     if (!map) return;
     const reframe = () =>
-      frameInRealBox(map, bboxRef.current, paddingRef.current, framedRef, reachRef.current);
+      frameInRealBox(
+        map,
+        bboxRef.current,
+        paddingRef.current,
+        framedRef,
+        reachRef.current,
+        maxZoomRef.current,
+      );
     reframe();
     map.on('resize', reframe);
     return () => {
@@ -164,6 +189,8 @@ export function useBodyMapCanvas({
   }, [palette, liveMap]);
 
   useRaster(liveMap, drawn.raster);
+  useConsoleAerial({ liveMap, on: aerial, bbox, mode });
+  const aerialCredit = useAerialCredit(aerial, bbox);
 
   const surface = useLiveSurface(liveMap);
 
@@ -178,6 +205,7 @@ export function useBodyMapCanvas({
     zoomOut,
     atMinZoom: map !== null && zoom <= map.getMinZoom() + 1e-6,
     atMaxZoom: map !== null && zoom >= map.getMaxZoom() - 1e-6,
+    aerialCredit,
   };
 }
 

@@ -9,6 +9,7 @@ import { floorZoom, MAX_ZOOM } from '../../body/map/bodyMapFraming';
 import type { BodyMapMode } from '../../body/map/bodyMapPalette';
 import { LINE_STYLES, OUTLINE_STYLES, tokenVar } from '../../body/map/bodyMapPalette';
 import { type DrawnScene, drawScene, layerSwitches } from '../../body/map/bodyScene';
+import { aerialCredit } from '../../body/map/consoleAerial';
 import type { BodyMapLayer, BodyMapScene } from '../../body/map/mapDescriptors';
 import { useBodyMapCanvas } from '../../body/map/useBodyMapCanvas';
 import type { InboxLegendRow, InboxMapView } from './inboxMapScene';
@@ -28,6 +29,9 @@ import type { InboxLegendRow, InboxMapView } from './inboxMapScene';
  *   rack's own row in the foot's corner, on by default — the body's archived pass under the outlines.
  * - **View only** (`viewOnly`, a phone's page): no zoom pair and the map takes no pointer, so a
  *   swipe scrolls the page instead of panning a map the thumb landed on.
+ * - **The summer aerial** (`aerial`, the Corpus head map's): the console's unmasked NAIP under the
+ *   outlines, its credit in the dock — no switch: the caller decides. **`maxZoom`** lets a caller
+ *   frame closer than the console's ceiling (a five-acre pond over the aerial).
  *
  * `InboxMapStill` is a story's and a test's: the same chrome over an SVG still of the same scene
  * (the automated browser can't load the basemap's tiles).
@@ -114,6 +118,10 @@ type Common = {
   height?: number;
   /** A phone's page: no zoom pair, no pointer on the map. */
   viewOnly?: boolean;
+  /** The summer aerial under the outlines. */
+  aerial?: boolean;
+  /** The camera's ceiling, if closer than the console's. */
+  maxZoom?: number;
   className?: string;
 };
 
@@ -145,6 +153,8 @@ export function InboxMap({
   mode,
   height = EMBED_HEIGHT,
   viewOnly = false,
+  aerial = false,
+  maxZoom = MAX_ZOOM,
   className,
 }: Common & { mode: BodyMapMode }) {
   const { drawn, foot } = useEmbedDrawn(view.scene);
@@ -154,6 +164,8 @@ export function InboxMap({
     drawn,
     padding: EMBED_PADDING,
     reach: view.reach,
+    aerial,
+    maxZoom,
   });
   return (
     <Frame height={height} viewOnly={viewOnly} className={className}>
@@ -165,6 +177,7 @@ export function InboxMap({
         rack={false}
         foot={foot}
         plate={embedPlate(view)}
+        credit={canvas.aerialCredit}
         onZoomIn={canvas.zoomIn}
         onZoomOut={canvas.zoomOut}
         atMinZoom={canvas.atMinZoom}
@@ -175,13 +188,13 @@ export function InboxMap({
 }
 
 /** The framing for a still, capped where the live map caps it, and the floor it may zoom out to. */
-function stillCamera(view: InboxMapView, width: number, height: number) {
+function stillCamera(view: InboxMapView, width: number, height: number, maxZoom: number) {
   const camera = fitCamera(view.frame, width, height, EMBED_PADDING);
   const reachZoom =
     view.reach === null ? null : fitCamera(view.reach, width, height, EMBED_PADDING).zoom;
   return {
     ...camera,
-    zoom: Math.min(MAX_ZOOM, camera.zoom),
+    zoom: Math.min(maxZoom, camera.zoom),
     floor: floorZoom(camera.zoom, reachZoom),
   };
 }
@@ -192,12 +205,23 @@ export function InboxMapStill({
   width,
   height = EMBED_HEIGHT,
   viewOnly = false,
+  aerial = false,
+  maxZoom = MAX_ZOOM,
+  aerialCapturedAt = null,
   hoverId,
   className,
-}: Common & { width: number; hoverId?: string | null }) {
+}: Common & {
+  width: number;
+  hoverId?: string | null;
+  /** When the story's photograph was flown, for its credit. */
+  aerialCapturedAt?: number | null;
+}) {
   const { drawn, foot } = useEmbedDrawn(view.scene);
   const [zoomStep, setZoomStep] = useState(0);
-  const framed = useMemo(() => stillCamera(view, width, height), [view, width, height]);
+  const framed = useMemo(
+    () => stillCamera(view, width, height, maxZoom),
+    [view, width, height, maxZoom],
+  );
   const surface = useMemo(
     () => stillSurface(width, height, { center: framed.center, zoom: framed.zoom + zoomStep }),
     [framed, width, height, zoomStep],
@@ -207,17 +231,18 @@ export function InboxMapStill({
       <BodyMapPane
         className={cn(EMBED_PANE, viewOnly && VIEW_ONLY)}
         surface={surface}
-        ground={<BodyMapStill surface={surface} drawn={drawn} />}
+        ground={<BodyMapStill surface={surface} drawn={drawn} aerial={aerial} />}
         drawn={drawn}
         rack={false}
         foot={foot}
         plate={embedPlate(view)}
+        credit={aerial ? aerialCredit(aerialCapturedAt) : null}
         onZoomIn={() => setZoomStep((z) => z + 1)}
         onZoomOut={() => setZoomStep((z) => z - 1)}
         // The live map's floor and ceiling: a step and a half out from the framing (or far enough
         // to see a wider reach whole), the street in.
         atMinZoom={framed.zoom + zoomStep - 1 < framed.floor}
-        atMaxZoom={framed.zoom + zoomStep + 1 > MAX_ZOOM}
+        atMaxZoom={framed.zoom + zoomStep + 1 > maxZoom}
         hoverId={hoverId ?? null}
       />
     </Frame>

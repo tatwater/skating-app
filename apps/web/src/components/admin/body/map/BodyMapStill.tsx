@@ -21,7 +21,55 @@ function dashOf(spec: StrokeSpec): string | undefined {
   return spec.dash ? spec.dash.map((d) => d * spec.width).join(' ') : undefined;
 }
 
-export function BodyMapStill({ surface, drawn }: { surface: MapSurface; drawn: DrawnScene }) {
+/**
+ * The summer aerial's stand-in for a still: a story can't fetch the photograph, so a fixed field of
+ * patches in the map's own quiet lifts stands where it would be — over the fills, under every line,
+ * the band the live map puts it in — so the inks can be read over a busy ground.
+ */
+function AerialStandIn({ width, height }: { width: number; height: number }) {
+  // A fixed field (a small linear-congruential walk), so a still is the same on every render.
+  let seed = 23;
+  const next = () => {
+    seed = (seed * 16807) % 2147483647;
+    return seed / 2147483647;
+  };
+  const patches = Array.from({ length: 36 }, (_, i) => {
+    const w = 40 + next() * 160;
+    const h = 30 + next() * 110;
+    const x = next() * width - w / 2;
+    const y = next() * height - h / 2;
+    const fill = i % 4 === 0 ? 'var(--lift-08)' : 'var(--lift-05)';
+    return { x, y, w, h, fill, angle: (next() - 0.5) * 50 };
+  });
+  return (
+    <g data-slot="body-map-aerial-still">
+      <rect width={width} height={height} fill="var(--raise)" />
+      {patches.map((p, i) => (
+        <rect
+          // biome-ignore lint/suspicious/noArrayIndexKey: a fixed field's patches are positional
+          key={i}
+          x={p.x.toFixed(1)}
+          y={p.y.toFixed(1)}
+          width={p.w.toFixed(1)}
+          height={p.h.toFixed(1)}
+          fill={p.fill}
+          transform={`rotate(${p.angle.toFixed(1)} ${(p.x + p.w / 2).toFixed(1)} ${(p.y + p.h / 2).toFixed(1)})`}
+        />
+      ))}
+    </g>
+  );
+}
+
+export function BodyMapStill({
+  surface,
+  drawn,
+  aerial = false,
+}: {
+  surface: MapSurface;
+  drawn: DrawnScene;
+  /** The summer aerial is on: its stand-in over the fills. */
+  aerial?: boolean;
+}) {
   const pt = (c: GeoJSON.Position) => {
     const p = surface.project([c[0] ?? 0, c[1] ?? 0]);
     return `${p.x.toFixed(1)} ${p.y.toFixed(1)}`;
@@ -55,6 +103,7 @@ export function BodyMapStill({ surface, drawn }: { surface: MapSurface; drawn: D
           />
         );
       })}
+      {aerial && <AerialStandIn width={surface.width} height={surface.height} />}
       {drawn.outlines.features.map((f) => {
         const spec = f.properties.lit
           ? LIT_STYLE

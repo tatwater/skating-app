@@ -177,6 +177,23 @@ export interface ImageryRevealOptions {
    * evidence they need, which is the ground just past the line they are about to move.
    */
   unmasked?: boolean;
+  /**
+   * The zoom below which nothing is fetched; {@link IMAGERY_MIN_ZOOM} unless said. The console map
+   * passes `0`: its camera is fenced to one body, so its widest view is still worth a photograph.
+   */
+  minZoom?: number;
+  /**
+   * Where the photograph's layer goes: the layer id it is inserted before. {@link aerialAnchorId}
+   * unless said — the console map has its own layer contract (`MAP_BANDS`) and names its band.
+   * Read when the layer is added, never re-run for a change of function.
+   */
+  anchor?: (map: maplibregl.Map) => string | undefined;
+  /**
+   * Paint laid over the layer's own (`raster-opacity` 1, no fade) when it is added — the console
+   * map's dimming toward its ground, so its inks stay legible over a photograph. Read when the layer
+   * is added (a theme switch re-creates the map, so a new mode's paint arrives with the new map).
+   */
+  paint?: Readonly<Record<string, number>>;
 }
 
 /**
@@ -192,9 +209,17 @@ export function useImageryReveal({
   loaded,
   masks,
   unmasked = false,
+  minZoom = IMAGERY_MIN_ZOOM,
+  anchor,
+  paint,
   onLoadingChange,
   onPaintedChange,
 }: ImageryRevealOptions): void {
+  // Read where the layer is added, so a caller's fresh function or object never re-mounts it.
+  const anchorRef = useRef(anchor);
+  anchorRef.current = anchor;
+  const paintRef = useRef(paint);
+  paintRef.current = paint;
   // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
   // GPU texture per view.
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -286,7 +311,7 @@ export function useImageryReveal({
       // whatever is in flight: it comes back, fails its own `mine !== generation` check, and never
       // reaches `onLoadingChange?.(false)` — so the pulse runs for ever over a lake nothing is being
       // fetched for. Every early exit above the claim, every exit below it settles the signal.
-      if (map.getZoom() < IMAGERY_MIN_ZOOM) return;
+      if (map.getZoom() < minZoom) return;
 
       const bounds = map.getBounds();
       const view = toMercatorBox({
@@ -417,8 +442,8 @@ export function useImageryReveal({
           id: IMAGERY_LAYER_ID,
           type: 'raster',
           source: IMAGERY_SOURCE_ID,
-          paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
-        },
+          paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, ...paintRef.current },
+        } as maplibregl.LayerSpecification,
         // **Always a layer id, never `undefined`.** `undefined` does not mean "wherever is sensible";
         // it means the top of the style — above the roads, above the pins, above the hazard layers
         // the D81 toggle exists to keep visible.
@@ -429,7 +454,7 @@ export function useImageryReveal({
         // *while a winter frame is up*. Zooming in then dropped the summer aerial over the February
         // picture and read as the winter frame vanishing. Mount order is not a z-order, so the order
         // is stated here instead.
-        aerialAnchorId(map),
+        (anchorRef.current ?? aerialAnchorId)(map),
       );
     };
 
@@ -457,7 +482,7 @@ export function useImageryReveal({
       if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
       if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
     };
-  }, [map, loaded, enabled, unmasked, onLoadingChange, onPaintedChange]);
+  }, [map, loaded, enabled, unmasked, minZoom, onLoadingChange, onPaintedChange]);
 
   // ── What is revealed, redrawn in place.
   //

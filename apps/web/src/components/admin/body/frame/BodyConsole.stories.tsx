@@ -151,6 +151,34 @@ export const ShapeScrolledLight: Story = {
 };
 
 /**
+ * Shape with the summer aerial on: the rack's last row lit, the photograph's stand-in over the
+ * fills and under the shore (a story can't fetch it — `Summer aerial (live)` draws the real one),
+ * its credit in the dock. Off again, the map is as it was.
+ */
+export const SummerAerial: Story = {
+  args: { aerial: true },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const aerial = page.getByRole('switch', { name: 'Summer aerial' });
+    await expect(aerial).toBeChecked();
+    await expect(slot(canvasElement, 'body-map-aerial-credit')).toHaveTextContent(
+      'Aerial · NAIP Jun 2023',
+    );
+    await expect(slot(canvasElement, 'body-map-aerial-still')).toBeInTheDocument();
+    await userEvent.click(aerial);
+    await expect(aerial).not.toBeChecked();
+    await expect(canvasElement.querySelector('[data-slot="body-map-aerial-still"]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-slot="body-map-aerial-credit"]')).toBeNull();
+  },
+};
+
+/** The same, light. */
+export const SummerAerialLight: Story = {
+  args: { aerial: true },
+  globals: { surface: 'admin', mode: 'light' },
+};
+
+/**
  * An ask opened from the left: ⏎ on it opens its tab with the ask lit, and focus moves into the
  * inspector, where the tab's keys listen.
  */
