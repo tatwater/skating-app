@@ -1,8 +1,8 @@
 import { type ClaimSource, waterBodyClassLabel } from '@skating/core';
 
 import { CATALOG_NAMES, CATALOG_TAGS } from '../../../body/tabs/names/namesModel';
+import type { CorpusItemOf } from '../../corpusTypes';
 import { acresText, raisedAgainWords, TASK_WORDS } from '../taskFacts';
-import type { CorpusItem } from '../taskItem';
 import { NAME_WORDS as W } from './nameWords';
 
 /**
@@ -12,7 +12,7 @@ import { NAME_WORDS as W } from './nameWords';
  * holds as *not recorded* is said so, never guessed.
  */
 
-export type NamesItem = Extract<CorpusItem, { lane: 'nameConflicts' }>;
+export type NamesItem = CorpusItemOf<'nameConflicts'>;
 export type NameChoice = NamesItem['names'][number];
 
 /** A choice's value as the write takes it: the shown name is `'shown'` (a keep), any other its spelling. */

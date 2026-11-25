@@ -104,8 +104,13 @@ describe('the body', () => {
     expect(depthWords(null)).toBe('None on file');
     expect(depthWords({ meters: 2.4, source: 'a state survey' })).toBe('2.4 m · a state survey');
     expect(depthWords({ meters: 12, source: '' })).toBe('12 m');
+    expect(depthWords({ meters: 2.4, source: 'a state survey', measure: 'max' })).toBe(
+      '2.4 m max · a state survey',
+    );
+    expect(depthWords({ meters: 3, source: '', measure: 'mean' })).toBe('3 m mean');
     expect(nearestWords(GROTON.neighbors)).toBe('Osmore Pond');
     expect(nearestWords([])).toBe('None on file');
+    expect(nearestWords(null)).toBe('Not computed yet');
     expect(raisedAgainNote(GROTON)).toBeNull();
   });
 });

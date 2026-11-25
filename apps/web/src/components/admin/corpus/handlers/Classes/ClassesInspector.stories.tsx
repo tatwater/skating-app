@@ -127,6 +127,8 @@ export const NotRecorded: Story = {
         q.querySelectorAll('[data-slot="rung-mark"], [data-slot="rung-silent"]'),
       ).toHaveLength(0);
       await expect(s.getAllByText('Not recorded until the next campaign')).toHaveLength(1);
+      // Nearest: the geometry facts not computed yet, never read as none.
+      await expect(s.getByText('Not computed yet')).toBeVisible();
       await expect(s.getByRole('radio', { name: 'Lake or pond' })).toBeChecked();
       await expect(s.getByRole('button', { name: /Keep as Lake or pond/ })).toBeVisible();
     }
@@ -165,7 +167,7 @@ export const Mixed: Story = {
   render: () => pair(() => <Classes item={GROTON_MIXED} />),
   play: async ({ canvasElement }) => {
     const s = within(must(quads(canvasElement)[0]));
-    await expect(s.getByText('2.4 m · a state survey')).toBeVisible();
+    await expect(s.getByText('2.4 m max · a state survey')).toBeVisible();
     await expect(
       s.getByText('Wetland · its code and area not recorded until the next campaign'),
     ).toBeVisible();
