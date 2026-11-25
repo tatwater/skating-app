@@ -46,7 +46,7 @@ export const NAME_WORDS = {
   onceKept: (name: string) => `Once ${name} is kept`,
   asNow: (name: string) => `${name}, as now`,
   /** D305: a settled name holds until a catalog's spellings change, then it is asked again. */
-  holds: 'The choice holds until a catalog’s spelling changes',
+  holds: 'Holds until a catalog renames it',
   /** What changed when a settled name is asked again (D305). */
   spellingChanged: 'a catalog’s spelling',
   /** The bar's name, and its button's tooltip. */

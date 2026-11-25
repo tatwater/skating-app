@@ -3,7 +3,15 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { must } from '@/components/kit/storyKit';
 import type { DecidedState } from '../../../inspector/InspectorFrame';
-import { GROTON_MAP, pair, quads, STORY_ZONE, StillMap, StoryPane } from '../CorpusInspectorStory';
+import {
+  BOARD_PANE,
+  GROTON_MAP,
+  pair,
+  quads,
+  STORY_ZONE,
+  StillMap,
+  StoryPane,
+} from '../CorpusInspectorStory';
 import { CLASSES_MAP_HEIGHT, ClassesInspector } from './ClassesInspector';
 import {
   CLASSES_NOW,
@@ -30,7 +38,7 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-const WIDTH = 788;
+const WIDTH = BOARD_PANE.width;
 
 function Classes({
   item,
@@ -118,7 +126,7 @@ export const NotRecorded: Story = {
       await expect(
         q.querySelectorAll('[data-slot="rung-mark"], [data-slot="rung-silent"]'),
       ).toHaveLength(0);
-      await expect(s.getAllByText('Not recorded until the next campaign')).toHaveLength(2);
+      await expect(s.getAllByText('Not recorded until the next campaign')).toHaveLength(1);
       await expect(s.getByRole('radio', { name: 'Lake or pond' })).toBeChecked();
       await expect(s.getByRole('button', { name: /Keep as Lake or pond/ })).toBeVisible();
     }

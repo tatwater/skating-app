@@ -71,6 +71,10 @@ export const WithSources: Story = {
     await expect(
       quad.querySelectorAll('[data-slot="rung-consequence"][data-emphasis]'),
     ).toHaveLength(1);
+    // A hairline between rows, none under the last (the group's hidden input is no row).
+    const rungs = [...quad.querySelectorAll<HTMLElement>('[data-slot="ladder-rung"]')];
+    await expect(getComputedStyle(must(rungs.at(-1))).borderBottomWidth).toBe('0px');
+    await expect(getComputedStyle(must(rungs[2])).borderBottomWidth).not.toBe('0px');
     await userEvent.click(s.getByRole('radio', { name: 'Bay' }));
     await expect(s.getByRole('radio', { name: 'Bay' })).toBeChecked();
     await expect(s.getByRole('radio', { name: 'Bay' })).toHaveAccessibleDescription(

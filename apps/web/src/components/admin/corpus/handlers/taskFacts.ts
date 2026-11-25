@@ -15,7 +15,7 @@ export const TASK_WORDS = {
   // Invented.
   notRecorded: 'Not recorded until the next campaign',
   noneOnFile: 'None on file',
-  nothingAttached: 'Nothing: no reports, no landmarks, no asks',
+  nothingAttached: 'No reports, landmarks or asks',
   atLeast: (words: string) => `At least ${words}`,
   reports: (n: number) => (n === 1 ? '1 report' : `${n} reports`),
   landmarks: (n: number) => (n === 1 ? '1 landmark' : `${n} landmarks`),
@@ -42,7 +42,7 @@ export function attachedWords(attached: Attached): string {
     attached.landmarks > 0 ? W.landmarks(attached.landmarks) : null,
     attached.asks > 0 ? W.asks(attached.asks) : null,
   ].filter((p): p is string => p !== null);
-  if (parts.length === 0) return attached.capped ? W.notRecorded : W.nothingAttached;
+  if (parts.length === 0) return W.nothingAttached;
   const words = parts.join(' · ');
   return attached.capped ? W.atLeast(words) : words;
 }

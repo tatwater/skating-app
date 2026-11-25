@@ -10,7 +10,7 @@ import {
 } from './taskFacts';
 
 describe('the facts both handlers say', () => {
-  it('counts what hangs on the body, a floor where the read stopped, not recorded when it never ran', () => {
+  it('counts what hangs on the body, a floor where the read stopped', () => {
     expect(attachedWords({ reports: 3, landmarks: 1, asks: 0, capped: false })).toBe(
       '3 reports · 1 landmark',
     );
@@ -21,10 +21,11 @@ describe('the facts both handlers say', () => {
       'At least 2 asks',
     );
     expect(attachedWords({ reports: 0, landmarks: 0, asks: 0, capped: false })).toBe(
-      'Nothing: no reports, no landmarks, no asks',
+      'No reports, landmarks or asks',
     );
+    // The counts are live reads, never a campaign's: none is none, even where a read stopped.
     expect(attachedWords({ reports: 0, landmarks: 0, asks: 0, capped: true })).toBe(
-      'Not recorded until the next campaign',
+      'No reports, landmarks or asks',
     );
   });
 

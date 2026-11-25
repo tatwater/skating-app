@@ -122,8 +122,8 @@ export const NotRecorded: Story = {
   play: async ({ canvasElement }) => {
     for (const q of quads(canvasElement)) {
       const s = within(q);
-      // Catalogs, Attached and Queued: three facts not recorded; no agreement is claimed.
-      await expect(s.getAllByText('Not recorded until the next campaign')).toHaveLength(3);
+      // Catalogs and Queued: two facts not recorded; no agreement is claimed.
+      await expect(s.getAllByText('Not recorded until the next campaign')).toHaveLength(2);
       await expect(s.queryByText(/agree it is one body/)).toBeNull();
       await expect(s.getByText('None on file')).toBeVisible();
       // Each spelling wears its one catalog, written out with no “via”.

@@ -14,16 +14,19 @@ import {
 
 /**
  * Story support for the 6a handlers (only stories import it): the inspector pane at the board's
- * width (788 px at 1440) with its context, both modes side by side, and the head map drawn as a
+ * width (744 × 830 px at 1440 × 900) with its context, both modes side by side, and the head map drawn as a
  * still over the boards' real outlines.
  */
 
 export const STORY_ZONE = 'America/New_York';
 
+/** The boards' inspector pane at 1440 × 900 (4.2 and 4.3 measured). */
+export const BOARD_PANE = { width: 744, height: 830 } as const;
+
 export function StoryPane({
   now,
-  width = 788,
-  height = 900,
+  width = BOARD_PANE.width,
+  height = BOARD_PANE.height,
   children,
 }: {
   now: number;

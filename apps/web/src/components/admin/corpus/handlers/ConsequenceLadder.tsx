@@ -115,9 +115,11 @@ export function ConsequenceLadder<V extends string = string>({
             data-suggested={r.suggested ? '' : undefined}
             // The row over the pick drops its rule, so the pick's edge reads alone.
             data-before-pick={i === picked - 1 ? '' : undefined}
+            // The group appends a hidden input, so `:last-child` never finds the last rung.
+            data-last={i === rungs.length - 1 ? '' : undefined}
             className={cn(
               'group/rung grid min-h-[2.75rem] items-center gap-x-(--space-3) px-(--space-2_5) py-(--space-1_5) text-start',
-              'border-0 border-b-(length:--stroke-hair) border-solid border-line last:border-b-0 data-before-pick:border-b-transparent',
+              'border-0 border-b-(length:--stroke-hair) border-solid border-line data-last:border-b-0 data-before-pick:border-b-transparent',
               'cursor-pointer rounded-container outline-none',
               'transition-[background-color,box-shadow] duration-(--duration-fast) ease-standard',
               '[--rim:var(--fg3)] lit:not-data-checked:[--rim:var(--fg2)] data-checked:[--rim:var(--fg)]',

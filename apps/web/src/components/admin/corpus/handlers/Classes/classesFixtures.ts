@@ -77,12 +77,11 @@ export const GROTON = {
 
 /**
  * The same task on dev today: loaded before the campaign that records the claims — no catalog
- * columns, no catalogs' rows, nothing suggested, the attachments not counted.
+ * columns, no catalogs' rows, nothing suggested, no neighbors.
  */
 export const GROTON_NOT_RECORDED = {
   ...GROTON,
   raisedBy: null,
-  attached: { reports: 0, landmarks: 0, asks: 0, capped: true },
   neighbors: [],
   claims: null,
   ladder: LADDER.map((r) => ({ ...r, suggested: false, byCatalog: {} })),

@@ -129,7 +129,7 @@ describe('the facts, recorded or said not to be', () => {
     expect(onceRows(BASIN, { verb: 'pickName', name: 'Lake Auburn' })).toEqual([
       { label: 'Displays', value: 'Lake Auburn', strong: true },
       { label: 'Alias', value: 'The Basin, still found by search' },
-      { label: 'Campaigns', value: 'The choice holds until a catalog’s spelling changes' },
+      { label: 'Campaigns', value: 'Holds until a catalog renames it' },
       { label: 'Undo', value: 'In the body’s history' },
     ]);
     expect(onceRows(BASIN, { verb: 'keepName', name: 'The Basin' })[0]).toEqual({
