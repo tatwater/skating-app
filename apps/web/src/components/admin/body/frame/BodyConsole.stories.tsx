@@ -153,7 +153,7 @@ export const ShapeScrolledLight: Story = {
 /**
  * Shape with the summer aerial on: the rack's last row lit, the photograph's stand-in over the
  * fills and under the shore (a story can't fetch it — `Summer aerial (live)` draws the real one),
- * its credit in the dock. Off again, the map is as it was.
+ * its credit in the dock.
  */
 export const SummerAerial: Story = {
   args: { aerial: true },
@@ -161,10 +161,25 @@ export const SummerAerial: Story = {
     const page = within(canvasElement);
     const aerial = page.getByRole('switch', { name: 'Summer aerial' });
     await expect(aerial).toBeChecked();
+    // Every row's name sits on its plate: none runs off the rack.
+    for (const row of slots(canvasElement, 'switch-row')) {
+      const label = must(row.querySelector<HTMLElement>('[data-slot="switch-label"]'));
+      await expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(
+        row.getBoundingClientRect().right,
+      );
+    }
     await expect(slot(canvasElement, 'body-map-aerial-credit')).toHaveTextContent(
       'Aerial · NAIP Jun 2023',
     );
     await expect(slot(canvasElement, 'body-map-aerial-still')).toBeInTheDocument();
+  },
+};
+
+/** Turned off again, the map is as it was: no stand-in, no credit. */
+export const SummerAerialOff: Story = {
+  args: { aerial: true },
+  play: async ({ canvasElement }) => {
+    const aerial = within(canvasElement).getByRole('switch', { name: 'Summer aerial' });
     await userEvent.click(aerial);
     await expect(aerial).not.toBeChecked();
     await expect(canvasElement.querySelector('[data-slot="body-map-aerial-still"]')).toBeNull();

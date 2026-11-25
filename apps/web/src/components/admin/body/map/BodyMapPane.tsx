@@ -218,7 +218,9 @@ export function BodyMapPane({
         </div>
       )}
       {rack !== false && (
-        <MapLayerRack>
+        // The summer aerial's row names itself in two words, a step past the kit rack's 8rem: the
+        // rack takes 9 when it holds that row, so no name runs off its plate.
+        <MapLayerRack className={cn(aerial !== undefined && 'w-[9rem]')}>
           {rows.map((row) => (
             <SwitchRow
               key={row.layer}

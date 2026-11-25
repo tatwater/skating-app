@@ -139,7 +139,7 @@ export function googleMapsRow(body: LinksBody): StaffOnlyRow | null {
   return {
     id: 'googleMaps',
     label: 'The lake on Google Maps',
-    sub: 'Framed on the whole lake · Staff only, not in the lake sheet',
+    sub: 'The interior point, the whole lake · Staff only',
     url: googleMapsUrl(center, zoom),
   };
 }
