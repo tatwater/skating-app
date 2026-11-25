@@ -145,17 +145,12 @@ type Offset = NonNullable<Neighbor['offset']>;
 const METERS_PER_MILE = 1609.344;
 
 /**
- * The nearest of the neighbors the geometry facts name: the one whose middle is closest, among
- * those with an offset on file; else the first, in the stored order.
+ * The nearest of the neighbors the geometry facts name: the first served. The server ranks every
+ * stored neighbor by its offset before it keeps three (`neighborsOf`), so the nearest with an offset
+ * on file comes first — one the client re-ranked among the three it got could only agree, and the
+ * rule stays in one place. With none on file, the first is the most prominent.
  */
-export function nearestOf(neighbors: readonly Neighbor[]): Neighbor | undefined {
-  let best: Neighbor | undefined;
-  for (const n of neighbors) {
-    if (n.offset == null) continue;
-    if (best?.offset == null || n.offset.meters < best.offset.meters) best = n;
-  }
-  return best ?? neighbors[0];
-}
+export const nearestOf = (neighbors: readonly Neighbor[]): Neighbor | undefined => neighbors[0];
 
 /**
  * An offset as the board says it — "1.1 mi north": miles to a tenth under ten, whole past, and the

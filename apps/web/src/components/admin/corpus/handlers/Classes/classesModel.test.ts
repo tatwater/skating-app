@@ -126,14 +126,13 @@ describe('the nearest body', () => {
     ...(offset === undefined ? {} : { offset }),
   });
 
-  it('is the one whose middle is closest among those on file, else the first', () => {
+  it('is the first served: the server puts the nearest with an offset first', () => {
     const far = n('Far Pond', at(4000));
     const close = n('Close Pond', at(900));
     const unknown = n('Unknown Pond', null);
-    expect(nearestOf([far, close])?.name).toBe('Close Pond');
-    expect(nearestOf([unknown, far, close])?.name).toBe('Close Pond');
-    // An offset not on file loses to one that is, wherever it stands.
-    expect(nearestOf([close, unknown])?.name).toBe('Close Pond');
+    // The server's order is the answer; the client never re-ranks it (`neighborsOf` owns the rule).
+    expect(nearestOf([close, far, unknown])?.name).toBe('Close Pond');
+    expect(nearestWords([close, far])).toBe('Close Pond · 0.6 mi north');
     // None on file (or a fixture from before offsets): the stored order's first.
     expect(nearestOf([unknown, n('Old Pond')])?.name).toBe('Unknown Pond');
     expect(nearestOf([])).toBeUndefined();

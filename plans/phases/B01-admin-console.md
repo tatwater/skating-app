@@ -16157,6 +16157,14 @@ guideline, as one PR (D300, amended).
   touches nothing, and its off-frame pointer, need a stored fact that doesn't exist: the nearest
   named body, touching or not, computed by `bodyGeo`, and a map that reports its visible frame
   (Co13).
+- **The three served neighbors were cut before any distance was known.** `neighborsOf` sliced the
+  stored neighbors (up to twelve, `TOUCH_CANDIDATES`, by prominence) to three and the web ranked
+  only those, so a closer fourth was never *Nearest*. The server now computes every stored
+  neighbor's offset (from the facts in hand, no read added), serves the nearest with an offset
+  first and the other two in prominence order; with no offset on file the order is prominence's
+  alone. The web's `nearestOf` reads the first, so the rule lives in one place. The head map draws
+  the served three, so the nearest is always on it; the Names *Neighbors* line lists the same three
+  in the same order.
 - **One consequence rule feeds the ladder and the rows.** Core's `classConsequenceLine` runs
   `classConsequence` itself over the claimed classes other than the body's own and keeps the
   heaviest (a refusal by the size rules over a wait for a parent); the server reads both from one

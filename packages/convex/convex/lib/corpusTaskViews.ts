@@ -38,7 +38,7 @@ import {
 } from '@skating/core';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
-import { geoFactsOf, placesOf, townsWithStateOf } from './bodyGeo';
+import { geoFactsOf, placesOf, TOUCH_CANDIDATES, townsWithStateOf } from './bodyGeo';
 import { openAsksFor } from './bodyLibrary';
 import { campaignRunOf } from './campaignRuns';
 import { type CorpusCan, corpusCan } from './corpusRules';
@@ -188,9 +188,9 @@ type ItemBase = RowBase & {
   /** Each counted to {@link ATTACHED_CAP} (asks to the library's own cap); `capped`: one is a floor. */
   attached: { reports: number; landmarks: number; asks: number; capped: boolean };
   /**
-   * At most 3 touching bodies, from the stored geometry facts. `null`: the facts aren't computed
-   * yet — never "none". (The snippet's `[]`, made nullable so not computed can't read as no
-   * neighbors.)
+   * At most 3 touching bodies, from the stored geometry facts: the nearest with an offset first,
+   * then prominence order (`neighborsOf`). `null`: the facts aren't computed yet — never "none".
+   * (The snippet's `[]`, made nullable so not computed can't read as no neighbors.)
    */
   neighbors: NeighborView[] | null;
 };
@@ -499,10 +499,14 @@ async function attachedOf(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
 }
 
 /**
- * The touching bodies the geometry facts stored, at most {@link NEIGHBORS_SHOWN}, in their stored
- * order; `null` before they're computed. Each with its offset from the body (`NeighborView`), from
- * facts already in hand — the body's `interiorPoint` and the neighbor's stored ring — so no read is
- * added.
+ * The touching bodies the geometry facts stored, at most {@link NEIGHBORS_SHOWN}; `null` before
+ * they're computed. Each with its offset from the body (`NeighborView`), from facts already in hand
+ * — the body's `interiorPoint` and the neighbor's stored ring — so no read is added.
+ *
+ * The offset is computed for every stored neighbor (at most {@link TOUCH_CANDIDATES}, in prominence
+ * order) before any is dropped, so the nearest is never cut by the slice: the nearest with an
+ * offset is served first (the earlier in prominence on a tie), the rest follow in prominence order.
+ * With no offset on file, the order is prominence's alone. *Nearest* reads the first.
  */
 export function neighborsOf(
   geo: Doc<'bodyGeoFacts'> | null,
@@ -510,7 +514,7 @@ export function neighborsOf(
 ): NeighborView[] | null {
   if (geo === null || geo.neighbors === undefined) return null;
   const from = body.interiorPoint ?? null;
-  return geo.neighbors.slice(0, NEIGHBORS_SHOWN).map((n) => {
+  const all: NeighborView[] = geo.neighbors.slice(0, TOUCH_CANDIDATES).map((n) => {
     const to = from === null ? null : ringInsidePoint(n.ring);
     return {
       id: n.waterBodyId,
@@ -518,6 +522,14 @@ export function neighborsOf(
       offset: from === null || to === null ? null : neighborOffset(from, to),
     };
   });
+  let nearest = -1;
+  all.forEach((n, i) => {
+    const best = all[nearest]?.offset;
+    if (n.offset != null && (best == null || n.offset.meters < best.meters)) nearest = i;
+  });
+  const first = all[nearest];
+  const ordered = first === undefined ? all : [first, ...all.filter((_, i) => i !== nearest)];
+  return ordered.slice(0, NEIGHBORS_SHOWN);
 }
 
 /** Other bodies in the library with the name (its `*` rows by name key), counted to the cap. */

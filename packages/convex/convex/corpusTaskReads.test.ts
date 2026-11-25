@@ -1202,6 +1202,103 @@ describe('item', () => {
       { id, name: 'The Basin', offset: null },
     ]);
   });
+
+  test('the nearest stored neighbor is served, first, wherever prominence put it; the rest keep prominence order', async () => {
+    const t = harness();
+    const mod = await person(t, 'Casey Example');
+    const middle = { lat: 44.005, lng: -71.995 };
+    const near = await lake(t, { interiorPoint: middle });
+    const flat = await lake(t, { name: 'Flat Pond' });
+    const many = await lake(t, { name: 'Many Pond', interiorPoint: middle });
+    const tied = await lake(t, { name: 'Tied Pond', interiorPoint: middle });
+    const empty = await lake(t, { name: 'Empty Pond', interiorPoint: middle });
+    // A strip whose inside point lies `km` due north of the body's.
+    const strip = (km: number) => {
+      const lat = middle.lat + km / 111.195;
+      return [
+        [-71.9951, lat - 0.0001],
+        [-71.9949, lat - 0.0001],
+        [-71.9949, lat + 0.0001],
+        [-71.9951, lat + 0.0001],
+        [-71.9951, lat - 0.0001],
+      ];
+    };
+    const noInside = [
+      [-72, 44],
+      [-72, 44.01],
+      [-72, 44],
+    ];
+    // Five, in prominence order: the closest is the fourth, and one has no inside point.
+    const five = [
+      { name: 'Taylor Pond', ring: strip(3) },
+      { name: 'Gulf Island Pond', ring: strip(2.5) },
+      { name: 'Lake Auburn', ring: noInside },
+      { name: 'Fourth Pond', ring: strip(0.5) },
+      { name: 'Fifth Pond', ring: strip(1) },
+    ];
+    // Thirteen, more than are ever stored: the one past the twelfth is no candidate, however near.
+    const thirteen = Array.from({ length: 13 }, (_, i) => ({
+      name: `Pond ${i + 1}`,
+      ring: strip(i === 12 ? 0.1 : 5 - i * 0.1),
+    }));
+    await t.run(async (ctx) => {
+      for (const [waterBodyId, neighbors] of [
+        [near, five],
+        // No interior point for the body: no offsets, so prominence order alone.
+        [flat, five],
+        [many, thirteen],
+        // A tie: the earlier in prominence is the nearer.
+        [
+          tied,
+          [
+            { name: 'Taylor Pond', ring: strip(3) },
+            { name: 'Twin A', ring: strip(1) },
+            { name: 'Twin B', ring: strip(1) },
+          ],
+        ],
+        [empty, []],
+      ] as const) {
+        await ctx.db.insert('bodyGeoFacts', {
+          waterBodyId,
+          computedAt: NOW,
+          neighbors: neighbors.map((n) => ({
+            waterBodyId: near,
+            name: n.name,
+            ring: n.ring.map((p) => [...p]),
+          })),
+        });
+      }
+    });
+    const read = async (id: Id<'waterBodies'>) =>
+      (await mod.as.query(api.corpusTasks.item, { ref: `body:${id}` })).item?.neighbors;
+
+    const served = await read(near);
+    expect(served?.map((n) => n.name)).toEqual(['Fourth Pond', 'Taylor Pond', 'Gulf Island Pond']);
+    expect(served?.[0]?.offset?.meters).toBeCloseTo(500, -1);
+    expect(served?.[1]?.offset?.meters).toBeCloseTo(3000, -1);
+
+    const prominence = await read(flat);
+    expect(prominence?.map((n) => n.name)).toEqual([
+      'Taylor Pond',
+      'Gulf Island Pond',
+      'Lake Auburn',
+    ]);
+    expect(prominence?.map((n) => n.offset)).toEqual([null, null, null]);
+
+    // Pond 12 (3.9 km) is the nearest of the twelve; Pond 13 (0.1 km) is past the bound.
+    expect((await read(many))?.map((n) => n.name)).toEqual(['Pond 12', 'Pond 1', 'Pond 2']);
+    expect((await read(tied))?.map((n) => n.name)).toEqual(['Twin A', 'Taylor Pond', 'Twin B']);
+    expect(await read(empty)).toEqual([]);
+    // Facts not computed yet: still `null`, never "none".
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('bodyGeoFacts')
+        .withIndex('by_body', (q) => q.eq('waterBodyId', near))
+        .unique();
+      if (row !== null) await ctx.db.patch(row._id, { neighbors: undefined });
+    });
+    expect(await read(near)).toBeNull();
+  });
 });
 
 // ── Contested as water is not 7a's (D307) ──────────────────────────────────────────────────────────────────────────
