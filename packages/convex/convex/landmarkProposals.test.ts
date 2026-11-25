@@ -888,6 +888,30 @@ describe('two places by one name (Greptile P1 and P2 on #84)', () => {
     expect(proposals[0]?.askers).toBe(QUEUE_CAP);
   });
 
+  test('a row names every ask for its place, and an ask past the read is read by its id (B01-6b)', async () => {
+    const { t, lake, mod, skater } = await lakeWithAsks();
+    const near = await seedAsks(t, lake, skater.id, at, QUEUE_CAP);
+    vi.setSystemTime(NOW + 1);
+    const [late] = await seedAsks(t, lake, skater.id, far, 1);
+    if (!late) throw new Error('no ask');
+    const read = (including?: Id<'waterBodyRequests'>) =>
+      mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, {
+        waterBodyId: lake,
+        ...(including !== undefined ? { including } : {}),
+      });
+    const bounded = await read();
+    expect(bounded.more).toBe(true);
+    expect(bounded.proposals).toHaveLength(1);
+    expect(bounded.proposals[0]?.requestIds).toEqual(near);
+    expect(bounded.proposals[0]?.aliases).toEqual([]);
+    const arrived = await read(late);
+    const row = arrived.proposals.find((p) => p.requestIds.includes(late));
+    expect(row).toMatchObject({ requestId: late, name: 'Long Point', coord: far, askers: 1 });
+    // One decided since is never read in.
+    await t.run((ctx) => ctx.db.patch(late, { status: 'declined' }));
+    expect((await read(late)).proposals).toHaveLength(1);
+  });
+
   test('the queue counts for each row what deciding that row closes, when asks chain (#84 review)', async () => {
     const { t, lake, mod, skater } = await lakeWithAsks();
     // ~700 m apart in a line: A and B are one place, B and C are one place, A and C are not.
