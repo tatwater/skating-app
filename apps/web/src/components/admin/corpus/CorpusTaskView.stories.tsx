@@ -186,7 +186,12 @@ async function expectListFits(root: HTMLElement) {
   document.body.append(probe);
   const hint = probe.getBoundingClientRect().width;
   probe.remove();
-  const room = search.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  // The field's content box, fractional as the hint is: `clientWidth` rounds to a whole pixel.
+  const room =
+    search.getBoundingClientRect().width -
+    [style.borderLeftWidth, style.borderRightWidth, style.paddingLeft, style.paddingRight]
+      .map(parseFloat)
+      .reduce((a, b) => a + b, 0);
   await expect(hint).toBeLessThanOrEqual(room);
 }
 

@@ -16,7 +16,7 @@ import {
   transitionsDone,
 } from './measure';
 import { Meter } from './meter';
-import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
+import { faceLoaded, KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
 const MACHINERY: LaneGroup[] = [
   {
@@ -615,6 +615,34 @@ async function expectWhole(el: Element, what: string) {
   );
 }
 
+/**
+ * A folded line's kicker gives way only as far as it must: its box is its text's width or the
+ * room beside the word, whichever is less — whole whenever the line has room for it. The room is
+ * the line's content less the gap and the word, with the kicker's trailing tracking given back:
+ * the design's rule, not the kicker's own margin, so a kicker that stops giving it back is caught.
+ * The text's width is its own ink, so the claim holds under any renderer's glyph widths. They
+ * differ: CI's Linux Chromium rounds each advance to a whole pixel, so "Pre-Season Pass" is 124 px
+ * there and 123.6 on a Mac, and at the console's width it is cut by 0.8 px there and whole here.
+ */
+async function expectKickerGivesWay(line: HTMLElement) {
+  const kicker = must(line.querySelector<HTMLElement>('[id]'));
+  const word = part(line, 'lanes-line-summary');
+  await faceLoaded(kicker, kicker.textContent ?? undefined);
+  await faceLoaded(word, word.textContent ?? undefined);
+  const ink = document.createRange();
+  ink.selectNodeContents(kicker);
+  const text = ink.getBoundingClientRect().width;
+  const room =
+    innerRect(line).width -
+    parseFloat(getComputedStyle(line).columnGap) -
+    word.getBoundingClientRect().width +
+    parseFloat(getComputedStyle(kicker).letterSpacing);
+  await expect(
+    kicker.getBoundingClientRect().width,
+    `the kicker whole or the room (text ${text}, room ${room})`,
+  ).toBeGreaterThanOrEqual(Math.min(text, room) - JUNCTION_TOLERANCE_PX);
+}
+
 /** Everything painted under `el` up to `root`, bottom first: the ground its ink sits on. */
 function groundUnder(el: HTMLElement, root: HTMLElement): string[] {
   const layers: string[] = [];
@@ -742,6 +770,7 @@ async function expectLine(nav: HTMLElement) {
   await expectWhole(word, 'the word');
   await near(col.right - word.getBoundingClientRect().right, px('var(--space-4_5)'), 'word inset');
   await expect(text.right).toBeLessThanOrEqual(word.getBoundingClientRect().left);
+  await expectKickerGivesWay(line);
 }
 
 /** The card, four-up: over the Tasks group, every lane state inside it, and while it is computed. */
@@ -989,8 +1018,8 @@ export const PassDoneCollapsed: Story = inContext(
     await expectLanesReadable(canvasElement);
     const line = button(/Pre-Season Pass/);
     await expect(line).toHaveAttribute('aria-expanded', 'false');
-    // At the console's width the kicker and its word both fit whole.
-    await expectWhole(must(line.querySelector('[id]')), 'the kicker');
+    // At the console's width the word is whole and the kicker gives way only as far as it must
+    // (`expectLine`): whole on a Mac, 0.8 px short under CI's whole-pixel glyphs.
     // Keyboard: the line is in the run, its folded lanes are not.
     button(/Duplicates/).focus();
     await userEvent.keyboard('{ArrowUp}');
@@ -1064,7 +1093,6 @@ export const PassDoneAtBottom: Story = inContext(
     await expectLine(nav);
     await expectLanesReadable(canvasElement);
     await expect(groupOrder(nav)).toEqual(['Tasks', 'Views', 'Standing', PASS]);
-    await expectWhole(must(part(nav, 'lanes-line').querySelector('[id]')), 'the kicker');
   },
 );
 
