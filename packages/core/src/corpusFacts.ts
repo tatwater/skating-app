@@ -2,7 +2,8 @@
  * **The words a Corpus task's facts are said in** (B01-6a): what each class would do with a body
  * (board 4.3's ladder), a catalog's rank as a name authority, and how two names differ (board 4.2's
  * tabs, by the writer's own rule in `corpusFacets.ts`). The reads (`convex/corpusTasks.ts`) say every fact through these, so a word means one
- * thing wherever it is drawn.
+ * thing wherever it is drawn: the ladder's rungs and a list row's consequence line are one rule
+ * (`classConsequence`), and a neighbor's distance and bearing are measured here too.
  *
  * **No word here says or implies anything about the ice** (D3): a class's consequence is what the
  * app does with the body — it stays, the size rules refuse it, it waits for a parent — never how the
@@ -11,6 +12,8 @@
 
 import type { ClaimSource } from './confidence';
 import { type NameFacet, splitOfNames } from './corpusFacets';
+import { bearingDegrees, haversineMeters, type LatLng } from './geometry';
+import { fetchOrigin } from './lakeGeometry';
 import { NAME_SOURCE_RANK } from './nameClaims';
 import {
   belongsInCorpus,
@@ -27,7 +30,22 @@ import type { WaterBodyClass } from './types';
 
 /** What the app does with a body under a class: it stays, the size rules refuse it, or it waits for a parent. */
 export type ClassConsequenceKind = 'stays' | 'leaves' | 'waitsForParent';
-export type ClassConsequence = { kind: ClassConsequenceKind; words: string };
+export type ClassConsequence = {
+  kind: ClassConsequenceKind;
+  words: string;
+  /**
+   * The consequence's lead words, the start of `words` (board 4.3 brightens a refusal's alone):
+   * "Refused by the size rules", "Stays", "Waits for a parent" — {@link CONSEQUENCE_LEAD}'s.
+   */
+  lead: string;
+};
+
+/** Each kind's lead words: how every consequence of the kind begins. */
+export const CONSEQUENCE_LEAD: Readonly<Record<ClassConsequenceKind, string>> = {
+  stays: 'Stays',
+  leaves: 'Refused by the size rules',
+  waitsForParent: 'Waits for a parent',
+};
 
 /** The body facts a consequence is read from (`belongsInCorpus`' inputs). */
 export type ConsequenceBody = {
@@ -79,28 +97,108 @@ function refusedAs(body: { name: string; areaSqM: number }, cls: WaterBodyClass)
  * small".
  */
 export function classConsequence(body: ConsequenceBody, cls: WaterBodyClass): ClassConsequence {
+  const said = (kind: ClassConsequenceKind, rest: string): ClassConsequence => {
+    const lead = CONSEQUENCE_LEAD[kind];
+    return { kind, words: `${lead}${rest}`, lead };
+  };
   const area = body.surfaceAreaSqM;
   if (area === null || !Number.isFinite(area)) {
-    return {
-      kind: 'stays',
-      words: `Stays, as ${STAYS_AS[cls]}: no area is on file for the size rules`,
-    };
+    return said('stays', `, as ${STAYS_AS[cls]}: no area is on file for the size rules`);
   }
   const byRule = belongsInCorpus({ name: body.name, surfaceAreaSqM: area, type: cls });
   if (!byRule && body.includedByRequest !== true) {
-    return {
-      kind: 'leaves',
-      words: `Refused by the size rules next campaign, as ${refusedAs({ name: body.name, areaSqM: area }, cls)}`,
-    };
+    return said(
+      'leaves',
+      ` next campaign, as ${refusedAs({ name: body.name, areaSqM: area }, cls)}`,
+    );
   }
   const asked = byRule ? '' : ': someone asked for it';
-  if (cls === 'bay') {
-    return {
-      kind: 'waitsForParent',
-      words: `Waits for a parent: a bay needs a lake to hold it${asked}`,
-    };
+  if (cls === 'bay') return said('waitsForParent', `: a bay needs a lake to hold it${asked}`);
+  return said('stays', `, as ${STAYS_AS[cls]}${asked}`);
+}
+
+/** A list row's consequence line (board 4.3's third line): what one claimed class would do. */
+export type ClassConsequenceLine = {
+  kind: Exclude<ClassConsequenceKind, 'stays'>;
+  /** The claimed class that would do it. */
+  cls: WaterBodyClass;
+  /** "Refused if a wetland", "Waits for a parent if a bay". */
+  words: string;
+};
+
+/** How a class is named after "if" on a row's line. */
+const IF_CLASSED: Readonly<Record<WaterBodyClass, string>> = {
+  lakePond: 'a lake or pond',
+  wetland: 'a wetland',
+  reservoir: 'a reservoir',
+  bay: 'a bay',
+  river: 'a river reach',
+  unclassified: 'unclassified',
+};
+
+/** Each kind's short lead on a row, where the ladder's full words don't fit. */
+const LINE_LEAD: Readonly<Record<ClassConsequenceLine['kind'], string>> = {
+  leaves: 'Refused',
+  waitsForParent: CONSEQUENCE_LEAD.waitsForParent,
+};
+
+/** A refusal outweighs a wait for a parent: the row says the heavier. */
+const LINE_WEIGHT: Readonly<Record<ClassConsequenceLine['kind'], number>> = {
+  leaves: 2,
+  waitsForParent: 1,
+};
+
+/**
+ * **A class conflict's row line** — what choosing one of the catalogs' other classes would do, by
+ * {@link classConsequence} itself (one rule: the row and the ladder can't disagree). Of the classes
+ * the catalogs claim, other than the body's own, the one whose consequence weighs most: a refusal
+ * by the size rules, then a wait for a parent. `null` when every claimed class would keep the body
+ * as it stands (a class it stays under is no consequence worth a line), and when no claims are
+ * recorded (`claimed` empty). Like every consequence, it says what the app does with the body,
+ * never anything about its ice (D3).
+ */
+export function classConsequenceLine(
+  body: ConsequenceBody,
+  current: WaterBodyClass,
+  claimed: readonly WaterBodyClass[],
+): ClassConsequenceLine | null {
+  let best: ClassConsequenceLine | null = null;
+  for (const cls of claimed) {
+    if (cls === current) continue;
+    const { kind } = classConsequence(body, cls);
+    if (kind === 'stays') continue;
+    if (best !== null && LINE_WEIGHT[best.kind] >= LINE_WEIGHT[kind]) continue;
+    best = { kind, cls, words: `${LINE_LEAD[kind]} if ${IF_CLASSED[cls]}` };
   }
-  return { kind: 'stays', words: `Stays, as ${STAYS_AS[cls]}${asked}` };
+  return best;
+}
+
+// ── A neighbor's distance and bearing ────────────────────────────────────────────────────────
+
+/**
+ * How far a neighbor lies from a body and in which direction: **point to point**, from a point
+ * inside the body's water to a point inside the neighbor's (never a shoreline point — the stored
+ * neighbors touch, so their shores are within meters of each other and a shore-to-shore figure
+ * would read 0 every time). `meters` is the great-circle distance (`haversineMeters`, symmetric);
+ * `bearingDeg` the direction from the body's point to the neighbor's, degrees clockwise from north
+ * in `[0, 360)` (`bearingDegrees`; `0` for coincident points).
+ */
+export type NeighborOffset = { meters: number; bearingDeg: number };
+
+/** The offset between two inside points; `null` when either isn't finite. */
+export function neighborOffset(from: LatLng, to: LatLng): NeighborOffset | null {
+  if (![from.lat, from.lng, to.lat, to.lng].every(Number.isFinite)) return null;
+  return { meters: haversineMeters(from, to), bearingDeg: bearingDegrees(from, to) };
+}
+
+/**
+ * A point inside a stored ring (a neighbor's simplified outer ring, `[lng, lat]` pairs): the same
+ * rule that computes a body's `interiorPoint` at import (`fetchOrigin`, the midpoint of the longest
+ * water span — strictly inside). `null` for a ring with no interior (fewer than four points, or
+ * collinear).
+ */
+export function ringInsidePoint(ring: readonly (readonly number[])[]): LatLng | null {
+  return fetchOrigin({ type: 'Polygon', coordinates: [ring.map((p) => [...p])] });
 }
 
 // ── How two names differ ───────────────────────────────────────────────────────────────────────
