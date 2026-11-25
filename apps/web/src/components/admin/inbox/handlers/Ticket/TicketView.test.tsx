@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { KeysProvider, modKey } from '@/lib/keys';
 import { stubJsdomAnimations } from '../../../body/tabs/jsdomStubs';
-import { InspectorProvider } from '../../inspector/inspectorContext';
+import { InspectorProvider } from '../../../inspector/inspectorContext';
 import { TicketView, type TicketViewProps } from './TicketView';
 import type { TicketDraft } from './ticketDrafts';
 import {

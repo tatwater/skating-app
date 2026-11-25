@@ -5,8 +5,8 @@ import { beforeAll, describe, expect, it, vi } from 'vitest';
 
 import { Toaster } from '@/components/kit/toast';
 
-import { stubJsdomAnimations } from '../../body/tabs/jsdomStubs';
-import { UndoProvider, type UndoServer } from '../../shell/undo';
+import { stubJsdomAnimations } from '../body/tabs/jsdomStubs';
+import { UndoProvider, type UndoServer } from '../shell/undo';
 import { type Decision, type Landed, useDecisionRunner } from './useDecisionRunner';
 
 /**

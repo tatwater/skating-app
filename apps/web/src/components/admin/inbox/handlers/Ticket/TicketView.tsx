@@ -23,16 +23,16 @@ import { Section } from '@/components/kit/section-slug';
 import { ThreadEvent, ThreadMessage } from '@/components/kit/thread-message';
 import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
-import { reportsWords } from '../../blocks/AuthorBlock';
-import { LinkChip } from '../../blocks/LinkChip';
-import { shownName } from '../../blocks/shownName';
 import {
   type DecidedState,
   InspectorFrame,
   InspectorHeadAge,
   InspectorHeadEnd,
   InspectorHeadTitle,
-} from '../../inspector/InspectorFrame';
+} from '../../../inspector/InspectorFrame';
+import { reportsWords } from '../../blocks/AuthorBlock';
+import { LinkChip } from '../../blocks/LinkChip';
+import { shownName } from '../../blocks/shownName';
 import { TARGET_CHIP } from '../../words/inboxWords';
 import { dayMonth, dayTime } from '../Flag/flagFormat';
 import { FLAG_WORDS, REASON_HEAD } from '../Flag/flagWords';

@@ -4,16 +4,16 @@ import { Badge } from '@/components/kit/badge';
 import { Button } from '@/components/kit/button';
 import { PersonLockup } from '@/components/kit/person-lockup';
 import { ComingSoonLink } from '@/components/kit/unavailable-button';
+import {
+  InspectorHeadAge,
+  InspectorHeadEnd,
+  InspectorHeadTitle,
+} from '../../../inspector/InspectorFrame';
 import type { AroundState } from '../../around/AroundLine';
 import { AuthorBlock } from '../../blocks/AuthorBlock';
 import { FlagBlock } from '../../blocks/FlagBlock';
 import { LinkChip } from '../../blocks/LinkChip';
 import { listTotalOf } from '../../blocks/listCut';
-import {
-  InspectorHeadAge,
-  InspectorHeadEnd,
-  InspectorHeadTitle,
-} from '../../inspector/InspectorFrame';
 import { FlagActions } from './FlagActions';
 import { allows, flagHead, type HistoryLink, isDown, liveFlags } from './flagModel';
 import type { FlagItem } from './flagTypes';

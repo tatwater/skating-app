@@ -495,7 +495,7 @@ describe('the registered handler', () => {
         locked={{
           by: 'Sarah',
           at: ACCESS_NOW,
-          decision: 'ruled_accessible',
+          decisionWord: 'confirmed accessible',
           byMe: false,
           actionId: 'a',
         }}

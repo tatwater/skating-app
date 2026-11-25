@@ -15,19 +15,18 @@ import { Note } from '@/components/kit/note';
 import { Section } from '@/components/kit/section-slug';
 import { ageInWords } from '@/lib/ages';
 import { cn } from '@/lib/utils';
-
+import {
+  InspectorHeadAge,
+  InspectorHeadEnd,
+  InspectorHeadTitle,
+} from '../../../inspector/InspectorFrame';
+import { useInspectorContext } from '../../../inspector/inspectorContext';
 import { AskDialog } from '../../../people/person/AskDialog';
 import { dayMonth } from '../../../shell/consoleTime';
 import { LinkChip } from '../../blocks/LinkChip';
 import { listTotalOf } from '../../blocks/listCut';
 import { rulingEvent } from '../../blocks/rulingEvent';
 import { TimelineEventBody } from '../../blocks/TimelineEventBody';
-import {
-  InspectorHeadAge,
-  InspectorHeadEnd,
-  InspectorHeadTitle,
-} from '../../inspector/InspectorFrame';
-import { useInspectorContext } from '../../inspector/inspectorContext';
 import { AskList } from '../asks/AskList';
 import {
   bodyKicker,

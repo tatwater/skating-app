@@ -2,7 +2,6 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
-  decidedStateOf,
   isDecidedPhase,
   LOCK_START,
   type LockSeen,
@@ -107,21 +106,6 @@ describe('the lock’s readings', () => {
         decided: { at: 1, by: null, decision: 'approved', actionId: null, byMe: true },
       }),
     ).toEqual(byMe);
-  });
-
-  it('names the decider, or a former staff member, and an empty action for a decision before the Inbox', () => {
-    expect(
-      decidedStateOf({
-        at: 5,
-        by: { userId: 'u' as never, displayName: 'Sarah Berman' },
-        decision: 'approved',
-        actionId: 'm1' as never,
-        byMe: false,
-      }),
-    ).toEqual({ by: 'Sarah Berman', at: 5, decision: 'approved', byMe: false, actionId: 'm1' });
-    expect(
-      decidedStateOf({ at: 5, by: null, decision: 'dismissed', actionId: null, byMe: false }),
-    ).toMatchObject({ by: 'a former staff member', actionId: '' });
   });
 });
 
