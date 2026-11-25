@@ -13150,14 +13150,23 @@ needs you*.
 #### The Corpus wave's rows (2026-11-24)
 
 What the founder's rulings on the Corpus design (B01-6) left owed outside the wave's four PRs, or
-waiting on him. The design and its briefs are *The Corpus tasks (B01-6, the design)*.
+waiting on him. The design and its briefs are *The Corpus tasks (B01-6, the design)*. Co5–Co12 came
+from 6a's build (2026-11-25, *What the build found (B01-6a)*).
 
 | # | Item | Where recorded | Who can act | Blocks | Status |
 |---|---|---|---|---|---|
-| Co1 | The shape of Contested as water — its tabs, its words, whether it is one lane — ruled on the real rows the next campaign stores (`classRefusals`) | D306; *After merge, on dev* (6a), step 7 | the founder, after a full campaign | 6b's Contested lane | open |
+| Co1 | The shape of Contested as water — its tabs, its words, whether it is one lane — ruled on the real rows the next campaign stores (`classRefusals`) | D306; *After merge, on dev* (6a), step 9 | the founder, after a full campaign | 6b's Contested lane | open |
 | Co2 | A cross-lake list of the season's automatic hazard merges, with *Unmerge*: fork 14 moved *Unmerge* to the Body console's Hazards tab and History, and `/admin/recurrence`'s list goes with 6d | fork 14; *Legacy retirement* | Machinery (its hazard-identity job) | nothing | open |
 | Co3 | Fork 10's reading: Known features as a lane inside the Pre-Season Pass group, never in *Views* — or no cross-lake lane at all | D308 | the founder (a confirmation) | 6d's Known features | open |
 | Co4 | The next full campaign (merge and load): without it Class conflicts' rows sit under *All* with the catalogs *not recorded*, and Co1 can't be looked at | *What the founder sees on dev after 6a* | the founder | Co1; Class conflicts' tabs | open |
+| Co5 | The task lanes' columns: the console's tokens 236 \| 340 (fork 19, the governor's) wrap the tabs; the boards draw 212 \| 420 | *What the build found (B01-6a)*, *Board differences* | the founder | 6a's PR | open |
+| Co6 | Which of 6a's open board gaps join it before its PR: the aerial, neighbor distance and bearing, the off-frame pointer, the rows' consequence line and per-name catalog tags, the silent-catalog column, the *Acres* sort, the *Filter* menu. The governor frames it as Class conflicts' gaps. Any the founder leaves out stay owed here | *What the build found (B01-6a)*, *Board differences* | the founder, then a build | 6a's PR | open |
+| Co7 | The copy pass over 6a's invented words (`corpus/words/corpusWords.ts`): "More may match: narrow the search", and History's raw class values ("Kept the class lakePond", "Set the class to …") | *What the build found (B01-6a)* | the founder | nothing | open |
+| Co8 | The load's time per batch on the cloud: the local proof's 496–749 ms real can't be checked against the 1 s limit, because the local backend doesn't enforce it | *What the build found (B01-6a)*, *The load proof*; *After merge, on dev*, step 8 | dev, during Co4 | nothing | open |
+| Co9 | `load.ts`' scope line is untested: the file runs `main()` on import | *What the build found (B01-6a)*, *Known and left* | a build | nothing | open |
+| Co10 | `displayScore` is rewritten by `transitionStanding` and `backfillCells` without a task sync, so a task's rank is stale until the drift repair re-ranks it | *Known and left* (6a) | a build, or accept | nothing | open |
+| Co11 | `bodyConsole`'s `outlineTrustedSince` reads the campaign's first `importRuns` row, which is now `build-region`'s, not the load's | *Known and left* (6a) | a build (`lib/campaignRuns.ts`'s rule) | nothing | open |
+| Co12 | `decideName` and `decideClass` refuse a bad task id before the capability check, against `taskAndBody`'s own comment | *Known and left* (6a) | a build | nothing | open |
 
 Skater-app questions are on B04's running list: a report's photo cap (2026-11-22) and the phone's
 cached copy of a taken-down photo (2026-11-23).
@@ -14845,7 +14854,7 @@ shape of Contested as water, which he rules on the next campaign's real rows bef
    built later without another campaign; the founder wants as few full campaigns as possible.
 4. **The campaign runs right after 6a merges** (**D309**; the founder: *"Okay"*), accepting that the
    yearly 3DHP refresh (probably January, in the founder's estimate) will be a second full load. Its
-   operator steps are in *After merge, on dev*, step 7.
+   operator steps are in *After merge, on dev*, steps 7–9.
 5. **Corpus moderator work on dev carries to prod** (**D310**). The founder: *"Yes, but only for
    corpus changes. No sense in making me or other admins re-do our work, even if we were only doing
    it for testing purposes. We will all make new accounts though (Clerk in prod doesn't carry over
@@ -15793,8 +15802,9 @@ prunes; these are what to expect, not checked against dev.
 
 ##### After merge, on dev (one executor, from main)
 
-0. **Nobody settles a Class conflict before the campaign** below: one settled on *not recorded*
-   evidence is asked again by it, once (D305).
+Rewritten 2026-11-25, after the build: the founder's pre-campaign steps are one step before the
+campaign (step 7), and reading back its record is its own step (9).
+
 1. **`convex dev --once`** from main at the squash, codegen first (`convex/_generated` as
    `convex dev` writes it; a difference from the offline stand-in is its own commit). Widen-only for
    fields and tables; the deploy deletes the three unread `waterBodies` indexes.
@@ -15816,20 +15826,25 @@ prunes; these are what to expect, not checked against dev.
    B01-3d's claims, and loading its line would write the old rule's states back over dev's. S1
    proves it on the throwaway backend before the PR opens; on dev, the next campaign's run row reads
    `settledHeld` and `raisedAgain`.
-7. **The next full campaign (the founder's), right after the merge, then his look at Contested as
-   water.** It runs as soon as steps 1–5 pass (D309; the founder: *"Okay"*), accepting that the
-   yearly 3DHP refresh (probably January) will be a second full load. Before the load, operator
-   steps, no code: step 0 holds (nobody settles a Class conflict before it); copy the laptop's
-   `scripts/etl/.scratch/merge/` aside (the next merge overwrites the only output on hand, of 9
-   August); and take a Convex snapshot export of dev — **a must, not a nicety**, since dev's corpus
-   decisions are to carry to prod (D310), and the load overwrites outlines, names, classes and states
-   and writes no audit row, and a chord bay re-fitted unseen loses its drawn outline until 6c. A full
-   merge and load fills `classClaims` (with tokens and acres), `classRefusals`, each name claim's
-   `sources` and `absorbedFeatures`, and leaves the first complete record (D309): read back that every
-   pass has its run row with its scope, that `progressAt` moved, and that the log's lines carry
-   timestamps. Then the dissent bodies' stored refusals are read back (a count by refusing token), the
-   founder looks at the real rows and rules the lane's shape — its tabs, its words, whether it is one
-   lane — and 6b builds it (D306).
+7. **The founder's steps before the campaign** (operator steps, no code):
+   - **nobody settles a Class conflict** from the merge until the campaign: one settled on *not
+     recorded* evidence is asked again by it, once (D305). Step 4's class conflict is set and undone,
+     so it leaves nothing settled;
+   - **copy the laptop's `scripts/etl/.scratch/merge/` aside**: the next merge overwrites the only
+     output on hand, of 9 August;
+   - **take a Convex snapshot export of dev** — **a must, not a nicety**: dev's corpus decisions are
+     to carry to prod (D310), the load overwrites outlines, names, classes and states and writes no
+     audit row, and a chord bay re-fitted unseen loses its drawn outline until 6c.
+8. **The next full campaign (merge and load, the founder's)**, as soon as steps 1–5 pass (D309; the
+   founder: *"Okay"*), accepting that the yearly 3DHP refresh (probably January) will be a second
+   full load. It fills `classClaims` (with tokens and acres), `classRefusals`, each name claim's
+   `sources` and `absorbedFeatures`. The load's time per batch on the cloud is unmeasured (*What the
+   build found (B01-6a)*, *The load proof*): read the load's function times on dev as it runs (Co8).
+9. **Read back the run record**, the first complete one (D309): every pass has its run row with its
+   scope, `progressAt` moved, and the log's lines carry timestamps; the load's row reads
+   `settledHeld` and `raisedAgain`. Then the dissent bodies' stored refusals are read back (a count by
+   refusing token), the founder looks at the real rows and rules the lane's shape — its tabs, its
+   words, whether it is one lane — and 6b builds it (D306).
 
 ##### The questions, as ruled (2026-11-24)
 
@@ -15857,7 +15872,160 @@ Asked of the governor; the founder answered those that were his.
 6. **When the next campaign runs** — *ruled: after 6a merges, the founder's to run* (a full merge and
    load); on 2026-11-25, *right after* the merge, the 3DHP refresh taken as a second load (D309).
    Class conflicts is thin until it does, and Contested as water's shape waits on it (*After merge,
-   on dev*, step 7).
+   on dev*, steps 7–9).
+
+#### What the build found (B01-6a)
+
+Built on `phase-b01-corpus` through `90f205d78` (2026-11-25), on main at `28a6934c6`: 58 commits
+and the integration merges. The PR isn't open yet. It waits on two founder calls, Co5 and Co6
+(*Board differences* below).
+
+##### Size
+
+`git diff --shortstat origin/main...HEAD`, `plans/` excluded: **22,520 insertions and 979 deletions
+over 249 files.** Of the insertions, 11,021 (49%) are tests and stories. By area: `packages/convex`
+8,219, `apps/web` 11,457, and `scripts/`, `packages/core` and `packages/guards` 2,836. `plans/` adds
+2,349 more over 6 files.
+
+| Estimate | Lines | Landed × the estimate |
+|---|---|---|
+| The design (*Size, honestly*: ~6,500 before the rulings; the slices table's ~5,700 after) | 6,500 / 5,700 | 3.5 / 4.0 |
+| The brief, after the rulings | 25,000–28,000 over ~160–190 files | 0.80–0.90 (and 1.3–1.6× the files) |
+| The brief with D309's unmeasured ~3,000–6,000 | ~28,000–34,000 | 0.66–0.80 |
+
+The Inbox wave's PRs ran 1.1–3.3× over their briefs; this one landed under its brief. It is still
+about four times the ~5,000-line guideline, as one PR (D299, amended).
+
+##### What shipped
+
+- **Name conflicts and Class conflicts, whole:**
+  - the stored task rows (`corpusTasks`, its counts and job rows), with one writer
+    (`lib/corpusTasks.ts`) and its writers guard;
+  - the backfill (`corpusTaskJobs:backfill`) and the drift repair;
+  - the daily retry of parked failures (`retryParkedDaily`). It frees a parked
+    `corpusTaskBackfill` body and the repair's own failures;
+  - the settle, honored by the import until its evidence changes (D305);
+  - `decideName`, `decideClass` and their undos;
+  - the reads (`lanes`, `listPage`, `item`);
+  - the web frame: the one sidebar, the task table with its search, the moved inspector, and the
+    two handlers' inspectors;
+  - the Overview's Corpus card, on `corpusTasks.lanes`, with *Contested as water* split out to the
+    old review page;
+  - Inbox Zero's *Corpus →*.
+- **The campaign's record (D309):**
+  - each run's scope and its heartbeat (`importRuns.scope`, the server-stamped `progressAt`);
+  - run rows for the three passes that wrote none: `build-region`, the landmark match and
+    `prune-floor`;
+  - `retire-absorbed` under its own kind, no longer a campaign load;
+  - `run-corpus.sh`'s log stamped line by line;
+  - `absorbedFeatures`, which the merge emits and the import stores;
+  - D218's scope widened with `derived` and `cleanup` (the governor's amendment), eight kinds in
+    all.
+- **The legacy strip:**
+  - `/admin/flags`, `/admin/support`, `/admin/users` and `/admin/users/$id` deleted;
+  - `/admin/water/standing` keeps only *Recently activated*, and `standing.listLane` is gone;
+  - the three `waterBodies` indexes only it read are dropped: `by_dormant_reason`, `by_removed_at`
+    and `by_public_access_verdict`.
+
+##### Found by the build and its review, with the fix
+
+- **The name claim kept only its top catalog.** Each claim now records every catalog behind its
+  spelling (`sources`, S2's ETL change; core's `distinctNameClaims` pools them, and a property test
+  holds it to the old rule). It shows from the next campaign (Bo29).
+- **A settle never held when one catalog made two claims.** `honorSettled` now compares against the
+  claims' stored form.
+- **The library's intake facet went stale after a settle or its undo.** `settleReason` and
+  `reopenTask` now queue a library refresh.
+- **A search the server cut read as complete.** The list ends *capped* (`scanBudgetSpent` on a done
+  search), worded "More may match: narrow the search" (`SEARCH_CAPPED`, invented; it waits on the
+  founder's copy pass, Co7).
+- **The Overview's card read 0 before the backfill.** It falls back to the reasons' rows while the
+  lanes are pending.
+- **A lane's search read the best 100 library matches first.** A task on a common name (150 Mud
+  Ponds, two of them asked about) could be unfindable. Each task row now carries `searchText` (its
+  body's library text, one rule with the library's) behind a `search_text` index filtered by lane,
+  status and facet. An open task's text is refreshed by every sync; a decided task keeps the text
+  its body had when it was decided.
+- **`raisedBy` could name a cleanup pass's day.** By-hand passes now carry the campaign id.
+  `lib/campaignRuns.ts` is the one rule (a merge or load row, not a legacy retire row), shared with
+  the Overview's *last campaign*.
+- **A Body-console rename left its task in the wrong tab**, with its counts off until the drift
+  repair. `setWaterBodyNameImpl` now syncs the body's tasks, and the guard holds every `nameClaims`
+  writer.
+- **The repair's lap wasn't gated on the live metrics.** Sixteen open tasks on ~1 MiB bodies read
+  past 16 MiB, and the whole pass failed. The page is now held to the transaction's live metrics:
+  shrunk, or skipped for the pass. Its test runs under a cut transaction (`90f205d78`).
+- **`/` from the rows didn't reach the search.** The rows' type-ahead swallowed it.
+- **A fixture clock failed at UTC+14** (CI's web time-zones job). `NAMES_NOW`, then the Corpus and
+  Classes clocks, are pinned with `zonedInstant`.
+- **The merge omitted an empty `absorbedFeatures`**, which the import reads as "not recorded, keep
+  what is stored". A body that stopped absorbing kept its stale list. The merge now emits `[]`.
+- **A parked `corpusTaskBackfill` failure left the lanes pending forever.** The daily retry now takes
+  it.
+- **No D218 scope fit the passes that load no corpus of their own**, so D218 gained `derived` and
+  `cleanup` (above).
+
+##### The load proof
+
+The governor ran it on an anonymous local backend with real merge lines, down the heaviest path, and
+re-measured it at the final head. It wasn't re-run for this record.
+
+- **150 records** (the loader's cap) took 1,385 of Convex's 4,096 index ranges and read 2.60 MB, in
+  394–460 ms nested and 496–749 ms real.
+- **Refused at 453+ records**, with "Too many reads" in `lookupByCatalogIds`: about 8.9 ranges a
+  record, a margin of ≈3.0×.
+- **Time on the cloud is unmeasured**, because the local backend doesn't enforce the 1 s limit.
+  Watching the campaign's load is a register row (Co8; *After merge, on dev*, step 8).
+- **The loader's caps are unchanged**: 150 records or 512 KiB a batch (`batchNdjson.ts`).
+
+##### Board differences (6a as built, against boards 4.2 and 4.3)
+
+| Difference | Where it stands |
+|---|---|
+| The columns are the console's tokens, 236 \| 340, where the boards draw 212 \| 420, so the tabs wrap | **the founder's call** (Co5). Fork 19, the governor's ruling, took the tokens before the wrap was seen |
+| No aerial on the head map (the shared map's gap, In30) | **the founder's call** (Co6): whether it joins 6a |
+| No neighbor distance or bearing, and no off-frame pointer | the same (Co6) |
+| No consequence line and no per-name catalog tags on the list rows | the same (Co6) |
+| No silent-catalog column | the same (Co6) |
+| No *Acres* sort and no *Filter* menu | the same (Co6) |
+| No per-catalog (NHD) outline | **not stored**: a body keeps one outline (as 4.5's *as NHD draws it*) |
+| No catalog edit dates | **not stored**: the ETL reads none, and 2026-11-24's question 2 didn't offer them |
+| Names has no emails and no *Suggested* | **6c** (D307) |
+
+Co6 is the founder's call on which of the open gaps join 6a. The governor frames it as Class
+conflicts' gaps. Any he leaves out stay owed under Co6.
+
+##### Known and left
+
+- **`load.ts`' scope line is untested.** The file runs `main()` on import, so no test can load it
+  (Co9).
+- **`displayScore` changes without a task sync.** `transitionStanding` and `backfillCells` in
+  `lib/standing` rewrite it, which leaves a task's rank stale until the drift repair re-ranks it.
+  Only the order is off; tabs and counts aren't (Co10).
+- **Three unreachable lines are left uncovered.** Under D40 they aren't worth a test.
+- **`bodyConsole`'s `outlineTrustedSince` now dates from `build-region`'s row.** It reads the
+  campaign's first `importRuns` row by `by_campaign`, and that row is now `build-region`'s, not the
+  load's. The function itself is unchanged. `lib/campaignRuns.ts` is the rule it could read (Co11).
+- **History reads raw class values** ("Kept the class lakePond", and `setClass`'s "Set the class
+  to …"), pending the copy pass (Co7).
+- **A bad task id is refused before the capability check.** `corpusWrites`' `taskAndBody` runs
+  before `actorFor`, against its own comment, so a caller without the capability learns whether a
+  task exists (Co12).
+
+##### Harness lessons for 6b–6d (the governor's)
+
+- **A builder's final report can fail to arrive.** Check the worktree instead of waiting: if it's
+  clean and committed, ask for the report again.
+- **A provider outage cuts turns mid-edit.** Restart with "take stock from the files".
+- **Builders ran only targeted tests.** The integrated run found three misses:
+  - a guard inventory miss: `useClassWrites` and `useNameWrites` weren't in `adminWriters`;
+  - a time-zone fixture;
+  - a test that timed out only under the full parallel run.
+
+  Before the PR, run the full uncached gates, CI's time-zone job and codegen-verify on a local
+  backend.
+- **Territories that overlapped on `lib/corpusTasks.ts` came back as conflicts** when builders
+  cherry-picked S1's first merge. Each was resolved by keeping the owner's version.
 
 ## Ruled out
 
