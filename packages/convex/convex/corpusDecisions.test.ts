@@ -552,6 +552,62 @@ describe('undo: the domain inverse, then the task reopens', () => {
   });
 });
 
+describe('the library’s rows follow a settle and its undo', () => {
+  /** The body's library rows' *intake* facet (it reads `reviewReason`), a value per row. */
+  const intakeOf = (t: T, bodyId: Id<'waterBodies'>) =>
+    t.run(async (ctx) =>
+      (
+        await ctx.db
+          .query('bodyLibraryRows')
+          .withIndex('by_body', (q) => q.eq('waterBodyId', bodyId))
+          .collect()
+      ).map((r) => r.intake),
+    );
+  const drain = (t: T) => t.mutation(internal.bodyLibrary.drainQueue, {});
+
+  test('a Keep takes the body out of the intake facet; its undo puts it back', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod');
+    const bodyId = await seedBody(t, ['name-conflict']);
+    const task = await taskOf(t, bodyId, 'name-conflict');
+
+    const { actionId } = await mod.as.mutation(api.corpusWrites.decideName, {
+      taskId: task._id,
+      pick: SHOWN_PICK,
+    });
+    // The decision's audit row refreshed the rows while the reason still stood; the settle queued
+    // the body, so the next drain reads the reason gone.
+    await drain(t);
+    const settled = await intakeOf(t, bodyId);
+    expect(settled.length).toBeGreaterThan(0);
+    expect(settled.every((intake) => intake === false)).toBe(true);
+
+    await mod.as.mutation(api.undo.run, { actionId });
+    await drain(t);
+    expect((await intakeOf(t, bodyId)).every((intake) => intake === true)).toBe(true);
+  });
+
+  test('a rename’s undo, whose row is written before the task reopens, puts it back too', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod');
+    const bodyId = await seedBody(t, ['name-conflict']);
+    const task = await taskOf(t, bodyId, 'name-conflict');
+
+    const { actionId } = await mod.as.mutation(api.corpusWrites.decideName, {
+      taskId: task._id,
+      pick: 'Lake Auburn',
+    });
+    await drain(t);
+    expect((await intakeOf(t, bodyId)).every((intake) => intake === false)).toBe(true);
+
+    await mod.as.mutation(api.undo.run, { actionId });
+    await drain(t);
+    const reopened = await intakeOf(t, bodyId);
+    expect(reopened.length).toBeGreaterThan(0);
+    expect(reopened.every((intake) => intake === true)).toBe(true);
+  });
+});
+
 describe('undo: overtaken', () => {
   /** What a campaign does when the evidence moved (D305): the settle dropped, the reason back. */
   const askAgain = async (t: T, bodyId: Id<'waterBodies'>, reason: ReviewReason) => {

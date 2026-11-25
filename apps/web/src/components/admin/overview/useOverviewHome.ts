@@ -132,12 +132,21 @@ export function useOverviewHome({
       // The intake rows lead; the Corpus counts and the task lanes fill in what they carry. Held
       // until every read lands: drawn from the intake rows alone, Duplicates would read rows and
       // then jump to decisions, and a built lane would jump from its reason's rows to its tasks.
+      // While the server is still filing its tasks (`pending`: the backfill) their counts are
+      // short — zero before it starts — so the lanes read their reasons' rows until it is done,
+      // as the sidebar and Inbox Zero draw no task count then.
       corpus:
         reviewCounts && corpusCounts && taskLanes
-          ? corpusFromReviewCounts(reviewCounts, corpusExtrasFrom(corpusCounts), {
-              nameConflicts: taskLanes.lanes.nameConflicts.open,
-              classConflicts: taskLanes.lanes.classConflicts.open,
-            })
+          ? corpusFromReviewCounts(
+              reviewCounts,
+              corpusExtrasFrom(corpusCounts),
+              taskLanes.pending
+                ? null
+                : {
+                    nameConflicts: taskLanes.lanes.nameConflicts.open,
+                    classConflicts: taskLanes.lanes.classConflicts.open,
+                  },
+            )
           : undefined,
       machinery: !canMachinery
         ? 'withheld'

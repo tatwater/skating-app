@@ -357,6 +357,32 @@ describe('the list', () => {
     expect(screen.getByRole('button', { name: 'Read on' })).toBeInTheDocument();
   });
 
+  it('a search the server cut at its bound says more may match: never All, no Read on, no tail', () => {
+    // The search as `corpusTasks.listPage` answers it: one read, done, `scanBudgetSpent` at its bound.
+    h.answers['corpusTasks:listPage'] = (args) =>
+      args.tab === 'decided'
+        ? page(NAME_ROWS.map((r) => ({ ...r, taskId: `d-${r.taskId}` as never })))
+        : page(NAME_ROWS, { scanBudgetSpent: true });
+    h.search = { lane: 'name-conflicts', q: 'pond' };
+    mount();
+    const end = document.querySelector('[data-slot="corpus-end"]');
+    expect(end?.textContent).toBe('More may match: narrow the search');
+    expect(end?.textContent).not.toContain('All');
+    expect(screen.queryByRole('button', { name: 'Read on' })).toBeNull();
+    // The decided tail sits only under a list whose every row is in.
+    expect(document.querySelector('[data-slot="corpus-tail"]')).toBeNull();
+  });
+
+  it('a cut search that found nothing in what it read still says more may match', () => {
+    h.answers['corpusTasks:listPage'] = (args) =>
+      args.tab === 'decided' ? page([]) : page([], { scanBudgetSpent: true });
+    h.search = { lane: 'name-conflicts', q: 'pond' };
+    mount();
+    expect(document.querySelector('[data-slot="corpus-end"]')?.textContent).toBe(
+      'More may match: narrow the search',
+    );
+  });
+
   it('says the server is still filing, and draws no count it can’t vouch for', () => {
     h.lanes = {
       lanes: { nameConflicts: { open: 3, facets: {} }, classConflicts: { open: 0, facets: {} } },

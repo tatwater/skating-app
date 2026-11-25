@@ -52,8 +52,12 @@ export function useCorpusLanes(now: number, enabled: boolean): CorpusLanesState 
 
 // ── The list ──────────────────────────────────────────────────────────────────────────────────────────
 
-/** Where the list stands: the shared chain's statuses, and `budget` — the search's scan stopped it. */
-export type TaskListStatus = ChainStatus | 'budget';
+/**
+ * Where the list stands: the shared chain's statuses, and the two ways a scan, not the list, ended
+ * it — `budget`: a page stopped short with a next page to read on; `capped`: a search (one bounded
+ * read, `corpusTasks.listPage`'s `q`: no next page) stopped at its bound with more that may match.
+ */
+export type TaskListStatus = ChainStatus | 'budget' | 'capped';
 
 export interface TaskPagesState {
   status: TaskListStatus;
@@ -108,7 +112,9 @@ type Joined = { status: TaskListStatus; rows: CorpusRowView[]; pending: boolean;
 /**
  * The chain's rows in order, each task once, whether any page read says the server is still filing,
  * and where the chain stops — at the scan's budget when the last page read says the scan, not the
- * list, ended it.
+ * list, ended it: with a next page (`budget`), or, as a search answers, with none (`capped` — the
+ * server's search is done in one read and says `scanBudgetSpent` when it left matches unread, so a
+ * done list that says so is never drawn as every match).
  */
 export function joinPages(pages: readonly Loadable<CorpusListPage>[] | null): Joined {
   const { status, rows, read, failed } = joinChain(
@@ -116,10 +122,9 @@ export function joinPages(pages: readonly Loadable<CorpusListPage>[] | null): Jo
     (page) => page.rows,
     (row) => row.taskId,
   );
-  const last = read.at(-1);
-  const budget = status === 'more' && last?.scanBudgetSpent === true;
+  const spent = read.at(-1)?.scanBudgetSpent === true;
   return {
-    status: budget ? 'budget' : status,
+    status: spent && status === 'more' ? 'budget' : spent && status === 'done' ? 'capped' : status,
     rows,
     pending: read.some((p) => p.pending),
     failed,

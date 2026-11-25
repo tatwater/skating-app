@@ -41,6 +41,7 @@ import {
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { queueLibraryRefresh } from './bodyLibrary';
 
 // ── The vocabulary ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -471,6 +472,9 @@ export async function settleReason(
     ...withReason(body.reviewReasons, reason, false),
     reviewSettled: [...(body.reviewSettled ?? []).filter((s) => s.reason !== reason), entry],
   });
+  // The library's row reads `reviewReason` (its *intake* facet), and the decision's audit row
+  // refreshed it before this patch: queued, so the row follows the reason off the body.
+  await queueLibraryRefresh(ctx, [body._id], now);
   const decided = {
     status: 'decided' as const,
     decidedAt: now,
@@ -520,6 +524,9 @@ export async function reopenTask(
     ...reasons,
     reviewSettled: settled.length > 0 ? settled : undefined,
   });
+  // The library's row reads `reviewReason` (its *intake* facet), and the undo's own audit row may
+  // have refreshed it before this patch: queued, so the row follows the reason back onto the body.
+  await queueLibraryRefresh(ctx, [body._id], now);
   const reopened = {
     status: 'open' as const,
     ...taskFieldsOf(task.lane, body),

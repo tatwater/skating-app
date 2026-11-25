@@ -364,6 +364,31 @@ describe('the import', () => {
     expect((await bodyOf(t, 'osm/A')).classClaims).toEqual(CLASSES);
   });
 
+  test('a record with two claims from one catalog is held to the claims stored, one a catalog', async () => {
+    // The merge emits a claim per member, so a group with two NHD features sends two NHD claims;
+    // the import stores the first. The settle is made on what is stored, and so is the comparison.
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    const twice = [
+      CLASSES[0],
+      { ...CLASSES[0], token: 'nhd:fcode=46601', areaSqM: 1e5 },
+      CLASSES[1],
+    ] as Rec['classClaims'];
+    await load(t, [{ ...BOTH, classClaims: twice }]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    expect((await bodyOf(t, 'osm/A')).classClaims).toEqual(CLASSES);
+    await settle(t, mod.id, id, 'classConflicts');
+    expect(await load(t, [{ ...BOTH, classClaims: twice }])).toMatchObject({
+      settledHeld: 1,
+      raisedAgain: 0,
+    });
+    expect((await openOf(t, id)).map((x) => x.lane)).toEqual(['nameConflicts']);
+    // A change to the claim that is stored still asks again.
+    const moved = [{ ...CLASSES[0], token: 'nhd:fcode=46602' }, CLASSES[1]] as Rec['classClaims'];
+    expect(await load(t, [{ ...BOTH, classClaims: moved }])).toMatchObject({ raisedAgain: 1 });
+    await expectCountsTally(t);
+  });
+
   test('a settle whose reason the record no longer raises is kept for a later campaign', async () => {
     const t = harness();
     const mod = await person(t, 'user_m', 'moderator');

@@ -149,7 +149,16 @@ describe('the chain’s pages, joined', () => {
 
   it('stops at the scan’s budget only when the last page says the scan ended it', () => {
     expect(joinPages([more(NAME_ROWS, { scanBudgetSpent: true })]).status).toBe('budget');
-    expect(joinPages([page(NAME_ROWS, { scanBudgetSpent: true })]).status).toBe('done');
+    expect(joinPages([more(NAME_ROWS)]).status).toBe('more');
+    // An earlier page's scan ending says nothing of the list's end.
+    expect(joinPages([more(NAME_ROWS, { scanBudgetSpent: true }), page([])]).status).toBe('done');
+  });
+
+  it('a search done in one read that left matches unread is capped, never all in', () => {
+    // The server's search: no next page (`isDone`), and `scanBudgetSpent` when it stopped at its bound.
+    expect(joinPages([page(NAME_ROWS, { scanBudgetSpent: true })]).status).toBe('capped');
+    expect(joinPages([page([], { scanBudgetSpent: true })]).status).toBe('capped');
+    expect(joinPages([page(NAME_ROWS)]).status).toBe('done');
   });
 
   it('says pending when any page read says the server is still filing', () => {

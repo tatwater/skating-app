@@ -30,6 +30,7 @@ import {
   LOADING_MORE,
   MORE_TO_READ,
   READ_MORE,
+  SEARCH_CAPPED,
   TAIL_FAILED,
 } from '../words/corpusWords';
 import type { TaskListStatus } from './taskReads';
@@ -44,8 +45,10 @@ import { type MarkedName, type TaskRowView, taskRowView } from './taskRows';
  * first name (G and ? pass to the console's keys unless a run is under way); ⏎ or Space, or a
  * press, opens the row. The search's text is marked in the names.
  *
- * - **Pages arrive as it scrolls** (`useLoadAhead`); past a search's scan bound the list stops at
- *   *More to read* with *Read on*.
+ * - **Pages arrive as it scrolls** (`useLoadAhead`); where a scan's budget ends a page the list stops
+ *   at *More to read* with *Read on*. A search is one bounded read with no next page: stopped at its
+ *   bound, its end says more may match and to narrow it — never *All 50*, and no decided tail under
+ *   a list that isn't all in.
  * - **States**: loading is skeleton rows; a failed page is said under the rows that stand, with
  *   *Try again* (the kit `RetryNote`, always mounted, so its words are announced); empty says so in
  *   the end tab. A failed tail is said under the list, never drawn as none decided.
@@ -299,7 +302,9 @@ export function TaskTable({
         ? LOADING_MORE
         : stoppedEarly
           ? MORE_TO_READ
-          : null;
+          : list.status === 'capped'
+            ? SEARCH_CAPPED
+            : null;
 
   return (
     <div data-slot="corpus-task-table" className={cn('flex min-h-0 flex-1 flex-col', className)}>

@@ -84,6 +84,11 @@ export const COLUMN_HEADS: Record<CorpusTaskLane, readonly [string, string, stri
 export const allOf = (n: number) => `All ${n.toLocaleString('en-US')}`;
 /** Where a list stopped at the search's bound: more may match (the Inbox's words). */
 export const MORE_TO_READ = 'More to read';
+/**
+ * Where a search stopped at its bound with no next page to read: only a narrower search finds the
+ * rest. Invented, for the copy pass.
+ */
+export const SEARCH_CAPPED = 'More may match: narrow the search';
 /** The next page, on its way (the Inbox's words). */
 export const LOADING_MORE = 'Loading more';
 

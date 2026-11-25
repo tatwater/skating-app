@@ -507,7 +507,7 @@ function honorSettled(
   item: {
     reviewReasons?: string[];
     nameClaims?: { source: string; value: string }[];
-    classClaims?: { source: string; value: string; token?: string }[];
+    classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']>;
   },
 ): HonoredReasons {
   const incoming = item.reviewReasons as ReviewReason[] | undefined;
@@ -516,11 +516,14 @@ function honorSettled(
     return { reasons: incoming, settled: existing.reviewSettled };
   }
   // The evidence as it will be stored: `nameFields` keeps only the record's catalog claims (a
-  // moderator's own is no evidence), and `classClaimFields` keeps the stored claims when the record
-  // sends none.
+  // moderator's own is no evidence; folding its repeated spellings changes no spelling), and the
+  // class claims go through `classClaimFields` itself — one claim a catalog, bounded, the stored
+  // ones kept when the record sends none. A settle is made on the stored claims, so comparing it
+  // with the record's raw list would ask again, every campaign, any body whose record carries two
+  // claims from one catalog.
   const after = {
     nameClaims: item.nameClaims as Doc<'waterBodies'>['nameClaims'],
-    classClaims: (item.classClaims ?? existing.classClaims) as Doc<'waterBodies'>['classClaims'],
+    classClaims: classClaimFields(item).classClaims ?? existing.classClaims,
   };
   const reasons: ReviewReason[] = [];
   const dropped = new Set<ReviewReason>();
