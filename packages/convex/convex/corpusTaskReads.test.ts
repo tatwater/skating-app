@@ -4,9 +4,10 @@
  * (by every ref, each lane's facts present and not recorded), on tasks filed through the real
  * writer (`lib/corpusTasks.ts`).
  *
- * `can` is S2's rule (`lib/corpusRules.ts`): here it is stood in by a marker, so these cases prove
- * that every row and item carries what the rule answers for its task and body. The cases at the end
- * check `can` against the real rule.
+ * `can` is S2's rule (`lib/corpusRules.ts`), and every case reads the real one but one: the case for
+ * a body merged away or removed since its decision stands it in by a marker, because the real rule
+ * answers a decided task by its lock before it looks at the body, and that case proves which body
+ * the read hands it. The cases at the end check `can` against the real rule on every row and item.
  */
 
 import { SQM_PER_ACRE } from '@skating/core';
@@ -17,7 +18,7 @@ import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { NO_SUCH_TAB, SEARCH_SCAN } from './corpusTasks';
 import * as rules from './lib/corpusRules';
-import { settleReason, syncBodyTasks } from './lib/corpusTasks';
+import { settleReason, syncBodyTasks, TASK_LEFT } from './lib/corpusTasks';
 import { ATTACHED_CAP, NAMESAKES_CAP } from './lib/corpusTaskViews';
 import schema from './schema';
 
@@ -25,17 +26,19 @@ const real = vi.hoisted(() => ({ corpusCan: null as unknown }));
 vi.mock('./lib/corpusRules', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./lib/corpusRules')>();
   real.corpusCan = actual.corpusCan;
-  return {
-    ...actual,
-    // A marker naming the task and the body's state, so a test can see which task and body the
-    // read asked the rule about.
-    corpusCan: vi.fn(
-      async (_ctx, _viewer, task: Doc<'corpusTasks'>, body: Doc<'waterBodies'> | null) => ({
-        pickName: `asked about ${task._id} on ${body?.removedAt ? 'removed' : (body?.mergedIntoId ?? 'live')}`,
-      }),
-    ),
-  };
+  return { ...actual, corpusCan: vi.fn(actual.corpusCan) };
 });
+
+/**
+ * A marker in the rule's place, naming the task and the body's state, so a case can see which task
+ * and body the read asked the rule about.
+ */
+const useMarker = () =>
+  vi
+    .mocked(rules.corpusCan)
+    .mockImplementation(async (_ctx, _viewer, task, body) => ({
+      pickName: `asked about ${task._id} on ${body?.removedAt ? 'removed' : (body?.mergedIntoId ?? 'live')}`,
+    }));
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -230,7 +233,9 @@ async function everything(as: Awaited<ReturnType<typeof person>>['as'], ids: Id<
 }
 
 beforeEach(() => {
-  vi.mocked(rules.corpusCan).mockClear();
+  vi.mocked(rules.corpusCan)
+    .mockReset()
+    .mockImplementation(real.corpusCan as typeof rules.corpusCan);
 });
 
 // ── The gate ──────────────────────────────────────────────────────────────────────────────────────────
@@ -301,6 +306,35 @@ describe('lanes', () => {
     expect((await mod.as.query(api.corpusTasks.lanes, { now: NOW })).lanes.nameConflicts.open).toBe(
       57,
     );
+  });
+});
+
+describe('pending', () => {
+  test('stays true while a backfill failure is owed, on every read, though the backfill run is done', async () => {
+    const t = harness();
+    const mod = await person(t, 'Casey Example');
+    const id = await lake(t);
+    await backfillDone(t);
+    const pendings = async () => [
+      (await mod.as.query(api.corpusTasks.lanes, { now: NOW })).pending,
+      (await mod.as.query(api.corpusTasks.listPage, { lane: 'nameConflicts', now: NOW })).pending,
+      (await mod.as.query(api.corpusTasks.item, { ref: `body:${id}`, now: NOW })).pending,
+    ];
+    expect(await pendings()).toEqual([false, false, false]);
+    const failure = await t.run((ctx) =>
+      ctx.db.insert('jobFailures', {
+        job: 'corpusTaskBackfill',
+        key: id,
+        attempts: 3,
+        errorClass: 'Error',
+        firstFailedAt: NOW,
+        lastFailedAt: NOW,
+        parkedAt: NOW,
+      }),
+    );
+    expect(await pendings()).toEqual([true, true, true]);
+    await t.run((ctx) => ctx.db.delete(failure));
+    expect(await pendings()).toEqual([false, false, false]);
   });
 });
 
@@ -424,7 +458,8 @@ describe('listPage', () => {
       facet: 'different',
       filedAt: NOW,
       body: { id, name: 'The Basin', place: 'Auburn, ME', cls: 'lakePond', acres: 2263 },
-      can: { pickName: `asked about ${task._id} on live` },
+      // The real rule: a moderator may pick or keep an open task's name.
+      can: { pickName: null, keepName: null },
       decided: null,
       lane: 'nameConflicts',
       shown: 'The Basin',
@@ -448,6 +483,10 @@ describe('listPage', () => {
       actionId: expect.any(String),
       byMe: false,
     });
+    // The lock, as the real rule says it: both verbs refused with the decider's sentence.
+    const lock = decided.rows[0]?.can;
+    expect(lock?.pickName).toMatch(/^Decided by Riley Example/);
+    expect(lock?.keepName).toBe(lock?.pickName);
     expect(
       (
         await by.as.query(api.corpusTasks.listPage, {
@@ -641,6 +680,7 @@ describe('item', () => {
   });
 
   test('a body merged away or removed since its decision still reads, and can is asked with it', async () => {
+    useMarker();
     const t = harness();
     const mod = await person(t, 'Casey Example');
     const survivor = await lake(t, {
@@ -973,12 +1013,7 @@ test('a class-dissent reason or stored classRefusals changes nothing these reads
 
 // ── can, against the real rule ─────────────────────────────────────────────────────────────────────────
 
-// Skipped until S2's `corpusCan` (`lib/corpusRules.ts`) is merged: the stub throws `PLACEHOLDER`.
-describe.skip('can on every row and item equals corpusCan', () => {
-  beforeEach(() => {
-    vi.mocked(rules.corpusCan).mockImplementation(real.corpusCan as typeof rules.corpusCan);
-  });
-
+describe('can on every row and item equals corpusCan', () => {
   test('for a moderator and an admin, on an open task, a decided one, and a body merged away or removed', async () => {
     const t = harness();
     const mod = await person(t, 'Casey Example');
@@ -1026,5 +1061,16 @@ describe.skip('can on every row and item equals corpusCan', () => {
         }
       }
     }
+    // Not a match on nulls alone: the rule's distinct answers all reach the reads.
+    const can = async (id: Id<'waterBodies'>) =>
+      (await admin.as.query(api.corpusTasks.item, { ref: `body:${id}` })).item?.can;
+    expect(await can(open)).toEqual({ pickName: null, keepName: null });
+    expect(await can(cls)).toEqual({ setClass: null, keepClass: null });
+    expect((await can(decided))?.pickName).toMatch(/^Decided by Avery Example/);
+    expect(await can(merged)).toEqual({ pickName: TASK_LEFT.merged, keepName: TASK_LEFT.merged });
+    expect(await can(removed)).toEqual({
+      pickName: TASK_LEFT.removed,
+      keepName: TASK_LEFT.removed,
+    });
   });
 });
