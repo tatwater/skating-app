@@ -934,7 +934,7 @@ then conduct rules written into the terms.
 #### Owed
 - The founder's device and browser pass of the new app (desktop browsers and the Pixel)
 - The pool-reassign path can still place a pool photo by location regardless of its day when a lake outline loads late (noted in the PhotoSorter fix commit)
-- The avatar-remove default image: store nothing when Clerk's `has_image` is false, in the webhook and the token claim both
+- ~~The avatar-remove default image: store nothing when Clerk's `has_image` is false, in the webhook and the token claim both~~ — done in the console fixes after #181: `storableAvatarUrl` refuses Clerk's generated silhouette (`isGeneratedAvatar`, read from the URL itself, so the webhook and the token claim both pass through it); a stored one clears on the person's next open. After merge on dev: `convex dev --once`
 - A check that the Clerk `convex` JWT template carries `picture` and `updated_at`
 - Mobile's hazards empty state still has the pre-D237 wording (web's was fixed in close-out)
 - The onboarding addition (B03 §9, D294–D298), after merge: `convex dev --once` on dev **before the device pass or any use of the app against dev** — both apps' root gates now query `consent.watchAnchor` (two tables, five optional profile fields, two crons; widen-only); `CLERK_SECRET_KEY` and the Resend keys confirmed on dev (names only); one real acceptance on dev checked end to end — the record's IP against the session in Clerk, whether the web's server-side handshake ever becomes the session's latest activity, the emailed copy received → B03 §9.16

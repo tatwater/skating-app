@@ -4,6 +4,7 @@ import {
   AVATAR_URL_MAX_BYTES,
   bountyLimitRestricts,
   effectiveBountyLimitOf,
+  isGeneratedAvatar,
   isPeopleLane,
   normalizePeopleListArgs,
   PEOPLE_LANE_LABELS,
@@ -111,6 +112,37 @@ describe('peopleLanesFor — Appeals open only for a viewer who reads support (D
   test('every lane in order, or every lane but appeals', () => {
     expect(peopleLanesFor(true)).toEqual([...PEOPLE_LANES]);
     expect(peopleLanesFor(false)).toEqual(PEOPLE_LANES.filter((l) => l !== 'appeals'));
+  });
+});
+
+/** A Clerk image URL of the given kind, as Clerk writes them: base64url JSON in the path. */
+const clerkImage = (body: object) =>
+  `https://img.clerk.com/${Buffer.from(JSON.stringify(body)).toString('base64url')}`;
+
+describe('isGeneratedAvatar — Clerk’s silhouette is no one’s photo', () => {
+  const generated = clerkImage({ type: 'default', iid: 'ins_2abc', rid: 'user_2xyz' });
+  const uploaded = clerkImage({ type: 'proxy', src: 'https://images.clerk.dev/uploaded/img_1' });
+
+  test('tells the generated silhouette from an uploaded or OAuth photo', () => {
+    expect(isGeneratedAvatar(generated)).toBe(true);
+    // A size asked for doesn't change what it is.
+    expect(isGeneratedAvatar(`${generated}?width=80`)).toBe(true);
+    expect(isGeneratedAvatar(uploaded)).toBe(false);
+    expect(isGeneratedAvatar('https://lh3.googleusercontent.com/a/photo')).toBe(false);
+  });
+
+  test('reads anything it can’t decode as a photo, never as the silhouette', () => {
+    expect(isGeneratedAvatar('not a url')).toBe(false);
+    expect(isGeneratedAvatar('https://img.clerk.com/')).toBe(false);
+    expect(isGeneratedAvatar('https://img.clerk.com/%%%')).toBe(false);
+    expect(isGeneratedAvatar(`https://img.clerk.com/${btoa('[1]')}`)).toBe(false);
+    // The same payload on another host is someone's file, not Clerk's silhouette.
+    expect(isGeneratedAvatar(generated.replace('img.clerk.com', 'example.com'))).toBe(false);
+  });
+
+  test('is never stored: the person shows their initials', () => {
+    expect(storableAvatarUrl(generated)).toBeUndefined();
+    expect(storableAvatarUrl(uploaded)).toBe(uploaded);
   });
 });
 

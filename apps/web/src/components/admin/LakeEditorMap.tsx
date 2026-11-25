@@ -1,8 +1,7 @@
 import {
   type BBox,
-  chordArc,
   type LatLng,
-  mouthArcSide,
+  mouthLine,
   type SubAreaMouth,
   shapeSignature,
 } from '@skating/core';
@@ -357,16 +356,11 @@ export function LakeEditorMap({
                 type: 'Feature' as const,
                 geometry: {
                   type: 'LineString' as const,
-                  // "Out" judged at the mouth, as the derivation judges it — the stored `side`
-                  // alone would bow a hook-shaped bay's line the wrong way.
-                  coordinates: chordArc(
-                    s.mouth.a,
-                    s.mouth.b,
-                    mouthArcSide(
-                      data.body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon,
-                      s.mouth,
-                    ),
-                    s.mouth.sagittaM,
+                  // Along the arc, bowed "out" as the derivation judges it (`mouthLine`): the
+                  // stored `side` alone would bow a hook-shaped bay's line the wrong way.
+                  coordinates: mouthLine(
+                    data.body.polygon as unknown as GeoJSON.Polygon | GeoJSON.MultiPolygon,
+                    s.mouth,
                   ).map((p) => [p.lng, p.lat]),
                 },
                 properties: { subAreaId: s._id },

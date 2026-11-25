@@ -182,23 +182,29 @@ export type OtherStandings = FunctionReturnType<typeof api.bodies.searchOtherSta
  * The other standings as the board groups them ("2 active · 4 dormant"): the server's lanes gathered
  * under their divider's word (the three dormant lanes are one *Dormant*), in the server's order.
  * A group's count is its lanes' together, a floor ("50+") when any of them stopped at the server's
- * bound; its rows are each lane's best, every row saying its own standing.
+ * bound; its rows are each lane's best, every row saying its own standing. A lane with more matches
+ * than the server's best few is a `more` — the way to the rest, in that lane's own list.
  */
 export function othersFrom(others: OtherStandings): BodyGroup[] {
   const groups: BodyGroup[] = [];
   for (const g of others.groups) {
     const label = standingGroupWord(g.lane);
     const rows = g.rows.map(rowFromLibrary);
+    const more =
+      g.capped || g.count > g.rows.length
+        ? [{ lane: g.lane, count: g.count, capped: g.capped }]
+        : [];
     const at = groups.findIndex((x) => x.key === label);
     const held = groups[at];
     if (held === undefined) {
-      groups.push({ key: label, label, rows, count: g.count, capped: g.capped });
+      groups.push({ key: label, label, rows, count: g.count, capped: g.capped, more });
     } else {
       groups[at] = {
         ...held,
         rows: [...held.rows, ...rows],
         count: (held.count ?? 0) + g.count,
         capped: held.capped === true || g.capped,
+        more: [...(held.more ?? []), ...more],
       };
     }
   }

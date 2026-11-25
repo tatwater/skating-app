@@ -466,6 +466,30 @@ describe('profiles.syncFromClerk', () => {
     expect((await t.run((ctx) => ctx.db.get(id)))?.email).toBe('new@example.com');
   });
 
+  test('clears a stored Clerk silhouette on the next open: the person shows their initials', async () => {
+    const t = convexTest(schema, modules);
+    const id = await onboardAda(t, 'clerk_ada');
+    const silhouette = `https://img.clerk.com/${Buffer.from(
+      JSON.stringify({ type: 'default', iid: 'ins_1', rid: 'user_1' }),
+    ).toString('base64url')}`;
+    // Stored before the rule: every avatar on dev is one.
+    await t.run((ctx) => ctx.db.patch(id, { profileImageUrl: silhouette }));
+
+    await t
+      .withIdentity({ subject: 'clerk_ada', pictureUrl: silhouette })
+      .mutation(api.profiles.syncFromClerk, {});
+    expect((await t.run((ctx) => ctx.db.get(id)))?.profileImageUrl).toBeUndefined();
+
+    // A photo of their own, uploaded later, is stored as ever.
+    const photo = `https://img.clerk.com/${Buffer.from(
+      JSON.stringify({ type: 'proxy', src: 'https://images.clerk.dev/uploaded/img_1' }),
+    ).toString('base64url')}`;
+    await t
+      .withIdentity({ subject: 'clerk_ada', pictureUrl: photo })
+      .mutation(api.profiles.syncFromClerk, {});
+    expect((await t.run((ctx) => ctx.db.get(id)))?.profileImageUrl).toBe(photo);
+  });
+
   test('an unmapped claim leaves the mirror alone rather than clearing it', async () => {
     const t = convexTest(schema, modules);
     const id = await onboardAda(t, 'clerk_ada');
