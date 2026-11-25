@@ -291,6 +291,19 @@ describe('the bay task — a new bay', () => {
     expect(mocks.writes).toEqual([]);
   });
 
+  it('the claim carries the drawing as it stands, so a map re-created mid-task puts it back', async () => {
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await user.click(await screen.findByRole('button', { name: /Draw by chord/ }));
+    expect(claim().engine).not.toHaveProperty('mouth');
+    finishChord();
+    expect(claim().engine).toMatchObject({ kind: 'chord', mouth: MOUTH });
+    await user.click(within(task()).getByRole('button', { name: 'Freehand' }));
+    expect(claim().engine).not.toHaveProperty('polygon');
+    traceRing();
+    expect(claim().engine).toMatchObject({ kind: 'ring', polygon: RING });
+  });
+
   it('a viewer who can’t shape bays is offered none of it', async () => {
     mocks.denied = new Set(['body.shape']);
     render(<Mounted />);
@@ -344,13 +357,66 @@ describe('the bay task — arrivals', () => {
     expect(mocks.claim).toBeNull();
   });
 
-  it('an ask past the read’s bound is never called closed', async () => {
+  it('a save that settles after the console was left still lands, and sends no one back', async () => {
+    mocks.search = { task: 'rq2', from: '/admin/inbox?lane=places&item=rq2' };
+    set(api.corpusRequests.openBayRequestsForBody, {
+      bays: [
+        {
+          requestId: 'rq2',
+          requestIds: ['rq2'],
+          name: 'Shaker cove',
+          aliases: [],
+          notes: [],
+          askers: 1,
+          createdAt: 1,
+        },
+      ],
+      more: false,
+    });
+    let settle: (answer: { subAreaId: string }) => void = () => {};
+    mocks.answer[getFunctionName(api.subAreas.createFromChord)] = () =>
+      new Promise((resolve) => {
+        settle = resolve;
+      });
+    const user = userEvent.setup();
+    const view = render(<Mounted />);
+    const box = await screen.findByRole('group', { name: 'Bay request · from the Inbox' });
+    finishChord();
+    await user.click(within(box).getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(sent(api.subAreas.createFromChord)).toHaveLength(1));
+    // The moderator goes elsewhere while the write is out.
+    view.unmount();
+    await act(async () => settle({ subAreaId: 'bay-new' }));
+    await waitFor(() => expect(mocks.announce).toHaveBeenCalled());
+    expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('asks for the ask it arrived for by its id, so one past the read’s bound still opens', async () => {
     mocks.search = { task: 'rq9' };
-    set(api.corpusRequests.openBayRequestsForBody, { bays: [], more: true });
+    mocks.results.set(
+      `${getFunctionName(api.corpusRequests.openBayRequestsForBody)}|${JSON.stringify({
+        waterBodyId: MASCOMA_ID,
+        including: 'rq9',
+      })}`,
+      {
+        bays: [
+          {
+            requestId: 'rq9',
+            requestIds: ['rq9'],
+            name: 'Late cove',
+            aliases: [],
+            notes: [],
+            askers: 1,
+            createdAt: 1,
+          },
+        ],
+        more: true,
+      },
+    );
     render(<Mounted />);
-    await waitFor(() => expect(toasts.map((t) => t.title)).toContain('Nothing to draw'));
-    expect(toasts[0]?.description).not.toMatch(/isn’t open/);
-    expect(mocks.claim).toBeNull();
+    await waitFor(() => expect(mocks.claim).not.toBeNull());
+    expect(within(task()).getByDisplayValue('Late cove')).toBeVisible();
+    expect(toasts).toEqual([]);
   });
 
   it('a read that fails says so and lets the arrival go, rather than sit armed and silent', async () => {

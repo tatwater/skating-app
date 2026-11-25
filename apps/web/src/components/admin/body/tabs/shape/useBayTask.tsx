@@ -3,7 +3,7 @@ import type { Id } from '@skating/convex/dataModel';
 import type { SubAreaMouth } from '@skating/core';
 import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
-import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { isFailed, loaded, read, useConsoleReads } from '@/components/admin/reads/consoleReads';
 import { sayRefusal } from '@/components/admin/said';
@@ -84,7 +84,11 @@ export function useBayTask({
   const reads = useConsoleReads({
     asks:
       search.task !== undefined
-        ? read(api.corpusRequests.openBayRequestsForBody, { waterBodyId })
+        ? read(api.corpusRequests.openBayRequestsForBody, {
+            waterBodyId,
+            // The ask arrived for is read by its id when the bounded list leaves it out.
+            including: search.task as Id<'waterBodyRequests'>,
+          })
         : null,
     landmarks:
       search.promote !== undefined ? read(api.landmarks.listForEditor, { waterBodyId }) : null,
@@ -120,14 +124,8 @@ export function useBayTask({
     const task = search.task;
     const row = asks.bays.find((b) => b.requestId === task || b.requestIds.includes(task as never));
     if (row === undefined) {
-      sayRefusal({
-        title: 'Nothing to draw',
-        // The read takes the lake's oldest open asks up to its bound: past it, an ask can be open
-        // and still not in it.
-        description: asks.more
-          ? 'That ask isn’t among the open asks this page could read for this lake.'
-          : 'That ask isn’t open any more.',
-      });
+      // The read names the ask arrived for even past its bound, so a miss is an ask closed since.
+      sayRefusal({ title: 'Nothing to draw', description: 'That ask isn’t open any more.' });
     } else {
       setDraft(
         startDraft(
@@ -190,14 +188,25 @@ export function useBayTask({
         ? {
             kind: 'chord',
             parent,
-            ...(t.kind === 'mouth' && t.mouth !== null ? { mouth: t.mouth } : {}),
+            // The mouth as it stands, so a map re-created mid-task (a theme switch) puts back
+            // what was drawn or moved, not what the task started from.
+            ...(draft.mouth !== null
+              ? { mouth: draft.mouth }
+              : t.kind === 'mouth' && t.mouth !== null
+                ? { mouth: t.mouth }
+                : {}),
             onChange: (state, mouth, preview) =>
               setDraft((d) => (d === null ? d : withChord(d, state, mouth, preview))),
           }
         : draft.way === 'freehand' && !draft.ringUnavailable
           ? {
               kind: 'ring',
-              ...(t.kind === 'redraw' && t.polygon !== null ? { polygon: t.polygon } : {}),
+              // The ring as it stands, as the chord's mouth is.
+              ...(draft.shape?.type === 'Polygon'
+                ? { polygon: draft.shape }
+                : t.kind === 'redraw' && t.polygon !== null
+                  ? { polygon: t.polygon }
+                  : {}),
               onChange: (polygon) => setDraft((d) => (d === null ? d : withRing(d, polygon))),
               onUnavailable: () =>
                 setDraft((d) => (d === null ? d : { ...d, ringUnavailable: true })),
@@ -222,6 +231,20 @@ export function useBayTask({
   const redrawWrite = useMutation(api.subAreas.redraw);
   const updateChord = useMutation(api.subAreas.updateChord);
   const { act } = useTabAction(bodyId);
+
+  // A save outlives its task (`act` settles after the tab unmounts, by design): what it does after
+  // the write — clear the draft, light the bay, go back to the Inbox — is the task's, so it happens
+  // only while that same task is still the one open. The write and its receipt land regardless.
+  const openSession = useRef<number | null>(null);
+  useEffect(() => {
+    openSession.current = draft?.session ?? null;
+  }, [draft?.session]);
+  useEffect(
+    () => () => {
+      openSession.current = null;
+    },
+    [],
+  );
 
   const save = async () => {
     if (draft === null || saving || saveBlocker(draft) !== null) return;
@@ -295,7 +318,7 @@ export function useBayTask({
           { title, target: subArea(t.subAreaId) },
         );
       }
-      if (!landed) return;
+      if (!landed || openSession.current !== d.session) return;
       setDraft(null);
       if (returnAfter) {
         setReturnAfter(false);

@@ -1078,6 +1078,45 @@ describe('name_bay — the sub-area queue', () => {
     expect((await t.run((ctx) => ctx.db.get(requestId)))?.status).toBe('approved');
   });
 
+  test('an ask past the read’s bound is read by its id when the reader arrived for it (B01-6a)', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const founder = await seedUser(t, 'founder');
+    const id = await seedBody(t);
+    const ask = (name: string, createdAt: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_bay',
+          status: 'open',
+          requesterId: founder.id,
+          coord: NOTCH,
+          waterBodyId: id,
+          name,
+          nameKey: name.toLowerCase(),
+          createdAt,
+        }),
+      );
+    for (let i = 0; i < QUEUE_CAP; i++) await ask(`Bay ${i}`, i);
+    const late = await ask('Late cove', QUEUE_CAP + 1);
+    const plain = await mod.as.query(api.corpusRequests.openBayRequestsForBody, {
+      waterBodyId: id,
+    });
+    expect(plain.more).toBe(true);
+    expect(plain.bays.some((b) => b.requestIds.includes(late))).toBe(false);
+    const arrived = await mod.as.query(api.corpusRequests.openBayRequestsForBody, {
+      waterBodyId: id,
+      including: late,
+    });
+    expect(arrived.bays.find((b) => b.requestIds.includes(late))?.name).toBe('Late cove');
+    // A closed ask is not brought in.
+    await t.run((ctx) => ctx.db.patch(late, { status: 'declined' }));
+    const closed = await mod.as.query(api.corpusRequests.openBayRequestsForBody, {
+      waterBodyId: id,
+      including: late,
+    });
+    expect(closed.bays.some((b) => b.requestIds.includes(late))).toBe(false);
+  });
+
   test('the editor’s queue flies only to a real point — a drawer ask carries the lake’s own', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
