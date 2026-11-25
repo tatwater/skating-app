@@ -79,6 +79,7 @@ import type * as lib_bodyGeo from "../lib/bodyGeo.js";
 import type * as lib_bodyLibrary from "../lib/bodyLibrary.js";
 import type * as lib_bodyNames from "../lib/bodyNames.js";
 import type * as lib_bodySummary from "../lib/bodySummary.js";
+import type * as lib_campaignRuns from "../lib/campaignRuns.js";
 import type * as lib_cellIndex from "../lib/cellIndex.js";
 import type * as lib_cellScan from "../lib/cellScan.js";
 import type * as lib_clerkEmail from "../lib/clerkEmail.js";
@@ -308,6 +309,7 @@ declare const fullApi: ApiFromModules<{
   "lib/bodyLibrary": typeof lib_bodyLibrary;
   "lib/bodyNames": typeof lib_bodyNames;
   "lib/bodySummary": typeof lib_bodySummary;
+  "lib/campaignRuns": typeof lib_campaignRuns;
   "lib/cellIndex": typeof lib_cellIndex;
   "lib/cellScan": typeof lib_cellScan;
   "lib/clerkEmail": typeof lib_clerkEmail;

@@ -36,6 +36,7 @@ import type { Doc, Id } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
 import { geoFactsOf, placesOf, townsWithStateOf } from './bodyGeo';
 import { openAsksFor } from './bodyLibrary';
+import { campaignRunOf } from './campaignRuns';
 import { type CorpusCan, corpusCan } from './corpusRules';
 
 // ── The views (the briefs' snippets) ──────────────────────────────────────────────────────────────
@@ -370,18 +371,18 @@ export async function taskOfRef(
   return [...decided].sort((a, b) => (b.decidedAt ?? 0) - (a.decidedAt ?? 0))[0] ?? null;
 }
 
-/** The run of the campaign that last re-affirmed the body (and so asserted its reasons). */
+/**
+ * The merge-or-load run of the campaign that last re-affirmed the body (and so asserted its
+ * reasons) — never a by-hand pass that carries the campaign's id after it, so the day is the
+ * campaign's, as the Overview's *last campaign* is.
+ */
 async function raisedByOf(
   ctx: QueryCtx,
   body: Doc<'waterBodies'>,
 ): Promise<{ campaignId: string; at: number } | null> {
   const campaignId = body.lastCampaignId;
   if (campaignId === undefined) return null;
-  const run = await ctx.db
-    .query('importRuns')
-    .withIndex('by_campaign', (q) => q.eq('campaignId', campaignId))
-    .order('desc')
-    .first();
+  const run = await campaignRunOf(ctx, campaignId);
   return run === null ? null : { campaignId, at: run.startedAt };
 }
 

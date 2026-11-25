@@ -24,6 +24,7 @@ import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { inboxPending } from './inboxItems';
 import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
+import { lastCampaignRun } from './lib/campaignRuns';
 import { countDedupDecisions } from './lib/dedupQueue';
 import { readInboxLanes } from './lib/inboxViews';
 import { readOpenFlags } from './lib/openFlags';
@@ -85,22 +86,6 @@ export const overview = query({
 // ── The Corpus card's tasks ─────────────────────────────────────────────────────────────────────
 
 /**
- * How far back the last campaign's read looks past legacy retire rows. Retirements follow a load one
- * to a campaign, so a run of more than a couple between two loads would be an operator re-running
- * it; past this many the read answers `null` for that kind rather than scan.
- */
-const LEGACY_RETIRE_LOOKBACK = 20;
-
-/**
- * A `retire-absorbed` row written before it had its own kind: `canonical_water`, labeled by
- * `scripts/etl/src/retireAbsorbed.ts` (with " (dry run)" after a dry one). It folds rows away, so it
- * is no campaign's load.
- */
-function isLegacyRetireRow(run: { kind: string; label: string }): boolean {
-  return run.kind === 'canonical_water' && run.label.startsWith('retire absorbed duplicates');
-}
-
-/**
  * The Corpus card's tasks that `waterBodies.reviewQueueCounts` doesn't count (B01 §5.1). Its own
  * query, not part of `overview`: these change when a campaign runs or a moderator decides, and
  * `overview` re-runs on every flag filed — a body row carries its outline, so re-reading them on
@@ -152,17 +137,8 @@ export const corpusCounts = query({
 
     // The last campaign: its merge or its load. `retire-absorbed` has its own kind since B01-6a
     // (`absorbed_retire`), so it is not read here; the rows it wrote before that sit under
-    // `canonical_water` with their own label, and are passed over by it (`isLegacyRetireRow`).
-    let campaignAt: number | null = null;
-    for (const kind of ['corpus_merge', 'canonical_water'] as const) {
-      const recent = await ctx.db
-        .query('importRuns')
-        .withIndex('by_kind_started', (q) => q.eq('kind', kind))
-        .order('desc')
-        .take(LEGACY_RETIRE_LOOKBACK);
-      const last = recent.find((run) => !isLegacyRetireRow(run));
-      if (last && (campaignAt === null || last.startedAt > campaignAt)) campaignAt = last.startedAt;
-    }
+    // `canonical_water` with their own label, and are passed over by it (`lib/campaignRuns.ts`).
+    const campaignAt = (await lastCampaignRun(ctx))?.startedAt ?? null;
 
     return {
       // A queue read that stopped short leaves a floor, and the figure says so.

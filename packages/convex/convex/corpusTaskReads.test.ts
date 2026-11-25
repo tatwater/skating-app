@@ -891,10 +891,17 @@ describe('item', () => {
     expect(none?.attached).toEqual({ reports: 0, landmarks: 0, asks: 0, capped: false });
 
     await t.run(async (ctx) => {
-      for (const startedAt of [NOW - 2000, NOW - 1000]) {
+      // The campaign's merge and load, then by-hand passes that carry its id after them: the floor
+      // prune, and a retirement from before it had its own kind. The campaign's day is its load's.
+      for (const [kind, label, startedAt] of [
+        ['corpus_merge', 'corpus merge', NOW - 2000],
+        ['canonical_water', 'canonical water', NOW - 1000],
+        ['floor_prune', 'prune below the area floor', NOW - 500],
+        ['canonical_water', 'retire absorbed duplicates', NOW - 400],
+      ] as const) {
         await ctx.db.insert('importRuns', {
-          kind: 'canonical_water',
-          label: 'canonical water',
+          kind,
+          label,
           campaignId: 'n7-4-20261012',
           deployment: 'test',
           isProd: false,
