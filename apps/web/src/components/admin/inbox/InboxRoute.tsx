@@ -5,6 +5,10 @@ import { useMemo, useRef, useState } from 'react';
 
 import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
+import { useCorpusLanes } from '../corpus/list/taskReads';
+import { firstOpenLane, openTotal } from '../corpus/taskLanes';
+import { taskSearchFor } from '../corpus/taskSearch';
+import { openTasks } from '../corpus/words/corpusWords';
 import { LOCK_START, lockSeenOf, nextLock } from '../inspector/lockModel';
 import { isFailed, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
@@ -23,7 +27,7 @@ import {
 } from './inboxSearch';
 import type { InspectorState } from './inspector/InboxInspector';
 import { localMidnight } from './lanes/laneModel';
-import type { ZeroToday } from './list/InboxZero';
+import { ZeroLinks, type ZeroToday } from './list/InboxZero';
 import { decidedSince } from './list/inboxModel';
 import {
   useDecidedFirstPage,
@@ -100,6 +104,20 @@ export function InboxRoute() {
     lanes.allOpen === 0;
   const todayRead = useInboxToday(dayNow, dayStart, canRead && atZero);
   const decidedRead = useDecidedFirstPage(listNow, canRead && atZero);
+  // *Not in the inbox*: what waits in Corpus's task lanes, read only at zero, and the way there —
+  // the first lane with an open task. No count while the server is still filing its tasks.
+  const canCorpus = can('corpus.read');
+  const corpusLanes = useCorpusLanes(listNow, canCorpus && atZero).shown;
+  const corpusLine =
+    corpusLanes === undefined || corpusLanes.pending
+      ? undefined
+      : openTasks(openTotal(corpusLanes));
+  const corpusLink = canCorpus ? (
+    <Link
+      to="/admin/corpus"
+      search={taskSearchFor({ lane: firstOpenLane(corpusLanes), tab: null, item: null, q: '' })}
+    />
+  ) : undefined;
 
   // ── The open item and its lock ──────────────────────────────────────────────────────────────
   // A `ticket:` ref to a viewer without support's read is refused by the read itself; it isn't
@@ -195,63 +213,74 @@ export function InboxRoute() {
   return (
     // The unmerge's live state where a merge is refused with `unmerging` (the Drawn lever).
     <UnmergeLiveProvider>
-      <InboxView
-        lanes={lanes}
-        canReadSupport={canSupport}
-        query={query}
-        onQueryChange={(next) =>
-          go(placeAfter(query, next, query.item !== null && openedFromList.current === query.item))
-        }
-        list={{
-          status: pages.status,
-          rows: pages.rows,
-          pending: pages.pending,
-          retryPending: pages.failure?.pending === true,
-        }}
-        onLoadMore={pages.loadMore}
-        {...(pages.failure !== null && { onRetryList: pages.failure.retry })}
-        tail={tail}
-        zero={atZero ? { day: zeroDay } : null}
-        inspector={inspector}
-        onOpenItem={(itemId, from) => {
-          openedFromList.current = itemId;
-          go({ ...query, item: itemId }, query.item !== null);
-          // From the keys, focus follows into the item; a press leaves it where the pointer is.
-          if (from === 'keys') inspectorRef.current?.focus();
-        }}
-        onCloseItem={() => go({ ...query, item: null }, true)}
-        {...(query.from !== null && {
-          onReturn: () => void navigate({ ...routerTarget(query.from as string) } as never),
-        })}
-        now={now}
-        linkFor={linkFor}
-        filterName={filterName}
-        {...(can('body.read') && {
-          bodySearch: {
-            onQuery: setBodyQ,
-            results: bodyResults,
-            failure: searchFailure(found.bodies),
-          },
-        })}
-        {...(can('people.read') && {
-          personSearch: {
-            onQuery: setPersonQ,
-            results: personResults,
-            failure: searchFailure(found.people),
-          },
-        })}
-        onNamed={(id, name) => setNamed({ id, name })}
-        inspectorRef={inspectorRef}
-        countsNote={
-          <ReadNote
-            data-slot="counts-error"
-            className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
-            reads={[lanesRead.state]}
-          >
-            {COUNTS_FAILED}
-          </ReadNote>
-        }
-      />
+      <ZeroLinks value={corpusLink === undefined ? {} : { corpus: corpusLink }}>
+        <InboxView
+          lanes={lanes}
+          canReadSupport={canSupport}
+          query={query}
+          onQueryChange={(next) =>
+            go(
+              placeAfter(query, next, query.item !== null && openedFromList.current === query.item),
+            )
+          }
+          list={{
+            status: pages.status,
+            rows: pages.rows,
+            pending: pages.pending,
+            retryPending: pages.failure?.pending === true,
+          }}
+          onLoadMore={pages.loadMore}
+          {...(pages.failure !== null && { onRetryList: pages.failure.retry })}
+          tail={tail}
+          zero={
+            atZero
+              ? {
+                  day: zeroDay,
+                  ...(corpusLine !== undefined && { notInInbox: { corpus: corpusLine } }),
+                }
+              : null
+          }
+          inspector={inspector}
+          onOpenItem={(itemId, from) => {
+            openedFromList.current = itemId;
+            go({ ...query, item: itemId }, query.item !== null);
+            // From the keys, focus follows into the item; a press leaves it where the pointer is.
+            if (from === 'keys') inspectorRef.current?.focus();
+          }}
+          onCloseItem={() => go({ ...query, item: null }, true)}
+          {...(query.from !== null && {
+            onReturn: () => void navigate({ ...routerTarget(query.from as string) } as never),
+          })}
+          now={now}
+          linkFor={linkFor}
+          filterName={filterName}
+          {...(can('body.read') && {
+            bodySearch: {
+              onQuery: setBodyQ,
+              results: bodyResults,
+              failure: searchFailure(found.bodies),
+            },
+          })}
+          {...(can('people.read') && {
+            personSearch: {
+              onQuery: setPersonQ,
+              results: personResults,
+              failure: searchFailure(found.people),
+            },
+          })}
+          onNamed={(id, name) => setNamed({ id, name })}
+          inspectorRef={inspectorRef}
+          countsNote={
+            <ReadNote
+              data-slot="counts-error"
+              className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
+              reads={[lanesRead.state]}
+            >
+              {COUNTS_FAILED}
+            </ReadNote>
+          }
+        />
+      </ZeroLinks>
     </UnmergeLiveProvider>
   );
 }

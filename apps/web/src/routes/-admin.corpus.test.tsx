@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { taskLaneById } from '../components/admin/corpus/taskLanes';
 import { CORPUS_TASKS } from '../components/admin/overview/overviewData';
 import { overviewHref } from '../components/admin/overview/overviewLinks';
 
@@ -20,18 +21,22 @@ describe('the Corpus route', () => {
     expect(route.path).toBe('/admin/corpus');
   });
 
-  // Home's documented `/admin/corpus?task=…` (`overviewHref`) is rewritten to the old pages before
-  // it is linked (`consolePathFor`); a hand-typed one still lands on the library's default lane.
-  it.each(CORPUS_TASKS)(
-    'takes ?task=%s without choking: the default lane, nothing kept',
-    (task) => {
-      const search = Object.fromEntries(
-        new URLSearchParams(overviewHref({ kind: 'corpus', task }).split('?')[1]),
-      );
-      expect(search).toEqual({ task });
-      expect(route.options.validateSearch(search)).toEqual({});
-    },
-  );
+  // Home's documented links (`overviewHref`) name a lane: a built one is kept, with nothing else;
+  // one not built yet lands on the library's default lane, never an error.
+  it.each(CORPUS_TASKS)('takes Home’s link for %s', (task) => {
+    const href = overviewHref({ kind: 'corpus', task });
+    const search = Object.fromEntries(new URLSearchParams(href.split('?')[1] ?? ''));
+    const kept = route.options.validateSearch(search);
+    if (search.lane !== undefined && taskLaneById(search.lane) !== null) {
+      expect(kept).toEqual({ lane: search.lane });
+    } else {
+      expect(kept).toEqual({});
+    }
+  });
+
+  it('drops a stale ?task= from before the lanes', () => {
+    expect(route.options.validateSearch({ task: 'nameConflicts' })).toEqual({});
+  });
 
   it('keeps the library’s own params beside a stray task', () => {
     expect(

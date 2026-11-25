@@ -90,6 +90,10 @@ export const MORE_TO_READ = 'More to read';
 /** The next page, on its way (the Inbox's words). */
 export const LOADING_MORE = 'Loading more';
 
+/** Inbox Zero's Corpus line: "552 open tasks", "Nothing open". */
+export const openTasks = (n: number) =>
+  n === 0 ? 'Nothing open' : `${n.toLocaleString('en-US')} open ${n === 1 ? 'task' : 'tasks'}`;
+
 /** The tab over every open task of the lane. */
 export const TAB_ALL = 'All';
 /** The lane's decided tasks, newest first. */

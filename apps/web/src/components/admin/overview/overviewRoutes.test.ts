@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { routerTarget } from '@/lib/routerTarget';
+import { taskLaneById } from '../corpus/taskLanes';
 import { modeAt, usesOldShell } from '../shell/consoleNav';
-import { type ActionRow, CORPUS_TASKS, INBOX_LANES } from './overviewData';
+import { type ActionRow, CORPUS_TASKS, type CorpusTask, INBOX_LANES } from './overviewData';
 import type { OverviewTarget } from './overviewLinks';
 
 import { consolePathFor, feedTargetPath } from './overviewRoutes';
@@ -49,8 +50,6 @@ describe('Home’s links, until the new modes land', () => {
   const targets: OverviewTarget[] = [
     { kind: 'inbox' },
     ...INBOX_LANES.map((lane) => ({ kind: 'inbox', lane }) as const),
-    { kind: 'corpus' },
-    ...CORPUS_TASKS.map((task) => ({ kind: 'corpus', task }) as const),
     { kind: 'machinery' },
     { kind: 'body', id: 'k1/7' },
   ];
@@ -67,15 +66,40 @@ describe('Home’s links, until the new modes land', () => {
     },
   );
 
-  // `/admin/corpus` is a real route now (the library), but Corpus's tasks aren't built: Home's
-  // *Corpus* rows still open the old page that does each task, never the library.
-  it.each([
-    { kind: 'corpus' },
-    ...CORPUS_TASKS.map((task) => ({ kind: 'corpus', task }) as const),
-  ] as const)('keeps %o on its old page, off the Corpus library', (target) => {
-    const path = consolePathFor(target) as string;
-    expect(path.startsWith('/admin/water')).toBe(true);
-    expect(modeAt(routerTarget(path).to)?.id).not.toBe('corpus');
+  /**
+   * Each Corpus row, task by task: a lane built opens in the Corpus mode (`?lane=`), every other
+   * still opens the old page that does its work — never the library's default lane (D293). The
+   * table pins the whole list, so a lane that lands (6b–6d) moves its row here, and the last PR
+   * drops the old-page half.
+   */
+  const CORPUS_PATHS: Record<CorpusTask | 'none', string> = {
+    none: '/admin/water/review',
+    duplicates: '/admin/water/review',
+    nameConflicts: '/admin/corpus?lane=name-conflicts',
+    classConflicts: '/admin/corpus?lane=class-conflicts',
+    contested: '/admin/water/review',
+    orphanBays: '/admin/water/review',
+    chordRefits: '/admin/water/review',
+    placeNames: '/admin/water/place-names',
+    preIcePass: '/admin/water/standing',
+    enrichment: '/admin/water/review',
+  };
+  it.each(Object.entries(CORPUS_PATHS))('opens the Corpus row %s at %s', (task, path) => {
+    const target: OverviewTarget =
+      task === 'none' ? { kind: 'corpus' } : { kind: 'corpus', task: task as CorpusTask };
+    expect(consolePathFor(target)).toBe(path);
+    const { to } = routerTarget(path);
+    if (path.startsWith('/admin/corpus')) {
+      expect(modeAt(to)?.id).toBe('corpus');
+      // …at a lane the route keeps (built), never the library's default.
+      expect(taskLaneById(routerTarget(path).search?.lane as string)).not.toBeNull();
+    } else {
+      expect(usesOldShell(path)).toBe(true);
+    }
+  });
+
+  it('lists every Corpus task in its table', () => {
+    expect(Object.keys(CORPUS_PATHS).sort()).toEqual([...CORPUS_TASKS, 'none'].sort());
   });
 
   it.each([

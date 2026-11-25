@@ -230,8 +230,13 @@ describe('overviewHref', () => {
   it('sends each target to its mode', () => {
     expect(overviewHref({ kind: 'inbox' })).toBe('/admin/inbox');
     expect(overviewHref({ kind: 'corpus', task: 'duplicates' })).toBe(
-      '/admin/corpus?task=duplicates',
+      '/admin/corpus?lane=duplicates',
     );
+    expect(overviewHref({ kind: 'corpus', task: 'nameConflicts' })).toBe(
+      '/admin/corpus?lane=name-conflicts',
+    );
+    // A row that isn't a lane opens the mode.
+    expect(overviewHref({ kind: 'corpus', task: 'enrichment' })).toBe('/admin/corpus');
     expect(overviewHref({ kind: 'corpus' })).toBe('/admin/corpus');
     expect(overviewHref({ kind: 'people' })).toBe('/admin/people');
     expect(overviewHref({ kind: 'people', list: 'banned' })).toBe('/admin/people?lane=banned');
@@ -547,6 +552,13 @@ describe('useOverviewHome', () => {
     convex.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
       'name-conflict': { count: 3, capped: false, advisory: true },
       'duplicate-candidate': { count: 8, capped: false, advisory: false },
+    });
+    convex.results.set(getFunctionName(api.corpusTasks.lanes), {
+      lanes: {
+        nameConflicts: { open: 3, facets: {} },
+        classConflicts: { open: 0, facets: {} },
+      },
+      pending: false,
     });
     convex.results.set(getFunctionName(api.console.corpusCounts), {
       duplicates: { count: 4, capped: false },

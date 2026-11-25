@@ -68,6 +68,24 @@ export const TASK_LANE_LIST: readonly TaskLaneEntry[] = CORPUS_TASK_LANES.map(
   (task) => TASK_LANES[task] as TaskLaneEntry,
 );
 
+/**
+ * Where the Corpus's tasks start from elsewhere (Inbox Zero's *Corpus →*): the first lane, in the
+ * sidebar's order, with an open task — or the first lane when none has one, or no count is read.
+ */
+export function firstOpenLane(
+  lanes: { lanes: Record<CorpusTaskLane, { open: number }> } | undefined,
+): TaskLaneEntry {
+  return (
+    TASK_LANE_LIST.find((l) => (lanes?.lanes[l.task].open ?? 0) > 0) ??
+    (TASK_LANE_LIST[0] as TaskLaneEntry)
+  );
+}
+
+/** Every task lane's open tasks, added up. */
+export function openTotal(lanes: { lanes: Record<CorpusTaskLane, { open: number }> }): number {
+  return TASK_LANE_LIST.reduce((sum, l) => sum + lanes.lanes[l.task].open, 0);
+}
+
 /** The task lane a URL id names, or `null` (a library lane's id, a lane not built, junk). */
 export function taskLaneById(id: string | undefined): TaskLaneEntry | null {
   return TASK_LANE_LIST.find((l) => l.id === id) ?? null;
