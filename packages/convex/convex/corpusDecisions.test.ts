@@ -13,6 +13,7 @@ import { describe, expect, test } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { SHOWN_PICK } from './corpusWrites';
+import { capturingAudit, writeAudit } from './lib/audit';
 import { ALREADY_SHOWN, type CorpusVerb, corpusCan, NOT_A_CATALOG_NAME } from './lib/corpusRules';
 import { syncBodyTasks, TASK_LEFT, taskKeyOf } from './lib/corpusTasks';
 import { SETTLE_ASKED_AGAIN } from './lib/undoHandlersCorpus';
@@ -613,6 +614,70 @@ describe('undo: overtaken', () => {
       'This question has closed since',
     );
     expect((await rowsOn(t, bodyId)).map((r) => r.action)).toEqual(['settle_review_reason']);
+  });
+});
+
+describe('undo: the offer matches the run', () => {
+  test('a Keep whose settle no longer stands on the body is never offered, nor run', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod');
+    const bodyId = await seedBody(t, ['name-conflict']);
+    const task = await taskOf(t, bodyId, 'name-conflict');
+    const { actionId } = await mod.as.mutation(api.corpusWrites.decideName, {
+      taskId: task._id,
+      pick: SHOWN_PICK,
+    });
+    // The settle's entry gone with no task asking again (a campaign that dropped it, with no row).
+    await t.run((ctx) => ctx.db.patch(bodyId, { reviewSettled: undefined }));
+    expect(
+      await t.query(internal.moderation.undoOfferForRow, { actorId: mod.id, actionId }),
+    ).toEqual({ undoable: false });
+    await expect(mod.as.mutation(api.undo.run, { actionId })).rejects.toThrow(SETTLE_ASKED_AGAIN);
+  });
+});
+
+describe('capturingAudit: the domain write’s row, scoped to its own call', () => {
+  test('two captures in one mutation each see only their own rows; a nested one, both', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod');
+    const bodyId = await seedBody(t, []);
+    const write = (ctx: Parameters<typeof writeAudit>[0]) =>
+      writeAudit(ctx, {
+        actorId: mod.id,
+        action: 'set_class',
+        targetType: 'waterbody',
+        targetId: bodyId,
+        reason: 'test',
+      });
+    const seen = await t.run(async (ctx) => {
+      await write(ctx); // outside any capture
+      const first = await capturingAudit(ctx, () => write(ctx));
+      const second = await capturingAudit(ctx, async () => {
+        await write(ctx);
+        return capturingAudit(ctx, () => write(ctx));
+      });
+      const failed = await capturingAudit(ctx, async () => {
+        await write(ctx);
+        throw new Error('refused');
+      }).catch(() => 'threw');
+      const after = await capturingAudit(ctx, () => write(ctx));
+      return {
+        first: first.rows.length,
+        outer: second.rows.length,
+        inner: second.value.rows.length,
+        failed,
+        after: after.rows.length,
+        firstIsItsOwn: first.rows[0]?.actionId === first.value,
+      };
+    });
+    expect(seen).toEqual({
+      first: 1,
+      outer: 2,
+      inner: 1,
+      failed: 'threw',
+      after: 1,
+      firstIsItsOwn: true,
+    });
   });
 });
 
