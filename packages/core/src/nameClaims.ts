@@ -81,9 +81,10 @@ export interface NameClaim {
   readonly source: ClaimSource;
   readonly value: string;
   /**
-   * Every catalog publishing this spelling, in rank order, `source` first (B01-6a). Absent on a
-   * claim stored before the campaign that records it, and on a moderator's own claim. After T0 the
-   * ETL's `nameClaimsOf` and `distinctNameClaims` carry it (S2's).
+   * Every catalog publishing this spelling, `source` first and the rest in rank order (B01-6a).
+   * Absent on a claim stored before the campaign that records it, and on a moderator's own claim:
+   * then `source` is the one catalog known, and nothing says the others agree. The merge records it
+   * (`nameClaimsOf`), and {@link distinctNameClaims} folds it when it folds a spelling.
    */
   readonly sources?: ClaimSource[];
 }
@@ -105,19 +106,39 @@ function key(value: string): string {
  *
  * First claim of a given string wins, so a caller that passes claims in authority order gets the
  * most authoritative source attached to each spelling.
+ *
+ * **Every catalog behind a spelling is kept** (B01-6a): the claims a spelling folds pool their
+ * `sources` — the first claim's `source` first, the rest in `NAME_SOURCE_RANK` order, each once — so
+ * the Name conflicts lane can draw *GNIS · NHD · 3DHP* where three catalogs agree. Only when **every**
+ * claim folded into it recorded its `sources`: a spelling with one claim from before the campaign
+ * that records them stays unrecorded, since a list that left that claim's other catalogs out would
+ * say the catalogs agree when nobody knows. `source` and `value` are exactly what they were before
+ * `sources` existed (a property test holds that).
  */
 export function distinctNameClaims(claims: readonly NameClaim[]): NameClaim[] {
-  const seen = new Set<string>();
-  const out: NameClaim[] = [];
+  const kept = new Map<string, { claim: NameClaim; sources: ClaimSource[] | null }>();
   for (const claim of claims) {
     const value = claim.value.trim();
     if (value.length === 0) continue;
     const k = key(value);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push({ source: claim.source, value });
+    const recorded = claim.sources === undefined ? null : [claim.source, ...claim.sources];
+    const first = kept.get(k);
+    if (first === undefined) {
+      kept.set(k, { claim: { source: claim.source, value }, sources: recorded });
+    } else {
+      first.sources =
+        first.sources === null || recorded === null ? null : [...first.sources, ...recorded];
+    }
   }
-  return out;
+  return [...kept.values()].map(({ claim, sources }) =>
+    sources === null ? claim : { ...claim, sources: rankedSources(claim.source, sources) },
+  );
+}
+
+/** `first`, then every other catalog in `pooled` once, in `NAME_SOURCE_RANK` order. */
+function rankedSources(first: ClaimSource, pooled: readonly ClaimSource[]): ClaimSource[] {
+  const rest = [...new Set(pooled)].filter((s) => s !== first);
+  return [first, ...rest.sort((a, b) => NAME_SOURCE_RANK[a] - NAME_SOURCE_RANK[b])];
 }
 
 /**

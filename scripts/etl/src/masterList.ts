@@ -108,11 +108,43 @@ export type KeptBody = Merged & {
   gnisIdFromGazetteer?: string | undefined;
   /** Other kept bodies this one overlaps — the duplicate sweep's finding. */
   duplicateOf?: string[] | undefined;
-  /** Every publisher's name for this water, winner first — see `nameClaimsOf`. */
-  nameClaims: { source: ClaimSource; value: string }[];
-  /** Every catalog's class for this water (B01-3d): what the Names tab shows per catalog. */
-  classClaims: { source: ClaimSource; value: WaterBodyClass }[];
+  /**
+   * Every publisher's name for this water, winner first, each with every catalog publishing its
+   * spelling (B01-6a) — see `nameClaimsOf`.
+   */
+  nameClaims: { source: ClaimSource; value: string; sources?: ClaimSource[] }[];
+  /**
+   * Every catalog's class for this water (B01-3d): what the Names tab shows per catalog — with the
+   * catalog's own token (`nhd:fcode=46600`, the member's `sourceToken`) and that feature's area
+   * (B01-6a), which the merge held and dropped before.
+   */
+  classClaims: ClassClaim[];
+  /**
+   * The catalogs that **refused** this water outright while another classed it (B01-6a): each
+   * refusing member's own token and area, at most {@link CLASS_REFUSALS_MAX}. `[]` when none refused.
+   * Kept only in the run stats before; stored now so the Contested lane can read which catalog
+   * refused, with what token (D306).
+   */
+  classRefusals: ClassRefusal[];
 };
+
+/** One catalog's class for a body, as the merge kept it (B01-6a: with its token and area). */
+export type ClassClaim = {
+  source: ClaimSource;
+  value: WaterBodyClass;
+  token: string;
+  areaSqM: number;
+};
+
+/** One catalog's outright refusal of a body another catalog classed (B01-6a). */
+export type ClassRefusal = { source: ClaimSource; token: string; areaSqM: number };
+
+/**
+ * The refusals kept on one body — the schema's "at most eight, as the class claims". A group is a
+ * handful of features; one refused by more than eight would be a chained merge, and its first eight
+ * say as much as all of them.
+ */
+export const CLASS_REFUSALS_MAX = 8;
 
 /**
  * A bay that is an arm of a body we keep — **a sub-area, not a body** (founder, 2026-08-06).
@@ -935,9 +967,22 @@ export function buildMasterList(input: MasterListInput): MasterList {
       }
     }
 
-    const classClaims = group.members
+    // Each member's own token and area ride on its claim (B01-6a): the token is the catalog's
+    // (`sourceToken`), not the ladder's, since the board names what the catalog published.
+    const classClaims: ClassClaim[] = group.members
       .filter((m) => m.cls !== null)
-      .map((m) => ({ source: m.source, value: m.cls as WaterBodyClass }));
+      .map((m) => ({
+        source: m.source,
+        value: m.cls as WaterBodyClass,
+        token: m.sourceToken,
+        areaSqM: m.areaSqM,
+      }));
+    // The refusing members, kept rather than tallied (B01-6a, D306): the dissent stats below count
+    // them; the body now carries them.
+    const classRefusals: ClassRefusal[] = group.members
+      .filter((m) => m.cls === null)
+      .slice(0, CLASS_REFUSALS_MAX)
+      .map((m) => ({ source: m.source, token: m.sourceToken, areaSqM: m.areaSqM }));
     // Counted before `scoreBody` swallows it — see `MasterListStats.settledWetland`.
     if (settledWetlandDissent(classClaims)) stats.settledWetland++;
     const scores = scoreBody({
@@ -998,6 +1043,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       // where it actually supplied the name rather than where it merely agreed with a catalog.
       nameClaims: nameClaimsOf(group.members, namedByGnis ? name : undefined),
       classClaims,
+      classRefusals,
       inRegionFraction: inRegionFraction(group, boundaryGrid),
     });
     pending.set(group.key, {
@@ -1144,6 +1190,7 @@ export function emitCanonicalBodies(kept: readonly KeptBody[], towns: TownLayer)
         reviewReasons: k.reviewReasons,
         nameClaims: k.nameClaims,
         classClaims: k.classClaims,
+        classRefusals: k.classRefusals,
         ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
       });
       emitted.push({

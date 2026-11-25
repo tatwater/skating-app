@@ -1,4 +1,4 @@
-import { LIBRARY_LANES, type LibraryListLane } from '@skating/core';
+import { type CorpusTaskLane, LIBRARY_LANES, type LibraryListLane } from '@skating/core';
 
 import type { BodyColumnId, BodySort, BodyStandingKey } from './bodiesModel';
 import type { FacetId } from './bodyFacets';
@@ -25,8 +25,8 @@ export type BodyLaneRead =
   | { kind: 'library'; lane: LibraryListLane }
   /** Bodies the viewer opened, newest first. */
   | { kind: 'openedByViewer' }
-  /** A Corpus task's queue (the founder may fold them in as lanes). */
-  | { kind: 'corpusTask'; task: string };
+  /** A Corpus task lane's queue (`BodiesRoute` draws it as `CorpusTaskView`). */
+  | { kind: 'corpusTask'; task: CorpusTaskLane };
 
 export interface BodyLane {
   /** The lane in the URL (`?lane=`) and in the sidebar. */
