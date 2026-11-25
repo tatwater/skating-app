@@ -4762,7 +4762,10 @@ export default defineSchema({
     .index('by_source_created', ['source', 'createdAt'])
     // And one person's placed put-ins by time, for *first-time*: `by_created_by` also holds every
     // derived marker a moderator hid (the hide is attributed to them), which would crowd them out.
-    .index('by_created_by_source_created', ['createdByUserId', 'source', 'createdAt']),
+    .index('by_created_by_source_created', ['createdByUserId', 'source', 'createdAt'])
+    // The launches one lot serves (B01-6b, D300): a lot placed by hand is removed by its undo only
+    // while no put-in links to it. `eq()` only: the field is optional and the index not sparse.
+    .index('by_parking_area', ['parkingAreaId']),
 
   /**
    * Where the car goes (A06d / D72) — modeled apart from `putIns`, and many-to-many with bodies.

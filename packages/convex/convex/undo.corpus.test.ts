@@ -530,7 +530,7 @@ describe('undo: approach kind and posted rules (D226)', () => {
     expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachKindOverride).toBeUndefined();
   });
 
-  test('a change that also moved the parking, or predates undo, is refused', async () => {
+  test('a change that also moved the parking puts the lot back too (D300); one before undo is refused', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
     const putInId = await seedPutIn(t, waterBodyId);
@@ -542,7 +542,16 @@ describe('undo: approach kind and posted rules (D226)', () => {
       approachKindOverride: 'hike_in',
     });
     const set = await newestOn(t, 'putIn', putInId);
-    await expect(mod.as.mutation(api.undo.run, { actionId: set._id })).rejects.toThrow(/parking/);
+    await mod.as.mutation(api.undo.run, { actionId: set._id });
+    const back = await t.run((ctx) => ctx.db.get(putInId));
+    expect(back?.parkingAreaId).toBeUndefined();
+    expect(back?.approachKindOverride).toBeUndefined();
+    expect(back?.approachMeters).toBeUndefined();
+    // Undoing that links the lot again, with its assertion.
+    const undoRow = await newestOn(t, 'putIn', putInId);
+    await mod.as.mutation(api.undo.run, { actionId: undoRow._id });
+    const again = await t.run((ctx) => ctx.db.get(putInId));
+    expect(again).toMatchObject({ parkingAreaId: lotId, approachKindOverride: 'hike_in' });
 
     const old = await seedOldRow(t, mod.id, {
       action: 'set_approach_kind',

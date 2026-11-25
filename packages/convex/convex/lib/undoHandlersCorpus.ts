@@ -10,7 +10,7 @@
  * the survivor's own footprint and the card's count.
  */
 
-import { type DormancyReason, isLeaving, standingOf } from '@skating/core';
+import { type DormancyReason, isLeaving, requiresHikeInAssertion, standingOf } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import { internal } from '../_generated/api';
 import type { Doc, Id } from '../_generated/dataModel';
@@ -22,7 +22,7 @@ import {
   unretractAlertImpl,
   unretractRefusal,
 } from '../accessAlerts';
-import { setPutInAccessImpl } from '../accessPoints';
+import { relinkRefusalOf, setPutInAccessImpl } from '../accessPoints';
 import type { ElevatedRole } from '../admin';
 import { demoteImpl, type FeatureShape, shapeRefusal, updateShapeImpl } from '../bodyFeatures';
 import { unmergeImpl } from '../hazards';
@@ -933,25 +933,49 @@ interface ApproachPrev {
   approachKindOverride: Doc<'putIns'>['approachKindOverride'] | null;
 }
 
-/** set_approach_kind → the override it replaced (or none), through the same gate and recompute. */
+/** Whether an approach row also moved the put-in's lot (a link that asserted the kind with it). */
+const movedTheLot = (row: Doc<'moderationActions'>): boolean => {
+  const { prev, parkingAreaId } = meta(row) as { prev: ApproachPrev; parkingAreaId?: string };
+  return (parkingAreaId ?? null) !== prev.parkingAreaId;
+};
+
+/**
+ * set_approach_kind → the override it replaced (or none), through the same gate and recompute. A row
+ * that also moved the put-in's lot — a link made with the hike-in asserted (B01-6b) — puts back the
+ * lot it replaced too (or none), and the walk is routed again (D300). Refused where the write would
+ * be: the put-in or the lot gone, or a walk past the D144 line left unasserted.
+ */
 const undoApproachKind: UndoHandler = {
-  blocked: (row) => {
-    const { prev, parkingAreaId } = meta(row) as { prev?: ApproachPrev; parkingAreaId?: string };
-    if (prev === undefined) return PREDATES;
-    if ((parkingAreaId ?? null) !== prev.parkingAreaId) {
-      return 'This also changed the put-in’s parking, which undo can’t put back yet; set the approach by hand.';
-    }
-    return null;
-  },
+  blocked: (row) => (meta(row).prev === undefined ? PREDATES : null),
   undoTakesAway: (row) =>
     UNDO_POLICY.set_approach_kind.takesAway((meta(row).prev as ApproachPrev).approachKindOverride),
+  refusalCost: () => ({ bytes: ROW_MAX.launch + ROW_MAX.putIn, reads: 2 }),
+  refusal: async (_ctx, row, read) => {
+    const { prev } = meta(row) as { prev: ApproachPrev };
+    const putIn = await read.row('launch', row.targetId as Id<'putIns'>);
+    if (!movedTheLot(row)) {
+      if (!putIn) return 'That put-in no longer exists.';
+      return requiresHikeInAssertion(putIn.approachMeters) &&
+        prev.approachKindOverride !== 'hike_in'
+        ? 'The walk to that put-in is past the hike-in line now, so its approach can’t go back unasserted. Set it by hand.'
+        : null;
+    }
+    // A lot's row weighs at most a document (an imported lot's name is uncapped).
+    const lot = prev.parkingAreaId === null ? 'none' : await read.row('putIn', prev.parkingAreaId);
+    return relinkRefusalOf(putIn, lot, prev.approachKindOverride);
+  },
   run: ({ ctx, actor, row, reason }) => {
-    const { approachKindOverride } = meta(row).prev as ApproachPrev;
+    const { approachKindOverride, parkingAreaId } = meta(row).prev as ApproachPrev;
     return setPutInAccessImpl(ctx, actor, {
       putInId: row.targetId as Id<'putIns'>,
       ...(approachKindOverride === null || approachKindOverride === undefined
         ? { clearApproachOverride: true }
         : { approachKindOverride }),
+      ...(movedTheLot(row)
+        ? parkingAreaId !== null
+          ? { parkingAreaId }
+          : { clearParking: true }
+        : {}),
       reason,
     });
   },
