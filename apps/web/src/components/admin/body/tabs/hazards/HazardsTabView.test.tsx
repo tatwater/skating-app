@@ -3,7 +3,6 @@ import userEvent from '@testing-library/user-event';
 import fc from 'fast-check';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 import { MIN_MARK } from '@/components/kit/day-strips';
-import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
 import {
@@ -632,41 +631,51 @@ describe('HazardsTabView — the winters, a day at a time', () => {
   });
 });
 
-describe('HazardsTabView — tools not built yet', () => {
-  it('draws Add a feature and Edit shape, each saying it is not available yet — never Mark a hazard', () => {
-    render(<HazardsTabView {...base} onAddFeature={UNAVAILABLE} onEditShape={UNAVAILABLE} />);
-    expect(screen.getByRole('button', { name: /Add a feature/ })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+describe('HazardsTabView — the feature tools', () => {
+  it('draws Add a feature and Edit shape as live buttons — never Mark a hazard', async () => {
+    const onAddFeature = vi.fn<() => void>();
+    render(<HazardsTabView {...base} onAddFeature={onAddFeature} />);
+    const add = screen.getByRole('button', { name: /Add a feature/ });
+    expect(add).not.toHaveAttribute('data-unavailable');
+    await userEvent.click(add);
+    expect(onAddFeature).toHaveBeenCalledTimes(1);
     // Hazards are marked from the skater apps alone (D299).
     expect(screen.queryByRole('button', { name: /Mark a hazard/ })).toBeNull();
     for (const b of screen.getAllByRole('button', { name: 'Edit shape' })) {
-      expect(b).toHaveAttribute('data-unavailable');
+      expect(b).not.toHaveAttribute('data-unavailable');
     }
   });
 
-  it('their keys act only while the pane has focus: the built ones run, the unbuilt ones say so', async () => {
+  it('F adds a feature only while the pane has focus', async () => {
     const onAddFeature = vi.fn<() => void>();
-    const { rerender } = render(<HazardsTabView {...base} onAddFeature={onAddFeature} />);
-    act(() => screen.getByRole('button', { name: '2026–27' }).focus());
+    render(<HazardsTabView {...base} onAddFeature={onAddFeature} />);
     await userEvent.keyboard('f');
-    expect(onAddFeature).toHaveBeenCalledTimes(1);
-    rerender(<HazardsTabView {...base} onAddFeature={UNAVAILABLE} />);
+    expect(onAddFeature).not.toHaveBeenCalled();
     act(() => screen.getByRole('button', { name: '2026–27' }).focus());
     await userEvent.keyboard('f');
     expect(onAddFeature).toHaveBeenCalledTimes(1);
   });
 
-  it('a past winter draws none of them', () => {
+  it('while a feature is drawn, its task stands over the tab and the tools rest', async () => {
+    const onAddFeature = vi.fn<() => void>();
     render(
       <HazardsTabView
         {...base}
-        season={SEASON - 1}
-        onAddFeature={UNAVAILABLE}
-        onEditShape={UNAVAILABLE}
+        onAddFeature={onAddFeature}
+        task={<fieldset aria-label="New known feature" />}
       />,
     );
+    expect(screen.getByRole('group', { name: 'New known feature' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Add a feature|Edit shape/ })).toBeNull();
+    act(() => screen.getByRole('button', { name: '2026–27' }).focus());
+    await userEvent.keyboard('f');
+    expect(onAddFeature).not.toHaveBeenCalled();
+    // Demoting stays: it is no drawing.
+    expect(screen.getAllByRole('button', { name: 'Demote' }).length).toBeGreaterThan(0);
+  });
+
+  it('a past winter draws none of them', () => {
+    render(<HazardsTabView {...base} season={SEASON - 1} />);
     expect(
       screen.queryByRole('button', { name: /Mark a hazard|Add a feature|Edit shape/ }),
     ).toBeNull();

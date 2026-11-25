@@ -49,6 +49,9 @@ export const MAX_PUT_IN_NAME_LENGTH = 60;
  */
 export const MAX_STANDING_NOTE_LENGTH = 160;
 
+/** A moderator's note on a known feature (a spring, a gas hole): it shows on the lake, one sentence. */
+export const MAX_BODY_FEATURE_NOTE_LENGTH = 280;
+
 /**
  * A catalog's machine id for a row (`node/123`, `way/…`, a GNIS or NHD key, `osm:relation/…`) —
  * every format ingested is under 40 characters; this is three times that.

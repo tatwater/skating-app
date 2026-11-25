@@ -37,6 +37,7 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/frame/BodyConsoleRoute.tsx': 'the boost: sendFor',
   'components/admin/body/tabs/access/AccessTab.tsx': 'the pick store; act (sendFor)',
   'components/admin/body/tabs/hazards/HazardsTab.tsx': 'sendFor',
+  'components/admin/body/tabs/hazards/useFeatureTask.tsx': 'the feature task: act (sendFor)',
   'components/admin/body/tabs/imagery/ImageryTab.tsx': 'sendFor, through the pick store',
   'components/admin/body/tabs/links/LinksTab.tsx': 'the list queue; sendFor',
   'components/admin/body/tabs/names/NamesTab.tsx': 'the pick store; the list queue; sendFor',

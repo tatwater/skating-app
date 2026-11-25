@@ -1,7 +1,9 @@
+import { MAX_BODY_FEATURE_NOTE_LENGTH } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
 import { api } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { MAX_FEATURE_POSITIONS } from './bodyFeatures';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -194,6 +196,126 @@ describe('bodyFeatures.create', () => {
         reason: '   ',
       }),
     ).rejects.toThrow(/reason is required/);
+  });
+});
+
+describe('bodyFeatures.create checks the shape as a redraw does (D300)', () => {
+  test('refuses a feature off its lake', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const waterBodyId = await seedBody(t);
+    await expect(
+      admin.as.mutation(api.bodyFeatures.create, {
+        waterBodyId,
+        type: 'spring_current',
+        geometryKind: 'point_radius',
+        geometry: { type: 'Point', coordinates: [5, 5] },
+        radiusMeters: 30,
+        reason: 'Authored by hand: Spring / current.',
+      }),
+    ).rejects.toThrow(/has to be on its lake/);
+    expect(await t.run((ctx) => ctx.db.query('bodyFeatures').collect())).toEqual([]);
+  });
+
+  test('refuses a shape past the position cap, by its count', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const waterBodyId = await seedBody(t);
+    const coordinates = Array.from({ length: MAX_FEATURE_POSITIONS + 1 }, (_, i) => [
+      0.1 + (0.8 * i) / MAX_FEATURE_POSITIONS,
+      0.5,
+    ]);
+    await expect(
+      admin.as.mutation(api.bodyFeatures.create, {
+        waterBodyId,
+        type: 'recurring_pressure_ridge',
+        geometryKind: 'line',
+        geometry: { type: 'LineString', coordinates },
+        bufferMeters: 15,
+        reason: 'Authored by hand: Recurring pressure ridge.',
+      }),
+    ).rejects.toThrow(`at most ${MAX_FEATURE_POSITIONS} points`);
+  });
+
+  test('takes a line at the cap, and a polygon, each on the lake', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const waterBodyId = await seedBody(t);
+    const coordinates = Array.from({ length: MAX_FEATURE_POSITIONS }, (_, i) => [
+      0.1 + (0.8 * i) / MAX_FEATURE_POSITIONS,
+      0.5,
+    ]);
+    const line = await admin.as.mutation(api.bodyFeatures.create, {
+      waterBodyId,
+      type: 'recurring_pressure_ridge',
+      geometryKind: 'line',
+      geometry: { type: 'LineString', coordinates },
+      bufferMeters: 15,
+      reason: 'Authored by hand: Recurring pressure ridge.',
+    });
+    const polygon = await admin.as.mutation(api.bodyFeatures.create, {
+      waterBodyId,
+      type: 'delta',
+      geometryKind: 'polygon',
+      geometry: {
+        type: 'Polygon',
+        coordinates: [
+          [
+            [0.2, 0.2],
+            [0.3, 0.2],
+            [0.3, 0.3],
+            [0.2, 0.2],
+          ],
+        ],
+      },
+      reason: 'Authored by hand: Delta.',
+    });
+    const rows = await t.run((ctx) => ctx.db.query('bodyFeatures').collect());
+    expect(rows.map((r) => [r._id, r.geometryKind])).toEqual([
+      [line, 'line'],
+      [polygon, 'polygon'],
+    ]);
+  });
+
+  test('refuses a line with no band', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const waterBodyId = await seedBody(t);
+    await expect(
+      admin.as.mutation(api.bodyFeatures.create, {
+        waterBodyId,
+        type: 'recurring_pressure_ridge',
+        geometryKind: 'line',
+        geometry: LINE,
+        reason: 'Authored by hand: Recurring pressure ridge.',
+      }),
+    ).rejects.toThrow(/Invalid body-feature geometry/);
+  });
+
+  test('refuses a note past its cap', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'admin', 'admin');
+    const waterBodyId = await seedBody(t);
+    const args = {
+      waterBodyId,
+      type: 'spring_current' as const,
+      geometryKind: 'point_radius' as const,
+      geometry: POINT,
+      radiusMeters: 30,
+      reason: 'Authored by hand: Spring / current.',
+    };
+    await expect(
+      admin.as.mutation(api.bodyFeatures.create, {
+        ...args,
+        note: 'x'.repeat(MAX_BODY_FEATURE_NOTE_LENGTH + 1),
+      }),
+    ).rejects.toThrow(/Keep the note under/);
+    await expect(
+      admin.as.mutation(api.bodyFeatures.create, {
+        ...args,
+        note: 'x'.repeat(MAX_BODY_FEATURE_NOTE_LENGTH),
+      }),
+    ).resolves.toBeTruthy();
   });
 });
 

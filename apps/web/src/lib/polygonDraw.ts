@@ -264,7 +264,11 @@ export function parsePastedPolygon(
   return { ok: true, polygon: geometry };
 }
 
-function unwrapGeometry(value: unknown): GeoJSON.Geometry | null {
+/**
+ * The geometry in a pasted GeoJSON value: a bare geometry, a `Feature`'s, or a one-feature
+ * `FeatureCollection`'s — `null` when there is none.
+ */
+export function unwrapGeometry(value: unknown): GeoJSON.Geometry | null {
   if (typeof value !== 'object' || value === null) return null;
   const node = value as { type?: string; geometry?: unknown; features?: unknown };
   if (node.type === 'FeatureCollection' && Array.isArray(node.features)) {
