@@ -23,7 +23,7 @@ import {
 import { type LotRow, litId } from './accessModel';
 
 /**
- * **The Access tab's map tasks, wired** (B01-6b, D300): the draft (`accessDraft`), its claim on the
+ * **The Access tab's map tasks, wired** (B01-6b, D313): the draft (`accessDraft`), its claim on the
  * console map (`frame/mapTool`'s point engine), and its save through the tab's writer
  * (`useTabAction`, a receipt with Undo; a refusal is a toast, and the task stays).
  *

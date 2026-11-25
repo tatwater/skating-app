@@ -13,7 +13,14 @@
  */
 
 import type { DeploymentTarget } from './deployment';
-import type { ImportRunCoverage, ImportRunKind, RunCount, RunFailure, RunStage } from './types';
+import type {
+  ImportRunCoverage,
+  ImportRunKind,
+  ImportRunScope,
+  RunCount,
+  RunFailure,
+  RunStage,
+} from './types';
 
 import process from 'node:process';
 
@@ -45,6 +52,11 @@ export interface RunLoggerOptions {
   /** Stages already known before the run starts — the archived extract, the filter command. */
   stages?: RunStage[];
   notes?: string[];
+  /**
+   * What the run set out to cover (D218): the pass, its states, and whether that is all of it.
+   * Stated at `start` and never after — a run's scope is its intent, not its outcome.
+   */
+  scope?: ImportRunScope;
   /**
    * The loader writes nothing (no `--apply`): the row's notes end with {@link DRY_RUN_NOTE} from
    * its start through its close — a close's own notes replace the start's on the server, so the
@@ -79,6 +91,9 @@ export class RunLogger {
         isProd: this.options.target.isProd,
         stages: this.options.stages ?? [],
         notes: labeled(this.options.dryRun === true, this.options.notes),
+        // Omitted, not `undefined`: the argv is JSON, and an older deployment's exact validator
+        // refuses a key it doesn't know only when the key is there.
+        ...(this.options.scope !== undefined && { scope: this.options.scope }),
       });
     });
   }

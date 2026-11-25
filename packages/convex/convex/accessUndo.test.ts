@@ -1,5 +1,5 @@
 /**
- * **Placing has an undo, every one** (B01-6b, D300): a put-in placed by hand is removed by its undo,
+ * **Placing has an undo, every one** (B01-6b, D313): a put-in placed by hand is removed by its undo,
  * a lot placed by hand is deleted with its lake links, a link puts back only which lot — and the walk
  * of a link is routed fresh, in the background, by ORS `foot-hiking`. Each acted through its real
  * mutation, undone through `api.undo.run`, the state read back; the engine's offer (`undoState`) is
@@ -111,7 +111,7 @@ const scheduledNames = (t: T) =>
 
 // ── A put-in placed by hand ───────────────────────────────────────────────────────────────────────
 
-describe('undo: a put-in placed by hand (D300)', () => {
+describe('undo: a put-in placed by hand (D313)', () => {
   async function placed() {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
@@ -295,7 +295,7 @@ describe('undo: a put-in placed by hand (D300)', () => {
 
 // ── A lot placed by hand ──────────────────────────────────────────────────────────────────────────
 
-describe('undo: a lot placed by hand (D300)', () => {
+describe('undo: a lot placed by hand (D313)', () => {
   async function lotPlaced() {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
@@ -442,7 +442,7 @@ describe('undo: a lot placed by hand (D300)', () => {
 
 // ── A link ────────────────────────────────────────────────────────────────────────────────────────
 
-describe('undo: a lot linked to a put-in (D300)', () => {
+describe('undo: a lot linked to a put-in (D313)', () => {
   async function linkedTwice() {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
@@ -592,7 +592,7 @@ describe('undo: a lot linked to a put-in (D300)', () => {
 
 // ── The walk, routed fresh ────────────────────────────────────────────────────────────────────────
 
-describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
+describe('a linked lot’s walk is routed by ORS foot-hiking (D313)', () => {
   async function linked(lotLng = -0.001) {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
@@ -614,11 +614,11 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
     return { t, waterBodyId, mod, putInId, lotId };
   }
 
-  /** An ORS answer: `meters` walked, `ascent` climbed, along `n` three-ordinate positions. */
   /** The link id a console link minted, which its route carries. */
   const linkIdOf = async (t: T, putInId: Id<'putIns'>) =>
     (await t.run((ctx) => ctx.db.get(putInId)))?.approachLinkId ?? 'none';
 
+  /** An ORS answer: `meters` walked, `ascent` climbed, along `n` three-ordinate positions. */
   function orsAnswer(meters: number, ascent: number, n = 3) {
     const coordinates = Array.from({ length: n }, (_, i) => [
       -0.001 + (0.001 * i) / (n - 1),
@@ -752,6 +752,36 @@ describe('a linked lot’s walk is routed by ORS foot-hiking (D300)', () => {
       }),
     ).toBe(true);
     expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachMeters).toBe(222);
+  });
+
+  test('a hike-in choice alone keeps the link, so its walk still lands; unlinking drops it', async () => {
+    const { t, mod, putInId, lotId } = await linked();
+    const first = await linkIdOf(t, putInId);
+    const pair = await t.query(internal.accessPoints.linkedPair, { putInId, parkingAreaId: lotId });
+    // The page sends only the choice when the lot stays as it is.
+    await mod.as.mutation(api.accessPoints.setPutInAccess, {
+      putInId,
+      approachKindOverride: 'hike_in',
+    });
+    expect(await linkIdOf(t, putInId)).toBe(first);
+    expect(await scheduledNames(t)).toEqual(['accessPoints:routeLinkedApproach']);
+    const answer = {
+      putInId,
+      parkingAreaId: lotId,
+      from: pair?.from ?? { lat: 0, lng: 0 },
+      to: pair?.to ?? { lat: 0, lng: 0 },
+      linkId: first,
+    };
+    expect(
+      await t.mutation(internal.accessPoints.storeRoutedApproach, { ...answer, meters: 333 }),
+    ).toBe(true);
+    expect(await t.run((ctx) => ctx.db.get(putInId))).toMatchObject({
+      approachMeters: 333,
+      approachRouted: true,
+      approachKindOverride: 'hike_in',
+    });
+    await mod.as.mutation(api.accessPoints.setPutInAccess, { putInId, clearParking: true });
+    expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachLinkId).toBeUndefined();
   });
 
   test('a stale answer never overwrites a newer link', async () => {

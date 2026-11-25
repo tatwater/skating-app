@@ -51,7 +51,7 @@ import {
   toMercatorBox,
 } from '@skating/core';
 import type * as maplibregl from 'maplibre-gl';
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { BANDS_LAYER_ID } from '../lib/depthBands';
 import { isTileResident, loadTile } from '../lib/imageryCache';
 import { composeImagery, compositeCanvasSize, imageryCorners } from '../lib/imageryCanvas';
@@ -177,6 +177,58 @@ export interface ImageryRevealOptions {
    * evidence they need, which is the ground just past the line they are about to move.
    */
   unmasked?: boolean;
+  /**
+   * The zoom below which nothing is fetched; {@link IMAGERY_MIN_ZOOM} unless said. The console map
+   * passes `0`: its camera is fenced to one body, so its widest view is still worth a photograph.
+   */
+  minZoom?: number;
+  /**
+   * Where the photograph's layer goes: the layer id it is inserted before. {@link aerialAnchorId}
+   * unless said — the console map has its own layer contract (`MAP_BANDS`) and names its band —
+   * and where a host's answers `undefined`, which to MapLibre is the top of the style.
+   * Read when the layer is added, never re-run for a change of function.
+   */
+  anchor?: (map: maplibregl.Map) => string | undefined;
+  /**
+   * Paint laid over the layer's own (`raster-opacity` 1, no fade) when it is added — the console
+   * map's dimming toward its ground, so its inks stay legible over a photograph. Read when the layer
+   * is added (a theme switch re-creates the map, so a new mode's paint arrives with the new map).
+   */
+  paint?: Readonly<Record<string, number>>;
+  /**
+   * Paint each cell as it lands, while nothing is on screen yet — the console's first view. Off by
+   * default: a masked reveal waits for the whole view, so a body's fill is never swapped for a
+   * photograph with a hole in it. Once a photograph is up, a new view swaps in whole either way, so
+   * a coarser picture already drawn is never traded for a sharper one with holes.
+   */
+  progressive?: boolean;
+  /**
+   * The current view's state as cells land — loading, then loaded or failed — and `null` when the
+   * layer comes down. Read through a ref, so a caller's fresh function never re-mounts the layer.
+   * See {@link RevealStatus}.
+   */
+  onStatusChange?: (status: RevealStatus | null) => void;
+}
+
+/**
+ * Where the view the reveal is drawing stands. `loading` is raised only when something has to be
+ * fetched (the same rule as `onLoadingChange`), and lasts until **every** cell the view wants has
+ * settled; `loaded` is all of them in; `failed` is at least one that didn't come (`failed` counts
+ * them — fewer than `cells` means part of the photograph is drawn). `shown` is whether a
+ * photograph is on screen at all, which a progressive first view sets before it is loaded.
+ */
+export interface RevealStatus {
+  phase: 'loading' | 'loaded' | 'failed';
+  cells: number;
+  arrived: number;
+  failed: number;
+  shown: boolean;
+}
+
+/** What the reveal hands back: a way to ask again for the view's cells that didn't come. */
+export interface ImageryReveal {
+  /** Refetch the current view's missing cells (a failed cell is never remembered, so it is asked anew). */
+  retry: () => void;
 }
 
 /**
@@ -192,9 +244,23 @@ export function useImageryReveal({
   loaded,
   masks,
   unmasked = false,
+  minZoom = IMAGERY_MIN_ZOOM,
+  anchor,
+  paint,
   onLoadingChange,
   onPaintedChange,
-}: ImageryRevealOptions): void {
+  progressive = false,
+  onStatusChange,
+}: ImageryRevealOptions): ImageryReveal {
+  const statusRef = useRef(onStatusChange);
+  statusRef.current = onStatusChange;
+  /** The status as last reported, so an unchanged one is not re-announced. */
+  const statusKeyRef = useRef<string | null>(null);
+  // Read where the layer is added, so a caller's fresh function or object never re-mounts it.
+  const anchorRef = useRef(anchor);
+  anchorRef.current = anchor;
+  const paintRef = useRef(paint);
+  paintRef.current = paint;
   // The canvas outlives individual fetches, so a pan reuses it rather than churning a DOM node and a
   // GPU texture per view.
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -259,109 +325,54 @@ export function useImageryReveal({
     let disposed = false;
     /** The view this hook is currently fetching for; a later one supersedes it. */
     let generation = 0;
-    /** The superseded view's fetches, so a pan stops paying for ground nobody is looking at. */
-    let inFlight: AbortController | null = null;
-
     /**
-     * Report the loading signal, at most once per change — see `loadingRef`.
+     * The cells in flight, by key — **shared by every view that wants them**, so a pan stops paying
+     * for ground nobody is looking at without abandoning ground it still is.
      *
-     * Every path that claims a generation reports the truth for the view it just superseded as well
-     * as its own, which is what makes "announce only when something is actually being fetched" safe.
+     * ⚠ It used to be one controller per view, aborted whole by the next. Measured against the live
+     * service (2026-11-25): a 15 px nudge one second into a cold first view aborted all four
+     * renders and asked the same four URLs again from zero — CloudFront keeps nothing of an
+     * aborted render — so every nudge of a slow map restarted its clock (10.4 s → 13.4 s there).
      */
-    const signalLoading = (next: boolean) => {
-      if (loadingRef.current === next) return;
-      loadingRef.current = next;
-      onLoadingChange?.(next);
+    const cells = new Map<string, { promise: Promise<ImageBitmap | null>; abort: () => void }>();
+    const fetchCell = (tile: ImageryTile): Promise<ImageBitmap | null> => {
+      const key = tileKey(tile);
+      const known = cells.get(key);
+      if (known) return known.promise;
+      const controller = new AbortController();
+      const promise = loadTile(tile, key, controller.signal).then((image) => {
+        // Settled: off the list, unless a drop already took it off (and a later view re-asked).
+        if (cells.get(key)?.promise === promise) cells.delete(key);
+        return image;
+      });
+      cells.set(key, { promise, abort: () => controller.abort() });
+      return promise;
+    };
+    /** Abandon every cell in flight that the view now wanted doesn't want. */
+    const dropCells = (wanted: ReadonlySet<string>) => {
+      for (const [key, entry] of cells) {
+        if (wanted.has(key)) continue;
+        entry.abort();
+        cells.delete(key);
+      }
+    };
+    const signalStatus = (status: RevealStatus | null) => {
+      const key =
+        status === null
+          ? null
+          : `${status.phase}|${status.cells}|${status.arrived}|${status.failed}|${status.shown}`;
+      if (key === statusKeyRef.current) return;
+      statusKeyRef.current = key;
+      statusRef.current?.(status);
     };
 
-    const refresh = async () => {
-      if (disposed) return;
-      const revealing = masksRef.current;
-      if (!revealing || revealing.length === 0) return;
-
-      // The usefulness floor. Leaving the last image up rather than clearing means a zoom out and
-      // back does not blink — and the layers come down with the effect anyway when the reveal ends.
-      //
-      // ⚠ **Checked before the generation is claimed.** Bumping `generation` and then bailing orphans
-      // whatever is in flight: it comes back, fails its own `mine !== generation` check, and never
-      // reaches `onLoadingChange?.(false)` — so the pulse runs for ever over a lake nothing is being
-      // fetched for. Every early exit above the claim, every exit below it settles the signal.
-      if (map.getZoom() < IMAGERY_MIN_ZOOM) return;
-
-      const bounds = map.getBounds();
-      const view = toMercatorBox({
-        minLat: bounds.getSouth(),
-        maxLat: bounds.getNorth(),
-        minLng: bounds.getWest(),
-        maxLng: bounds.getEast(),
-      });
-
-      const container = map.getContainer();
-      const devicePx = Math.max(1, container.clientWidth) * (window.devicePixelRatio || 1);
-      // What the screen could actually resolve, in projected meters — the sharpness we ask the grid
-      // for. It answers with the coarsest level that meets it, or a coarser one if that would cost
-      // more cells than the service tolerates in parallel.
-      const target = (view.maxX - view.minX) / devicePx;
-      const { level, tiles } = fitGridLevel(view, target);
-      const canvasBounds = tilesBounds(tiles);
-      if (!canvasBounds) return;
-
-      // **What this view would draw.** Compared before anything is fetched or painted, so a pan that
-      // resolves to the same cells and the same bodies stops here rather than repeating the work.
-      const signature = [
-        level,
-        tiles.map(tileKey).join(','),
-        revealing.map((entry) => entry.key).join(','),
-        unmasked,
-      ].join('|');
-      if (signature === drawnRef.current && map.getSource(IMAGERY_SOURCE_ID)) {
-        // ⚠ **Skipping the work still has to supersede the work already running.** A pan away and
-        // straight back leaves the earlier view's fetch in flight, and it passes its own
-        // `mine !== generation` check when it lands — so it paints *that* ground over the view we are
-        // actually sitting on and moves the source's coordinates with it, and nothing refreshes until
-        // the next `moveend`. The symptom is the photograph disappearing from a view it had already
-        // drawn. Claim the generation, drop the fetch, and settle its signal.
-        generation += 1;
-        inFlight?.abort();
-        inFlight = null;
-        signalLoading(false);
-        return;
-      }
-
-      const mine = ++generation;
-      // The concurrency cap is per *view*, and without this it was only ever per view: a drag fires a
-      // `moveend` a second, and ten unabandoned views is forty parallel cold renders against a service
-      // that starts answering 200-with-a-1-KB-body past about four. Superseding a view has to stop
-      // paying for it.
-      inFlight?.abort();
-      const controller = new AbortController();
-      inFlight = controller;
-
-      // **Announced only when something is actually going to be fetched.** Every cell already decoded
-      // in memory means this view costs no network at all, and flashing the wash over a lake whose
-      // photograph is about to be drawn synchronously is the signal crying wolf — which is worse than
-      // no signal, because it teaches the skater to ignore the one that means something.
-      const announces = tiles.some((tile: ImageryTile) => !isTileResident(tileKey(tile)));
-      signalLoading(announces);
-      // Every cell, concurrently — bounded by `AERIAL_MAX_TILES_PER_VIEW`, which is set from what the
-      // renderer tolerates rather than from what the network would allow.
-      const fetched = await Promise.all(
-        tiles.map(async (tile: ImageryTile) => {
-          const image = await loadTile(tile, tileKey(tile), controller.signal);
-          return image ? { tile, image } : null;
-        }),
-      );
-
-      // Superseded, or torn down, while the fetches were in flight. Drawing now would put ground the
-      // skater has already left back on screen.
-      if (disposed || mine !== generation) return;
-      signalLoading(false);
-
-      const present = fetched.filter((entry) => entry !== null);
-      // Nothing arrived at all: keep whatever is on screen. A blank reveal is strictly worse than a
-      // stale one, and this is also the shape a dead service takes.
-      if (present.length === 0) return;
-
+    /** Draw `present` on the canvas and put it on the map: the source moved, or added with its layer. */
+    const paintCells = (
+      present: { tile: ImageryTile; image: ImageBitmap }[],
+      revealing: readonly KeyedMask[],
+      canvasBounds: NonNullable<ReturnType<typeof tilesBounds>>,
+      level: number,
+    ) => {
       const size = compositeCanvasSize(canvasBounds, gridResolution(level));
       canvas.width = size.width;
       canvas.height = size.height;
@@ -375,21 +386,6 @@ export function useImageryReveal({
         featherMeters: AERIAL_MASK_METERS.feather,
         clip: !unmasked,
       });
-      // Recorded only once **every** cell arrived. A composite with a hole in it is not this view
-      // drawn: remembering it as drawn makes the hole permanent, because every later pan back
-      // computes the same signature and skips the redraw that would have filled it — and the bodies
-      // over that hole still have their `water-fill` suppressed by the painted set below.
-      drawnRef.current = present.length === tiles.length ? signature : null;
-      // The cartography's cue, and it is emitted here rather than when the set was decided — see
-      // `onPaintedChange`. Unmasked mode paints the whole box and replaces nobody's fill, so it
-      // reports nothing.
-      const painted = unmasked ? [] : revealing.map((entry) => entry.id);
-      const reported = painted.join(',');
-      if (reported !== reportedRef.current) {
-        reportedRef.current = reported;
-        onPaintedChange?.(painted);
-      }
-
       const corners = imageryCorners({
         minLat: mercatorYToLat(canvasBounds.minY),
         maxLat: mercatorYToLat(canvasBounds.maxY),
@@ -417,8 +413,8 @@ export function useImageryReveal({
           id: IMAGERY_LAYER_ID,
           type: 'raster',
           source: IMAGERY_SOURCE_ID,
-          paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
-        },
+          paint: { 'raster-opacity': 1, 'raster-fade-duration': 0, ...paintRef.current },
+        } as maplibregl.LayerSpecification,
         // **Always a layer id, never `undefined`.** `undefined` does not mean "wherever is sensible";
         // it means the top of the style — above the roads, above the pins, above the hazard layers
         // the D81 toggle exists to keep visible.
@@ -429,8 +425,181 @@ export function useImageryReveal({
         // *while a winter frame is up*. Zooming in then dropped the summer aerial over the February
         // picture and read as the winter frame vanishing. Mount order is not a z-order, so the order
         // is stated here instead.
-        aerialAnchorId(map),
+        //
+        // A host's anchor that names nothing (its own layers not in yet) falls back to this hook's
+        // own, as `useFreezeUpFrame`'s does — the rule above holds for a host too.
+        anchorRef.current?.(map) ?? aerialAnchorId(map),
       );
+    };
+
+    /**
+     * Report the loading signal, at most once per change — see `loadingRef`.
+     *
+     * Every path that claims a generation reports the truth for the view it just superseded as well
+     * as its own, which is what makes "announce only when something is actually being fetched" safe.
+     */
+    const signalLoading = (next: boolean) => {
+      if (loadingRef.current === next) return;
+      loadingRef.current = next;
+      onLoadingChange?.(next);
+    };
+
+    const refresh = async () => {
+      if (disposed) return;
+      const revealing = masksRef.current;
+      if (!revealing || revealing.length === 0) return;
+
+      // The usefulness floor. Leaving the last image up rather than clearing means a zoom out and
+      // back does not blink — and the layers come down with the effect anyway when the reveal ends.
+      //
+      // ⚠ **Checked before the generation is claimed.** Bumping `generation` and then bailing orphans
+      // whatever is in flight: it comes back, fails its own `mine !== generation` check, and never
+      // reaches `onLoadingChange?.(false)` — so the pulse runs for ever over a lake nothing is being
+      // fetched for. Every early exit above the claim, every exit below it settles the signal.
+      if (map.getZoom() < minZoom) return;
+
+      // **A pane that isn't on screen asks for nothing** — and, like the floor, before the claim. A
+      // hidden pane (a narrow page's map behind its list) measures zero, but MapLibre gives a zero
+      // container a 400 × 300 view, so `getBounds()` is still a real box — kilometers of it at the
+      // camera a hidden map is left at — while the screen it is sized against is zero pixels wide.
+      // The sharpness asked for is then the whole view per pixel, and the grid answers with a cell
+      // near its coarsest level (at the zoom the console's map loads at, a quarter of the world in
+      // one picture): fetched for ground nobody is looking at, and — if the service answers — on
+      // the map when the pane is shown, where a progressive host no longer paints the real view as
+      // its cells land. The zoom floor used to hide this (the console's map loads below it); a host
+      // with no floor (its `minZoom: 0`) meets it on every body opened with the switch left on.
+      // Showing the pane resizes the map, and a resize ends in `moveend`, so the view is asked for
+      // the moment it has a screen.
+      const container = map.getContainer();
+      if (!(container.clientWidth > 0 && container.clientHeight > 0)) return;
+
+      const bounds = map.getBounds();
+      const view = toMercatorBox({
+        minLat: bounds.getSouth(),
+        maxLat: bounds.getNorth(),
+        minLng: bounds.getWest(),
+        maxLng: bounds.getEast(),
+      });
+
+      const devicePx = container.clientWidth * (window.devicePixelRatio || 1);
+      // What the screen could actually resolve, in projected meters — the sharpness we ask the grid
+      // for. It answers with the coarsest level that meets it, or a coarser one if that would cost
+      // more cells than the service tolerates in parallel.
+      const target = (view.maxX - view.minX) / devicePx;
+      const { level, tiles } = fitGridLevel(view, target);
+      const canvasBounds = tilesBounds(tiles);
+      if (!canvasBounds) return;
+
+      // **What this view would draw.** Compared before anything is fetched or painted, so a pan that
+      // resolves to the same cells and the same bodies stops here rather than repeating the work.
+      const signature = [
+        level,
+        tiles.map(tileKey).join(','),
+        revealing.map((entry) => entry.key).join(','),
+        unmasked,
+      ].join('|');
+      if (signature === drawnRef.current && map.getSource(IMAGERY_SOURCE_ID)) {
+        // ⚠ **Skipping the work still has to supersede the work already running.** A pan away and
+        // straight back leaves the earlier view's fetch in flight, and it passes its own
+        // `mine !== generation` check when it lands — so it paints *that* ground over the view we are
+        // actually sitting on and moves the source's coordinates with it, and nothing refreshes until
+        // the next `moveend`. The symptom is the photograph disappearing from a view it had already
+        // drawn. Claim the generation, drop the fetch, and settle its signal.
+        generation += 1;
+        dropCells(new Set());
+        signalLoading(false);
+        signalStatus({
+          phase: 'loaded',
+          cells: tiles.length,
+          arrived: tiles.length,
+          failed: 0,
+          shown: true,
+        });
+        return;
+      }
+
+      const mine = ++generation;
+      // The concurrency cap is per *view*, and without this it was only ever per view: a drag fires a
+      // `moveend` a second, and ten unabandoned views is forty parallel cold renders against a service
+      // that starts answering 200-with-a-1-KB-body past about four. Superseding a view has to stop
+      // paying for it — for the cells it no longer wants; the ones it still wants keep coming.
+      dropCells(new Set(tiles.map(tileKey)));
+
+      // **Announced only when something is actually going to be fetched.** Every cell already decoded
+      // in memory means this view costs no network at all, and flashing the wash over a lake whose
+      // photograph is about to be drawn synchronously is the signal crying wolf — which is worse than
+      // no signal, because it teaches the skater to ignore the one that means something.
+      const announces = tiles.some((tile: ImageryTile) => !isTileResident(tileKey(tile)));
+      signalLoading(announces);
+      // A progressive host paints cells as they land only while nothing is on screen: over an
+      // existing photograph the new view swaps in whole, as before.
+      const progressiveHere = progressive && !map.getSource(IMAGERY_SOURCE_ID);
+      let arrived = 0;
+      let failed = 0;
+      const status = (phase: RevealStatus['phase']): RevealStatus => ({
+        phase,
+        cells: tiles.length,
+        arrived,
+        failed,
+        shown: map.getSource(IMAGERY_SOURCE_ID) !== undefined,
+      });
+      if (announces) signalStatus(status('loading'));
+      const landed: ({ tile: ImageryTile; image: ImageBitmap } | null)[] = tiles.map(() => null);
+      // Every cell, concurrently — bounded by `AERIAL_MAX_TILES_PER_VIEW`, which is set from what the
+      // renderer tolerates rather than from what the network would allow.
+      const fetched = await Promise.all(
+        tiles.map(async (tile: ImageryTile, index: number) => {
+          const image = await fetchCell(tile);
+          const entry = image ? { tile, image } : null;
+          if (disposed || mine !== generation) return entry;
+          if (entry) arrived += 1;
+          else failed += 1;
+          landed[index] = entry;
+          if (arrived + failed < tiles.length) {
+            if (progressiveHere && entry) {
+              paintCells(
+                landed.filter((cell) => cell !== null),
+                revealing,
+                canvasBounds,
+                level,
+              );
+            }
+            if (announces) signalStatus(status('loading'));
+          }
+          return entry;
+        }),
+      );
+
+      // Superseded, or torn down, while the fetches were in flight. Drawing now would put ground the
+      // skater has already left back on screen.
+      if (disposed || mine !== generation) return;
+      signalLoading(false);
+
+      const present = fetched.filter((entry) => entry !== null);
+      // Nothing arrived at all: keep whatever is on screen. A blank reveal is strictly worse than a
+      // stale one, and this is also the shape a dead service takes.
+      if (present.length === 0) {
+        signalStatus(status('failed'));
+        return;
+      }
+
+      paintCells(present, revealing, canvasBounds, level);
+      // Recorded only once **every** cell arrived. A composite with a hole in it is not this view
+      // drawn: remembering it as drawn makes the hole permanent, because every later pan back
+      // computes the same signature and skips the redraw that would have filled it — and the bodies
+      // over that hole still have their `water-fill` suppressed by the painted set below.
+      drawnRef.current = present.length === tiles.length ? signature : null;
+      // The cartography's cue, and it is emitted here rather than when the set was decided — see
+      // `onPaintedChange`. Unmasked mode paints the whole box and replaces nobody's fill, so it
+      // reports nothing.
+      const painted = unmasked ? [] : revealing.map((entry) => entry.id);
+      const reported = painted.join(',');
+      if (reported !== reportedRef.current) {
+        reportedRef.current = reported;
+        onPaintedChange?.(painted);
+      }
+
+      signalStatus(status(failed === 0 ? 'loaded' : 'failed'));
     };
 
     refreshRef.current = () => void refresh();
@@ -441,9 +610,10 @@ export function useImageryReveal({
 
     return () => {
       disposed = true;
-      inFlight?.abort();
+      dropCells(new Set());
       refreshRef.current = null;
       signalLoading(false);
+      signalStatus(null);
       // The photograph is about to be removed, so nothing is painted any more — without this the
       // fills would stay suppressed against a reveal that no longer exists.
       if (reportedRef.current !== '') {
@@ -457,7 +627,7 @@ export function useImageryReveal({
       if (map.getLayer(IMAGERY_LAYER_ID)) map.removeLayer(IMAGERY_LAYER_ID);
       if (map.getSource(IMAGERY_SOURCE_ID)) map.removeSource(IMAGERY_SOURCE_ID);
     };
-  }, [map, loaded, enabled, unmasked, onLoadingChange, onPaintedChange]);
+  }, [map, loaded, enabled, unmasked, minZoom, onLoadingChange, onPaintedChange, progressive]);
 
   // ── What is revealed, redrawn in place.
   //
@@ -468,6 +638,15 @@ export function useImageryReveal({
     drawnMasksRef.current = masks;
     refreshRef.current?.();
   }, [masks]);
+
+  // Asks the view again: a cell that failed was never remembered, so it is fetched anew; the ones
+  // that arrived are in memory and cost nothing. The answer is always reported, even one the same
+  // as before (failed again), so a caller waiting on it hears back.
+  const retry = useCallback(() => {
+    statusKeyRef.current = null;
+    refreshRef.current?.();
+  }, []);
+  return { retry };
 }
 
 /**

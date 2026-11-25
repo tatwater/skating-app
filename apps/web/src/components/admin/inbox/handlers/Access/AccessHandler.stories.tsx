@@ -4,8 +4,8 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { must } from '@/components/kit/storyKit';
 import { ThemePair } from '../../../../../../.storybook/theme';
-import { type DecidedState, InspectorFrame } from '../../inspector/InspectorFrame';
-import { InspectorProvider } from '../../inspector/inspectorContext';
+import { type DecidedState, InspectorFrame } from '../../../inspector/InspectorFrame';
+import { InspectorProvider } from '../../../inspector/inspectorContext';
 import { InboxMapStill } from '../../map/InboxMap';
 import { ItemMapView } from '../../map/ItemMap';
 import { ACCESS_MAP } from '../../map/itemMapFixtures';
@@ -173,7 +173,7 @@ export const DecidedByColleague: Story = {
         locked={{
           by: 'Sarah Berman',
           at: ACCESS_NOW - 600_000,
-          decision: 'ruled_accessible',
+          decisionWord: 'confirmed accessible',
           byMe: false,
           actionId: 'a1',
         }}

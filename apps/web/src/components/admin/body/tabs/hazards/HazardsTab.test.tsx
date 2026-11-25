@@ -107,7 +107,7 @@ describe('HazardsTab', () => {
       .filter((c) => c.name === 'hazards:listForBody')
       .map((c) => (c.args as { season: number }).season);
     expect(new Set(seasons).size).toBe(1);
-    // Hazards are marked from the skater apps alone (D299); a known feature is drawn here (D300).
+    // Hazards are marked from the skater apps alone (D299); a known feature is drawn here (D313).
     expect(screen.queryByRole('button', { name: /Mark a hazard/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Add a feature/ })).not.toHaveAttribute(
       'data-unavailable',

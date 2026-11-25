@@ -13,7 +13,7 @@ import type { BBoxLike } from '@/lib/mapSurface';
 import { unwrapGeometry } from '@/lib/polygonDraw';
 
 /**
- * **A known feature on the drawing board** (B01-6b, D300): the one piece of state the Hazards tab
+ * **A known feature on the drawing board** (B01-6b, D313): the one piece of state the Hazards tab
  * holds while the map draws a feature — what it is for, how it is drawn, the fields, and the shape
  * as it stands. Pure but for the session counter: the tab keeps it in state and steps it with these
  * functions, and the map tool claim is read off it.

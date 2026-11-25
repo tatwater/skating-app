@@ -4,7 +4,9 @@ import { Button } from '@/components/kit/button';
 import { ListEnd } from '@/components/kit/list-end';
 import { RetryNote } from '@/components/kit/retry-note';
 import { SkeletonText } from '@/components/kit/skeleton';
-
+import { InspectorFrame, InspectorHeadTitle } from '../../inspector/InspectorFrame';
+import { InspectorProvider } from '../../inspector/inspectorContext';
+import { isDecidedPhase, type LockPhase } from '../../inspector/lockModel';
 import type { InboxItemView } from '../list/inboxTypes';
 import {
   HISTORY,
@@ -18,9 +20,7 @@ import {
 } from '../words/inboxWords';
 import { ComingSoonLink } from './ComingSoonLink';
 import { HANDLERS, type HandlerKey, type InboxHandler, registeredHandler } from './handlerRegistry';
-import { InspectorFrame, InspectorHeadTitle } from './InspectorFrame';
-import { InspectorProvider } from './inspectorContext';
-import { decidedStateOf, isDecidedPhase, type LockPhase } from './lockModel';
+import { decidedStateOf } from './inboxLock';
 import { PlaceholderHandler } from './PlaceholderHandler';
 
 /**

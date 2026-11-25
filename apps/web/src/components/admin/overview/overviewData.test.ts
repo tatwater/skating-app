@@ -82,7 +82,7 @@ describe('the Inbox card', () => {
 });
 
 describe('the Corpus card', () => {
-  it('folds the intake reasons into the Corpus tasks', () => {
+  it('folds the intake reasons into the Corpus tasks, the dissent bodies a row of their own', () => {
     const corpus = corpusFromReviewCounts({
       'duplicate-candidate': { count: 200, capped: false, advisory: false },
       'same-source-duplicate': { count: 83, capped: false, advisory: false },
@@ -93,7 +93,9 @@ describe('the Corpus card', () => {
     });
     expect(corpus.duplicates).toEqual(c(283));
     expect(corpus.nameConflicts).toEqual(c(412));
-    expect(corpus.classConflicts).toEqual(c(140, true));
+    // Class conflicts are `class-conflict` alone, as their lane is; the dissent is Contested.
+    expect(corpus.classConflicts).toEqual(c(100));
+    expect(corpus.contested).toEqual(c(40, true));
     expect(corpus.orphanBays).toEqual(c(61));
     // What no read carries yet stays out until the route passes it.
     expect(corpus.chordRefits).toBeNull();
@@ -117,6 +119,19 @@ describe('the Corpus card', () => {
     // No record says when the pre-ice pass ran: it stays out, never "not run".
     expect(corpus.preIcePass).toBeNull();
     expect(corpus.enrichment).toBeNull();
+  });
+
+  it('counts a built lane from its tasks — the figures the lanes read gives — over the reason’s rows', () => {
+    const counts = {
+      'name-conflict': { count: 50, capped: true, advisory: true },
+      'class-conflict': { count: 9, capped: false, advisory: false },
+      'class-dissent': { count: 7, capped: false, advisory: false },
+    };
+    const corpus = corpusFromReviewCounts(counts, {}, { nameConflicts: 412, classConflicts: 0 });
+    expect(corpus.nameConflicts).toEqual(c(412));
+    expect(corpus.classConflicts).toEqual(c(0));
+    // The lane that isn't built still reads its reason.
+    expect(corpus.contested).toEqual(c(7));
   });
 
   it('counts a reason the server left out as zero, and takes the extras it is given', () => {

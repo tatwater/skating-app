@@ -223,7 +223,7 @@ describe('what the read serves reaches the page', () => {
 describe('the inspector’s zone', () => {
   it('reads the dormancy’s date in it, not the runner’s', async () => {
     const { RequestBody } = await import('./RequestView');
-    const { InspectorProvider } = await import('../../inspector/inspectorContext');
+    const { InspectorProvider } = await import('../../../inspector/inspectorContext');
     // 00:30 on 25 Sep in New York is still 24 Sep at UTC−11.
     const item = {
       ...activateShelved(),

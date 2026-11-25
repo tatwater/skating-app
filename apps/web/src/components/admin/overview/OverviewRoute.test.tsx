@@ -123,6 +123,13 @@ beforeEach(() => {
   mocks.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
     'duplicate-candidate': { count: 5, capped: false, advisory: false },
   });
+  mocks.results.set(getFunctionName(api.corpusTasks.lanes), {
+    lanes: {
+      nameConflicts: { open: 12, facets: {} },
+      classConflicts: { open: 4, facets: {} },
+    },
+    pending: false,
+  });
   mocks.results.set(getFunctionName(api.console.corpusCounts), {
     duplicates: count(3),
     chordRefits: count(0),
@@ -215,7 +222,7 @@ describe('the Overview at /admin', () => {
     expect(screen.getByText('Chord re-fits')).toBeInTheDocument();
   });
 
-  it('sends each link to the old page that does the work', () => {
+  it('sends each link to the mode that does the work, or the old page until it lands', () => {
     render(<OverviewRoute />);
     const row = (label: string) =>
       (screen.getByText(label).closest('[data-slot="count-row"]') as HTMLElement).querySelector(
@@ -225,6 +232,10 @@ describe('the Overview at /admin', () => {
     expect(row('Safety')).toHaveAttribute('href', '/admin/inbox?lane=safety');
     expect(row('Requests')).toHaveAttribute('href', '/admin/inbox?lane=requests');
     expect(row('Duplicates')).toHaveAttribute('href', '/admin/water/review');
+    // A built task lane opens in the Corpus mode; the dissent bodies' row keeps the old page.
+    expect(row('Name conflicts')).toHaveAttribute('href', '/admin/corpus?lane=name-conflicts');
+    expect(row('Class conflicts')).toHaveAttribute('href', '/admin/corpus?lane=class-conflicts');
+    expect(row('Contested as water')).toHaveAttribute('href', '/admin/water/review');
     // People has landed: its lists open as its lanes.
     expect(row('Banned')).toHaveAttribute('href', '/admin/people?lane=banned');
     expect(row('New this week')).toHaveAttribute('href', '/admin/people?lane=newest');

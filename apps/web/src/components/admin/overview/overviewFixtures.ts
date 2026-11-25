@@ -197,7 +197,8 @@ export const HOME: OverviewHomeData = {
   corpus: {
     duplicates: { count: 283, capped: false },
     nameConflicts: { count: 412, capped: false },
-    classConflicts: { count: 140, capped: false },
+    classConflicts: { count: 98, capped: false },
+    contested: { count: 42, capped: false },
     orphanBays: { count: 61, capped: false },
     chordRefits: { count: 2, capped: false },
     placeNames: { count: 237, capped: false },

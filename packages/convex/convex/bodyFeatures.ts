@@ -87,7 +87,7 @@ export const listRecent = query({
 
 /**
  * Create a known feature directly (the Body console's Hazards tab, the old editor, a seed). The
- * shape is checked as `updateShape` checks a redraw (D300): a valid point, line or polygon with its
+ * shape is checked as `updateShape` checks a redraw (D313): a valid point, line or polygon with its
  * width, at most {@link MAX_FEATURE_POSITIONS} positions, and a footprint on the lake's box.
  */
 export const create = mutation({
@@ -121,7 +121,7 @@ export const create = mutation({
         `Keep the note under ${MAX_BODY_FEATURE_NOTE_LENGTH} characters — it shows on the lake.`,
       );
     }
-    // One rule for a feature drawn and one redrawn (D300): the hazards' gate, the position cap, and
+    // One rule for a feature drawn and one redrawn (D313): the hazards' gate, the position cap, and
     // a footprint on the lake — `updateShape`'s own check, so a shape created here can be redrawn.
     checkedShape(
       {

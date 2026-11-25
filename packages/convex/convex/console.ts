@@ -24,6 +24,7 @@ import type { Id } from './_generated/dataModel';
 import { mutation, query } from './_generated/server';
 import { inboxPending } from './inboxItems';
 import { hasCapability, isLockedOut, requireCapability } from './lib/auth';
+import { lastCampaignRun } from './lib/campaignRuns';
 import { countDedupDecisions } from './lib/dedupQueue';
 import { readInboxLanes } from './lib/inboxViews';
 import { readOpenFlags } from './lib/openFlags';
@@ -95,7 +96,8 @@ export const overview = query({
  *   the same as one a campaign flagged.
  * - `chordRefits` — bays whose mouth a moved shoreline re-fitted or left stale (D215), across bodies.
  * - `placeNames` — place names from the email groups still open (D202).
- * - `campaignAt` — when the last corpus run started (a merge or a canonical load).
+ * - `campaignAt` — when the last corpus run started (a merge or a canonical load; never a
+ *   retirement of absorbed rows, which is a cleanup after one).
  * - `preIcePass` and `enrichment` are `null`: no record says when the pre-ice pass was done, and
  *   nothing indexes a body by the enrichment it lacks. Each is drawn *Not recorded yet*, never zero.
  */
@@ -133,15 +135,10 @@ export const corpusCounts = query({
       .withIndex('by_status_messages', (q) => q.eq('status', 'open'))
       .take(COUNT_CAP + 1);
 
-    let campaignAt: number | null = null;
-    for (const kind of ['corpus_merge', 'canonical_water'] as const) {
-      const last = await ctx.db
-        .query('importRuns')
-        .withIndex('by_kind_started', (q) => q.eq('kind', kind))
-        .order('desc')
-        .first();
-      if (last && (campaignAt === null || last.startedAt > campaignAt)) campaignAt = last.startedAt;
-    }
+    // The last campaign: its merge or its load. `retire-absorbed` has its own kind since B01-7a
+    // (`absorbed_retire`), so it is not read here; the rows it wrote before that sit under
+    // `canonical_water` with their own label, and are passed over by it (`lib/campaignRuns.ts`).
+    const campaignAt = (await lastCampaignRun(ctx))?.startedAt ?? null;
 
     return {
       // A queue read that stopped short leaves a floor, and the figure says so.

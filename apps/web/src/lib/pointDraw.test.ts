@@ -1,5 +1,5 @@
 /**
- * The point tool (B01-6b, D300), driven through a fake map as the chord tool's test does: a click
+ * The point tool (B01-6b, D313), driven through a fake map as the chord tool's test does: a click
  * places, the mark drags, the cursor says which, and a snap moves the ghost and the pick alike.
  */
 

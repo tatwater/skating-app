@@ -26,7 +26,7 @@ import {
 } from './featureDraft';
 
 /**
- * **The known-feature task, wired** (B01-6b, D300): the Hazards tab's draft (`featureDraft`), its
+ * **The known-feature task, wired** (B01-6b, D313): the Hazards tab's draft (`featureDraft`), its
  * claim on the console map (`frame/mapTool`), and its save.
  *
  * - **Starting**: *Add a feature* (F), or *Edit shape* on a feature, which opens on its own shape.

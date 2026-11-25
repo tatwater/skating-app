@@ -802,8 +802,9 @@ describe('the place in the URL', () => {
       search: { lane: 'moderator', body: ID },
       replace: true,
     });
+    // A lane opens from the one Corpus sidebar, which both views mount: to the mode's own path.
     await userEvent.click(screen.getByRole('button', { name: /^Active/ }));
-    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: '.', search: {} });
+    expect(mocks.navigate).toHaveBeenLastCalledWith({ to: '/admin/corpus', search: {} });
   });
 
   it('opens a body at its console, the id escaped as every other link to it is', () => {

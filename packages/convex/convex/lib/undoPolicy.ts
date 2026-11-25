@@ -372,7 +372,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   // ── Access ──────────────────────────────────────────────────────────────────────────────────────
   // B01-3d: a promotion's undo puts the launch's source and name back (taking official status away,
   // so it asks a reason); the undo of that undo promotes again (giving, so it asks none). B01-6b
-  // (D300): a put-in placed by hand (`placed`, or a row from before the direction was recorded) is
+  // (D313): a put-in placed by hand (`placed`, or a row from before the direction was recorded) is
   // removed by its undo — taking it away, so asking a reason — and undoing that removal (`unplaced`)
   // places it again, asking none. `takesAway` is read with the row's direction: whether undoing it
   // takes something away.
@@ -381,7 +381,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: (direction) => direction !== 'demoted' && direction !== 'unplaced',
     capability: 'body.access',
   },
-  // One verb, two targets (B01-6b, D300). On a lot (`parkingArea`): a lot placed by hand is deleted
+  // One verb, two targets (B01-6b, D313). On a lot (`parkingArea`): a lot placed by hand is deleted
   // with its lake links by its undo — taking it away, so asking a reason — refused once a put-in links
   // to it; undoing that removal places it again. An edit of an existing lot has no undo yet (Bo22's).
   // On a put-in: a link's undo restores only which lot (or none), and the walk is routed again; it
@@ -477,6 +477,24 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     undo: { kind: 'none', why: "The photo's file was deleted 30 days after its removal." },
     takesAway: always,
     capability: 'content.moderate',
+  },
+
+  // ── The Corpus tasks (B01-7a) ──────────────────────────────────────────────────────────────────
+  // A *Keep* settles an intake question and changes nothing on the body; its undo asks the question
+  // again (`undoHandlersCorpus.ts`). Settling changes nothing a skater sees, and neither does putting
+  // the question back, so neither asks a reason. A lane's rename or reclass is the Body console's
+  // own verb (`set_water_body_name`, `set_class`), undone as it always was — `lib/undo.ts` reopens
+  // the task any undone row decided, so no row here names them.
+  settle_review_reason: {
+    undo: inverse('unsettle_review_reason'),
+    takesAway: never,
+    capability: 'corpus.intake',
+  },
+  // Settling again is a decision with its own row, made from the lane, never an undo.
+  unsettle_review_reason: {
+    undo: { kind: 'none', why: 'Settle it again from its lane.' },
+    takesAway: never,
+    capability: 'corpus.intake',
   },
 };
 

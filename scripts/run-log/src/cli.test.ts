@@ -52,6 +52,16 @@ describe('record command', () => {
     );
   });
 
+  it("carries a receipt's scope onto the row it opens", () => {
+    const scope = { pass: 'archive', states: ['VT'], complete: false };
+    vi.mocked(readFileSync).mockReturnValueOnce(JSON.stringify({ ...receipt, scope }));
+    expect(recordFromCommandLine([])).toBe(0);
+    expect(calls()[0]).toEqual([
+      'importRuns:start',
+      { ...receipt, deployment: 'dev:receipt-fixture', isProd: false, stages: [], scope },
+    ]);
+  });
+
   it('records a failed historical receipt with explicit deployment metadata and its original time', () => {
     const startedAt = 1_720_000_000_000;
     const input = JSON.stringify({

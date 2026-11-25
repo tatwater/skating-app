@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * **The known-feature task through the real Body console route** (B01-6b, D300): only the router,
+ * **The known-feature task through the real Body console route** (B01-6b, D313): only the router,
  * the role, the Convex hooks, the undo shell's announce, the toast queue, the map's canvas and the
  * map's engine stood in — the engine's claim is captured, so a test plays the map's part (a point
  * placed, a line or a ring traced). A feature is drawn any of three ways and sent with the fields

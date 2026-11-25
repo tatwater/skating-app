@@ -15,7 +15,7 @@ import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
 import { internalMutation, internalQuery, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
-import { IMPORT_RUN_KINDS, WEATHER_CELL_INVALIDATING_KINDS } from './lib/enums';
+import { IMPORT_RUN_KINDS, IMPORT_RUN_SCOPES, WEATHER_CELL_INVALIDATING_KINDS } from './lib/enums';
 import { literals } from './lib/validators';
 import { RECONCILE_DEBOUNCE_MS } from './weatherArchive';
 
@@ -60,6 +60,13 @@ const coverageValidator = v.object({
   omissions: v.array(v.object({ reason: v.string(), count: v.number() })),
 });
 
+/** What the run set out to cover (D218) — see the `importRuns.scope` schema note. */
+const scopeValidator = v.object({
+  pass: literals(IMPORT_RUN_SCOPES),
+  states: v.optional(v.array(v.string())),
+  complete: v.boolean(),
+});
+
 /**
  * Open a run.
  *
@@ -76,8 +83,11 @@ export const start = internalMutation({
     isProd: v.boolean(),
     stages: v.optional(v.array(stageValidator)),
     notes: v.optional(v.array(v.string())),
+    /** What the run set out to cover — stated once, here, by the writer that knows it (D218). */
+    scope: v.optional(scopeValidator),
   },
   handler: async (ctx, args) => {
+    const now = Date.now();
     return await ctx.db.insert('importRuns', {
       kind: args.kind,
       label: args.label,
@@ -85,12 +95,15 @@ export const start = internalMutation({
       deployment: args.deployment,
       isProd: args.isProd,
       status: 'running',
-      startedAt: Date.now(),
+      startedAt: now,
+      // The first beat: a loader killed before its first flush is silent from its start.
+      progressAt: now,
       counts: [],
       stages: args.stages ?? [],
       failures: [],
       failuresTotal: 0,
       notes: args.notes,
+      ...(args.scope !== undefined && { scope: args.scope }),
     });
   },
 });
@@ -103,6 +116,10 @@ export const start = internalMutation({
  * an observability table cannot afford, because nothing downstream would contradict it.
  *
  * Failures append up to the cap while `failuresTotal` keeps counting past it.
+ *
+ * **Every call is a heartbeat** (D218): `progressAt` is stamped here, by the server's clock, so a
+ * loader needs no change to have one and cannot send a wrong one. A call carrying nothing new still
+ * beats — a run that is alive and between counts is not stalled.
  */
 export const progress = internalMutation({
   args: {
@@ -121,7 +138,7 @@ export const progress = internalMutation({
     const run = await ctx.db.get(runId);
     if (!run) throw new Error(`importRuns row ${runId} not found`);
     const patch = mergeInto(run, { counts, stages, failures, failuresTotal, coverage });
-    await ctx.db.patch(runId, patch);
+    await ctx.db.patch(runId, { ...patch, progressAt: Date.now() });
   },
 });
 
@@ -154,10 +171,13 @@ export const finish = internalMutation({
   ) => {
     const run = await ctx.db.get(runId);
     if (!run) throw new Error(`importRuns row ${runId} not found`);
+    const now = Date.now();
     await ctx.db.patch(runId, {
       ...mergeInto(run, { counts, stages, failures, failuresTotal, coverage }),
       status,
-      finishedAt: Date.now(),
+      finishedAt: now,
+      // The last beat is the close: a finished row's heartbeat never trails its finish.
+      progressAt: now,
       error,
       notes: notes ?? run.notes,
     });
@@ -211,7 +231,9 @@ export const restamp = internalMutation({
   handler: async (ctx, { runId, startedAt, finishedAt }) => {
     const run = await ctx.db.get(runId);
     if (!run) throw new Error(`importRuns row ${runId} not found`);
-    await ctx.db.patch(runId, { startedAt, finishedAt });
+    // The heartbeat moves with the times it describes: a historical fetch must not read as having
+    // reported this afternoon, the same lie this mutation exists to stop telling about `startedAt`.
+    await ctx.db.patch(runId, { startedAt, finishedAt, progressAt: finishedAt ?? startedAt });
   },
 });
 

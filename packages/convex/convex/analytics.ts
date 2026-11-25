@@ -393,8 +393,10 @@ const TREND_REPORT_CAP = 300;
 const TREND_REACTION_READ_BUDGET = 12_000;
 
 /**
- * The **contributor-trust trend** behind the D57 panel (`/admin/users/$id`) — one bucket per calendar
- * month of a contributor's history, split good vs bad, returned alongside the account's creation date.
+ * The **contributor-trust trend** for the D57 panel — one bucket per calendar month of a
+ * contributor's history, split good vs bad, returned alongside the account's creation date. The old
+ * user page that drew it is gone, and People's person page (`/admin/people/$id`) does not draw it
+ * yet, so no page reads this today.
  *
  * Tenure-awareness is the entire point (D57). A raw `contradictionCount` of 3 means something very
  * different for a ten-year contributor with four hundred good reports than for a one-month account with

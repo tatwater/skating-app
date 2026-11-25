@@ -112,6 +112,10 @@ const VERB: Record<AuditAction, string> = {
   create_landmark: 'Added a landmark',
   edit_landmark: 'Edited a landmark',
   promote_landmark: 'Promoted a landmark',
+  // The Corpus tasks (B01-7a): a review question kept as the body stands, and put back by its undo.
+  // Invented, for the copy pass.
+  settle_review_reason: 'Settled {t}’s review question',
+  unsettle_review_reason: 'Reopened {t}’s review question',
 };
 
 /** The row's sentence: "Hid a report", "Approved a request". */

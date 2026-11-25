@@ -313,7 +313,7 @@ export const AddedByAModerator: Story = {
               ...l,
               added: {
                 at: new Date(2026, 9, 3, 12).getTime(),
-                by: { name: 'Teagan Atwater', handle: 'teagan', href: '/admin/users/u-teagan' },
+                by: { name: 'Teagan Atwater', handle: 'teagan', href: '/admin/people/u-teagan' },
               },
             }
           : l,
@@ -325,7 +325,7 @@ export const AddedByAModerator: Story = {
     await expect(card).toHaveTextContent('3 Oct 2026');
     await expect(within(card).getByRole('link', { name: '@teagan' })).toHaveAttribute(
       'href',
-      '/admin/users/u-teagan',
+      '/admin/people/u-teagan',
     );
   },
 };

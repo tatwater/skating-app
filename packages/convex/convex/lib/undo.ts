@@ -12,7 +12,8 @@
  * - **Reason** — asked only when the value the undo puts back takes something away from skaters.
  *
  * The undo itself runs the inverse verb's own helper inside {@link asUndoOf}, so its side effects run
- * and every row it writes is tagged as the undo.
+ * and every row it writes is tagged as the undo. Then, whatever the verb, the Corpus task the row
+ * decided reopens (B01-7a, {@link runUndo}).
  */
 
 import { isLeaving } from '@skating/core';
@@ -22,6 +23,7 @@ import type { MutationCtx, QueryCtx } from '../_generated/server';
 import { asUndoOf, composed, fitComposed } from './audit';
 import { hasCapability } from './auth';
 import { authorDeletedRefusal, contentFactsOn } from './authorDeletion';
+import { reopenTask } from './corpusTasks';
 import { seesLedgerGrants } from './ledgerEditors';
 import { ownContentRefusal } from './ownContent';
 import { type PersonWrite, refusalFor, writeRefusal } from './peopleCan';
@@ -396,5 +398,15 @@ export async function runUndo(
     trimmed.length > 0
       ? trimmed
       : fitComposed(composed`Undid ${row.action.replace(/_/g, ' ')}: ${row.reason}`);
-  await asUndoOf(ctx, actionId, () => handler.run({ ctx, actor, row, reason: why, writers }));
+  await asUndoOf(ctx, actionId, async () => {
+    await handler.run({ ctx, actor, row, reason: why, writers });
+    // **One rule for every verb** (B01-7a): a row that decided a Corpus task — a lane's rename or
+    // reclass, written by the Body console's own verb, and 7b's standing or removal — is undone by
+    // that verb's own inverse above, and then its task reopens, its reason back on the body. A row
+    // that decided none answers `'none'`. A task a later campaign already asked again answers
+    // `'overtaken'` and writes nothing: the domain undo stands alone, since the question is open
+    // already. A settle's own handler reopens first (the reopen is its whole undo), so this finds
+    // nothing left to do there.
+    await reopenTask(ctx, row._id);
+  });
 }

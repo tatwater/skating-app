@@ -31,13 +31,32 @@ export const PEOPLE_LANE_OF: Readonly<
   leaving: 'leaving',
 };
 
+/**
+ * Each Corpus task's lane in the Corpus mode's URL (`?lane=`), as the phase plan names them; `null`
+ * for a row that isn't a lane (the pass's row opens its group, the enrichment row its own view).
+ * The route keeps a lane only once it is built: an unbuilt one lands on the library's default.
+ */
+export const CORPUS_LANE_OF: Readonly<Record<CorpusTask, string | null>> = {
+  duplicates: 'duplicates',
+  nameConflicts: 'name-conflicts',
+  classConflicts: 'class-conflicts',
+  contested: 'contested',
+  orphanBays: 'orphan-bays',
+  chordRefits: 'chord-refits',
+  placeNames: 'place-names',
+  preIcePass: null,
+  enrichment: null,
+};
+
 /** The console's routes (the phase plan's table), for a page that isn't handed a router. */
 export function overviewHref(to: OverviewTarget): string {
   switch (to.kind) {
     case 'inbox':
       return to.lane ? `/admin/inbox?lane=${to.lane}` : '/admin/inbox';
     case 'corpus':
-      return to.task ? `/admin/corpus?task=${to.task}` : '/admin/corpus';
+      return to.task && CORPUS_LANE_OF[to.task] !== null
+        ? `/admin/corpus?lane=${CORPUS_LANE_OF[to.task]}`
+        : '/admin/corpus';
     case 'machinery':
       return '/admin/machinery';
     case 'people':

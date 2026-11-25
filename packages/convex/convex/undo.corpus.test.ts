@@ -530,7 +530,7 @@ describe('undo: approach kind and posted rules (D226)', () => {
     expect((await t.run((ctx) => ctx.db.get(putInId)))?.approachKindOverride).toBeUndefined();
   });
 
-  test('a change that also moved the parking puts the lot back too (D300); one before undo is refused', async () => {
+  test('a change that also moved the parking puts the lot back too (D313); one before undo is refused', async () => {
     const t = convexTest(schema, modules);
     const waterBodyId = await seedBody(t);
     const putInId = await seedPutIn(t, waterBodyId);

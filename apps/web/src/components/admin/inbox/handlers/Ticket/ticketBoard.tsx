@@ -1,8 +1,7 @@
 import { type RefObject, useRef, useState } from 'react';
-
+import type { DecidedState } from '../../../inspector/InspectorFrame';
+import { InspectorProvider, useInspectorContext } from '../../../inspector/inspectorContext';
 import type { HandlerKey, InboxHandler } from '../../inspector/handlerRegistry';
-import type { DecidedState } from '../../inspector/InspectorFrame';
-import { InspectorProvider, useInspectorContext } from '../../inspector/inspectorContext';
 import type { InboxRowView } from '../../list/inboxTypes';
 import { TicketView } from './TicketView';
 import { useTicketDraft } from './ticketDrafts';

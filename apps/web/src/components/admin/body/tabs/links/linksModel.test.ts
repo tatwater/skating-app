@@ -4,7 +4,16 @@ import { describe, expect, it } from 'vitest';
 import { dropIndex, moveId } from '@/components/kit/sortable-rows';
 import { BODY_NOW, MASCOMA, SMALL_POND } from './linksFixtures';
 import { INTERIOR_POINT_ID, linksMapScene } from './linksMap';
-import { carryIds, coordWords, derivedRows, type KeyedLink, linkChanges } from './linksModel';
+import {
+  carryIds,
+  coordWords,
+  derivedRows,
+  googleMapsRow,
+  googleMapsUrl,
+  type KeyedLink,
+  linkChanges,
+  mapsZoom,
+} from './linksModel';
 
 describe('derivedRows', () => {
   it('draws the board: Windy, Copernicus and the NH group, each with what it is built from', () => {
@@ -270,5 +279,84 @@ describe('linkChanges — a change whose links moved is refused, never re-aimed'
     expect(linkChanges.order(['kD', 'kA', 'kB'])([c, b, d])).toBeNull();
     // A link added since doesn't stop the order: it keeps its place after the ones I ordered.
     expect(linkChanges.order(['kD', 'kA', 'kB'])([a, b, d, c])).toEqual([d, a, b, c]);
+  });
+});
+
+describe('the lake on Google Maps (staff only)', () => {
+  const MASCOMA_BOX = { minLng: -72.2079, minLat: 43.5999, maxLng: -72.1188, maxLat: 43.6671 };
+
+  it('opens at the interior point — never the shoreline point — framed on the whole lake', () => {
+    const row = googleMapsRow({
+      ...MASCOMA,
+      // A centroid on the shore, as `centroid` / `representativePoint` are on a curved lake.
+      centroid: { lat: 43.6671, lng: -72.2079 },
+      representativePoint: { lat: 43.6671, lng: -72.2079 },
+      bbox: MASCOMA_BOX,
+    });
+    expect(row?.id).toBe('googleMaps');
+    const url = new URL(row?.url ?? '');
+    expect(url.origin + url.pathname).toBe('https://www.google.com/maps/@');
+    expect(url.searchParams.get('api')).toBe('1');
+    expect(url.searchParams.get('map_action')).toBe('map');
+    expect(url.searchParams.get('center')).toBe('43.61740,-72.13600');
+    expect(url.searchParams.get('zoom')).toBe('12');
+    // Nothing else: no key, nothing about the viewer.
+    expect([...url.searchParams.keys()].sort()).toEqual(['api', 'center', 'map_action', 'zoom']);
+  });
+
+  it('without an interior point, the box’s middle; with neither, no row', () => {
+    const row = googleMapsRow({ name: 'X', centroid: { lat: 1, lng: 1 }, bbox: MASCOMA_BOX });
+    expect(new URL(row?.url ?? '').searchParams.get('center')).toBe('43.63350,-72.16335');
+    expect(googleMapsRow({ name: 'X', centroid: { lat: 1, lng: 1 } })).toBeNull();
+  });
+
+  it('with a point and no box, a pond’s zoom', () => {
+    const row = googleMapsRow({ interiorPoint: { lat: 44.5, lng: -70.2 } });
+    expect(new URL(row?.url ?? '').searchParams.get('zoom')).toBe('14');
+  });
+
+  it('says what it is and that skaters never read it', () => {
+    const row = googleMapsRow({ ...MASCOMA, bbox: MASCOMA_BOX });
+    expect(row?.label).toBe('The lake on Google Maps');
+    expect(row?.sub).toMatch(/Staff only/);
+    expect(row?.sub).not.toMatch(/safe|skateable|good to go/i);
+    expect(googleMapsUrl({ lat: 43.6, lng: -72.1 }, 12)).toContain('zoom=12');
+  });
+
+  it('frames every lake whole around its interior point, as close as that allows (property)', () => {
+    const mercY = (lat: number) => {
+      const s = Math.sin((lat * Math.PI) / 180);
+      return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+    };
+    fc.assert(
+      fc.property(
+        fc.double({ min: 25, max: 49, noNaN: true }),
+        fc.double({ min: -124, max: -67, noNaN: true }),
+        fc.double({ min: 0.0005, max: 1.5, noNaN: true }),
+        fc.double({ min: 0.0005, max: 1, noNaN: true }),
+        fc.double({ min: 0.05, max: 0.95, noNaN: true }),
+        fc.double({ min: 0.05, max: 0.95, noNaN: true }),
+        (lat, lng, w, h, fx, fy) => {
+          const box = { minLng: lng, maxLng: lng + w, minLat: lat, maxLat: lat + h };
+          const center = { lng: lng + w * fx, lat: lat + h * fy };
+          const z = mapsZoom(center, box);
+          expect(Number.isInteger(z)).toBe(true);
+          expect(z).toBeGreaterThanOrEqual(3);
+          expect(z).toBeLessThanOrEqual(18);
+          // In pixels at that zoom, the box's far side both ways fits the 1000 × 600 view.
+          const world = 256 * 2 ** z;
+          const halfX = (Math.max(center.lng - box.minLng, box.maxLng - center.lng) / 360) * world;
+          const cy = mercY(center.lat);
+          const halfY =
+            Math.max(Math.abs(mercY(box.maxLat) - cy), Math.abs(mercY(box.minLat) - cy)) * world;
+          if (z > 3) {
+            expect(halfX).toBeLessThanOrEqual(500 + 1e-6);
+            expect(halfY).toBeLessThanOrEqual(300 + 1e-6);
+          }
+          // One step closer would cut the lake (unless the closest zoom is reached).
+          if (z < 18) expect(halfX * 2 > 500 || halfY * 2 > 300).toBe(true);
+        },
+      ),
+    );
   });
 });

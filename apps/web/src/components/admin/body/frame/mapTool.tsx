@@ -26,7 +26,7 @@ import type { BBoxLike } from '@/lib/mapSurface';
  * - **`session`** says when the drawing starts over: the engine is re-attached only when it (or the
  *   tool's kind) changes, never because a callback or the mode bar's words did. The callbacks are
  *   read through a ref, so a claim may pass fresh closures every render.
- * - **The cursor is a crosshair** whenever a click on the map will place something (D300); a mark
+ * - **The cursor is a crosshair** whenever a click on the map will place something (D313); a mark
  *   that drags shows the grab hand only under the pointer.
  * - **Esc leaves the tool** (`onExit`), unless something else already took the key (a dialog, an
  *   open menu) or it was pressed in a field — the same call as the mode bar's Esc cap.

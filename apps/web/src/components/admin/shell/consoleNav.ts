@@ -11,10 +11,12 @@ import type { GoLetter } from '@/lib/keys';
  * keeps its own copy of {@link OLD_SHELL_TREES}, since a string constant can't import it, and
  * `oldShellPredicate.test.tsx` holds the two copies and all three behaviors to one answer.
  *
- * **Narrowing it is how a mode lands.** When a mode replaces old pages, its trees leave
- * {@link OLD_SHELL_TREES} (and the init script's copy), their entries leave {@link LEGACY_PAGES},
- * and the old routes become redirects; the old components are deleted at the phase's close, not
- * before. The list empties with the last old page, and the whole mechanism — this predicate, the
+ * **Narrowing it is how a mode lands.** An old page retires in the PR that lands the last lane it
+ * serves, and its code goes in that same PR (D305): its tree leaves {@link OLD_SHELL_TREES} (and
+ * the init script's copy), its entry leaves {@link LEGACY_PAGES}, and its route (or a redirect,
+ * where links in the wild may hold it), its components and the tests that pinned them are deleted
+ * together, never kept for a later sweep. A page that still serves something no lane replaces
+ * stays. The list empties with the last old page, and the whole mechanism — this predicate, the
  * init script's removal, the `.dark` sync — goes with it.
  */
 

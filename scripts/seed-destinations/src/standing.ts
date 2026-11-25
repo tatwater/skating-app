@@ -81,6 +81,8 @@ async function main() {
         kind: 'standing_seed',
         label: 'corpus standing seed (A07b)',
         ...(campaignId ? { campaignId } : {}),
+        // Every stored body, not by state (D218).
+        scope: { pass: 'seed', complete: true },
         target: resolveDeployment(),
         call: convexRun,
       })

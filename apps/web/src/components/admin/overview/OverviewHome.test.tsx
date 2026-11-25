@@ -230,8 +230,13 @@ describe('overviewHref', () => {
   it('sends each target to its mode', () => {
     expect(overviewHref({ kind: 'inbox' })).toBe('/admin/inbox');
     expect(overviewHref({ kind: 'corpus', task: 'duplicates' })).toBe(
-      '/admin/corpus?task=duplicates',
+      '/admin/corpus?lane=duplicates',
     );
+    expect(overviewHref({ kind: 'corpus', task: 'nameConflicts' })).toBe(
+      '/admin/corpus?lane=name-conflicts',
+    );
+    // A row that isn't a lane opens the mode.
+    expect(overviewHref({ kind: 'corpus', task: 'enrichment' })).toBe('/admin/corpus');
     expect(overviewHref({ kind: 'corpus' })).toBe('/admin/corpus');
     expect(overviewHref({ kind: 'people' })).toBe('/admin/people');
     expect(overviewHref({ kind: 'people', list: 'banned' })).toBe('/admin/people?lane=banned');
@@ -548,6 +553,13 @@ describe('useOverviewHome', () => {
       'name-conflict': { count: 3, capped: false, advisory: true },
       'duplicate-candidate': { count: 8, capped: false, advisory: false },
     });
+    convex.results.set(getFunctionName(api.corpusTasks.lanes), {
+      lanes: {
+        nameConflicts: { open: 3, facets: {} },
+        classConflicts: { open: 0, facets: {} },
+      },
+      pending: false,
+    });
     convex.results.set(getFunctionName(api.console.corpusCounts), {
       duplicates: { count: 4, capped: false },
       chordRefits: { count: 2, capped: false },
@@ -612,5 +624,47 @@ describe('useOverviewHome', () => {
       [null, 'Run failed'],
       ['Sarah', 'Hid'],
     ]);
+  });
+
+  it('counts a built lane from its reason’s rows while the server is still filing its tasks', () => {
+    convex.results.set(getFunctionName(api.waterBodies.reviewQueueCounts), {
+      'name-conflict': { count: 50, capped: true, advisory: true },
+      'class-conflict': { count: 9, capped: false, advisory: false },
+    });
+    convex.results.set(getFunctionName(api.console.corpusCounts), {
+      duplicates: { count: 4, capped: false },
+      chordRefits: { count: 2, capped: false },
+      placeNames: { count: 237, capped: false },
+      preIcePass: null,
+      enrichment: null,
+      campaignAt: 7,
+    });
+    // Before the backfill the task counts are short (here, none filed yet): never drawn as zero.
+    const lanes = getFunctionName(api.corpusTasks.lanes);
+    convex.results.set(lanes, {
+      lanes: {
+        nameConflicts: { open: 0, facets: {} },
+        classConflicts: { open: 0, facets: {} },
+      },
+      pending: true,
+    });
+    const { result, rerender } = renderHook(
+      (props: { now: number }) => useOverviewHome({ season: 2026, now: props.now, can: admin }),
+      { initialProps: { now: NOW } },
+    );
+    expect(result.current.corpus?.nameConflicts).toEqual({ count: 50, capped: true });
+    expect(result.current.corpus?.classConflicts).toEqual({ count: 9, capped: false });
+
+    // Once every task is filed, the lanes' own figures.
+    convex.results.set(lanes, {
+      lanes: {
+        nameConflicts: { open: 412, facets: {} },
+        classConflicts: { open: 98, facets: {} },
+      },
+      pending: false,
+    });
+    rerender({ now: NOW + 60_000 });
+    expect(result.current.corpus?.nameConflicts).toEqual({ count: 412, capped: false });
+    expect(result.current.corpus?.classConflicts).toEqual({ count: 98, capped: false });
   });
 });

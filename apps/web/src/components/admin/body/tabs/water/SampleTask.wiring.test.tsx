@@ -5,7 +5,7 @@ import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
- * **The sample-point task through the real Body console route** (B01-6b, D300): only the router,
+ * **The sample-point task through the real Body console route** (B01-6b, D313): only the router,
  * the role, the Convex hooks, the undo shell's announce, the toast queue, the map's canvas and the
  * map's engine stood in — the engine's claim is captured. *Suggest a grid* shows core's grid on the
  * map as the claim's draft, with no engine; *Save* sends it with the points it was suggested over

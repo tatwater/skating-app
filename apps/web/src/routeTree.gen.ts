@@ -28,14 +28,12 @@ import { Route as AdminIndexRouteImport } from './routes/admin.index'
 import { Route as AdminCorpusRouteImport } from './routes/admin.corpus'
 import { Route as AdminDashboardRouteImport } from './routes/admin.dashboard'
 import { Route as AdminFeaturesRouteImport } from './routes/admin.features'
-import { Route as AdminFlagsRouteImport } from './routes/admin.flags'
 import { Route as AdminIceCalibrationRouteImport } from './routes/admin.ice-calibration'
 import { Route as AdminImportsRouteImport } from './routes/admin.imports'
 import { Route as AdminInboxRouteImport } from './routes/admin.inbox'
 import { Route as AdminPeopleRouteImport } from './routes/admin.people'
 import { Route as AdminRecurrenceRouteImport } from './routes/admin.recurrence'
 import { Route as AdminSeasonsRouteImport } from './routes/admin.seasons'
-import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminTuningRouteImport } from './routes/admin.tuning'
 import { Route as GooglePhotosCallbackRouteImport } from './routes/google-photos.callback'
 import { Route as SkaterBountyIdRouteImport } from './routes/_skater.bounty.$id'
@@ -47,8 +45,6 @@ import { Route as SkaterUUsernameRouteImport } from './routes/_skater.u.$usernam
 import { Route as SkaterWaterIdRouteImport } from './routes/_skater.water.$id'
 import { Route as AdminBodyIdRouteImport } from './routes/admin.body.$id'
 import { Route as AdminPeopleIdRouteImport } from './routes/admin.people.$id'
-import { Route as AdminUsersIndexRouteImport } from './routes/admin.users.index'
-import { Route as AdminUsersIdRouteImport } from './routes/admin.users.$id'
 import { Route as AdminWaterIndexRouteImport } from './routes/admin.water.index'
 import { Route as AdminWaterIdRouteImport } from './routes/admin.water.$id'
 import { Route as AdminWaterPlaceNamesRouteImport } from './routes/admin.water.place-names'
@@ -150,11 +146,6 @@ const AdminFeaturesRoute = AdminFeaturesRouteImport.update({
   path: '/features',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminFlagsRoute = AdminFlagsRouteImport.update({
-  id: '/flags',
-  path: '/flags',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminIceCalibrationRoute = AdminIceCalibrationRouteImport.update({
   id: '/ice-calibration',
   path: '/ice-calibration',
@@ -183,11 +174,6 @@ const AdminRecurrenceRoute = AdminRecurrenceRouteImport.update({
 const AdminSeasonsRoute = AdminSeasonsRouteImport.update({
   id: '/seasons',
   path: '/seasons',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminSupportRoute = AdminSupportRouteImport.update({
-  id: '/support',
-  path: '/support',
   getParentRoute: () => AdminRoute,
 } as any)
 const AdminTuningRoute = AdminTuningRouteImport.update({
@@ -245,16 +231,6 @@ const AdminPeopleIdRoute = AdminPeopleIdRouteImport.update({
   path: '/$id',
   getParentRoute: () => AdminPeopleRoute,
 } as any)
-const AdminUsersIndexRoute = AdminUsersIndexRouteImport.update({
-  id: '/users/',
-  path: '/users/',
-  getParentRoute: () => AdminRoute,
-} as any)
-const AdminUsersIdRoute = AdminUsersIdRouteImport.update({
-  id: '/users/$id',
-  path: '/users/$id',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminWaterIndexRoute = AdminWaterIndexRouteImport.update({
   id: '/water/',
   path: '/water/',
@@ -304,14 +280,12 @@ export interface FileRoutesByFullPath {
   '/admin/corpus': typeof AdminCorpusRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
-  '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
   '/admin/inbox': typeof AdminInboxRoute
   '/admin/people': typeof AdminPeopleRouteWithChildren
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
-  '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/admin/': typeof AdminIndexRoute
@@ -323,14 +297,12 @@ export interface FileRoutesByFullPath {
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/people/$id': typeof AdminPeopleIdRoute
-  '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
   '/admin/water/requests': typeof AdminWaterRequestsRoute
   '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/water/standing': typeof AdminWaterStandingRoute
   '/settings/': typeof SkaterSettingsIndexRoute
-  '/admin/users/': typeof AdminUsersIndexRoute
   '/admin/water/': typeof AdminWaterIndexRoute
 }
 export interface FileRoutesByTo {
@@ -348,14 +320,12 @@ export interface FileRoutesByTo {
   '/admin/corpus': typeof AdminCorpusRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
-  '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
   '/admin/inbox': typeof AdminInboxRoute
   '/admin/people': typeof AdminPeopleRouteWithChildren
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
-  '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/': typeof SkaterIndexRoute
@@ -368,14 +338,12 @@ export interface FileRoutesByTo {
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/people/$id': typeof AdminPeopleIdRoute
-  '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
   '/admin/water/requests': typeof AdminWaterRequestsRoute
   '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/water/standing': typeof AdminWaterStandingRoute
   '/settings': typeof SkaterSettingsIndexRoute
-  '/admin/users': typeof AdminUsersIndexRoute
   '/admin/water': typeof AdminWaterIndexRoute
 }
 export interface FileRoutesById {
@@ -397,14 +365,12 @@ export interface FileRoutesById {
   '/admin/corpus': typeof AdminCorpusRoute
   '/admin/dashboard': typeof AdminDashboardRoute
   '/admin/features': typeof AdminFeaturesRoute
-  '/admin/flags': typeof AdminFlagsRoute
   '/admin/ice-calibration': typeof AdminIceCalibrationRoute
   '/admin/imports': typeof AdminImportsRoute
   '/admin/inbox': typeof AdminInboxRoute
   '/admin/people': typeof AdminPeopleRouteWithChildren
   '/admin/recurrence': typeof AdminRecurrenceRoute
   '/admin/seasons': typeof AdminSeasonsRoute
-  '/admin/support': typeof AdminSupportRoute
   '/admin/tuning': typeof AdminTuningRoute
   '/google-photos/callback': typeof GooglePhotosCallbackRoute
   '/_skater/': typeof SkaterIndexRoute
@@ -417,14 +383,12 @@ export interface FileRoutesById {
   '/_skater/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/people/$id': typeof AdminPeopleIdRoute
-  '/admin/users/$id': typeof AdminUsersIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
   '/admin/water/requests': typeof AdminWaterRequestsRoute
   '/admin/water/review': typeof AdminWaterReviewRoute
   '/admin/water/standing': typeof AdminWaterStandingRoute
   '/_skater/settings/': typeof SkaterSettingsIndexRoute
-  '/admin/users/': typeof AdminUsersIndexRoute
   '/admin/water/': typeof AdminWaterIndexRoute
 }
 export interface FileRouteTypes {
@@ -447,14 +411,12 @@ export interface FileRouteTypes {
     | '/admin/corpus'
     | '/admin/dashboard'
     | '/admin/features'
-    | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
     | '/admin/inbox'
     | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
-    | '/admin/support'
     | '/admin/tuning'
     | '/google-photos/callback'
     | '/admin/'
@@ -466,14 +428,12 @@ export interface FileRouteTypes {
     | '/water/$id'
     | '/admin/body/$id'
     | '/admin/people/$id'
-    | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
     | '/admin/water/requests'
     | '/admin/water/review'
     | '/admin/water/standing'
     | '/settings/'
-    | '/admin/users/'
     | '/admin/water/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -491,14 +451,12 @@ export interface FileRouteTypes {
     | '/admin/corpus'
     | '/admin/dashboard'
     | '/admin/features'
-    | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
     | '/admin/inbox'
     | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
-    | '/admin/support'
     | '/admin/tuning'
     | '/google-photos/callback'
     | '/'
@@ -511,14 +469,12 @@ export interface FileRouteTypes {
     | '/water/$id'
     | '/admin/body/$id'
     | '/admin/people/$id'
-    | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
     | '/admin/water/requests'
     | '/admin/water/review'
     | '/admin/water/standing'
     | '/settings'
-    | '/admin/users'
     | '/admin/water'
   id:
     | '__root__'
@@ -539,14 +495,12 @@ export interface FileRouteTypes {
     | '/admin/corpus'
     | '/admin/dashboard'
     | '/admin/features'
-    | '/admin/flags'
     | '/admin/ice-calibration'
     | '/admin/imports'
     | '/admin/inbox'
     | '/admin/people'
     | '/admin/recurrence'
     | '/admin/seasons'
-    | '/admin/support'
     | '/admin/tuning'
     | '/google-photos/callback'
     | '/_skater/'
@@ -559,14 +513,12 @@ export interface FileRouteTypes {
     | '/_skater/water/$id'
     | '/admin/body/$id'
     | '/admin/people/$id'
-    | '/admin/users/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
     | '/admin/water/requests'
     | '/admin/water/review'
     | '/admin/water/standing'
     | '/_skater/settings/'
-    | '/admin/users/'
     | '/admin/water/'
   fileRoutesById: FileRoutesById
 }
@@ -721,13 +673,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminFeaturesRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/flags': {
-      id: '/admin/flags'
-      path: '/flags'
-      fullPath: '/admin/flags'
-      preLoaderRoute: typeof AdminFlagsRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/ice-calibration': {
       id: '/admin/ice-calibration'
       path: '/ice-calibration'
@@ -768,13 +713,6 @@ declare module '@tanstack/react-router' {
       path: '/seasons'
       fullPath: '/admin/seasons'
       preLoaderRoute: typeof AdminSeasonsRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/support': {
-      id: '/admin/support'
-      path: '/support'
-      fullPath: '/admin/support'
-      preLoaderRoute: typeof AdminSupportRouteImport
       parentRoute: typeof AdminRoute
     }
     '/admin/tuning': {
@@ -853,20 +791,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/admin/people/$id'
       preLoaderRoute: typeof AdminPeopleIdRouteImport
       parentRoute: typeof AdminPeopleRoute
-    }
-    '/admin/users/': {
-      id: '/admin/users/'
-      path: '/users'
-      fullPath: '/admin/users/'
-      preLoaderRoute: typeof AdminUsersIndexRouteImport
-      parentRoute: typeof AdminRoute
-    }
-    '/admin/users/$id': {
-      id: '/admin/users/$id'
-      path: '/users/$id'
-      fullPath: '/admin/users/$id'
-      preLoaderRoute: typeof AdminUsersIdRouteImport
-      parentRoute: typeof AdminRoute
     }
     '/admin/water/': {
       id: '/admin/water/'
@@ -968,24 +892,20 @@ interface AdminRouteChildren {
   AdminCorpusRoute: typeof AdminCorpusRoute
   AdminDashboardRoute: typeof AdminDashboardRoute
   AdminFeaturesRoute: typeof AdminFeaturesRoute
-  AdminFlagsRoute: typeof AdminFlagsRoute
   AdminIceCalibrationRoute: typeof AdminIceCalibrationRoute
   AdminImportsRoute: typeof AdminImportsRoute
   AdminInboxRoute: typeof AdminInboxRoute
   AdminPeopleRoute: typeof AdminPeopleRouteWithChildren
   AdminRecurrenceRoute: typeof AdminRecurrenceRoute
   AdminSeasonsRoute: typeof AdminSeasonsRoute
-  AdminSupportRoute: typeof AdminSupportRoute
   AdminTuningRoute: typeof AdminTuningRoute
   AdminIndexRoute: typeof AdminIndexRoute
   AdminBodyIdRoute: typeof AdminBodyIdRoute
-  AdminUsersIdRoute: typeof AdminUsersIdRoute
   AdminWaterIdRoute: typeof AdminWaterIdRoute
   AdminWaterPlaceNamesRoute: typeof AdminWaterPlaceNamesRoute
   AdminWaterRequestsRoute: typeof AdminWaterRequestsRoute
   AdminWaterReviewRoute: typeof AdminWaterReviewRoute
   AdminWaterStandingRoute: typeof AdminWaterStandingRoute
-  AdminUsersIndexRoute: typeof AdminUsersIndexRoute
   AdminWaterIndexRoute: typeof AdminWaterIndexRoute
 }
 
@@ -993,24 +913,20 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminCorpusRoute: AdminCorpusRoute,
   AdminDashboardRoute: AdminDashboardRoute,
   AdminFeaturesRoute: AdminFeaturesRoute,
-  AdminFlagsRoute: AdminFlagsRoute,
   AdminIceCalibrationRoute: AdminIceCalibrationRoute,
   AdminImportsRoute: AdminImportsRoute,
   AdminInboxRoute: AdminInboxRoute,
   AdminPeopleRoute: AdminPeopleRouteWithChildren,
   AdminRecurrenceRoute: AdminRecurrenceRoute,
   AdminSeasonsRoute: AdminSeasonsRoute,
-  AdminSupportRoute: AdminSupportRoute,
   AdminTuningRoute: AdminTuningRoute,
   AdminIndexRoute: AdminIndexRoute,
   AdminBodyIdRoute: AdminBodyIdRoute,
-  AdminUsersIdRoute: AdminUsersIdRoute,
   AdminWaterIdRoute: AdminWaterIdRoute,
   AdminWaterPlaceNamesRoute: AdminWaterPlaceNamesRoute,
   AdminWaterRequestsRoute: AdminWaterRequestsRoute,
   AdminWaterReviewRoute: AdminWaterReviewRoute,
   AdminWaterStandingRoute: AdminWaterStandingRoute,
-  AdminUsersIndexRoute: AdminUsersIndexRoute,
   AdminWaterIndexRoute: AdminWaterIndexRoute,
 }
 

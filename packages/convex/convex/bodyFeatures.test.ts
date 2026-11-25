@@ -199,7 +199,7 @@ describe('bodyFeatures.create', () => {
   });
 });
 
-describe('bodyFeatures.create checks the shape as a redraw does (D300)', () => {
+describe('bodyFeatures.create checks the shape as a redraw does (D313)', () => {
   test('refuses a feature off its lake', async () => {
     const t = harness();
     const admin = await seedUser(t, 'admin', 'admin');

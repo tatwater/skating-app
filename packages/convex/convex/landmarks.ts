@@ -893,7 +893,7 @@ export const create = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'body.places');
-    // Placing an ask decides it, so it takes the ask's own capability too (D300): an emailed name
+    // Placing an ask decides it, so it takes the ask's own capability too (D313): an emailed name
     // is the place-names queue's, a skater's proposal the Inbox's.
     if (args.corpusNameId !== undefined) await requireCapability(ctx, 'corpus.placeNames');
     if (args.requestId !== undefined) await requireCapability(ctx, 'inbox.request');

@@ -255,7 +255,7 @@ export function placeAsks(
 export type PersonInput = { userId: string; username: string; displayName: string };
 
 /** Where a person's page is, for the handle's link. */
-export const personPath = (userId: string) => `/admin/users/${encodeURIComponent(userId)}`;
+export const personPath = (userId: string) => `/admin/people/${encodeURIComponent(userId)}`;
 
 /** A person as a lockup names them: the real name (the handle when none), the handle as the link. */
 export function personFrom(p: PersonInput): Person {

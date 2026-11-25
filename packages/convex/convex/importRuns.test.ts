@@ -9,7 +9,7 @@
  *  - **The read side is admin-only.** Run rows name deployment targets, source URLs and checksums.
  */
 import { convexTest } from 'convex-test';
-import { describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import { MAX_STORED_FAILURES } from './importRuns';
@@ -219,6 +219,101 @@ describe('importRuns write path', () => {
     await expect(t.mutation(internal.importRuns.progress, { runId, counts: [] })).rejects.toThrow(
       /not found/,
     );
+  });
+});
+
+describe('importRuns scope and heartbeat (D218, B01-7a)', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test('a run stores the scope its writer stated, and a run that states none has none', async () => {
+    const t = harness();
+    const scope = { pass: 'full-canonical' as const, states: ['ME', 'VT'], complete: true };
+    const stated = await startRun(t, { scope });
+    const unstated = await startRun(t);
+
+    expect((await t.run((ctx) => ctx.db.get(stated)))?.scope).toEqual(scope);
+    // Absent, not a default: an older loader's row is *not recorded*, never "full".
+    expect(await t.run((ctx) => ctx.db.get(unstated))).not.toHaveProperty('scope');
+  });
+
+  test('the server stamps the heartbeat at start, at every progress and at the close', async () => {
+    vi.useFakeTimers();
+    const t = harness();
+    vi.setSystemTime(1_000);
+    const runId = await startRun(t);
+    const beat = async () => (await t.run((ctx) => ctx.db.get(runId)))?.progressAt;
+    expect(await beat()).toBe(1_000);
+
+    vi.setSystemTime(61_000);
+    await t.mutation(internal.importRuns.progress, {
+      runId,
+      counts: [{ name: 'inserted', value: 150 }],
+    });
+    expect(await beat()).toBe(61_000);
+
+    // A flush with nothing new still beats: alive between counts is not stalled.
+    vi.setSystemTime(121_000);
+    await t.mutation(internal.importRuns.progress, { runId });
+    expect(await beat()).toBe(121_000);
+
+    vi.setSystemTime(181_000);
+    await t.mutation(internal.importRuns.finish, { runId, status: 'succeeded' as const });
+    const row = await t.run((ctx) => ctx.db.get(runId));
+    expect(row?.progressAt).toBe(181_000);
+    expect(row?.finishedAt).toBe(181_000);
+  });
+
+  test("a restamped row's heartbeat moves with its times, never reading as reported today", async () => {
+    const t = harness();
+    const runId = await startRun(t);
+    await t.mutation(internal.importRuns.finish, { runId, status: 'succeeded' as const });
+
+    await t.mutation(internal.importRuns.restamp, {
+      runId,
+      startedAt: 1_722_000_000_000,
+      finishedAt: 1_722_000_600_000,
+    });
+    expect((await t.run((ctx) => ctx.db.get(runId)))?.progressAt).toBe(1_722_000_600_000);
+
+    // No finish given: the start is the last thing the row can vouch for.
+    await t.mutation(internal.importRuns.restamp, { runId, startedAt: 1_722_000_000_000 });
+    expect((await t.run((ctx) => ctx.db.get(runId)))?.progressAt).toBe(1_722_000_000_000);
+  });
+
+  /** The weather-cell reconciles `finish` enqueued, read off the scheduler. */
+  async function scheduledReconciles(t: ReturnType<typeof harness>) {
+    return t.run(async (ctx) => {
+      const jobs = await ctx.db.system.query('_scheduled_functions').collect();
+      return jobs.filter((j) => j.name.includes('maybeSyncWeatherCells'));
+    });
+  }
+
+  test.each([
+    // It reconciled as `canonical_water` before it had its own kind, and must still.
+    ['absorbed_retire', 1],
+    // A demotion leaves cells the registry counts — `standing_seed`'s case.
+    ['floor_prune', 1],
+    // Neither writes a body: the masks are files, and the match is offline.
+    ['region_masks', 0],
+    ['landmark_match', 0],
+  ] as const)('a finished %s run schedules %i weather-cell reconcile(s)', async (kind, n) => {
+    const t = harness();
+    const runId = await startRun(t, { kind });
+    await t.mutation(internal.importRuns.finish, { runId, status: 'succeeded' as const });
+    expect(await scheduledReconciles(t)).toHaveLength(n);
+  });
+
+  test('a dry retirement reconciles nothing — it folded no row', async () => {
+    const t = harness();
+    const runId = await startRun(t, { kind: 'absorbed_retire' as const });
+    await t.mutation(internal.importRuns.finish, {
+      runId,
+      status: 'succeeded' as const,
+      applied: false,
+    });
+    expect(await scheduledReconciles(t)).toHaveLength(0);
   });
 });
 

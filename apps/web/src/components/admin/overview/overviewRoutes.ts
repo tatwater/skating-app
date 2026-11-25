@@ -1,6 +1,7 @@
+import { taskLaneById } from '../corpus/taskLanes';
 import { type InboxQuery, inboxHref } from '../inbox/inboxSearch';
 import type { FeedTarget } from './overviewData';
-import { type OverviewTarget, PEOPLE_LANE_OF } from './overviewLinks';
+import { CORPUS_LANE_OF, type OverviewTarget, PEOPLE_LANE_OF } from './overviewLinks';
 
 /** The Inbox at a place: a lane, or one item by its source ref (`request:<id>`). */
 function inboxPath(place: Partial<Pick<InboxQuery, 'lane' | 'item'>>): string {
@@ -15,8 +16,9 @@ function bodyConsolePath(id: string): string {
 /**
  * Where Home's links go in the app as it stands: the old pages, until each target's mode lands
  * (the same rule as the palette, which opens a body in its Body console and a person in People).
- * Corpus's library and Body console have landed, so a body opens in its Body console; its tasks
- * haven't, so a Corpus task still opens its old page, never the library at `/admin/corpus` (D293).
+ * Corpus's library and Body console have landed, so a body opens in its Body console; a Corpus task
+ * whose lane is built opens that lane (`/admin/corpus?lane=name-conflicts`), and one not yet built
+ * still opens its old page, never the library's default (D293).
  * `overviewHref` names the console's own routes; this names the pages that exist.
  *
  * Every Inbox lane lands on its lane in the Inbox; every Corpus task on the old page that does that
@@ -31,7 +33,10 @@ export function consolePathFor(to: OverviewTarget): string | null {
       // support since B01-5f, the flag lanes (safety, access reports, content flags) since B01-5e —
       // each old page redirects there.
       return inboxPath(to.lane === undefined ? {} : { lane: to.lane });
-    case 'corpus':
+    case 'corpus': {
+      // A built lane is the Corpus mode's own (B01-7a: Name and Class conflicts).
+      const lane = to.task === undefined ? null : CORPUS_LANE_OF[to.task];
+      if (lane !== null && taskLaneById(lane) !== null) return `/admin/corpus?lane=${lane}`;
       switch (to.task) {
         case 'placeNames':
           return '/admin/water/place-names';
@@ -40,6 +45,7 @@ export function consolePathFor(to: OverviewTarget): string | null {
         default:
           return '/admin/water/review';
       }
+    }
     case 'machinery':
       return '/admin/imports';
     case 'people':

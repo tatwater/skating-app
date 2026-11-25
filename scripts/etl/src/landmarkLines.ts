@@ -88,6 +88,8 @@ export function packLines(lines: readonly BodyLine[], batchSize: number): BodyLi
 
 /** What the transform's `summary.json` says about the run the loader is about to write. */
 export interface TransformSummary {
+  /** The states the match ran, lower case (`landmarkCli`'s `selected`). */
+  states?: string[];
   corpusApplied?: boolean;
   complete?: boolean;
   /** Each catalog source's candidate count, `vt.osm` / `vt.gnis` — what vouches for `complete`. */

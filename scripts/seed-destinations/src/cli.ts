@@ -317,6 +317,8 @@ async function main() {
     kind: 'seed_destinations',
     label: 'curated destination boosts (A06c §2.3a/§4)',
     ...(campaignId ? { campaignId } : {}),
+    // The whole shortlist onto the corpus (D218).
+    scope: { pass: 'seed', complete: true },
     target: resolveDeployment(),
     call: convexRun,
   });

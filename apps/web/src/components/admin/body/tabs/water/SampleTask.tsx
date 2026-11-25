@@ -11,7 +11,7 @@ import {
 } from './sampleDraft';
 
 /**
- * **The sample-point task** (B01-6b, D300): a suggested grid of weather sample points, shown on the
+ * **The sample-point task** (B01-6b, D313): a suggested grid of weather sample points, shown on the
  * map while this block is up — the old editor's tool in the console's task frame, as the bay task
  * is drawn. The spacing, *Suggest again*, what the grid is, and *Save* (⌘S) or *Discard* (Esc on
  * the map). No board draws it; it waits on the founder's look pass.

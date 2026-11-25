@@ -108,11 +108,61 @@ export type KeptBody = Merged & {
   gnisIdFromGazetteer?: string | undefined;
   /** Other kept bodies this one overlaps — the duplicate sweep's finding. */
   duplicateOf?: string[] | undefined;
-  /** Every publisher's name for this water, winner first — see `nameClaimsOf`. */
-  nameClaims: { source: ClaimSource; value: string }[];
-  /** Every catalog's class for this water (B01-3d): what the Names tab shows per catalog. */
-  classClaims: { source: ClaimSource; value: WaterBodyClass }[];
+  /**
+   * Every publisher's name for this water, winner first, each with every catalog publishing its
+   * spelling (B01-7a) — see `nameClaimsOf`.
+   */
+  nameClaims: { source: ClaimSource; value: string; sources?: ClaimSource[] }[];
+  /**
+   * Every catalog's class for this water (B01-3d): what the Names tab shows per catalog — with the
+   * catalog's own token (`nhd:fcode=46600`, the member's `sourceToken`) and that feature's area
+   * (B01-7a), which the merge held and dropped before.
+   */
+  classClaims: ClassClaim[];
+  /**
+   * The catalogs that **refused** this water outright while another classed it (B01-7a): each
+   * refusing member's own token and area, at most {@link CLASS_REFUSALS_MAX}. `[]` when none refused.
+   * Kept only in the run stats before; stored now so the Contested lane can read which catalog
+   * refused, with what token (D307).
+   */
+  classRefusals: ClassRefusal[];
 };
+
+/** One catalog's class for a body, as the merge kept it (B01-7a: with its token and area). */
+export type ClassClaim = {
+  source: ClaimSource;
+  value: WaterBodyClass;
+  token: string;
+  areaSqM: number;
+};
+
+/** One catalog's outright refusal of a body another catalog classed (B01-7a). */
+export type ClassRefusal = { source: ClaimSource; token: string; areaSqM: number };
+
+/**
+ * The refusals kept on one body — the schema's "at most eight, as the class claims". A group is a
+ * handful of features; one refused by more than eight would be a chained merge, and its first eight
+ * say as much as all of them.
+ */
+export const CLASS_REFUSALS_MAX = 8;
+
+/** The absorbed features kept on one body — the import's `MAX_ABSORBED_FEATURES` (D310). */
+export const ABSORBED_FEATURES_MAX = 32;
+
+/**
+ * The members the merge folded into `k` (`absorbedIds`), as the record carries them (D310): each one's
+ * catalog, its id exactly as `absorbed.ndjson` names it (`refOf` splits `${source}:${id}` at the first
+ * colon, so the id is the member's own), and its area — the first {@link ABSORBED_FEATURES_MAX}.
+ */
+export function absorbedFeaturesOf(
+  k: Pick<KeptBody, 'members' | 'absorbedIds'>,
+): { source: ClaimSource; externalId: string; areaSqM: number }[] {
+  const absorbed = new Set(k.absorbedIds);
+  return k.members
+    .filter((m) => absorbed.has(`${m.source}:${m.id}`))
+    .slice(0, ABSORBED_FEATURES_MAX)
+    .map((m) => ({ source: m.source, externalId: m.id, areaSqM: m.areaSqM }));
+}
 
 /**
  * A bay that is an arm of a body we keep — **a sub-area, not a body** (founder, 2026-08-06).
@@ -935,9 +985,22 @@ export function buildMasterList(input: MasterListInput): MasterList {
       }
     }
 
-    const classClaims = group.members
+    // Each member's own token and area ride on its claim (B01-7a): the token is the catalog's
+    // (`sourceToken`), not the ladder's, since the board names what the catalog published.
+    const classClaims: ClassClaim[] = group.members
       .filter((m) => m.cls !== null)
-      .map((m) => ({ source: m.source, value: m.cls as WaterBodyClass }));
+      .map((m) => ({
+        source: m.source,
+        value: m.cls as WaterBodyClass,
+        token: m.sourceToken,
+        areaSqM: m.areaSqM,
+      }));
+    // The refusing members, kept rather than tallied (B01-7a, D307): the dissent stats below count
+    // them; the body now carries them.
+    const classRefusals: ClassRefusal[] = group.members
+      .filter((m) => m.cls === null)
+      .slice(0, CLASS_REFUSALS_MAX)
+      .map((m) => ({ source: m.source, token: m.sourceToken, areaSqM: m.areaSqM }));
     // Counted before `scoreBody` swallows it — see `MasterListStats.settledWetland`.
     if (settledWetlandDissent(classClaims)) stats.settledWetland++;
     const scores = scoreBody({
@@ -998,6 +1061,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
       // where it actually supplied the name rather than where it merely agreed with a catalog.
       nameClaims: nameClaimsOf(group.members, namedByGnis ? name : undefined),
       classClaims,
+      classRefusals,
       inRegionFraction: inRegionFraction(group, boundaryGrid),
     });
     pending.set(group.key, {
@@ -1144,6 +1208,8 @@ export function emitCanonicalBodies(kept: readonly KeptBody[], towns: TownLayer)
         reviewReasons: k.reviewReasons,
         nameClaims: k.nameClaims,
         classClaims: k.classClaims,
+        classRefusals: k.classRefusals,
+        absorbedFeatures: absorbedFeaturesOf(k),
         ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
       });
       emitted.push({

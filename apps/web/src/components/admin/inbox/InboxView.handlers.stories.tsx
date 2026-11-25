@@ -3,7 +3,8 @@ import { type ComponentProps, useEffect, useRef, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { expectControlsInside, expectNoSidewaysScroll, must } from '@/components/kit/storyKit';
-
+import { InspectorFrame } from '../inspector/InspectorFrame';
+import { useInspectorContext } from '../inspector/inspectorContext';
 import { accessSlots } from './handlers/Access/AccessHandlerView';
 import { DISPUTE } from './handlers/Access/accessHandlerFixtures';
 import type { AccessItem } from './handlers/Access/accessModel';
@@ -12,8 +13,6 @@ import { AROUND, SAFETY_ITEM as FLAG_ITEM, WEATHER } from './handlers/Flag/flagF
 import { InboxBoard, storyLink } from './inboxBoard';
 import { queryOf } from './inboxSearch';
 import type { HandlerKey, InboxHandler } from './inspector/handlerRegistry';
-import { InspectorFrame } from './inspector/InspectorFrame';
-import { useInspectorContext } from './inspector/inspectorContext';
 import { resetInboxScroll } from './list/InboxList';
 import {
   ACCESS_ROW,

@@ -11,20 +11,24 @@ import { join, resolve } from 'node:path';
 import { expect, test } from 'vitest';
 
 const CONVEX = resolve(__dirname, '../../convex/convex');
-/** Where the person writes, the record sheet's writes and the alert pin live. */
+/**
+ * Where the person writes, the record sheet's writes and the alert pin live — and the Corpus tasks'
+ * decisions (B01-7a), whose rule must refuse before the domain write's or the settle's row.
+ */
 const WRITERS = [
   'moderation.ts',
   'admin.ts',
   'ledger.ts',
   'accessAlerts.ts',
   join('lib', 'ledgerEditors.ts'),
+  'corpusWrites.ts',
 ];
 
-/** A call that writes the audit log. */
-const AUDIT = /\b(?:auditUser|writePersonAudit|writeAudit|takeLedgerGrant)\(/;
+/** A call that writes the audit log — `capturingAudit` runs a domain write that does (B01-7a). */
+const AUDIT = /\b(?:auditUser|writePersonAudit|writeAudit|takeLedgerGrant|capturingAudit)\(/;
 /** What decides a write: a refusal, a refusal helper, or an early "nothing changed". */
 const DECIDES =
-  /throw new ConvexError|\bassertWrite\(|\bloadModeratableUser\(|\brecordRefusal\(|\brecordActorRefusal\(|\bownContentRefusal\(|return unchanged\(/g;
+  /throw new ConvexError|\bassertWrite\(|\bloadModeratableUser\(|\brecordRefusal\(|\brecordActorRefusal\(|\bownContentRefusal\(|\bassertCorpusVerb\(|\bnamePickRefusal\(|return unchanged\(/g;
 
 const count = (text: string, char: string) => text.split(char).length - 1;
 

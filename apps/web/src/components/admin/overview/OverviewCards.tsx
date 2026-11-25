@@ -72,7 +72,7 @@ export function InboxCard({ data, now, ...props }: CardProps<InboxCardData> & { 
 // ── Corpus ───────────────────────────────────────────────────────────────────────────────────
 
 export function CorpusCard({ data, ...props }: CardProps<CorpusCardData>) {
-  if (data === undefined) return <CountCard title="Corpus" loadingRows={8} {...props} />;
+  if (data === undefined) return <CountCard title="Corpus" loadingRows={9} {...props} />;
   const pass = data.preIcePass;
   return (
     <CountCard
@@ -102,15 +102,25 @@ export function CorpusCard({ data, ...props }: CardProps<CorpusCardData>) {
             <TooltipTrigger variant="text" render={<span />}>
               Class conflicts
             </TooltipTrigger>
-            <TooltipContent>
-              The catalogs disagree on what kind of water it is, or one says it isn't a lake or pond
-              at all
-            </TooltipContent>
+            <TooltipContent>The catalogs disagree on what kind of water it is</TooltipContent>
           </Tooltip>
         }
         value={countText(data.classConflicts)}
         tone={countTone(data.classConflicts)}
         to={{ kind: 'corpus', task: 'classConflicts' }}
+      />
+      <CountRow
+        label={
+          <Tooltip>
+            <TooltipTrigger variant="text" render={<span />}>
+              Contested as water
+            </TooltipTrigger>
+            <TooltipContent>A catalog says it isn’t a lake or pond at all</TooltipContent>
+          </Tooltip>
+        }
+        value={countText(data.contested)}
+        tone={countTone(data.contested)}
+        to={{ kind: 'corpus', task: 'contested' }}
       />
       <CountRow
         label="Orphan bays"

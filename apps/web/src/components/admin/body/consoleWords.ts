@@ -117,3 +117,19 @@ export const PANE_WORDS = {
   /** The map pane's name for a reader (the body's is *The body*, the tab's *Inspector*). */
   map: 'Map',
 } as const;
+
+// ── The summer aerial's credit, while it loads ────────────────────────────────────────────────
+
+/**
+ * What the summer aerial's credit adds after its source ("Aerial · NAIP Jun 2023 · Loading…") while
+ * the photograph is on its way or some of it didn't come; nothing once it's all in. A failure here
+ * is a read, not a refusal: said in place with *Try again*, never a toast. Nouns about the
+ * photograph only — never a word about the ice.
+ */
+export const AERIAL_LOAD_WORDS = {
+  loading: 'Loading…',
+  failed: 'Didn’t load',
+  partial: 'Part of it didn’t load',
+  retry: 'Try again',
+  retrying: 'Trying again…',
+} as const;

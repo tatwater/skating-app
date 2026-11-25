@@ -5,6 +5,12 @@ import { ageInWords } from '@/lib/ages';
 
 import { REQUEST_WORDS } from '../../bodies/askWords';
 import {
+  InspectorFrame,
+  InspectorHeadAge,
+  InspectorHeadTitle,
+} from '../../inspector/InspectorFrame';
+import { useInspectorContext } from '../../inspector/inspectorContext';
+import {
   FACT_BODY,
   FACT_FILED,
   FACT_LANE,
@@ -21,8 +27,6 @@ import {
 } from '../words/inboxWords';
 import { elsewhereFor } from './elsewhere';
 import { handlerKeyOf, type InboxHandlerProps } from './handlerRegistry';
-import { InspectorFrame, InspectorHeadAge, InspectorHeadTitle } from './InspectorFrame';
-import { useInspectorContext } from './inspectorContext';
 
 /**
  * **The handler for a kind whose handler hasn't landed** — the item's facts, read only, with no

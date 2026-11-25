@@ -170,7 +170,7 @@ export function useMapToolEngine(
             return;
           }
           control = built;
-          // A click traces (D300): the crosshair, never MapLibre's grab hand.
+          // A click traces (D313): the crosshair, never MapLibre's grab hand.
           map.getCanvas().style.cursor = 'crosshair';
           if (engine.polygon) {
             built.setPolygon(engine.polygon);

@@ -4,8 +4,8 @@ import { expect, waitFor, within } from 'storybook/test';
 
 import { must } from '@/components/kit/storyKit';
 import { ThemePair } from '../../../../../../.storybook/theme';
-import { type DecidedState, InspectorFrame } from '../../inspector/InspectorFrame';
-import { InspectorProvider } from '../../inspector/inspectorContext';
+import { type DecidedState, InspectorFrame } from '../../../inspector/InspectorFrame';
+import { InspectorProvider } from '../../../inspector/inspectorContext';
 import { InboxMapStill } from '../../map/InboxMap';
 import { ItemMapView } from '../../map/ItemMap';
 import { DRAWN_MAP } from '../../map/itemMapFixtures';
@@ -261,7 +261,7 @@ export const DecidedByColleague: Story = {
         locked={{
           by: 'Sarah Berman',
           at: DRAWN_NOW - 600_000,
-          decision: 'approved',
+          decisionWord: 'approved',
           byMe: false,
           actionId: 'a1',
         }}
@@ -284,7 +284,7 @@ export const MergedByColleague: Story = {
         locked={{
           by: 'Sarah Berman',
           at: DRAWN_NOW - 600_000,
-          decision: 'merged',
+          decisionWord: 'merged',
           byMe: false,
           actionId: 'a2',
         }}

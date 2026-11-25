@@ -900,7 +900,7 @@ const undoImageryOverride: UndoHandler = {
  * set_put_in → by the row's direction:
  * - `promoted` → demoted (the source and name it replaced); `demoted` → promoted again (B01-3d);
  * - `placed` (or a row from `setOfficial` before the direction was recorded) → the put-in removed
- *   (D300), refused once anything hangs off it (`placementRefusalOf`); `unplaced` → placed again
+ *   (D313), refused once anything hangs off it (`placementRefusalOf`); `unplaced` → placed again
  *   where it was, by its name, through `setOfficial`'s own path.
  */
 type PutInDirection = 'promoted' | 'demoted' | 'placed' | 'unplaced';
@@ -1043,7 +1043,7 @@ const undoPutIn: UndoHandler = {
   },
 };
 
-// ── Lots and links (D300) ─────────────────────────────────────────────────────────────────────────
+// ── Lots and links (D313) ─────────────────────────────────────────────────────────────────────────
 
 interface LinkPrev {
   parkingAreaId: Id<'parkingAreas'> | null;
@@ -1061,7 +1061,7 @@ const parkingRowOf = (row: Doc<'moderationActions'>): ParkingRow | null => {
 };
 
 /**
- * set_parking_area → by its target (D300):
+ * set_parking_area → by its target (D313):
  * - **on a lot placed by hand** (`prev: null`): the lot deleted with its lake links, refused once
  *   anything hangs off it (`lotRemovalRefusalOf`); **its removal** (`removed`): the lot placed again,
  *   where it was, by its name, for the lakes it served (a new lot, as a placement makes);

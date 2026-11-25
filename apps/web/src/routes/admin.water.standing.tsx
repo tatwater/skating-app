@@ -1,68 +1,30 @@
 import { api } from '@skating/convex/api';
-import { formatAreaAcres, standingReasonLabel } from '@skating/core';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
-import { useState } from 'react';
 import { AdminEmpty, AdminPageHeader, Table, Td, Th } from '../components/admin/adminUi';
-import { Button } from '../components/ui/button';
 import { Card, CardContent } from '../components/ui/card';
 
 /**
- * Corpus standing — **what is off the active map, and why; and what just came back** (A07b).
+ * Corpus standing — **what just came back to the active map** (A07b).
  *
  * The founder's trajectory is a corpus of a few hundred actually-skated lakes out of 25,000 known,
  * reached by machines (the seed, the July rollover, the campaign prunes) that shelve rather than
- * delete. A machine that changes the shape of the map needs a page where a person sees it do so;
- * this is that page. Five lanes, one per non-active standing, newest first, plus the list of bodies
- * that recently became active again — the one place a report silently un-shelving a pond is seen.
+ * delete — and a report on a shelved pond brings it back with no person in the loop. This page is
+ * where that is seen: the bodies that recently became active again, newest first, with what
+ * brought each back and what the enrichment passes have not yet given it.
  *
- * Every row links into the lake editor, whose Standing card is where the act happens. This page
- * lists; it does not act — a lane with buttons on every row is how a fat thumb un-shelves a pond.
+ * What is off the active map, and why, is the Corpus library's lanes now (`/admin/corpus`); this
+ * page kept only what no console page draws yet. Every row links into the lake editor, whose
+ * Standing card is where the act happens. This page lists; it does not act.
  */
 export const Route = createFileRoute('/admin/water/standing')({ component: StandingPage });
 
-type Lane = 'inactive' | 'not_in_campaign' | 'moderator' | 'no_public_access' | 'removed';
-
-const LANES: readonly Lane[] = [
-  'inactive',
-  'not_in_campaign',
-  'moderator',
-  'no_public_access',
-  'removed',
-];
-
-const LANE_LABELS: Record<Lane, string> = {
-  inactive: standingReasonLabel('inactive'),
-  not_in_campaign: standingReasonLabel('not_in_campaign'),
-  moderator: standingReasonLabel('moderator'),
-  no_public_access: standingReasonLabel('no_public_access'),
-  removed: 'Removed',
-};
-
-const LANE_BLURBS: Record<Lane, string> = {
-  inactive:
-    'Nobody has reported, tracked or marked anything here in three seasons, nobody has boosted or favorited it, and it has no saved put-in — the July rollover, or the seed. A report or a new put-in brings it back on its own.',
-  not_in_campaign:
-    'The admission rules refuse it now — a raised acreage floor, a class the merge no longer takes. Shelved by a campaign prune rather than deleted. A report brings it back and keeps it by request.',
-  moderator:
-    'Set dormant by hand, with a note the skater reads. Only a moderator brings these back.',
-  no_public_access:
-    'A moderator ruled there is no lawful way in. Dormant on that account; the ruling is changed in the lake editor’s Access section, not here.',
-  removed:
-    'Taken off the map (D48) — a landowner request, junk, a duplicate. Draws only when zoomed right in, with the reason; absent from search. Restore from the lake editor.',
-};
-
 function StandingPage() {
-  const [lane, setLane] = useState<Lane>('inactive');
-  const rows = useQuery(api.standing.listLane, { lane });
   const recent = useQuery(api.standing.listRecentActivations, {});
 
   return (
     <div className="flex flex-col gap-6">
-      <AdminPageHeader
-        title="Standing"
-        subtitle="What is off the active map and why — and what just came back."
-      />
+      <AdminPageHeader title="Standing" subtitle="What just came back to the active map." />
 
       <section className="flex flex-col gap-3">
         <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
@@ -101,75 +63,6 @@ function StandingPage() {
                   ))}
                 </tbody>
               </Table>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="flex flex-col gap-3">
-        <h2 className="font-mono text-foreground-muted text-xs uppercase tracking-widest">
-          Off the active map
-        </h2>
-        <div className="flex flex-wrap gap-2">
-          {LANES.map((l) => (
-            <Button
-              key={l}
-              variant={l === lane ? 'default' : 'outline'}
-              size="sm"
-              onClick={() => setLane(l)}
-            >
-              {LANE_LABELS[l]}
-            </Button>
-          ))}
-        </div>
-        <Card>
-          <CardContent className="flex flex-col gap-3">
-            <p className="text-foreground-muted text-sm">{LANE_BLURBS[lane]}</p>
-            {rows === undefined ? null : rows.rows.length === 0 ? (
-              <AdminEmpty>Nothing in this lane.</AdminEmpty>
-            ) : (
-              <>
-                <Table>
-                  <thead>
-                    <tr>
-                      <Th>Lake</Th>
-                      <Th>Acres</Th>
-                      <Th>Since</Th>
-                      <Th>Last activity</Th>
-                      <Th>Flags</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.rows.map((row) => (
-                      <tr key={row._id}>
-                        <Td>
-                          <LakeLink id={row._id} name={row.name} states={row.states} />
-                        </Td>
-                        <Td className="font-mono text-xs">{formatAreaAcres(row.surfaceAreaSqM)}</Td>
-                        <Td>{new Date(row.standing.since).toLocaleDateString()}</Td>
-                        <Td>
-                          {row.lastActivityAt === undefined
-                            ? 'never'
-                            : new Date(row.lastActivityAt).toLocaleDateString()}
-                        </Td>
-                        <Td className="font-mono text-xs">
-                          {[
-                            row.includedByRequest ? 'by request' : null,
-                            row.curatedBoost > 0 ? `boost ${row.curatedBoost}` : null,
-                          ]
-                            .filter(Boolean)
-                            .join(' · ') || '—'}
-                        </Td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </Table>
-                {rows.truncated ? (
-                  <p className="text-foreground-muted text-xs">
-                    Showing the newest {rows.rows.length}; the lane holds more.
-                  </p>
-                ) : null}
-              </>
             )}
           </CardContent>
         </Card>

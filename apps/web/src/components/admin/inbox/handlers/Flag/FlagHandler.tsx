@@ -2,15 +2,14 @@ import { api } from '@skating/convex/api';
 import { AROUND_IT_DEFAULT_DAYS } from '@skating/core';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { type ReactNode, useState } from 'react';
-
+import { InspectorFrame } from '../../../inspector/InspectorFrame';
+import { useInspectorContext } from '../../../inspector/inspectorContext';
 import { isFailed, read, useConsoleReadSet } from '../../../reads/consoleReads';
 import { useUndo } from '../../../shell/undo';
 import type { AroundState } from '../../around/AroundLine';
 import { AroundSheet } from '../../around/AroundSheet';
 import { AuthorMenu } from '../../inspector/AuthorMenu';
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
-import { InspectorFrame } from '../../inspector/InspectorFrame';
-import { useInspectorContext } from '../../inspector/inspectorContext';
 import { ItemMap } from '../../map/ItemMap';
 import { flagSlots } from './FlagView';
 import type { AroundItData, ClaimWeatherData, FlagItem } from './flagTypes';

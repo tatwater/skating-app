@@ -947,7 +947,7 @@ export interface SetOfficialParkingArgs {
 }
 
 /**
- * `setOfficialParking`'s body — also what undoing a lot's removal runs (D300), so a lot put back is
+ * `setOfficialParking`'s body — also what undoing a lot's removal runs (D313), so a lot put back is
  * created as a placed one is, its lake links asserted again.
  */
 export async function setOfficialParkingImpl(
@@ -1036,7 +1036,7 @@ export async function setOfficialParkingImpl(
   return parkingAreaId;
 }
 
-// ── Undoing a lot placed by hand (D300) ──────────────────────────────────────────────────────────
+// ── Undoing a lot placed by hand (D313) ──────────────────────────────────────────────────────────
 
 /**
  * Why removing a lot placed by hand is refused, or `null` — one rule for the undo's offer and its
@@ -1227,7 +1227,7 @@ export async function setPutInAccessImpl(
     if (!lot) throw new ConvexError('Parking area not found');
     parkingAreaId = args.parkingAreaId;
     // Straight-line, flagged, until the walk is routed. Not routed here: this is a request path, and
-    // D87 keeps ORS off it. A staff link is walked fresh in the background instead (D300, amending
+    // D87 keeps ORS off it. A staff link is walked fresh in the background instead (D313, amending
     // D87 — a handful a day against the quota), scheduled below; the flagged line stands until that
     // lands, and stays if ORS refuses.
     const leg = straightLineApproach(lot.coord, putIn.coord);
@@ -1247,11 +1247,15 @@ export async function setPutInAccessImpl(
     );
   }
 
-  // A link that will be walked fresh gets its own id, carried by the route it schedules (below).
+  // A link that will be walked fresh gets its own id, carried by the route it schedules (below). An
+  // edit that leaves the lot alone (a hike-in choice alone) keeps the link's id, so a walk still in
+  // flight for it lands; unlinking drops it, so nothing lands on a put-in with no lot.
   const walked = Boolean(args.parkingAreaId && !args.clearParking && approachRouted === false);
   const approachLinkId = walked
     ? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
-    : undefined;
+    : args.clearParking
+      ? undefined
+      : putIn.approachLinkId;
   await ctx.db.patch(args.putInId, {
     parkingAreaId,
     approachMeters,
@@ -1291,7 +1295,7 @@ export async function setPutInAccessImpl(
     createdAt: Date.now(),
   });
 
-  // A lot linked (or put back by an undo) is walked fresh, in the background (D300): one ORS
+  // A lot linked (or put back by an undo) is walked fresh, in the background (D313): one ORS
   // `foot-hiking` leg, which lands only if this link still stands when it answers.
   if (walked && args.parkingAreaId && approachLinkId !== undefined) {
     await ctx.scheduler.runAfter(0, internal.accessPoints.routeLinkedApproach, {
@@ -1323,7 +1327,7 @@ export function relinkRefusalOf(
   return null;
 }
 
-// ── The walk, routed fresh (D300) ────────────────────────────────────────────────────────────────
+// ── The walk, routed fresh (D313) ────────────────────────────────────────────────────────────────
 
 /** The pair a link's walk is routed between, as it stands — or `null` when the link is gone. */
 export const linkedPair = internalQuery({
@@ -1383,7 +1387,7 @@ export async function fetchFootHikingLeg(from: LatLng, to: LatLng): Promise<Appr
 }
 
 /**
- * Route a linked lot's walk (D300): read the pair, ask ORS once, store what it answered. Scheduled
+ * Route a linked lot's walk (D313): read the pair, ask ORS once, store what it answered. Scheduled
  * by `setPutInAccessImpl` whenever a lot is linked — from the console, the old editor or an undo.
  */
 export const routeLinkedApproach = internalAction({

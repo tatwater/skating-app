@@ -3,7 +3,7 @@ import { DEFAULT_SAMPLE_SPACING_KM, type LatLng, suggestSamplePoints } from '@sk
 import type { BBoxLike } from '@/lib/mapSurface';
 
 /**
- * **A suggested grid of weather sample points** (B01-6b, D300): the old editor's tool, kept as it
+ * **A suggested grid of weather sample points** (B01-6b, D313): the old editor's tool, kept as it
  * was — suggest a grid at a spacing, look at it on the map, save it or let it go. Pure but for the
  * session counter: the Water tab keeps it in state, and the map's claim is read off it (no engine;
  * the grid is the draft, drawn as hollow rings — proposed, not placed).

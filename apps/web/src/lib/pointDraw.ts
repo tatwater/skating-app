@@ -3,7 +3,7 @@ import type { LatLng } from '@skating/core';
 import type { ChordMap, ChordMapEvent } from './chordDraw';
 
 /**
- * The point tool (B01-6b, D300): one mark placed by a click, or moved by a click elsewhere or by
+ * The point tool (B01-6b, D313): one mark placed by a click, or moved by a click elsewhere or by
  * dragging it. A landmark dropped or moved, a put-in or a lot placed, a known feature's center.
  *
  * - **A click places**, anywhere on the map; the cursor is a crosshair the whole time the tool is

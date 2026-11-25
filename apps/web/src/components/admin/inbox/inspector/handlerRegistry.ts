@@ -1,7 +1,6 @@
 import type { ComponentType } from 'react';
-
+import type { DecidedState } from '../../inspector/InspectorFrame';
 import type { InboxItemView } from '../list/inboxTypes';
-import type { DecidedState } from './InspectorFrame';
 
 /**
  * **Which handler draws an item** — by its kind, and for a flag by what it is on (the subject):

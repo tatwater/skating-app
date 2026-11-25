@@ -32,7 +32,7 @@ import {
 } from './featureDraft';
 
 /**
- * **The known-feature task** (B01-6b, D300): a feature being drawn, over the tab's own blocks, framed
+ * **The known-feature task** (B01-6b, D313): a feature being drawn, over the tab's own blocks, framed
  * in the mode's ice as the bay task is — no board draws it, so it follows the bay task's pattern and
  * waits on the founder's look pass. Its header says what it is for (a new feature, a redraw); a new
  * feature's type and note; the way it is drawn (the segments switch the map's engine); a point's

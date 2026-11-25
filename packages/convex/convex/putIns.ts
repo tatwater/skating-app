@@ -90,7 +90,7 @@ export const setOfficial = mutation({
 });
 
 /**
- * `setOfficial`'s body — also what undoing a placement's undo runs (D300: placing has an undo,
+ * `setOfficial`'s body — also what undoing a placement's undo runs (D313: placing has an undo,
  * every one), so the snap, the far-from-water refusal and the put-in's after-effects apply to the
  * redo too. The row records `direction: 'placed'` so its undo knows what it is.
  */
@@ -176,7 +176,7 @@ export async function placePutInImpl(
   return { putInId: id, actionId };
 }
 
-// ── Undoing a placement (D300) ───────────────────────────────────────────────────────────────
+// ── Undoing a placement (D313) ───────────────────────────────────────────────────────────────
 
 /**
  * How many of a body's access alerts a placement's undo reads to see whether one was filed on the

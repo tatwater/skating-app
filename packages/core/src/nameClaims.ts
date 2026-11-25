@@ -37,10 +37,56 @@
 
 import type { ClaimSource } from './confidence';
 
+/**
+ * Whose name wins when two catalogs both have one — **authority, not length**.
+ *
+ * The rule this replaced was longest-wins, and its own docstring defended it as *"right when the
+ * catalogs disagree about which lake this is"*. That is backwards: if the catalogs disagree about
+ * which lake this is, the merge is already wrong and preferring the longer string entrenches the
+ * error under a more confident-looking label. Length is not evidence of anything.
+ *
+ * The order is the order of authority over US place names:
+ *
+ * | rank | source | what its name actually is |
+ * | --- | --- | --- |
+ * | 0 | `gnis` | the gazetteer, from the body that assigns the names |
+ * | 1 | `nhd` | NHD's `gnis_name` column — **which IS GNIS**, joined at publication |
+ * | 2 | `3dhp` | `gnisidlabel`, the same gazetteer one release later |
+ * | 3 | `osm` | a mapper's free text: local, often better, and unaccountable |
+ *
+ * **OSM ranking last is a real trade and worth naming.** OSM frequently carries the name a local
+ * would use where the gazetteer carries an official one, and we lose that. What we buy is that the
+ * stored name is always traceable to a publisher, which is the property a name-conflict queue needs
+ * in order to be worth opening — and the OSM name survives on the row as `osmId`'s feature, so it is
+ * recoverable rather than gone.
+ *
+ * Moved here from the ETL's `mergeRules.ts` (B01-7a), which imports it: the merge ranks the claims by
+ * it, and the Corpus Name conflicts lane says each catalog's rank in words from the same table.
+ */
+export const NAME_SOURCE_RANK: Readonly<Record<ClaimSource, number>> = {
+  // A moderator has looked at it, which ends the question — the same precedence `scoreAttribute`
+  // gives `user`. No merged feature carries this source today; it is here so that the day one does,
+  // the rule is already right rather than quietly outranked by a gazetteer.
+  user: -1,
+  gnis: 0,
+  nhd: 1,
+  '3dhp': 2,
+  osm: 3,
+  // Not a catalog: `name` is a keyword read off a string a catalog already supplied.
+  name: 4,
+};
+
 /** One publisher's name for a body, kept whether or not it won. */
 export interface NameClaim {
   readonly source: ClaimSource;
   readonly value: string;
+  /**
+   * Every catalog publishing this spelling, `source` first and the rest in rank order (B01-7a).
+   * Absent on a claim stored before the campaign that records it, and on a moderator's own claim:
+   * then `source` is the one catalog known, and nothing says the others agree. The merge records it
+   * (`nameClaimsOf`), and {@link distinctNameClaims} folds it when it folds a spelling.
+   */
+  readonly sources?: ClaimSource[];
 }
 
 /** Case-insensitive, whitespace-insensitive key. Not `sameName` — see `distinctNameClaims`. */
@@ -60,19 +106,39 @@ function key(value: string): string {
  *
  * First claim of a given string wins, so a caller that passes claims in authority order gets the
  * most authoritative source attached to each spelling.
+ *
+ * **Every catalog behind a spelling is kept** (B01-7a): the claims a spelling folds pool their
+ * `sources` — the first claim's `source` first, the rest in `NAME_SOURCE_RANK` order, each once — so
+ * the Name conflicts lane can draw *GNIS · NHD · 3DHP* where three catalogs agree. Only when **every**
+ * claim folded into it recorded its `sources`: a spelling with one claim from before the campaign
+ * that records them stays unrecorded, since a list that left that claim's other catalogs out would
+ * say the catalogs agree when nobody knows. `source` and `value` are exactly what they were before
+ * `sources` existed (a property test holds that).
  */
 export function distinctNameClaims(claims: readonly NameClaim[]): NameClaim[] {
-  const seen = new Set<string>();
-  const out: NameClaim[] = [];
+  const kept = new Map<string, { claim: NameClaim; sources: ClaimSource[] | null }>();
   for (const claim of claims) {
     const value = claim.value.trim();
     if (value.length === 0) continue;
     const k = key(value);
-    if (seen.has(k)) continue;
-    seen.add(k);
-    out.push({ source: claim.source, value });
+    const recorded = claim.sources === undefined ? null : [claim.source, ...claim.sources];
+    const first = kept.get(k);
+    if (first === undefined) {
+      kept.set(k, { claim: { source: claim.source, value }, sources: recorded });
+    } else {
+      first.sources =
+        first.sources === null || recorded === null ? null : [...first.sources, ...recorded];
+    }
   }
-  return out;
+  return [...kept.values()].map(({ claim, sources }) =>
+    sources === null ? claim : { ...claim, sources: rankedSources(claim.source, sources) },
+  );
+}
+
+/** `first`, then every other catalog in `pooled` once, in `NAME_SOURCE_RANK` order. */
+function rankedSources(first: ClaimSource, pooled: readonly ClaimSource[]): ClaimSource[] {
+  const rest = [...new Set(pooled)].filter((s) => s !== first);
+  return [first, ...rest.sort((a, b) => NAME_SOURCE_RANK[a] - NAME_SOURCE_RANK[b])];
 }
 
 /**

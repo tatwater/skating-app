@@ -3,7 +3,7 @@ import { HIKE_IN_ASSERT_M, haversineMeters, type LatLng } from '@skating/core';
 import type { LotRow, PutInRow } from './accessModel';
 
 /**
- * **The Access tab's map tasks** (B01-6b, D300), as data: a put-in placed (its spot snapped to the
+ * **The Access tab's map tasks** (B01-6b, D313), as data: a put-in placed (its spot snapped to the
  * shore while hovering, the server snapping it again), a lot placed (where the click is), or a lot
  * linked to a put-in (a click on a lot, or *No parking*, with the hike-in assertion D144 asks for on
  * a long walk). Pure, but for the session counter that tells the map when a drawing starts over.

@@ -1,7 +1,7 @@
-import { render } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import fc from 'fast-check';
 import { useMemo } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freezeUpLaneIds } from '@/components/useFreezeUpFrame';
 import { type BBoxLike, fitCamera, type Padding } from '@/lib/mapSurface';
@@ -9,6 +9,7 @@ import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
 import { floorZoom, ZOOM_OUT_ROOM } from './bodyMapFraming';
 import { adminToken } from './bodyMapPalette';
 import { DEFAULT_LAYERS, type DrawnScene, drawScene } from './bodyScene';
+import { AERIAL_PAINT } from './consoleAerial';
 import { DOT_SOURCE, LINE_SOURCE, OUTLINE_SOURCE } from './glLayers';
 
 /**
@@ -40,6 +41,10 @@ class FakeMap {
         this.check();
         src.data = d;
       },
+      // A canvas source's (the summer aerial's) re-upload pair.
+      setCoordinates: () => {},
+      play: () => {},
+      pause: () => {},
     };
     this.sources.set(id, src);
   }
@@ -119,6 +124,15 @@ class FakeMap {
   getCenter() {
     return { lng: -72.15, lat: 43.63 };
   }
+  getBounds() {
+    const b = MASCOMA_BOUNDS;
+    return {
+      getSouth: () => b.minLat,
+      getNorth: () => b.maxLat,
+      getWest: () => b.minLng,
+      getEast: () => b.maxLng,
+    };
+  }
   project([lng, lat]: [number, number]) {
     return { x: lng, y: lat };
   }
@@ -169,6 +183,18 @@ vi.mock('@/lib/env', async (importOriginal) => {
   };
 });
 
+// The summer aerial's cells: decoded at once, never fetched (the reveal's own tests cover the cache).
+const tiles = vi.hoisted(() => ({ load: vi.fn(async () => ({}) as ImageBitmap) }));
+vi.mock('@/lib/imageryCache', () => ({
+  loadTile: () => tiles.load(),
+  isTileResident: () => true,
+}));
+// …and its credit's date: never asked of the network here.
+vi.mock('./consoleAerial', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('./consoleAerial')>()),
+  useAerialCredit: (on: boolean) => (on ? 'Aerial · NAIP' : null),
+}));
+
 const { FIT_PADDING: FIT_PADDING_FOR_TEST, useBodyMapCanvas } = await import('./useBodyMapCanvas');
 
 /** Imagery's lit pass, as its scene hands it to the frame. */
@@ -189,22 +215,43 @@ function Harness({
   raster = null,
   padding,
   reach,
+  aerial,
+  maxZoom,
 }: {
   mode: 'dark' | 'light';
   bbox?: typeof MASCOMA_BOUNDS;
   raster?: DrawnScene['raster'];
   padding?: Padding;
   reach?: BBoxLike | null;
+  aerial?: boolean;
+  maxZoom?: number;
 }) {
   const drawn = useMemo(() => ({ ...drawScene(MASCOMA_SCENE, DEFAULT_LAYERS), raster }), [raster]);
-  const canvas = useBodyMapCanvas({ bbox, mode, drawn, padding, reach });
-  return <div data-testid="zoom">{canvas.surface ? 'live' : 'waiting'}</div>;
+  const canvas = useBodyMapCanvas({ bbox, mode, drawn, padding, reach, aerial, maxZoom });
+  return (
+    <div
+      data-testid="zoom"
+      data-credit={canvas.aerialCredit ?? undefined}
+      data-aerial-load={canvas.aerialLoad?.load}
+      data-aerial-pending={canvas.aerialLoad?.pending ? '' : undefined}
+    >
+      {canvas.surface ? 'live' : 'waiting'}
+      {canvas.aerialLoad?.onRetry && (
+        <button type="button" onClick={canvas.aerialLoad.onRetry}>
+          retry
+        </button>
+      )}
+    </div>
+  );
 }
 
 beforeEach(() => {
   shell.map = new FakeMap();
   shell.live = false;
   shell.onLoad = null;
+  // Reset, not cleared: a test that makes the cells fail must not leave the next one failing with
+  // it, however it ends (a reset puts back the implementation the mock was made with).
+  tiles.load.mockReset();
 });
 
 describe('useBodyMapCanvas', () => {
@@ -492,6 +539,133 @@ describe('an embed’s own room and reach (the Inbox)', () => {
       [b.minLng - dx, b.minLat - dy],
       [b.maxLng + dx, b.maxLat + dy],
     ]);
+  });
+});
+
+describe('a caller’s ceiling (the Corpus head map’s)', () => {
+  const pond = { minLng: -72.1502, minLat: 43.63, maxLng: -72.1498, maxLat: 43.6302 };
+
+  it('frames a pond closer than the console’s 17 when the caller says, and holds the floor under it', () => {
+    const map = loadLive({ mode: 'dark', bbox: pond, maxZoom: 19 });
+    expect(map.maxZoom).toBe(19);
+    expect(map.zoom).toBe(19);
+    expect(map.minZoom).toBeLessThanOrEqual(19);
+  });
+
+  it('is the console’s 17 unless said', () => {
+    expect(loadLive({ mode: 'dark', bbox: pond }).maxZoom).toBe(17);
+  });
+});
+
+describe('the summer aerial', () => {
+  /** A 2D context that draws nothing: jsdom has none, and the reveal bails without one. */
+  beforeEach(() => {
+    const noop = () => {};
+    const ctx = new Proxy({ filter: 'none' } as Record<string, unknown>, {
+      get: (target, key) => (key in target ? target[key as string] : noop),
+      set: (target, key, value) => {
+        target[key as string] = value;
+        return true;
+      },
+      has: () => true,
+    });
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(
+      ctx as unknown as CanvasRenderingContext2D,
+    );
+  });
+  // …and jsdom's own back after each: the stand-in never reaches the suites below.
+  afterEach(() => vi.restoreAllMocks());
+
+  const aerialLayer = (map: FakeMap) => map.layers.get('imagery-raster');
+
+  it('draws nothing of it while off', async () => {
+    const map = loadLive({ mode: 'dark' });
+    await Promise.resolve();
+    expect(aerialLayer(map)).toBeUndefined();
+    expect(tiles.load).not.toHaveBeenCalled();
+  });
+
+  it('lays the photograph over the fills and under the fields and every line, dimmed for the mode', async () => {
+    const map = loadLive({ mode: 'dark', aerial: true });
+    await waitFor(() => expect(aerialLayer(map)).toBeDefined());
+    const order = map.getLayersOrder();
+    const at = order.indexOf('imagery-raster');
+    expect(at).toBeGreaterThan(order.indexOf('body-console-fill-body'));
+    expect(order[at + 1]).toBe('body-console-field-dots');
+    expect(at).toBeLessThan(order.indexOf('body-console-outline-body'));
+    expect(aerialLayer(map)?.paint).toMatchObject(AERIAL_PAINT.dark);
+  });
+
+  it('in the light, lifted instead', async () => {
+    const map = loadLive({ mode: 'light', aerial: true });
+    await waitFor(() => expect(aerialLayer(map)).toBeDefined());
+    expect(aerialLayer(map)?.paint).toMatchObject(AERIAL_PAINT.light);
+  });
+
+  it('goes under a winter pass already up, never over it', async () => {
+    const map = loadLive({ mode: 'dark', raster: PASS, aerial: true });
+    await waitFor(() => expect(aerialLayer(map)).toBeDefined());
+    const order = map.getLayersOrder();
+    expect(order.indexOf('imagery-raster')).toBeLessThan(
+      order.indexOf(freezeUpLaneIds('primary', 0).layerId),
+    );
+  });
+
+  it('comes off with the switch, and says its credit only while on', async () => {
+    const map = shell.map as FakeMap;
+    const view = render(<Harness mode="dark" aerial />);
+    map.loaded = true;
+    shell.onLoad?.(map);
+    shell.live = true;
+    view.rerender(<Harness mode="dark" aerial />);
+    await waitFor(() => expect(aerialLayer(map)).toBeDefined());
+    expect(view.getByTestId('zoom').dataset.credit).toBe('Aerial · NAIP');
+    view.rerender(<Harness mode="dark" aerial={false} />);
+    expect(aerialLayer(map)).toBeUndefined();
+    expect(map.sources.has('imagery')).toBe(false);
+    expect(view.getByTestId('zoom').dataset.credit).toBeUndefined();
+  });
+
+  /** The map loaded with the aerial on, as the harness's live view. */
+  function aerialLive() {
+    const map = shell.map as FakeMap;
+    const view = render(<Harness mode="dark" aerial />);
+    map.loaded = true;
+    shell.onLoad?.(map);
+    shell.live = true;
+    view.rerender(<Harness mode="dark" aerial />);
+    return { map, view, zoom: () => view.getByTestId('zoom') };
+  }
+
+  it('its credit is loading until the cells are in, then loaded; off, it says nothing', async () => {
+    const { view, zoom } = aerialLive();
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('loaded'));
+    view.rerender(<Harness mode="dark" aerial={false} />);
+    expect(zoom().dataset.aerialLoad).toBeUndefined();
+  });
+
+  it('says failed when no cell came, and Try again asks again until the photograph is in', async () => {
+    tiles.load.mockResolvedValue(null as unknown as ImageBitmap);
+    const { view, map, zoom } = aerialLive();
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('failed'));
+    expect(map.sources.has('imagery')).toBe(false);
+    tiles.load.mockResolvedValue({} as ImageBitmap);
+    act(() => view.getByRole('button', { name: 'retry' }).click());
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('loaded'));
+    expect(zoom().dataset.aerialPending).toBeUndefined();
+    expect(view.queryByRole('button', { name: 'retry' })).toBeNull();
+    expect(map.sources.has('imagery')).toBe(true);
+  });
+
+  it('a retry that fails again offers Try again again — never stuck on Trying again…', async () => {
+    tiles.load.mockResolvedValue(null as unknown as ImageBitmap);
+    const { view, zoom } = aerialLive();
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('failed'));
+    const asked = tiles.load.mock.calls.length;
+    act(() => view.getByRole('button', { name: 'retry' }).click());
+    await waitFor(() => expect(tiles.load.mock.calls.length).toBeGreaterThan(asked));
+    await waitFor(() => expect(zoom().dataset.aerialPending).toBeUndefined());
+    expect(zoom().dataset.aerialLoad).toBe('failed');
   });
 });
 

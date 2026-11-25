@@ -5,7 +5,7 @@ import { api } from './_generated/api';
 import schema from './schema';
 
 /**
- * `landmarks.create` placing an ask (D300): an emailed name also needs `corpus.placeNames`, a
+ * `landmarks.create` placing an ask (D313): an emailed name also needs `corpus.placeNames`, a
  * skater's proposal also needs `inbox.request` — the capabilities the Places tab gates the buttons
  * on. Every role holding `body.places` holds both today, so the test raises one capability's role
  * past the moderator's to prove the server asks for it, and only when the ask is passed.

@@ -9,7 +9,7 @@ import { hazardsMapScene } from '../tabs/hazards/hazardsMap';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyMapStillView } from './BodyMap';
 import { BodyMapKey } from './BodyMapMarks';
-import { BodyMapPane } from './BodyMapPane';
+import { BodyMapPane, RACK_UNDER_TOOL } from './BodyMapPane';
 import { drawScene, layerSwitches, mergeScenes } from './bodyScene';
 import type { MapPointMark } from './mapDescriptors';
 
@@ -198,6 +198,92 @@ describe('the rack’s switches', () => {
   });
 });
 
+describe('the summer aerial on the console map', () => {
+  it('is the rack’s last row, never disabled, and draws its stand-in and credit while on', async () => {
+    const user = userEvent.setup();
+    render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        aerialCapturedAt={Date.UTC(2023, 5, 22)}
+      />,
+    );
+    const rack = screen.getAllByRole('switch');
+    const aerial = screen.getByRole('switch', { name: 'Summer aerial' });
+    expect(rack.at(-1)).toBe(aerial);
+    expect(aerial).not.toBeChecked();
+    expect(aerial).not.toHaveAttribute('data-disabled');
+    // The winter pass's own row stays what it was: disabled with no pass in the scene.
+    expect(screen.getByRole('switch', { name: 'Aerial' })).toHaveAttribute('data-disabled');
+    expect(document.querySelector('[data-slot="body-map-aerial-still"]')).toBeNull();
+    expect(document.querySelector('[data-slot="body-map-aerial-credit"]')).toBeNull();
+
+    await user.click(aerial);
+    expect(aerial).toBeChecked();
+    expect(document.querySelector('[data-slot="body-map-aerial-still"]')).not.toBeNull();
+    const credit = document.querySelector('[data-slot="body-map-aerial-credit"]');
+    expect(credit).toHaveTextContent('Aerial · NAIP Jun 2023');
+    // In the dock, before the scale and the zoom pair: board 4.3's corner.
+    const group = credit?.parentElement;
+    expect(group?.parentElement).toHaveAttribute('data-slot', 'map-dock');
+    expect(group?.parentElement?.firstElementChild).toBe(group);
+    expect(group?.firstElementChild).toBe(credit);
+    // In: nothing owed, nothing to press.
+    expect(credit).toHaveAttribute('data-state', 'loaded');
+    expect(document.querySelector('[data-slot="body-map-aerial-retry"]')).toBeNull();
+  });
+
+  it('draws over the fills and under every line: the shore stays on top', () => {
+    render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        aerial
+      />,
+    );
+    const svg = document.querySelector('[data-slot="body-map-still"]') as SVGElement;
+    const children = [...svg.children];
+    const stand = children.findIndex(
+      (c) => c.getAttribute('data-slot') === 'body-map-aerial-still',
+    );
+    const shore = children.findIndex((c) => c.getAttribute('data-id')?.startsWith('body'));
+    expect(stand).toBeGreaterThan(0);
+    expect(shore).toBeGreaterThan(stand);
+  });
+
+  it('a switch a tab change resets (Put-ins) is not the aerial’s: it stays as the viewer left it', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+      />,
+    );
+    await user.click(screen.getByRole('switch', { name: 'Summer aerial' }));
+    await user.click(screen.getByRole('switch', { name: 'Put-ins' }));
+    rerender(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="names"
+        width={W}
+        height={H}
+      />,
+    );
+    expect(screen.getByRole('switch', { name: 'Put-ins' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Summer aerial' })).toBeChecked();
+  });
+});
+
 describe('BodyMapKey', () => {
   const words = () => screen.getAllByRole('listitem').map((i) => i.textContent);
 
@@ -250,5 +336,66 @@ describe('the tool’s mode bar (B01-6a)', () => {
   it('draws no bar while no tool is held', () => {
     render(<BodyMapPane surface={null} ground={null} drawn={drawn} rack={false} />);
     expect(document.querySelector('[data-slot="map-mode-bar"]')).toBeNull();
+  });
+
+  it('drops the rack under the bar while a tool is held, and puts it back when the tool goes', () => {
+    const tool = { mode: 'Bay mode', onExit: () => {} };
+    const still = (held: typeof tool | null) => (
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        tool={held}
+      />
+    );
+    const { rerender } = render(still(tool));
+    const rack = () => screen.getByRole('group', { name: 'Map layers' });
+    // The kit's own rule looks for the bar inside `[data-slot=map-pane]`; this pane is `body-map`,
+    // so the rule can't match and the pane says the offset itself.
+    expect(rack().closest('[data-slot="map-pane"]')).toBeNull();
+    expect(rack()).toHaveClass(RACK_UNDER_TOOL);
+    // One rule for the rack's top: the corner's is gone, not merely outvoted.
+    expect(rack()).not.toHaveClass('top-(--space-5)');
+    // …and the measure it names is the kit rack's own, set on the rack.
+    expect(rack().style.getPropertyValue('--rack-under-mode')).not.toBe('');
+    rerender(still(null));
+    expect(rack()).not.toHaveClass(RACK_UNDER_TOOL);
+    expect(rack()).toHaveClass('top-(--space-5)');
+  });
+
+  it('measures the chrome again when a tool’s bar goes up: the labels keep clear of it', () => {
+    // The pane at the origin, and the bar laid out down the right edge (taller than it is drawn, so
+    // every parallel's label meets it): only a new measure can know it is there.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      const slot = this.getAttribute('data-slot');
+      if (slot === 'body-map') return rect(0, 0, W, H);
+      if (slot === 'map-mode-bar') return rect(20, 14, W - 20, H);
+      return rect(0, 0, 0, 0);
+    });
+    const latitudes = () =>
+      [...document.querySelectorAll('[data-slot="map-graticule-label"]')]
+        .map((l) => l.textContent ?? '')
+        .filter((t) => t.endsWith('°N'));
+    const still = (held: boolean) => (
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        tool={held ? { mode: 'Bay mode', onExit: () => {} } : null}
+      />
+    );
+    const { rerender } = render(still(false));
+    expect(latitudes().length).toBeGreaterThan(0);
+    rerender(still(true));
+    expect(latitudes()).toEqual([]);
+    // …and back when the tool goes.
+    rerender(still(false));
+    expect(latitudes().length).toBeGreaterThan(0);
   });
 });

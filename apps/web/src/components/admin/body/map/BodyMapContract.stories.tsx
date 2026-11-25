@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect } from 'storybook/test';
 
+import { resolvePx } from '@/components/kit/measure';
 import { must } from '@/components/kit/storyKit';
 
 import { MASCOMA_BOUNDS, MASCOMA_SCENE } from '../frame/bodyFixtures';
@@ -187,6 +188,55 @@ export const ShapeUnknown: Story = {
     ).toHaveTextContent('Shape unknown');
     await expect(must(canvasElement.querySelector('[data-slot="map-key"]'))).toHaveTextContent(
       'Hazard',
+    );
+  },
+};
+
+/**
+ * A tool held on the map (Bay mode): its bar across the top, and the rack dropped under it with
+ * the boards' gap — every row of it clear of the bar, the summer aerial's last row included.
+ */
+export const ToolHeld: Story = {
+  args: {
+    bbox: MASCOMA_BOUNDS,
+    scene: MASCOMA_SCENE,
+    resetKey: 'tool',
+    width: 656,
+    height: 830,
+    tool: {
+      mode: 'Bay mode',
+      line: 'Click the shore where the bay begins',
+      step: 'Step 1 of 4',
+      onExit: () => {},
+    },
+  },
+  play: async ({ canvasElement }) => {
+    const bar = must(canvasElement.querySelector<HTMLElement>('[data-slot="map-mode-bar"]'));
+    const rack = must(canvasElement.querySelector<HTMLElement>('[data-slot="map-layer-rack"]'));
+    const under = bar.getBoundingClientRect().bottom;
+    // The kit's gap under a mode bar (`space-4`), as its own pane leaves it.
+    await expect(rack.getBoundingClientRect().top - under).toBeCloseTo(
+      resolvePx(rack, 'var(--space-4)'),
+      0,
+    );
+    const rows = [...rack.querySelectorAll<HTMLElement>('[data-slot="switch-row"]')];
+    await expect(rows.length).toBeGreaterThan(1);
+    for (const row of rows) {
+      await expect(row.getBoundingClientRect().top).toBeGreaterThanOrEqual(under);
+    }
+  },
+};
+
+/** Without a tool the rack keeps its corner. */
+export const NoToolHeld: Story = {
+  args: { ...ToolHeld.args, tool: null },
+  play: async ({ canvasElement }) => {
+    const pane = must(canvasElement.querySelector<HTMLElement>('[data-slot="body-map"]'));
+    const rack = must(canvasElement.querySelector<HTMLElement>('[data-slot="map-layer-rack"]'));
+    await expect(canvasElement.querySelector('[data-slot="map-mode-bar"]')).toBeNull();
+    await expect(rack.getBoundingClientRect().top - pane.getBoundingClientRect().top).toBeCloseTo(
+      resolvePx(pane, 'var(--space-5)'),
+      0,
     );
   },
 };

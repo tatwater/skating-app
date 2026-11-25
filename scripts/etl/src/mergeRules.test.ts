@@ -355,8 +355,8 @@ describe('nameClaimsOf', () => {
         feature('nhd', 'b', { name: 'The Basin' }),
       ]),
     ).toEqual([
-      { source: 'nhd', value: 'The Basin' },
-      { source: 'osm', value: 'Lake Auburn' },
+      { source: 'nhd', value: 'The Basin', sources: ['nhd'] },
+      { source: 'osm', value: 'Lake Auburn', sources: ['osm'] },
     ]);
   });
 
@@ -369,25 +369,53 @@ describe('nameClaimsOf', () => {
       feature('3dhp', 'a', { name: 'Long Pond' }),
       feature('nhd', 'b', { name: 'Long Pond' }),
     ];
-    expect(nameClaimsOf(members)).toEqual([{ source: 'nhd', value: 'Long Pond' }]);
-    expect(nameClaimsOf([...members].reverse())).toEqual([{ source: 'nhd', value: 'Long Pond' }]);
+    const credited = [{ source: 'nhd', value: 'Long Pond', sources: ['nhd', '3dhp'] }];
+    expect(nameClaimsOf(members)).toEqual(credited);
+    expect(nameClaimsOf([...members].reverse())).toEqual(credited);
+  });
+
+  // B01-7a: the board's *GNIS · NHD · 3DHP*. The merge folded identical spellings and kept only the
+  // winner's source, which no backfill can recover — so the next campaign records every catalog.
+  it('records every catalog publishing a spelling, the top-ranked first and as `source`', () => {
+    expect(
+      nameClaimsOf([
+        feature('osm', 'a', { name: 'Long Pond' }),
+        feature('3dhp', 'b', { name: 'Long Pond' }),
+        feature('nhd', 'c', { name: 'LONG POND' }),
+      ]),
+    ).toEqual([{ source: 'nhd', value: 'LONG POND', sources: ['nhd', '3dhp', 'osm'] }]);
+  });
+
+  it('records the gazetteer among the catalogs when it agrees with one', () => {
+    expect(nameClaimsOf([feature('osm', 'a', { name: 'Cicero Swamp' })], 'Cicero Swamp')).toEqual([
+      { source: 'gnis', value: 'Cicero Swamp', sources: ['gnis', 'osm'] },
+    ]);
+  });
+
+  it('records a catalog once, though it publishes the spelling twice', () => {
+    expect(
+      nameClaimsOf([
+        feature('osm', 'a', { name: 'Moose Pond' }),
+        feature('osm', 'b', { name: 'Moose Pond' }),
+      ]),
+    ).toEqual([{ source: 'osm', value: 'Moose Pond', sources: ['osm'] }]);
   });
 
   it('appends the gazetteer name as a gnis claim, ranked first', () => {
     // It has no member to belong to: it is what `resolveGnisNames` supplied for a body no catalog
     // named, and the ordering rule still has to place it.
     expect(nameClaimsOf([feature('osm', 'a', { name: 'The Bog' })], 'Cicero Swamp')).toEqual([
-      { source: 'gnis', value: 'Cicero Swamp' },
-      { source: 'osm', value: 'The Bog' },
+      { source: 'gnis', value: 'Cicero Swamp', sources: ['gnis'] },
+      { source: 'osm', value: 'The Bog', sources: ['osm'] },
     ]);
   });
 
   it('ignores a gazetteer name that was not used', () => {
     expect(nameClaimsOf([feature('osm', 'a', { name: 'Mud Pond' })], undefined)).toEqual([
-      { source: 'osm', value: 'Mud Pond' },
+      { source: 'osm', value: 'Mud Pond', sources: ['osm'] },
     ]);
     expect(nameClaimsOf([feature('osm', 'a', { name: 'Mud Pond' })], '')).toEqual([
-      { source: 'osm', value: 'Mud Pond' },
+      { source: 'osm', value: 'Mud Pond', sources: ['osm'] },
     ]);
   });
 
@@ -404,8 +432,8 @@ describe('nameClaimsOf', () => {
         feature('osm', 'b', { name: 'Little Moose Pond' }),
       ]),
     ).toEqual([
-      { source: 'osm', value: 'Moose Pond' },
-      { source: 'osm', value: 'Little Moose Pond' },
+      { source: 'osm', value: 'Moose Pond', sources: ['osm'] },
+      { source: 'osm', value: 'Little Moose Pond', sources: ['osm'] },
     ]);
   });
 });

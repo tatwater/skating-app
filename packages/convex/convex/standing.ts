@@ -62,7 +62,6 @@ import {
   runIsolated,
   runItem,
 } from './lib/recurringWork';
-import { takeCappedResult } from './lib/scan';
 import {
   activateBody,
   anyFavorite,
@@ -73,7 +72,6 @@ import {
   SAVED_PUT_IN_TAB_READ,
   savedPutInsOf,
 } from './lib/standing';
-import { literals } from './lib/validators';
 import { bodyAttachmentKind } from './waterBodies';
 
 // ── The moderator's hand ───────────────────────────────────────────────────────────────────────
@@ -176,71 +174,13 @@ export async function setStandingImpl(
   }
 }
 
-// ── The standing lists ─────────────────────────────────────────────────────────────────────────
+// ── The standing list ──────────────────────────────────────────────────────────────────────────
+//
+// The five off-map lanes `/admin/water/standing` once listed are the Corpus library's lanes now,
+// and their read went with them; what remains is the list no console page draws yet.
 
-/** Rows a lane shows at once. The lanes are for acting one body at a time, not for counting. */
-const LANE_CAP = 200;
-
-const LANES = ['inactive', 'not_in_campaign', 'moderator', 'no_public_access', 'removed'] as const;
-export type StandingLane = (typeof LANES)[number];
-
-/**
- * Moderator: one lane of the standing page — every body in a given non-active standing, newest
- * first, capped.
- *
- * Five lanes, five index reads, none of which touch the active majority: the three stored
- * dormancy reasons come off `by_dormant_reason`, `none` rulings off `by_public_access_verdict`, and
- * removals off `by_removed_at` with a `gt(0)` range that excludes the `undefined` the optional
- * field sorts first. Each row carries what a moderator needs to judge it without opening it — the
- * last time anyone was on it, so an `inactive` lane reads as a list of dates.
- */
-export const listLane = query({
-  args: { lane: literals(LANES), limit: v.optional(v.number()) },
-  handler: async (ctx, { lane, limit }) => {
-    await requireCapability(ctx, 'corpus.read');
-    const cap = Math.min(LANE_CAP, Math.max(1, limit ?? LANE_CAP));
-    const source =
-      lane === 'removed'
-        ? ctx.db
-            .query('waterBodies')
-            .withIndex('by_removed_at', (q) => q.gt('removedAt', 0))
-            .order('desc')
-        : lane === 'no_public_access'
-          ? ctx.db
-              .query('waterBodies')
-              .withIndex('by_public_access_verdict', (q) => q.eq('publicAccess.verdict', 'none'))
-              .order('desc')
-          : ctx.db
-              .query('waterBodies')
-              .withIndex('by_dormant_reason', (q) => q.eq('dormant.reason', lane))
-              .order('desc');
-    const { rows, truncated } = await takeCappedResult(source, cap, `standing.listLane(${lane})`);
-    const out = [];
-    for (const body of rows) {
-      const s = standingOf(body);
-      // A row can sit in a lane's index and belong to a stronger lane — a removed body still carries
-      // its old `dormant` field. Show it where `standingOf` says it is, once.
-      if (s.standing === 'unlisted') continue;
-      const inLane =
-        (lane === 'removed' && s.standing === 'removed') ||
-        (lane !== 'removed' && s.standing === 'dormant' && s.reason === lane);
-      if (!inLane) continue;
-      out.push({
-        _id: body._id,
-        name: body.name,
-        type: body.type,
-        states: body.states ?? [],
-        surfaceAreaSqM: body.surfaceAreaSqM ?? 0,
-        centroid: body.centroid,
-        standing: s,
-        lastActivityAt: await lastActivityAt(ctx, body._id),
-        includedByRequest: body.includedByRequest === true,
-        curatedBoost: body.curatedBoost ?? 0,
-      });
-    }
-    return { rows: out, truncated };
-  },
-});
+/** The most rows the recently-activated list returns, whatever `limit` asks. */
+const ACTIVATIONS_CAP = 200;
 
 /**
  * Moderator: bodies that recently became active, newest first — **the machine's re-activations,
@@ -251,7 +191,7 @@ export const listRecentActivations = query({
   args: { limit: v.optional(v.number()) },
   handler: async (ctx, { limit }) => {
     await requireCapability(ctx, 'corpus.read');
-    const cap = Math.min(LANE_CAP, Math.max(1, limit ?? 50));
+    const cap = Math.min(ACTIVATIONS_CAP, Math.max(1, limit ?? 50));
     const rows = await ctx.db
       .query('waterBodies')
       .withIndex('by_activated_at', (q) => q.gt('activatedAt', 0))
@@ -708,6 +648,8 @@ export const runStandingRollover = internalAction({
         campaignId: rolloverCampaignId(season, apply === true),
         deployment: process.env.CONVEX_CLOUD_URL ?? 'unknown',
         isProd: isProdDeployment(),
+        // Every active body, every state (D218): the rollover is never partial by design.
+        scope: { pass: 'rollover', complete: true },
         stages: [
           {
             name: 'rollover',

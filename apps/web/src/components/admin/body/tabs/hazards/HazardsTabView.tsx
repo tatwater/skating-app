@@ -63,7 +63,7 @@ import { CROSSING_WORDS, HAZARDS_WORDS, VOTE_WORDS, wordsContext } from './hazar
  * Board 5.4.7, Body › Hazards, the default view: the winters as a bar over the tab, this winter's
  * hazards on the lake — or, before any, *no hazard reports yet* over the empty winter beside last
  * winter's record — then the body's known features and the promotion queue's count. While a known
- * feature is drawn, its task stands over the tab (D300); no hazard is ever marked here (D299).
+ * feature is drawn, its task stands over the tab (D313); no hazard is ever marked here (D299).
  *
  * **D3.** The tab describes the record, never the lake: an empty list says no hazard reports are
  * on record, never that nothing is there. A stale hazard keeps its row, faded, never removed; an

@@ -18,7 +18,7 @@ import {
 } from './sampleDraft';
 
 /**
- * **The sample-point task, wired** (B01-6b, D300): the Water tab's suggested grid (`sampleDraft`),
+ * **The sample-point task, wired** (B01-6b, D313): the Water tab's suggested grid (`sampleDraft`),
  * its claim on the console map (no engine; the grid is the draft, as hollow rings), and the two
  * writes, each through the tab's writer (`useTabAction`) with Undo as the server offers it:
  *

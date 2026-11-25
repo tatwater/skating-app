@@ -133,9 +133,9 @@ The counts are public: the About page shows each state's **known** and **active*
 ## For moderators
 
 - **Set dormant / bring back**: the lake editor's *Standing* card, with a note skaters read.
-- **See what the machines did**: `/admin/water/standing` — five lanes (inactive, rules changed,
-  moderator, no public access, removed), newest first, and the list of recent activations with what
-  brought each back.
+- **See what the machines did**: the Corpus library (`/admin/corpus`) — a lane per off-map standing
+  (dormant as inactive, not in campaign or by a moderator; no public access; removed) — and
+  `/admin/water/standing`, the list of recent activations with what brought each back.
 - **Remove / restore** stay on the same card (admin only). Restoring is an activation.
 - **Answer requests**: `/admin/water/requests` — approve performs the act (activate, restore,
   remove, confirm access, admit from the catalog) and closes every sibling ask; decline takes a
