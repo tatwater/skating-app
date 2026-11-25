@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import { type ReactElement, useRef } from 'react';
@@ -88,10 +88,11 @@ describe('the inspector', () => {
     render(
       <>
         <Pane item={GROTON} onDecide={onDecide} />
-        <input aria-label="elsewhere" />
+        <div tabIndex={-1} data-testid="elsewhere" />
       </>,
     );
-    await user.click(screen.getByLabelText('elsewhere'));
+    // Focus outside the pane, on a plain focusable (an input would swallow ⏎ anyway).
+    act(() => screen.getByTestId('elsewhere').focus());
     await user.keyboard('{Enter}');
     expect(onDecide).not.toHaveBeenCalled();
     await user.click(screen.getByRole('radio', { name: 'Reservoir' }));
