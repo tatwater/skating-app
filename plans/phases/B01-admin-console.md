@@ -13031,7 +13031,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Bo26 | A hazard whose footprint can't be drawn shows nowhere on the map while the list counts it | `tabs/hazards/hazardDrawing.ts`, `hazardsMap.ts` | done in #152 (B01-3t): a pin at its reported point, "Shape unknown", by one rule for the map, the rows and the glyph. Geometry with no usable coordinate still needs design: its row says *Not on the map* | correctness-or-safety | S–M | The no-coordinate case: the founder's call (see *A hazard's shape unknown, and the record's Kept*) |
 | Bo27 | Imagery pass override controls (`imageryOverrides.set` is built) | `ImageryTab.tsx`, Unavailable | blocked on B04: neither app passes `passOverrides` to its timeline | missing | S | B04's PR that honors overrides on web and phone |
 | Bo28 | Filing a bathymetry survey | `WaterView.tsx`, Unavailable | blocked on the founder (call 7) | missing | M | His ruling on what a filing records |
-| Bo29 | Each catalog's own name claims (the Names ladder reads "not recorded") | BS9; `importCanonical` | blocked on the ETL: it must keep the claims, then each body's next campaign | missing (data) | L | ETL work |
+| Bo29 | Each catalog's own name claims (the Names ladder reads "not recorded") | BS9; `importCanonical` | paid by B01-6a (2026-11-24): each name claim stores every catalog publishing its spelling (`sources`, S2's ETL change); each body shows them from its next campaign | missing (data) | L | The next campaign |
 | Bo30 | Staff reference links have no stored id, so another moderator's edit reads as a new link | `schema.ts` `referenceLinks: {label, url}` | open | correctness | M (schema) | An id per link. Every writer of the list must keep it: `setReferenceLinks` and its undo, and a merge's union (`mergedModeratorLists`); needs an inventory |
 | Bo31 | A stored short list of a body's bay and landmark names | `lib/bodyNames`, `lib/undoHandlersBody` | built on `phase-b01-stored-facts` (B01-3u, D282), not yet merged: one row per body, bounded at 256 KiB at the write; History's landmark undo checks the duplicate rule exactly from it and sends a bay-name clash to the landmark. On dev: deploy, then `landmarks:backfillBodyNames` | performance/correctness | L | See *The two stored facts built* |
 | Bo32 | The Bodies library queue keeps its own copy of the parking rule rather than `lib/attempts` | `lib/bodyLibrary.ts:523` | open (switching changes behavior: the first `parkedAt` is kept, and there is no daily-retry stamp) | polish (engine) | M | — |
@@ -14117,7 +14117,9 @@ capability (D217), which every moderator holds except `body.remove`.
 
 **The facts each board asks for, and where they come from** (`corpusTasks.item`, below):
 
-- **Names (4.2)**: each claim with its catalogs (`nameClaims`); the catalogs' rank in words from
+- **Names (4.2)**: each claim with its catalogs (`nameClaims`, each with every catalog publishing
+  its spelling in `sources` from 6a's next campaign — before it, the top-ranked one alone, and
+  *All four agree* is drawn only where it is recorded); the catalogs' rank in words from
   `NAME_SOURCE_RANK` (*First: the authority on US names* … *Last: a mapper's free text*) — today in the
   ETL (`scripts/etl/src/mergeRules.ts:601`), moved to core at 6a's T0; *Elsewhere*, a
   namesake count, bounded (`bodyLibraryRows.by_scope_name`, `eq(nameKey)`, 51 rows, "50+"); the split
@@ -14382,7 +14384,7 @@ its capability refusal.
 | Table | Change | Rollout |
 |---|---|---|
 | `corpusTasks`, `corpusTaskCounts`, `corpusTaskJobRuns` | new | deploy, then `corpusTaskJobs:backfill` to done; reads `pending` until it is |
-| `waterBodies` | `reviewSettled?`, `classRefusals?`, `absorbedFeatures?`, `dedupReason?`; `classClaims`' object gains `token?` and `areaSqM?` | widen only; `classRefusals` and the claims' two fields (6a) and `absorbedFeatures` (6b) are written by the next campaign, `dedupReason` also by the partner backfill; each reads *not recorded* until then |
+| `waterBodies` | `reviewSettled?`, `classRefusals?`, `absorbedFeatures?`, `dedupReason?`; `classClaims`' object gains `token?` and `areaSqM?`; `nameClaims`' object gains `sources?` (6a) | widen only; `classRefusals` and the claims' two fields (6a) and `absorbedFeatures` (6b) are written by the next campaign, `dedupReason` also by the partner backfill; each reads *not recorded* until then |
 | `waterBodies` | the indexes `by_dormant_reason`, `by_removed_at`, `by_public_access_verdict` dropped (6a) | their only reader was `standing.listLane`, deleted with Standing's lanes half (fork 15); proven unread by grep before the drop. A narrowing of indexes only: the deploy deletes them, no data moves |
 | the email mention counts (6c, D307) | new: one row per body, name and winter with its count | deploy, then a loader in `scripts/` from the mention inventory's aggregate (gitignored under `training_data/`), dry first; counts only |
 | `subAreaRefits` | new | deploy; written going forward |
@@ -14801,6 +14803,15 @@ water, which he rules on the next campaign's real rows before 6b (D306).
   `by_removed_at` and `by_public_access_verdict` lost their only reader when `standing.listLane` was
   deleted with Standing's lanes half. Each is dropped only after a grep proves nothing reads it.
 - **People's trust panel is owed a home** (found by the legacy strip): the register's Pe29.
+- **Each name claim records every catalog that publishes its spelling** (the governor, after the
+  briefs were amended; verified in the code): the merge folds identical spellings and kept only the
+  top-ranked catalog (`nameClaimsOf` sorts by `NAME_SOURCE_RANK`, `distinctNameClaims` keeps the
+  first source per spelling), so board 4.2's *GNIS · NHD · 3DHP* and *All four agree* couldn't be drawn
+  and no backfill can recover them. From 6a the claim carries `sources` (optional, rank order,
+  `source` unchanged as the first), widen-only; S2 carries it through the ETL. A name conflict's
+  evidence is over the distinct spellings only, never over which catalogs publish them, so the
+  campaign that first brings `sources` re-asks no settled name conflict; a new or withdrawn spelling
+  does. The register's Bo29 is paid by 6a.
 - **What needs the founder after 6a merges:** a full campaign (merge and load). Without it, Class
   conflicts' rows sit under *All* with the catalogs *not recorded*, and no Contested row can be
   looked at.
@@ -14899,6 +14910,7 @@ Each was checked against the code at `b213854b`; the briefs below build on the r
 | `reopenTask(actionId)` | no index finds a task by its decision's row | `corpusTasks.by_decision_action` (`eq` only) |
 | "their rows carry `taskId`, so the undo also unsettles and reopens" | the impls 6a calls (`setWaterBodyNameImpl`, `setClassImpl`) return the body's id, not their audit row's (6b's `removeBodyImpl` and `setStandingImpl` do too; the standing row is written deep in `lib/standing.ts`' `transitionStanding`) | the domain row's id becomes the task's `decisionActionId`; one hook in `lib/undo.ts` reopens the task after any undo whose row decided one (S2), so 6b's verbs need no second hook. How the id comes back is S2's call; the recommendation is a capture scoped to the mutation in `writeAudit` (the `inboxBatch` pattern), which 6b's two impls can use unchanged, rather than signature changes |
 | `lib/decisionResult.ts` renamed `DecisionResult` | five server files and three web files import `InboxDecisionResult` | no rename: T0 exports `UndoOffer` and adds `CorpusDecisionResult` beside it |
+| Board 4.2 draws each name's catalogs (*GNIS · NHD · 3DHP*) and *All four agree* | the merge folds identical spellings and stores one claim per spelling with only its top-ranked `source` (`nameClaimsOf`, `distinctNameClaims`); no backfill can recover the rest | the claim gains `sources?` from the next campaign (the governor's later ruling; S2); the evidence ignores it, so its arrival re-asks nothing |
 | `NAME_SOURCE_RANK` gives the rank in words | it lives in the ETL (`scripts/etl/src/mergeRules.ts:601`), which Convex can't import | T0 moves it to `packages/core/src/nameClaims.ts`; the ETL imports it from core |
 | A class claim carries the board's FCODE and edit date (not verified) | `classClaims` is `{ source, value }` (`schema.ts:869`); the merge holds each member's own token (`sourceToken`: `nhd:fcode=46600`, `osm:water=pond`) and area (`areaSqM`) and drops both; **no edit date is read anywhere in the ETL** | the claim gains `token?` and `areaSqM?`, carried by the next campaign (question 2, ruled: yes); no edit date is drawn |
 | The contested facet from the refusing token; a body loaded before reads *Not water* | the refusing tokens are dropped (`masterList.ts:938-985`); and in the last merge (`n7-3-20260809`) the 20 queued dissents were 18 refusals by OSM's bare `natural=water` and 2 by `wetland=tidalflat` (its log's per-token tally): every refusal of the *flowing* or *engineered* family is settled by `settledClassDissent` (`core/waterClass.ts:814`) and never queued | **the Contested lane leaves 6a** (question 3, ruled; D306): 6a stores `classRefusals` (the import, from the next campaign) and files no `class-dissent` task; the lane's facets wait on the founder's look at the stored rows, and land in 6b |
@@ -14920,9 +14932,9 @@ A builder who needs a line in a function it doesn't own asks for it in its repor
 
 | Builder | Owns | Requests as a seam, never edits |
 |---|---|---|
-| **X — seams, then the legacy** | *Part 1 (T0):* `packages/convex/convex/schema.ts` (the seam below, with the three index drops); `waterBodies.ts`' `canonicalBody` validator only; `lib/enums.ts`' `MODERATION_ACTIONS` only; `lib/undoPolicy.ts`' two placeholder rows only; `lib/decisionResult.ts`; the typed stubs `convex/corpusTasks.ts`, `convex/corpusWrites.ts`, `lib/corpusTasks.ts`, `lib/corpusRules.ts`; `packages/core/src/corpusTasks.ts` (new), the stubs `reviewEvidence.ts`, `corpusFacets.ts`, `corpusFacts.ts` and their lines in `index.ts`, `capabilities.ts` (`corpus.intake`), `nameClaims.ts` (`NAME_SOURCE_RANK`) and the ETL's import of it (`scripts/etl/src/mergeRules.ts`); `apps/web/src/components/admin/shell/actionLabels.ts` (the two verbs); the moves into `apps/web/src/components/admin/inspector/` and `admin/actions/` and every importer they touch (`inbox/**` — imports only, plus `inboxWords.ts`' `BACK_TO_QUEUE` and `decidedBy` moving out and the fixtures' `decisionWord` — and `body/tabs/shape/ShapeTabRoute.tsx`); `convex/_generated`; `plans/06-data-model.md`; the root `.gitignore` (`apps/web/.pass-dress/`). *Part 2 (done and merged, `c739d67e`–`0da61869`):* `routes/admin.flags.tsx`, `admin.support.tsx`, `admin.users.index.tsx`, `admin.users.$id.tsx`, `-admin.flags.test.tsx`, `-admin.support.test.tsx`, `routeTree.gen.ts`; `admin/body/tabs/places/placesModel.ts` (`personPath`), `placesFixtures.ts`, `PlacesView.stories.tsx`, `PlacesTab.test.tsx`, `placesModel.test.ts`; `packages/convex/convex/clerkAdmin.ts` (`deepLinkPath` at `:141`) and `clerkAdmin.test.ts` (`:110`, `:472`); `analytics.ts`' stale comment (`:396`); `routes/admin.water.standing.tsx` (its lanes half); `standing.ts`' `listLane` only and its cases in `standing.test.ts`; `admin/shell/consoleNav.ts`' comment (`:16`, to D304's rule) and `consoleNav.test.ts`' comments | the kit (`kit/lanes.tsx` belongs to the dress builder); `admin/overview/**` (W1's) |
+| **X — seams, then the legacy** | *Part 1 (T0):* `packages/convex/convex/schema.ts` (the seam below, with the three index drops); `waterBodies.ts`' `canonicalBody` validator only; `lib/enums.ts`' `MODERATION_ACTIONS` only; `lib/undoPolicy.ts`' two placeholder rows only; `lib/decisionResult.ts`; the typed stubs `convex/corpusTasks.ts`, `convex/corpusWrites.ts`, `lib/corpusTasks.ts`, `lib/corpusRules.ts`; `packages/core/src/corpusTasks.ts` (new), the stubs `reviewEvidence.ts`, `corpusFacets.ts`, `corpusFacts.ts` and their lines in `index.ts`, `capabilities.ts` (`corpus.intake`), `nameClaims.ts` (`NAME_SOURCE_RANK`) and the ETL's import of it (`scripts/etl/src/mergeRules.ts`); `apps/web/src/components/admin/shell/actionLabels.ts` (the two verbs) and the same two in `admin/overview/overviewData.ts`' `ACTION_WORDS` (typed over the audit union; W1's file after); the moves into `apps/web/src/components/admin/inspector/` and `admin/actions/` and every importer they touch (`inbox/**` — imports only, plus `inboxWords.ts`' `BACK_TO_QUEUE` and `decidedBy` moving out and the fixtures' `decisionWord` — and `body/tabs/shape/ShapeTabRoute.tsx`); `convex/_generated`; `plans/06-data-model.md`; the root `.gitignore` (`apps/web/.pass-dress/`). *Part 2 (done and merged, `c739d67e`–`0da61869`):* `routes/admin.flags.tsx`, `admin.support.tsx`, `admin.users.index.tsx`, `admin.users.$id.tsx`, `-admin.flags.test.tsx`, `-admin.support.test.tsx`, `routeTree.gen.ts`; `admin/body/tabs/places/placesModel.ts` (`personPath`), `placesFixtures.ts`, `PlacesView.stories.tsx`, `PlacesTab.test.tsx`, `placesModel.test.ts`; `packages/convex/convex/clerkAdmin.ts` (`deepLinkPath` at `:141`) and `clerkAdmin.test.ts` (`:110`, `:472`); `analytics.ts`' stale comment (`:396`); `routes/admin.water.standing.tsx` (its lanes half); `standing.ts`' `listLane` only and its cases in `standing.test.ts`; `admin/shell/consoleNav.ts`' comment (`:16`, to D304's rule) and `consoleNav.test.ts`' comments | the kit (`kit/lanes.tsx` belongs to the dress builder); `admin/overview/**` (W1's) |
 | **S1 — the writer and the import** (`name-conflict` and `class-conflict` tasks; the refusals stored, no task for them) | `packages/convex/convex/lib/corpusTasks.ts` (replacing the stub), `lib/corpusTaskRepair.ts` (new), `convex/corpusTaskJobs.ts` (new: `backfill`, `repair`, `syncOne`); `waterBodies.ts`' `mergeFields`, `classClaimFields` and a new `classRefusalFields`, `importCanonical`'s handler, `mergeBodyInto`, `removeBodyImpl`, `restoreBodyImpl`, `resolveIncomingMergeDuplicates`, `resolveCampaignDuplicates`; `unmerge.ts`; `lib/enums.ts`' `FAILING_JOBS` only; `recurringJobs.ts`' `CRON_OF`; `crons.ts`; `packages/core/src/reviewEvidence.ts`, `corpusFacets.ts` (replacing the stubs); `scripts/etl/src/load.ts` and `scripts/run-log/src/batchNdjson.ts` (the batch size, if the proof lowers it); `packages/guards/src/corpusTaskWriters.test.ts` (new); their tests | `schema.ts`; `lib/corpusRules.ts` (S2's); `lib/undo.ts` (S2's — S1 names the call, S2 adds it); `masterList.ts` / `transform.ts` (S2's) |
-| **S2 — decisions and their undo** | `convex/corpusWrites.ts` (replacing the stub: `decideName`, `decideClass`); `lib/corpusRules.ts` (replacing the stub); `lib/undo.ts` (the reopen hook); `lib/undoPolicy.ts` (the two rows, final); `lib/undoHandlersCorpus.ts` (`settle_review_reason` ↔ `unsettle_review_reason`); `waterBodies.ts`' `setWaterBodyNameImpl` and `setClassImpl` only, and `lib/audit.ts` — each only if the action id's way back needs it; `scripts/etl/src/masterList.ts`, `transform.ts`, `types.ts` (`classRefusals`, the claims' `token` and `areaSqM`); `packages/guards/src/writersDecideFirst.test.ts` and `importCycles.test.ts`, if `corpusWrites.ts` joins them; their tests | `schema.ts`; S1's `lib/corpusTasks.ts` (imports `settleReason`, `reopenTask`, `taskToDecide`; asks for any change) |
+| **S2 — decisions and their undo** | `convex/corpusWrites.ts` (replacing the stub: `decideName`, `decideClass`); `lib/corpusRules.ts` (replacing the stub); `lib/undo.ts` (the reopen hook); `lib/undoPolicy.ts` (the two rows, final); `lib/undoHandlersCorpus.ts` (`settle_review_reason` ↔ `unsettle_review_reason`); `waterBodies.ts`' `setWaterBodyNameImpl` and `setClassImpl` only, and `lib/audit.ts` — each only if the action id's way back needs it; `scripts/etl/src/masterList.ts`, `transform.ts`, `types.ts` (`classRefusals`, the claims' `token` and `areaSqM`); `scripts/etl/src/mergeRules.ts`' `nameClaimsOf` and `packages/core/src/nameClaims.ts`' `distinctNameClaims` (each name claim's `sources`); `packages/guards/src/writersDecideFirst.test.ts` and `importCycles.test.ts`, if `corpusWrites.ts` joins them; their tests | `schema.ts`; S1's `lib/corpusTasks.ts` (imports `settleReason`, `reopenTask`, `taskToDecide`; asks for any change) |
 | **S3 — the reads** (two lanes) | `convex/corpusTasks.ts` (replacing the stub: `lanes`, `listPage`, `item`); `lib/corpusTaskViews.ts` (new); `packages/core/src/corpusFacts.ts` (replacing the stub: the class ladder's consequences, the rank words, the name split's words); their tests | `schema.ts`; `lib/corpusRules.ts` (S2's: `can` calls it); `console.ts` (no change in 6a) |
 | **W1 — the frame** | `apps/web/src/components/admin/bodies/`: `BodiesRoute.tsx`, `BodiesView.tsx`, `BodiesView.stories.tsx`, `bodyLanes.ts`, `bodiesSearch.ts`, `bodiesReads.ts` and their tests; `admin/corpus/` but `handlers/` and `map/` (`CorpusLanes.tsx`, `CorpusTaskView.tsx`, `taskLanes.ts`, `taskSearch.ts`, `corpusTypes.ts`, `list/`, `inspector/` with the handler registry, `words/corpusWords.ts`, `testing/routeHarness.tsx`); `routes/admin.corpus.tsx` if it needs a line; `admin/overview/` (`OverviewCards.tsx`, `overviewData.ts`, `overviewLinks.tsx`, `overviewRoutes.ts`, `useOverviewHome.ts`, their fixtures, tests and stories); `admin/inbox/list/InboxZero.tsx`, `inbox/InboxRoute.tsx`' `notInInbox` prop, `inbox/words/inboxWords.ts`' `CORPUS_LINK`, and their tests (X's T0 touched the last two for its moves only) | `kit/` (the dress builder's `Lanes`; a promotion is the governor's); `admin/inspector/` and `admin/actions/` (moved at T0, unchanged after); the route tree; `consoleNav.ts`; `packages/*` |
 | **W2 — the two handlers** | `admin/corpus/handlers/Names/`, `Classes/` (each with `register.tsx`, its writes on the moved `useDecisionRunner`, its words, fixtures, stories and wiring test); `admin/corpus/map/`; the kit candidates `ChoiceRows` and `ConsequenceLadder` beside the handlers | the same as W1, plus W1's files; `body/map/` (a descriptor it needs is a seam request) |
@@ -15044,8 +15056,21 @@ and `classClaims`' object widened (question 2, ruled: carry both):
       ),
 ```
 
-The same three widenings in `waterBodies.ts`' `canonicalBody` validator (`:346-352`), which is exact:
-a loader that sends `classRefusals` before this deploys is refused outright, so the deploy comes first.
+and `nameClaims`' object widened (the governor's later ruling, *Also ruled*): `source` stays the
+top-ranked catalog, so every existing reader of `source` and `value` is untouched:
+
+```ts
+        v.object({
+          source: literals(CLAIM_SOURCES),
+          value: v.string(),
+          /** Every catalog publishing this spelling, rank order, `source` first; absent before the campaign that records it, and on a `user` claim. */
+          sources: v.optional(v.array(literals(CLAIM_SOURCES))),
+        }),
+```
+
+The same four widenings in `waterBodies.ts`' `canonicalBody` validator (`:346-352`), which is exact:
+a loader that sends `classRefusals` or `sources` before this deploys is refused outright, so the
+deploy comes first.
 No field is narrowed. No `moderationActions.targetType` is added in 6a: every 6a row targets the body.
 
 **The three index drops** (the governor's ruling): `waterBodies`' `by_dormant_reason`, `by_removed_at`
@@ -15101,9 +15126,12 @@ widen-only deploy. The web search's `contested` id stays a dropped id until then
 
 And: `capabilities.ts` gains `'corpus.intake': write('moderator', 'Settle an intake question without
 changing the body.')`; `NAME_SOURCE_RANK` moves from `scripts/etl/src/mergeRules.ts:601` to
-`nameClaims.ts`, the ETL importing it; the stubs `reviewEvidence.ts`, `corpusFacets.ts` (S1's) and
-`corpusFacts.ts` (S3's), each exporting its signature from the snippets below with a body that throws
-`PLACEHOLDER`, exported from `index.ts` now so neither builder edits it.
+`nameClaims.ts`, the ETL importing it, and `NameClaim` gains `sources?: ClaimSource[]`; the stubs
+`reviewEvidence.ts`, `corpusFacets.ts` (S1's) and `corpusFacts.ts` (S3's), each exporting its
+signature from the snippets below with a body that throws `PLACEHOLDER`, exported from `index.ts`
+now so neither builder edits it. **After T0, `mergeRules.ts`' `nameClaimsOf` and
+`core/nameClaims.ts`' `distinctNameClaims` are S2's** (they carry `sources`, beside S2's ETL change);
+X touches neither again.
 
 **3. The verbs.** `MODERATION_ACTIONS` gains `settle_review_reason` (a settle-only decision, its
 target the body) and `unsettle_review_reason` (its undo). `undoPolicy.ts` gets placeholder rows
@@ -15111,7 +15139,10 @@ target the body) and `unsettle_review_reason` (its undo). `undoPolicy.ts` gets p
 'corpus.intake' }`, `unsettle_review_reason: { undo: { kind: 'none', why: 'Settle it again from its
 lane.' }, … }`), which
 S2 owns from then. `actionLabels.ts`: *Settled {t}'s review question* and *Reopened {t}'s review
-question* (invented, for the copy pass).
+question* (invented, for the copy pass). The Overview feed's `ACTION_WORDS`
+(`overview/overviewData.ts`) is typed over the same audit union, so the verbs can't compile without
+its two lines too (*Settled review question*, *Reopened review question*): X lands them as a
+placeholder in W1's file at T0, and W1 owns them after.
 
 **4. `lib/decisionResult.ts`**: `UndoOffer` exported; beside it
 `export type CorpusDecisionResult = { taskId: Id<'corpusTasks'>; actionId: Id<'moderationActions'> } &
@@ -15120,9 +15151,12 @@ UndoOffer` and `corpusDecisionResult(ctx, actorId, taskId, actionId)`, the offer
 
 **5. The typed stubs**, each a whole file whose owner replaces it: `convex/corpusTasks.ts` (the three
 queries with their validators and return types from the snippets, answering
-`{ …, pending: true }` and empty), `convex/corpusWrites.ts` (the two mutations, args validated,
-throwing `PLACEHOLDER`), `lib/corpusTasks.ts` and `lib/corpusRules.ts` (the signatures below,
-throwing). Each line says `PLACEHOLDER` and whose it is. Then `pnpm --filter @skating/convex codegen`.
+`{ …, pending: true }` and empty, the view types exported from the stub), `convex/corpusWrites.ts`
+(the two mutations, args validated, gated `corpus.intake` as the stub's floor — the capability map's
+guard holds every capability to a gate — and throwing `PLACEHOLDER`), `lib/corpusTasks.ts` and
+`lib/corpusRules.ts` (the signatures below, throwing). Each line says `PLACEHOLDER` and whose it is.
+Then `pnpm --filter @skating/convex codegen`; the stand-in rewrites every generated file in its own
+format, so only `api.d.ts`' new module lines are committed, in `convex dev`'s format.
 
 **6. The web moves.** `inbox/inspector/InspectorFrame.tsx` (and its stories), `DecidedLock.tsx`,
 `inspectorContext.tsx` and `lockModel.ts` (and its test) to `admin/inspector/`;
@@ -15182,21 +15216,38 @@ export async function corpusTaskBatch<T>(ctx: MutationCtx, work: () => Promise<T
 ```ts
 // reviewEvidence.ts
 export type EvidenceRecord = {
-  nameClaims?: readonly { source: string; value: string }[];
+  nameClaims?: readonly { source: string; value: string; sources?: readonly string[] }[];
   classClaims?: readonly { source: string; value: string; token?: string }[];
 };
 /** Evidence over facts not yet stored (no class claims). */
 export const UNRECORDED_EVIDENCE = 'unrecorded';
 /**
- * What raised `reason` on `record`, as a deterministic string (at most 1 KiB): a name conflict's
- * catalog claims (never a `user` claim), a class conflict's claims with their tokens.
- * `null` for a reason 6a doesn't settle (`class-dissent` included: 6b adds the refusals, D306).
- * One rule for the settle and the import (D305).
+ * What raised `reason` on `record`, as a deterministic string (at most 1 KiB). A name conflict's:
+ * the distinct catalog spellings only (never a `user` claim) — their normalized keys, sorted — and
+ * never which catalogs publish them, so the campaign that first records `sources`, or a catalog
+ * newly agreeing with a spelling already there, re-asks nothing; a new spelling, or one withdrawn,
+ * does. A class conflict's: its claims with their tokens. `null` for a reason 6a doesn't settle
+ * (`class-dissent` included: 6b adds the refusals, D306). One rule for the settle and the import
+ * (D305).
  */
 export function reviewEvidence(reason: ReviewReason, record: EvidenceRecord): string | null;
 
 // corpusFacets.ts — the facet a task is filed in, from the body's stored facts
-export function facetOf(lane: CorpusTaskLane, record: EvidenceRecord & { name: string; type: WaterBodyClass }): string;
+export type FacetRecord = EvidenceRecord & { name: string; type: WaterBodyClass };
+export function facetOf(lane: CorpusTaskLane, record: FacetRecord): CorpusTaskFacet; // core's `CorpusTaskFacet`, never *All*
+```
+
+**The words** (core, `corpusFacts.ts`, S3):
+
+```ts
+export type ClassConsequence = { kind: 'stays' | 'leaves' | 'waitsForParent'; words: string };
+export type ConsequenceBody = { name: string; surfaceAreaSqM: number; includedByRequest?: boolean };
+/** What setting `cls` on `body` would do, from `belongsInCorpus` (D3: never a word about the ice). */
+export function classConsequence(body: ConsequenceBody, cls: WaterBodyClass): ClassConsequence;
+export type NameSplit = 'different' | 'oneLetter' | 'qualifier';
+export function nameSplit(shown: string, other: string): NameSplit;
+/** "First: the authority on US names", from `NAME_SOURCE_RANK`. */
+export function nameRankWords(source: ClaimSource): string;
 ```
 
 **The rule** (`lib/corpusRules.ts`, S2; S3's `can` and every write ask it):
@@ -15278,7 +15329,9 @@ export type CorpusTaskItemView = ItemBase & (
       depth: { meters: number; source: string } | null }
 );
 export type NameChoiceView = {
-  value: string; sources: ClaimSource[]; rankWords: string; // "First: the authority on US names"
+  value: string; sources: ClaimSource[];                    // every catalog publishing it, rank order
+  sourcesRecorded: boolean;                                 // false: the top catalog alone (stored before the campaign, or a `user` claim)
+  rankWords: string;                                        // "First: the authority on US names"
   shown: boolean; suggested: boolean;                       // `suggested` false on every name until 6c (D307)
   namesakes: { count: number; capped: boolean };            // other listed bodies with the name, "50+"
 };
@@ -15408,13 +15461,17 @@ import's hook runs inside `corpusTaskBatch`, so a batch moves each count row onc
   moved), leave (each `leftBecause`), settle (each decision), reopen and its `'overtaken'`; the
   counts equal their tallies after each.
 - [ ] `reviewEvidence` and `facetOf` with Vitest cases, and a `fast-check` property: evidence is
-  independent of claim order and of `user` claims, and changes when any catalog claim changes.
+  independent of claim order, of `user` claims and of each claim's `sources`; a name conflict's
+  changes when a catalog spelling is added or withdrawn, and a class conflict's when any class claim
+  changes.
 
 **Second merge — the hooks, the jobs, the guard:**
 - [ ] `convex-test` per hook: the import files a task per 6a reason, and none for a `class-dissent`
   (its `classRefusals` stored all the same); drops a reason (task left,
   `notAsserted`); holds a settled reason with unchanged evidence (no task, `settledHeld`); asks again
-  on changed evidence (a new open task, `raisedAgain`, the decided one kept); `mergeBodyInto` leaves
+  on changed evidence (a new open task, `raisedAgain`, the decided one kept); a settled name
+  conflict re-imported with the same spellings but different `sources` stays settled, and with a
+  new spelling is raised again; `mergeBodyInto` leaves
   the loser's tasks (`merged`); the unmerge files them again; `removeBodyImpl` leaves (`removed`);
   `restoreBodyImpl` files again; both duplicate resolutions' deletes leave (`deleted`).
 - [ ] Backfill and repair, as the Inbox's (*Definitions of done*, S1): bounded by `ReadBudget` on
@@ -15481,6 +15538,11 @@ ETL keeps the refusals now though no 6a lane reads them (D306): `masterList.ts` 
   domain write's refusal; let `keepName` patch the name.
 - [ ] The ETL: Vitest over `masterList`'s kept records (a dissent's refusals with their tokens and
   areas, claims with theirs), and `toCanonicalBody`'s emitted `classRefusals`.
+- [ ] Each name claim's `sources` (the governor's later ruling): `nameClaimsOf` and
+  `distinctNameClaims` keep every catalog publishing a spelling, in rank order, `source` its first;
+  Vitest over two and three catalogs with one spelling, and a `fast-check` property that `source`
+  and `value` are what they were before the change; a moderator's `user` claim and the free-text
+  path (`setWaterBodyNameImpl`) still work, and `searchText` is unchanged (a test each).
 - [ ] `undoPolicy.test.ts`'s exhaustiveness green; `undoOwed()` unchanged (6a pays no `later` row).
 - [ ] Types, lint, the touched suites green.
 
@@ -15504,6 +15566,9 @@ external id through the library's search, bounded; the rank words come from `NAM
   merged away or removed; each lane's view with its facts present and with them not recorded;
   `raisedAgain` after an evidence change; `raisedBy` from the body's campaign.
 - [ ] `can` on every row and item equals `corpusCan` (after the pull from S2).
+- [ ] The Names item's `sources` from each claim's `sources`, with `sourcesRecorded: true`; a claim
+  without them (stored before the campaign, or a `user` claim) answers its one `source` and
+  `sourcesRecorded: false` — a test each.
 - [ ] A body with a `class-dissent` reason, or stored `classRefusals`, changes nothing these reads
   return (no lane, no count, no facet for it in 6a, D306).
 - [ ] Core's `classConsequence` and the name split's words: Vitest, and a test that no word they
@@ -15568,7 +15633,8 @@ the current value, *Suggested* only where the item says so, the default pick the
 *Set as Wetland*, *Keep as Wetland*). Every verb is drawn only from `item.can` (absent: not
 drawn; a sentence: never a button); every write through the runner, every refusal a toast (D268),
 the receipt in the present tense, its *Undo* the decision's row. Names: the claims as `ChoiceRows`
-with catalogs, rank words and namesakes, *Once … shows*, *In the app*; no emails and no *Suggested*
+with the run of catalogs from each claim's `sources` (*GNIS · NHD · 3DHP*; one catalog where
+`sourcesRecorded` is false, and *all agree* only when every claim's is true), rank words and namesakes, *Once … shows*, *In the app*; no emails and no *Suggested*
 in 6a — 6c adds both to this handler (D307), so leave the rows room for an emails line and a
 *Suggested* mark the item will one day carry, without drawing either. Classes: the
 `ConsequenceLadder`, *The catalogs* (each claim's token and acres, or *Not recorded until the next
@@ -15638,7 +15704,8 @@ prunes; these are what to expect, not checked against dev.
 - **Name conflicts** works whole: `nameClaims` have been stored since A07a. The tabs *Different · One
   letter · Qualifier*, both names with their catalogs and rank, namesakes, attachments, neighbors,
   the campaign that queued it. Not drawn: the emails (6c, D307) and the catalogs' edit dates (never
-  stored). No name wears *Suggested* until 6c; ⏎ keeps the shown name.
+  stored). No name wears *Suggested* until 6c; ⏎ keeps the shown name. Each name shows its top
+  catalog alone, and no *all agree*, until the campaign records every catalog behind a spelling.
 - **Class conflicts**: every row under *All* only — *Wetland or lake* and *Other pairs* read 0 —
   because no body has `classClaims` until a campaign carries them. *The catalogs say* and *The
   catalogs* read *Not recorded until the next campaign*; *Now* is the body's class; nothing is
@@ -15650,6 +15717,8 @@ prunes; these are what to expect, not checked against dev.
 
 ##### After merge, on dev (one executor, from main)
 
+0. **Nobody settles a Class conflict before the campaign** below: one settled on *not recorded*
+   evidence is asked again by it, once (D305).
 1. **`convex dev --once`** from main at the squash, codegen first (`convex/_generated` as
    `convex dev` writes it; a difference from the offline stand-in is its own commit). Widen-only for
    fields and tables; the deploy deletes the three unread `waterBodies` indexes.
@@ -15671,8 +15740,12 @@ prunes; these are what to expect, not checked against dev.
    B01-3d's claims, and loading its line would write the old rule's states back over dev's. S1
    proves it on the throwaway backend before the PR opens; on dev, the next campaign's run row reads
    `settledHeld` and `raisedAgain`.
-7. **The next full campaign (the founder's), then his look at Contested as water.** A full merge and
-   load fills `classClaims` (with tokens and acres) and `classRefusals`. Then the dissent bodies'
+7. **The next full campaign (the founder's), then his look at Contested as water.** Before the
+   load, two operator steps, no code: copy the laptop's `scripts/etl/.scratch/merge/` aside (the next
+   merge overwrites the only output on hand, of 9 August); and take a Convex snapshot export of dev
+   (the load overwrites outlines, names, classes and states and writes no audit row, and a chord bay
+   re-fitted unseen loses its drawn outline until 6c). A full merge and load fills `classClaims`
+   (with tokens and acres), `classRefusals` and each name claim's `sources`. Then the dissent bodies'
    stored refusals are read back (a count by refusing token), the founder looks at the real rows and
    rules the lane's shape — its tabs, its words, whether it is one lane — and 6b builds it (D306).
 
