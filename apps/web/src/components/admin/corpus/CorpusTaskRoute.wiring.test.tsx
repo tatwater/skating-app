@@ -49,6 +49,13 @@ vi.doMock('./inspector/handlerRegistry', async (orig) => ({
   CORPUS_HANDLERS: new Map([['nameConflicts', StubHandler]]),
 }));
 
+// The narrow-screen rule is measured; here a test says which side of it the page is on.
+const columns = { fit: true };
+vi.doMock('../shell/columnsFit', async (orig) => ({
+  ...(await orig<typeof import('../shell/columnsFit')>()),
+  useColumnsFit: () => columns.fit,
+}));
+
 const { mount } = await installCorpusRouteMocks();
 
 beforeAll(() => {
@@ -65,7 +72,10 @@ beforeAll(() => {
   });
   stubJsdomAnimations();
 });
-beforeEach(resetHarness);
+beforeEach(() => {
+  resetHarness();
+  columns.fit = true;
+});
 
 const inspector = () =>
   must(document.querySelector<HTMLElement>('[data-pane="detail"]'), 'the inspector');
@@ -393,5 +403,162 @@ describe('a library lane', () => {
     mount();
     fireEvent.click(within(sidebar()).getByText('Class conflicts'));
     expect(seen.at(-1)).toEqual({ lane: 'class-conflicts' });
+  });
+});
+
+/** Every navigation with its options (`replace`), in order. */
+const goes = () => {
+  const seen: { search: Record<string, unknown>; replace?: boolean }[] = [];
+  h.navigate = (opts) => {
+    seen.push(opts as (typeof seen)[number]);
+  };
+  return seen;
+};
+const grid = () => screen.getByRole('grid', { name: 'Name conflicts' });
+const searchbox = () => screen.getByRole('searchbox', { name: 'Find a body' }) as HTMLInputElement;
+
+describe('the inspector', () => {
+  it('says a failed read of the open task with Try again', () => {
+    h.search = { lane: 'name-conflicts', item: NAME_ITEM.taskId };
+    h.answers['corpusTasks:item'] = () => failed();
+    mount();
+    const error = must(
+      inspector().querySelector('[data-slot="corpus-item-error"]'),
+      'the failed note',
+    );
+    expect(error.textContent).toContain('couldn’t be read');
+    expect(within(error).getByRole('button', { name: /Try again/ })).toBeInTheDocument();
+    expect(inspector().querySelector('[data-slot="stub-handler"]')).toBeNull();
+  });
+
+  it('⇧⏎ or Esc in it goes back to the list — never with a modifier, a repeat, or a key used', () => {
+    const seen = goes();
+    h.search = { lane: 'name-conflicts', item: NAME_ITEM.taskId };
+    openItem(NAME_ITEM);
+    mount();
+    const back = (init: KeyboardEventInit) => {
+      act(() => inspector().focus());
+      fireEvent.keyDown(inspector(), init);
+      return document.activeElement === grid();
+    };
+    expect(back({ key: 'Enter', shiftKey: true })).toBe(true);
+    expect(back({ key: 'Escape' })).toBe(true);
+    expect(back({ key: 'Enter' })).toBe(false);
+    expect(back({ key: 'Escape', repeat: true })).toBe(false);
+    expect(back({ key: 'Enter', shiftKey: true, metaKey: true })).toBe(false);
+    expect(back({ key: 'Escape', ctrlKey: true })).toBe(false);
+    expect(back({ key: 'Escape', altKey: true })).toBe(false);
+    // A key a handler already used is its own.
+    act(() => inspector().focus());
+    const used = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    used.preventDefault();
+    inspector().dispatchEvent(used);
+    expect(document.activeElement).not.toBe(grid());
+    // Wide, the task stays open beside the list: the way back is focus, not a navigation.
+    expect(seen).toEqual([]);
+  });
+});
+
+describe('the list’s keys and pointer', () => {
+  it('/ goes to the search from the list’s column, and types into a field', () => {
+    h.search = { lane: 'name-conflicts' };
+    mount();
+    const tab = screen.getByRole('button', { name: 'One letter' });
+    act(() => tab.focus());
+    fireEvent.keyDown(tab, { key: '/' });
+    expect(searchbox()).toHaveFocus();
+    // In the field, it is a character like any other.
+    const typed = fireEvent.keyDown(searchbox(), { key: '/' });
+    expect(typed).toBe(true);
+    // A key already used is not taken again.
+    act(() => tab.focus());
+    const used = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true });
+    used.preventDefault();
+    tab.dispatchEvent(used);
+    expect(tab).toHaveFocus();
+  });
+
+  it('a press on a row opens it', () => {
+    const seen = goes();
+    h.search = { lane: 'name-conflicts' };
+    mount();
+    const row = must(
+      within(grid())
+        .getAllByRole('row')
+        .find((r) => r.textContent?.includes('The Basin')),
+      'The Basin’s row',
+    );
+    fireEvent.mouseDown(row);
+    fireEvent.click(row);
+    expect(seen.at(-1)).toEqual({
+      to: '/admin/corpus',
+      search: { lane: 'name-conflicts', item: NAME_ROWS[0]?.taskId },
+    });
+  });
+
+  it('Esc clears the search and asks the list without it at once; typing not yet sent sends nothing', () => {
+    vi.useFakeTimers();
+    try {
+      const seen = goes();
+      h.search = { lane: 'name-conflicts', q: 'basin' };
+      const view = mount();
+      expect(searchbox().value).toBe('basin');
+      fireEvent.keyDown(searchbox(), { key: 'Escape' });
+      expect(searchbox().value).toBe('');
+      expect(seen).toEqual([
+        { to: '/admin/corpus', search: { lane: 'name-conflicts' }, replace: true },
+      ]);
+      // The URL follows; then typing cleared before its beat ends was never asked.
+      h.search = { lane: 'name-conflicts' };
+      view.refresh();
+      fireEvent.change(searchbox(), { target: { value: 'echo' } });
+      fireEvent.keyDown(searchbox(), { key: 'Escape' });
+      expect(searchbox().value).toBe('');
+      act(() => vi.advanceTimersByTime(TASK_SEARCH_DEBOUNCE_MS * 2));
+      expect(seen).toHaveLength(1);
+      // An empty field's Esc is the browser's.
+      expect(fireEvent.keyDown(searchbox(), { key: 'Escape' })).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('a narrow screen (the console’s master–detail rule)', () => {
+  const pane = (name: string) =>
+    must(document.querySelector<HTMLElement>(`[data-pane="${name}"]`), `the ${name} pane`);
+
+  it('gives the page to the open task; Back to the list closes it in place, focus on the rows', () => {
+    columns.fit = false;
+    const seen = goes();
+    h.search = { lane: 'name-conflicts', item: NAME_ITEM.taskId };
+    openItem(NAME_ITEM);
+    const view = mount();
+    expect(document.querySelector('[data-slot="corpus-task-page"]')).toHaveAttribute('data-narrow');
+    expect(pane('lanes')).toHaveClass('hidden');
+    expect(pane('middle')).toHaveClass('hidden');
+    fireEvent.click(screen.getByRole('button', { name: 'Back to the list' }));
+    expect(seen).toEqual([
+      { to: '/admin/corpus', search: { lane: 'name-conflicts' }, replace: true },
+    ]);
+    // The URL follows: the list takes the page, and its rows have focus once drawn.
+    h.search = { lane: 'name-conflicts' };
+    view.refresh();
+    expect(pane('middle')).not.toHaveClass('hidden');
+    expect(pane('detail')).toHaveClass('hidden');
+    expect(grid()).toHaveFocus();
+  });
+
+  it('⇧⏎ in the open task closes it the same way', () => {
+    columns.fit = false;
+    const seen = goes();
+    h.search = { lane: 'name-conflicts', item: NAME_ITEM.taskId };
+    openItem(NAME_ITEM);
+    mount();
+    act(() => pane('detail').focus());
+    fireEvent.keyDown(pane('detail'), { key: 'Enter', shiftKey: true });
+    expect(seen).toEqual([
+      { to: '/admin/corpus', search: { lane: 'name-conflicts' }, replace: true },
+    ]);
   });
 });
