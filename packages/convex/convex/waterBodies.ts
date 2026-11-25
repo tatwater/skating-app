@@ -559,6 +559,21 @@ function classRefusalFields(item: {
       item.classRefusals.length > 0 ? item.classRefusals.slice(0, MAX_CLASS_CLAIMS) : undefined,
   };
 }
+/** The most absorbed features a body stores (the producer bounds them; this is the import's cap). */
+export const MAX_ABSORBED_FEATURES = 32;
+
+/**
+ * The features the merge folded into a body, as the import stores them (B01-6a): a record's list
+ * replaces the stored one (`[]` included: *none*, recorded), and a record without the field (an
+ * older loader's) keeps what's stored, since absent means *not recorded*. Capped at
+ * {@link MAX_ABSORBED_FEATURES}.
+ */
+function absorbedFeatureFields(item: {
+  absorbedFeatures?: NonNullable<Doc<'waterBodies'>['absorbedFeatures']>;
+}): { absorbedFeatures?: Doc<'waterBodies'>['absorbedFeatures'] } {
+  if (item.absorbedFeatures === undefined) return {};
+  return { absorbedFeatures: item.absorbedFeatures.slice(0, MAX_ABSORBED_FEATURES) };
+}
 // ⚠ `nameClaims` is deliberately NOT here. It belongs to `nameFields`, which merges the incoming
 // claims with a moderator's stored pick — and both are spread into the same patch object, with
 // `mergeFields` *after*. A copy here would win that spread and silently discard the override on
@@ -940,6 +955,7 @@ export const importCanonical = internalMutation({
           baseClass: item.type,
           ...classClaimFields(item),
           ...classRefusalFields(item),
+          ...absorbedFeatureFields(item),
           // **`source` is deliberately NOT patched, and it is not the same question as
           // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
           // un-fixed within the hour).
@@ -1050,6 +1066,7 @@ export const importCanonical = internalMutation({
           baseClass: item.type,
           ...classClaimFields(item),
           ...classRefusalFields(item),
+          ...absorbedFeatureFields(item),
           source: item.source,
           externalId: item.externalId,
           // **Minted at insert, so no row is ever without one.** `mintWaterBodyKeys` exists to

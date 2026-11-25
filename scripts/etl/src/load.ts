@@ -308,6 +308,8 @@ function main(): void {
     kind: 'canonical_water',
     label: label ?? mergedLabel ?? 'unscoped canonical water',
     campaignId,
+    // The merge's scope (D309): the load runs over exactly what the merge produced.
+    ...(merge?.scope !== undefined && { scope: merge.scope }),
     target,
     stages,
     call: convexRun,

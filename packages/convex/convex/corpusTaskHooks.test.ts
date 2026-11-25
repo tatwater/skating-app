@@ -80,6 +80,7 @@ type Rec = {
     areaSqM?: number;
   }[];
   classRefusals?: { source: 'osm' | 'nhd'; token: string; areaSqM?: number }[];
+  absorbedFeatures?: { source: 'osm' | 'nhd'; externalId: string; areaSqM: number }[];
   osmId?: string;
   campaignId?: string;
 };
@@ -110,6 +111,7 @@ function record(r: Rec) {
     ...(r.nameClaims !== undefined ? { nameClaims: r.nameClaims } : {}),
     ...(r.classClaims !== undefined ? { classClaims: r.classClaims } : {}),
     ...(r.classRefusals !== undefined ? { classRefusals: r.classRefusals } : {}),
+    ...(r.absorbedFeatures !== undefined ? { absorbedFeatures: r.absorbedFeatures } : {}),
   };
 }
 
@@ -240,6 +242,29 @@ describe('the import', () => {
     ]);
     await load(t, [{ ...BOTH, classRefusals: [] }]);
     expect((await bodyOf(t, 'osm/A')).classRefusals).toBeUndefined();
+  });
+
+  test('the absorbed features: stored capped on insert and patch, absent keeps, [] is recorded', async () => {
+    const t = harness();
+    const folded = (n: number, tag: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        source: 'osm' as const,
+        externalId: `osm/${tag}${i}`,
+        areaSqM: 1_000 + i,
+      }));
+    // The insert: none sent, none stored; a second body's 40 stored as the first 32.
+    await load(t, [BOTH, { externalId: 'osm/B', x: 5, absorbedFeatures: folded(40, 'b') }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toBeUndefined();
+    expect((await bodyOf(t, 'osm/B')).absorbedFeatures).toEqual(folded(32, 'b'));
+    // The patch: a list replaces (capped), an absent field keeps, [] is stored as *none*.
+    await load(t, [{ ...BOTH, absorbedFeatures: folded(33, 'a') }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual(folded(32, 'a'));
+    await load(t, [BOTH]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual(folded(32, 'a'));
+    await load(t, [{ ...BOTH, absorbedFeatures: folded(1, 'c') }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual(folded(1, 'c'));
+    await load(t, [{ ...BOTH, absorbedFeatures: [] }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual([]);
   });
 
   test('holds a settled reason whose evidence is unchanged: no task, settledHeld', async () => {
