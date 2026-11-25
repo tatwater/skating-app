@@ -262,6 +262,43 @@ describe('the list', () => {
     }
   });
 
+  it('drops typing when the place moves before the search is asked', () => {
+    vi.useFakeTimers();
+    try {
+      const seen: Record<string, unknown>[] = [];
+      h.navigate = ({ search }) => {
+        seen.push(search);
+      };
+      h.search = { lane: 'name-conflicts' };
+      const view = mount();
+      fireEvent.change(screen.getByRole('searchbox', { name: 'Find a body' }), {
+        target: { value: 'basin' },
+      });
+      // Another tab, before the beat ends: the typing belonged to the place it was typed in.
+      h.search = { lane: 'name-conflicts', tab: 'oneLetter' };
+      view.refresh();
+      act(() => vi.advanceTimersByTime(TASK_SEARCH_DEBOUNCE_MS * 2));
+      expect(seen.some((search) => search.q !== undefined)).toBe(false);
+      expect(
+        (screen.getByRole('searchbox', { name: 'Find a body' }) as HTMLInputElement).value,
+      ).toBe('');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('draws the decided tail only under a list whose every row is in', () => {
+    h.answers['corpusTasks:listPage'] = (args) =>
+      args.tab === 'decided'
+        ? page([NAME_DECIDED_ROW])
+        : page(NAME_ROWS.slice(0, 2), { isDone: false, continueCursor: 'c1' });
+    h.search = { lane: 'name-conflicts' };
+    mount();
+    const grid = screen.getByRole('grid', { name: 'Name conflicts' });
+    expect(within(grid).queryByText('Decided lately')).toBeNull();
+    expect(within(grid).queryByText(NAME_DECIDED_ROW.shown)).toBeNull();
+  });
+
   it('opens a row from the keyboard, the tail running on under the open rows', () => {
     const seen = navigations();
     h.answers['corpusTasks:listPage'] = (args) =>
