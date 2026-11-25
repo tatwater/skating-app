@@ -61,6 +61,7 @@ import { linkAuditRow, queueLibraryRefresh, stampChanged } from './lib/bodyLibra
 import { refreshBodyNames, setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells } from './lib/cellIndex';
+import { syncBodyTasks } from './lib/corpusTasks';
 import { markGeoStale } from './lib/geoStale';
 import {
   batchHasRoom,
@@ -515,6 +516,8 @@ async function restoreBodies(
   await ctx.db.patch(loser._id, restored);
   if (fromLoser.pins.length > 0) await refreshPinnedFacts(ctx, loser._id, fromLoser.pins);
   const now = { ...loser, ...restored } as Doc<'waterBodies'>;
+  // Its questions are live again: its reasons file their Corpus tasks anew (the merge left them).
+  await syncBodyTasks(ctx, loser._id, { body: now });
   await syncWaterBodyCells(ctx, loser._id, {
     bbox: loser.bbox,
     minVisibleZoom: zoomSortKey(now),

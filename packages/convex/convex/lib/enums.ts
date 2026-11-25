@@ -774,6 +774,10 @@ export const FAILING_JOBS = [
   // attempts the watch carries, keyed by photo id) — so parked work shows on Machinery.
   'photoPurge',
   'photoRotation',
+  // B01-6a: the Corpus tasks — a body the backfill could not file (keyed by body id, retried by the
+  // repair's passes), and a body or a lane's counts the drift repair could not reconcile.
+  'corpusTaskBackfill',
+  'corpusTaskRepair',
 ] as const;
 export type FailingJob = (typeof FAILING_JOBS)[number];
 

@@ -72,12 +72,30 @@ export function taskKeyOf(reason: CorpusTaskReason, waterBodyId: Id<'waterBodies
 }
 
 /**
+ * The fields of a body its tasks are read from — all a sync needs, so a writer can hand over what it
+ * just wrote without the outline (a body is up to 1 MiB).
+ */
+export type TaskBody = Pick<Doc<'waterBodies'>, 'name' | 'type'> &
+  Partial<
+    Pick<
+      Doc<'waterBodies'>,
+      | 'nameClaims'
+      | 'classClaims'
+      | 'displayScore'
+      | 'reviewReasons'
+      | 'mergedIntoId'
+      | 'dedupStatus'
+      | 'removedAt'
+    >
+  >;
+
+/**
  * Why a body asks nothing any more, whatever its reasons say: gone (`deleted`), merged away, or
  * removed. `null` for a body whose questions are live. Dormant bodies still ask: a dormant lake is
  * still in the corpus, and its name is still shown when it wakes.
  */
 export function goneBecause(
-  body: Pick<Doc<'waterBodies'>, 'mergedIntoId' | 'dedupStatus' | 'removedAt'> | null,
+  body: Partial<Pick<Doc<'waterBodies'>, 'mergedIntoId' | 'dedupStatus' | 'removedAt'>> | null,
 ): Exclude<CorpusTaskLeftReason, 'notAsserted'> | null {
   if (body === null) return 'deleted';
   if (body.mergedIntoId !== undefined || body.dedupStatus === 'merged') return 'merged';
@@ -86,7 +104,7 @@ export function goneBecause(
 }
 
 /** The 6a questions live on `body`: its task reasons, unless the body is gone. */
-export function liveReasons(body: Doc<'waterBodies'> | null): Set<CorpusTaskReason> {
+export function liveReasons(body: TaskBody | null): Set<CorpusTaskReason> {
   if (body === null || goneBecause(body) !== null) return new Set();
   return new Set((body.reviewReasons ?? []).filter(isTaskReason));
 }
@@ -127,7 +145,7 @@ export function countKeysOf(task: Counted | null): string[] {
 }
 
 /** The open batch of each transaction: count deltas owed until its end. */
-const BATCHES = new WeakMap<object, { depth: number; owed: Map<string, number> }>();
+const BATCHES = new WeakMap<object, { owed: Map<string, number> }>();
 
 async function writeCount(ctx: MutationCtx, key: string, by: number): Promise<void> {
   if (by === 0) return;
@@ -163,25 +181,40 @@ async function moveCounts(
  * nothing in the writer reads a count.
  */
 export async function corpusTaskBatch<T>(ctx: MutationCtx, work: () => Promise<T>): Promise<T> {
-  const open = BATCHES.get(ctx);
-  if (open) {
-    open.depth++;
-    try {
-      return await work();
-    } finally {
-      open.depth--;
-    }
-  }
-  const batch = { depth: 1, owed: new Map<string, number>() };
-  BATCHES.set(ctx, batch);
+  const batch = openTaskBatch(ctx);
   let value: T;
   try {
     value = await work();
-  } finally {
-    BATCHES.delete(ctx);
+  } catch (e) {
+    batch.abandon();
+    throw e;
   }
-  for (const [key, by] of batch.owed) await writeCount(ctx, key, by);
+  await batch.close();
   return value;
+}
+
+/**
+ * {@link corpusTaskBatch} as two calls, for a caller whose work is a long handler body (the import's):
+ * `close()` writes the owed counts — once, by the outermost — and `abandon()` drops them (the caller
+ * is throwing, so its transaction writes nothing anyway). A nested open joins the outer batch.
+ */
+export function openTaskBatch(ctx: MutationCtx): {
+  close: () => Promise<void>;
+  abandon: () => void;
+} {
+  // A nested batch joins the outer one: the outermost writes the counts.
+  if (BATCHES.has(ctx)) return { close: async () => {}, abandon: () => {} };
+  const batch = { owed: new Map<string, number>() };
+  BATCHES.set(ctx, batch);
+  return {
+    close: async () => {
+      BATCHES.delete(ctx);
+      for (const [key, by] of batch.owed) await writeCount(ctx, key, by);
+    },
+    abandon: () => {
+      BATCHES.delete(ctx);
+    },
+  };
 }
 
 /** A count row's value (zero when absent). */
@@ -195,14 +228,20 @@ export async function readTaskCount(ctx: QueryCtx, key: string): Promise<number>
 
 /**
  * Whether the stored tasks can't yet be taken as the corpus's: until the backfill's run row says
- * done, every read answers `pending` (the counts would be short, not exact).
+ * done, and while any body it couldn't file is still owed (`jobFailures`, parked or not), every
+ * read answers `pending` (the counts would be short, not exact).
  */
 export async function corpusTasksPending(ctx: QueryCtx): Promise<boolean> {
   const run = await ctx.db
     .query('corpusTaskJobRuns')
     .withIndex('by_job', (q) => q.eq('job', 'backfill'))
     .first();
-  return run?.done !== true;
+  if (run?.done !== true) return true;
+  const owed = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_parked', (q) => q.eq('job', 'corpusTaskBackfill'))
+    .first();
+  return owed !== null;
 }
 
 // ── Filing, refreshing, leaving ──────────────────────────────────────────────────────────────────────────
@@ -255,43 +294,27 @@ export async function leaveTask(
  * `notAsserted` (the campaign stopped raising it). A second open task on one key (drift) leaves too.
  *
  * Call it after the write that changed the body. `opts.body` is the body as the caller just wrote
- * it (or `null`: deleted), so the sync doesn't read it again.
+ * it — at least its {@link TaskBody} fields — or `null` (deleted), so the sync doesn't read it again.
  */
 export async function syncBodyTasks(
   ctx: MutationCtx,
   waterBodyId: Id<'waterBodies'>,
-  opts: WriterOpts & { body?: Doc<'waterBodies'> | null } = {},
+  opts: WriterOpts & { body?: TaskBody | null } = {},
 ): Promise<SyncOutcome> {
   const now = opts.now ?? Date.now();
-  const body = opts.body !== undefined ? opts.body : await ctx.db.get(waterBodyId);
-  const gone = goneBecause(body);
-  const live = liveReasons(body);
-  const outcome: SyncOutcome = { filed: 0, refreshed: 0, left: 0 };
-  const held = new Set<CorpusTaskReason>();
-  for (const task of await openTasksOf(ctx, waterBodyId)) {
-    const reason = reasonOfLane(task.lane);
-    const ours = task.key === taskKeyOf(reason, waterBodyId);
-    if (body === null || !live.has(reason) || held.has(reason) || !ours) {
-      await leaveTask(ctx, task, gone ?? 'notAsserted', { now });
-      outcome.left++;
-      continue;
-    }
-    held.add(reason);
-    const fields = taskFieldsOf(task.lane, body);
-    if (fields.facet === task.facet && fields.rankKey === task.rankKey) continue;
+  const plan = await planBodyTasks(ctx, waterBodyId, opts);
+  for (const { task, because } of plan.leave) await leaveTask(ctx, task, because, { now });
+  for (const { task, fields } of plan.refresh) {
     await ctx.db.patch(task._id, { ...fields, refreshedAt: now });
     await moveCounts(ctx, task, { ...task, ...fields });
-    outcome.refreshed++;
   }
-  if (body === null) return outcome;
-  for (const reason of CORPUS_TASK_REASONS) {
-    if (!live.has(reason) || held.has(reason)) continue;
+  for (const { reason, fields } of plan.file) {
     const lane = CORPUS_REASON_LANE[reason];
     const filed = {
       key: taskKeyOf(reason, waterBodyId),
       kind: 'reason' as const,
       lane,
-      ...taskFieldsOf(lane, body),
+      ...fields,
       status: 'open' as const,
       filedAt: now,
       waterBodyId,
@@ -300,9 +323,49 @@ export async function syncBodyTasks(
     };
     await ctx.db.insert('corpusTasks', filed);
     await moveCounts(ctx, null, filed);
-    outcome.filed++;
   }
-  return outcome;
+  return { filed: plan.file.length, refreshed: plan.refresh.length, left: plan.leave.length };
+}
+
+/** What a sync would write: the tasks to leave, to refresh, and the questions to file. */
+export type BodyTaskPlan = {
+  leave: { task: Doc<'corpusTasks'>; because: CorpusTaskLeftReason }[];
+  refresh: { task: Doc<'corpusTasks'>; fields: { facet: string; rankKey: number } }[];
+  file: { reason: CorpusTaskReason; fields: { facet: string; rankKey: number } }[];
+};
+
+/**
+ * **What {@link syncBodyTasks} would write, read only** — the one rule, so the drift repair's dry run
+ * reports exactly what its sync would fix. Empty when the body's tasks are what its fields say.
+ */
+export async function planBodyTasks(
+  ctx: QueryCtx,
+  waterBodyId: Id<'waterBodies'>,
+  opts: { body?: TaskBody | null } = {},
+): Promise<BodyTaskPlan> {
+  const body = opts.body !== undefined ? opts.body : await ctx.db.get(waterBodyId);
+  const gone = goneBecause(body);
+  const live = liveReasons(body);
+  const plan: BodyTaskPlan = { leave: [], refresh: [], file: [] };
+  const held = new Set<CorpusTaskReason>();
+  for (const task of await openTasksOf(ctx, waterBodyId)) {
+    const reason = reasonOfLane(task.lane);
+    const ours = task.key === taskKeyOf(reason, waterBodyId);
+    if (body === null || !live.has(reason) || held.has(reason) || !ours) {
+      plan.leave.push({ task, because: gone ?? 'notAsserted' });
+      continue;
+    }
+    held.add(reason);
+    const fields = taskFieldsOf(task.lane, body);
+    if (fields.facet === task.facet && fields.rankKey === task.rankKey) continue;
+    plan.refresh.push({ task, fields });
+  }
+  if (body === null) return plan;
+  for (const reason of CORPUS_TASK_REASONS) {
+    if (!live.has(reason) || held.has(reason)) continue;
+    plan.file.push({ reason, fields: taskFieldsOf(CORPUS_REASON_LANE[reason], body) });
+  }
+  return plan;
 }
 
 /**

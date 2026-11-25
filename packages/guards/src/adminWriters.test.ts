@@ -46,14 +46,14 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
   'components/admin/inbox/handlers/Access/useAccessWrites.ts': 'said, naming the body',
   'components/admin/inbox/handlers/Drawn/useDrawnWrites.ts':
-    'useDecisionRunner (inbox/actions): said, naming the body',
+    'useDecisionRunner (admin/actions): said, naming the body',
   'components/admin/inbox/handlers/Flag/useFlagWrites.ts': 'said, naming the item’s subject',
   'components/admin/inbox/handlers/Place/usePlaceWrites.ts':
-    'useDecisionRunner (inbox/actions): said, naming the ask and its body',
+    'useDecisionRunner (admin/actions): said, naming the ask and its body',
   'components/admin/inbox/handlers/Request/useRequestWrites.ts':
-    'useDecisionRunner (inbox/actions): said, naming the body or the water',
+    'useDecisionRunner (admin/actions): said, naming the body or the water',
   'components/admin/inbox/handlers/Ticket/useTicketWrites.ts':
-    'useDecisionRunner (inbox/actions): said, naming whose ticket',
+    'useDecisionRunner (admin/actions): said, naming whose ticket',
   'components/admin/people/person/usePersonWrites.ts': 'said, naming the person',
   'components/admin/people/record/RecordSheet.tsx': 'useRecordWrites: said, naming the person',
   'components/admin/shell/ConsoleLayout.tsx':

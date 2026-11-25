@@ -397,6 +397,14 @@ crons.interval('repair bodies library drift', { minutes: 2 }, internal.bodyLibra
  */
 crons.interval('repair inbox items drift', { minutes: 3 }, internal.inboxItems.repair, {});
 
+// ── The Corpus tasks (B01-6a) ──
+/**
+ * The drift repair: the oldest-refreshed open tasks and a lap over every body with a review reason,
+ * each body re-synced from its fields, and each lane's counts recounted; and the backfill's failures
+ * retried. The net for a write that skipped the one writer; its fixes and failures show on Machinery.
+ */
+crons.interval('repair corpus tasks drift', { minutes: 3 }, internal.corpusTaskJobs.repair, {});
+
 // ── People (B01 §5.7) ──
 /**
  * A lapsed suspension's stored status is reset to active (D222): each person in their own nested

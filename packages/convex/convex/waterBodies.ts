@@ -119,6 +119,13 @@ import { bodyNamesRow, setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
+import {
+  evidenceOf,
+  isTaskReason,
+  leaveBodyTasks,
+  openTaskBatch,
+  syncBodyTasks,
+} from './lib/corpusTasks';
 import { inboxDecisionResult } from './lib/decisionResult';
 import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import { isProdDeployment } from './lib/deployment';
@@ -437,20 +444,105 @@ function shapeFields(item: {
  * `pruneBelowAreaFloor` treats as a keep. That is the safe direction, and it is the direction the
  * prune already takes for an unknown area, so the explicit `undefined` is correct here too.
  */
-function mergeFields(item: {
-  sourceAreaSqM?: number;
-  inRegionFraction?: number;
-  confidence?: { name: string; polygon: string; cls: string };
-  reviewReasons?: string[];
-}) {
+function mergeFields(
+  item: {
+    sourceAreaSqM?: number;
+    inRegionFraction?: number;
+    confidence?: { name: string; polygon: string; cls: string };
+    reviewReasons?: string[];
+  },
+  honored: HonoredReasons = { reasons: item.reviewReasons as ReviewReason[] | undefined },
+) {
+  const reasons = honored.reasons;
   return {
     sourceAreaSqM: item.sourceAreaSqM,
     inRegionFraction: item.inRegionFraction,
     confidence: item.confidence as Doc<'waterBodies'>['confidence'],
-    reviewReasons: item.reviewReasons as Doc<'waterBodies'>['reviewReasons'],
+    reviewReasons: reasons as Doc<'waterBodies'>['reviewReasons'],
     // Derived here rather than sent, so the stored scalar cannot disagree with the array it indexes
     // — two spellings of one fact is how a queue starts missing rows nothing can see are missing.
-    reviewReason: primaryReviewReason(item.reviewReasons as ReviewReason[] | undefined),
+    reviewReason: primaryReviewReason(reasons),
+    // Only when the honoring rule ran on a stored body: an insert has nothing settled to keep.
+    ...('settled' in honored ? { reviewSettled: honored.settled } : {}),
+  };
+}
+
+/** The incoming reasons after the honoring rule, and what it did to the stored settles (D305). */
+type HonoredReasons = {
+  reasons: ReviewReason[] | undefined;
+  settled?: Doc<'waterBodies'>['reviewSettled'];
+  held?: number;
+  raised?: number;
+};
+
+/**
+ * **A settled question holds until its evidence changes** (B01-6a, D305): the import's half of the
+ * settle. Each incoming reason a moderator settled on this body is compared, by core's one rule
+ * (`reviewEvidence`, through `evidenceOf`), against the evidence the body will carry once this record
+ * lands — the record's catalog names, its class claims or, from an older loader that sends none, the
+ * stored ones it keeps. The same evidence **holds** the settle: the reason is dropped (`held`), and
+ * no task files. Different evidence **asks again**: the reason stays and its settle entry goes
+ * (`raised`), so the task files anew. A settle made on *not recorded* evidence is asked again by the
+ * first campaign that records it — once, since the settle that follows is made on what it brought.
+ *
+ * A settle whose reason the record doesn't raise is kept: the question is quiet, not answered
+ * differently, and a later campaign that raises it again is held to it.
+ */
+function honorSettled(
+  existing: Doc<'waterBodies'>,
+  item: {
+    reviewReasons?: string[];
+    nameClaims?: { source: string; value: string }[];
+    classClaims?: { source: string; value: string; token?: string }[];
+  },
+): HonoredReasons {
+  const incoming = item.reviewReasons as ReviewReason[] | undefined;
+  const settledBefore = existing.reviewSettled ?? [];
+  if (settledBefore.length === 0 || incoming === undefined || incoming.length === 0) {
+    return { reasons: incoming, settled: existing.reviewSettled };
+  }
+  // The evidence as it will be stored: `nameFields` keeps only the record's catalog claims (a
+  // moderator's own is no evidence), and `classClaimFields` keeps the stored claims when the record
+  // sends none.
+  const after = {
+    nameClaims: item.nameClaims as Doc<'waterBodies'>['nameClaims'],
+    classClaims: (item.classClaims ?? existing.classClaims) as Doc<'waterBodies'>['classClaims'],
+  };
+  const reasons: ReviewReason[] = [];
+  const dropped = new Set<ReviewReason>();
+  let held = 0;
+  for (const reason of incoming) {
+    const entry = settledBefore.find((s) => s.reason === reason);
+    if (entry === undefined || !isTaskReason(reason)) {
+      reasons.push(reason);
+    } else if (entry.evidence === evidenceOf(reason, after)) {
+      held++;
+    } else {
+      reasons.push(reason);
+      dropped.add(reason);
+    }
+  }
+  const settled = settledBefore.filter((s) => !dropped.has(s.reason));
+  return {
+    reasons: reasons.length > 0 ? reasons : undefined,
+    settled: settled.length > 0 ? settled : undefined,
+    held,
+    raised: dropped.size,
+  };
+}
+
+/**
+ * The catalogs' refusals as the import stores them (B01-6a, D306): a record's list replaces the
+ * stored one, `[]` clears it, and a record without the field (an older loader's) keeps what's stored.
+ * Bounded as the class claims are.
+ */
+function classRefusalFields(item: {
+  classRefusals?: NonNullable<Doc<'waterBodies'>['classRefusals']>;
+}): { classRefusals?: Doc<'waterBodies'>['classRefusals'] } {
+  if (item.classRefusals === undefined) return {};
+  return {
+    classRefusals:
+      item.classRefusals.length > 0 ? item.classRefusals.slice(0, MAX_CLASS_CLAIMS) : undefined,
   };
 }
 // ⚠ `nameClaims` is deliberately NOT here. It belongs to `nameFields`, which merges the incoming
@@ -543,11 +635,12 @@ export const MAX_CLASS_CLAIMS = 8;
 /**
  * Each catalog's class claim as the import carries it (B01-3d): one per source (the first kept),
  * bounded. Omitted when the record carries none — an older loader's record, which leaves the stored
- * claims as they were rather than erasing them.
+ * claims as they were rather than erasing them. Each claim's `token` and `areaSqM` (B01-6a) ride
+ * through as the record sends them.
  */
-function classClaimFields(item: {
-  classClaims?: { source: (typeof CLAIM_SOURCES)[number]; value: Doc<'waterBodies'>['type'] }[];
-}): { classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']> } {
+function classClaimFields(item: { classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']> }): {
+  classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']>;
+} {
   if (item.classClaims === undefined) return {};
   const seen = new Set<string>();
   const claims = item.classClaims.filter((c) => {
@@ -700,8 +793,14 @@ export const importCanonical = internalMutation({
     let keptByPin = 0;
     const outsideRegion: { externalId: string; waterBodyId: Id<'waterBodies'> | null }[] = [];
     let tooLong = 0;
+    // The honoring rule's two counts (D305): settled questions this batch held, and asked again.
+    let settledHeld = 0;
+    let raisedAgain = 0;
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
 
+    // One Corpus task batch: each count row the batch's bodies move is written once, at its end.
+    // A throw aborts the transaction, so no count can land without its tasks.
+    const taskBatch = openTaskBatch(ctx);
     for (const [index, item] of bodies.entries()) {
       const states = statesByItem[index] as string[];
       // A name or catalog id past its cap (B01-3h) skips the row, counted — never the campaign.
@@ -813,6 +912,10 @@ export const importCanonical = internalMutation({
           active: isActive(existing),
         });
         await queueLibraryRefresh(ctx, [existing._id]);
+        // A settled question holds until its evidence changes (D305).
+        const honored = honorSettled(existing, item);
+        settledHeld += honored.held ?? 0;
+        raisedAgain += honored.raised ?? 0;
         await ctx.db.patch(existing._id, {
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
           // import and the three must never disagree. See `nameFields`.
@@ -822,6 +925,7 @@ export const importCanonical = internalMutation({
           type: existing.moderatorClass ?? item.type,
           baseClass: item.type,
           ...classClaimFields(item),
+          ...classRefusalFields(item),
           // **`source` is deliberately NOT patched, and it is not the same question as
           // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
           // un-fixed within the hour).
@@ -848,7 +952,7 @@ export const importCanonical = internalMutation({
           ...regionStatesFields(states.length === 0 ? ruleStatesOf(existing) : states, pins),
           ...scores,
           ...shapeFields(item),
-          ...mergeFields(item),
+          ...mergeFields(item, honored),
           // Stamped on every touch, so step 6 can find the rows this campaign never mentioned.
           // Left alone when the caller names no campaign: a partial load must not make the whole
           // corpus look re-affirmed by a run that only saw one state.
@@ -860,6 +964,18 @@ export const importCanonical = internalMutation({
           // reconciliation guessed. Overwriting unconditionally is the opposite error and a far
           // worse one; see `assertedCatalogIds`.
           ...assertedCatalogIds(item),
+        });
+        // Its Corpus tasks follow its reasons: filed, refreshed, or left `notAsserted`. Handed the
+        // fields they read as just written, so an outline near 1 MiB isn't read twice.
+        await syncBodyTasks(ctx, existing._id, {
+          body: {
+            ...existing,
+            ...nameFields(existing, item),
+            type: existing.moderatorClass ?? item.type,
+            ...classClaimFields(item),
+            ...scores,
+            ...mergeFields(item, honored),
+          },
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (A01).
@@ -919,6 +1035,7 @@ export const importCanonical = internalMutation({
           type: item.type,
           baseClass: item.type,
           ...classClaimFields(item),
+          ...classRefusalFields(item),
           source: item.source,
           externalId: item.externalId,
           // **Minted at insert, so no row is ever without one.** `mintWaterBodyKeys` exists to
@@ -945,6 +1062,17 @@ export const importCanonical = internalMutation({
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
         });
+        // A new body's reasons file their tasks (nothing settled on it yet), from the fields they read
+        // as just written.
+        await syncBodyTasks(ctx, id, {
+          body: {
+            ...nameFields(undefined, item),
+            type: item.type,
+            ...classClaimFields(item),
+            ...scores,
+            ...mergeFields(item),
+          },
+        });
         await syncWaterBodyCells(ctx, id, {
           bbox: item.bbox,
           minVisibleZoom: scores.minVisibleZoom,
@@ -955,6 +1083,7 @@ export const importCanonical = internalMutation({
         inserted++;
       }
     }
+    await taskBatch.close();
     // `unresolved` is capped: a batch is 150 bodies and a pathological run could make every one of
     // them ambiguous, but the *counts* are what the loader reports and the samples are for a human
     // reading a run row. Twenty is enough to recognize a pattern and small enough to never dominate
@@ -975,6 +1104,10 @@ export const importCanonical = internalMutation({
       outsideRegion: outsideRegion.slice(0, 20),
       /** Rows skipped for a name or catalog id past its cap (B01-3h). */
       tooLong,
+      /** Settled questions the batch's records raised on unchanged evidence: held, no task (D305). */
+      settledHeld,
+      /** Settled questions raised on changed evidence: asked again, a task filed anew (D305). */
+      raisedAgain,
       unresolved: unresolved.slice(0, 20),
     };
   },
@@ -3297,6 +3430,8 @@ export async function removeBodyImpl(
     { removedAt: now, removedByUserId: actor._id, removalReason: args.reason },
     { actorId: actor._id, audit: false, now },
   );
+  // A removed body asks nothing: its Corpus tasks leave (`removed`), none decided by a person.
+  await leaveBodyTasks(ctx, args.waterBodyId, 'removed', { now });
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'remove',
@@ -3357,6 +3492,8 @@ export async function restoreBodyImpl(
     now,
     extraPatch: { removedAt: undefined, removedByUserId: undefined, removalReason: undefined },
   });
+  // Back on the map, its questions are live again: its reasons file their tasks anew.
+  await syncBodyTasks(ctx, args.waterBodyId, { now });
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'restore',
@@ -4337,6 +4474,9 @@ export async function mergeBodyInto(
           }
         : {}),
     });
+    // The loser's Corpus tasks leave with it (`merged`); the survivor's re-derive from its facts.
+    await syncBodyTasks(ctx, loserId);
+    await syncBodyTasks(ctx, survivorId);
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
     // itself `near_certain` naming the body just merged — a candidate `merge` would now refuse as
@@ -8416,6 +8556,8 @@ export const resolveIncomingMergeDuplicates = internalMutation({
               listed: false,
             });
             await ctx.db.delete(loser._id);
+            // Its Corpus tasks leave with it (`deleted`).
+            await leaveBodyTasks(ctx, loser._id, 'deleted');
             await queueLibraryRefresh(ctx, [loser._id]);
             await markGeoStale(ctx, [loser._id]);
           }
@@ -8531,6 +8673,8 @@ export const resolveCampaignDuplicates = internalMutation({
         listed: false,
       });
       await ctx.db.delete(body._id);
+      // Its Corpus tasks leave with it (`deleted`).
+      await leaveBodyTasks(ctx, body._id, 'deleted');
       await queueLibraryRefresh(ctx, [body._id]);
       await markGeoStale(ctx, [body._id]);
     }

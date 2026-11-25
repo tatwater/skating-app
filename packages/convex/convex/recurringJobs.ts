@@ -439,4 +439,7 @@ const CRON_OF: Record<FailingJob, string> = {
   // photo file owed a deletion (`lib/photoFiles`, key `file:<id>`) is its row too, whoever owed it —
   // a rotation, a delete, the purge — retried by the watch and by the daily 'sweep photo files'.
   photoRotation: 'rotate or release a photo’s files',
+  // B01-6a: the backfill is run by hand; its failures are retried by the repair's cron.
+  corpusTaskBackfill: 'repair corpus tasks drift',
+  corpusTaskRepair: 'repair corpus tasks drift',
 };
