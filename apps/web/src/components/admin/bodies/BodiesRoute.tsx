@@ -15,6 +15,8 @@ import {
 
 import { ReadBoundary } from '@/components/kit/read-boundary';
 import { useRole } from '@/lib/useRole';
+import { CorpusTaskRoute } from '../corpus/CorpusTaskRoute';
+import { taskQueryOf } from '../corpus/taskSearch';
 import { searchFor as inboxSearchFor } from '../inbox/inboxSearch';
 import {
   isFailed,
@@ -97,8 +99,20 @@ export type BodiesRouteProps = {
   openLabel?: string;
 };
 
-export function BodiesRoute({ bodyPath = BODY_PATH, openLabel }: BodiesRouteProps) {
+export function BodiesRoute(props: BodiesRouteProps) {
   const search = useSearch({ strict: false }) as BodiesSearch;
+  // One route, one sidebar: a task lane (`?lane=name-conflicts`) draws its list and inspector
+  // (`CorpusTaskRoute`); every other lane is the library's.
+  const task = taskQueryOf(search);
+  if (task !== null) return <CorpusTaskRoute query={task} />;
+  return <LibraryRoute search={search} {...props} />;
+}
+
+function LibraryRoute({
+  search,
+  bodyPath = BODY_PATH,
+  openLabel,
+}: BodiesRouteProps & { search: BodiesSearch }) {
   const navigate = useNavigate();
   const { can } = useRole();
   const now = useMinuteNow();
