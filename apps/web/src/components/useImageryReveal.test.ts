@@ -337,3 +337,299 @@ describe('a host’s own floor, anchor and paint (the console map’s summer aer
     await waitFor(() => expect(loadTile).toHaveBeenCalled());
   });
 });
+
+describe('onStatusChange — where the view stands, cell by cell', () => {
+  /** A cell the test settles by hand. */
+  function held() {
+    let settle: (value: ImageBitmap | null) => void = () => {};
+    const promise = new Promise<ImageBitmap | null>((resolve) => {
+      settle = resolve;
+    });
+    return { promise, settle };
+  }
+
+  it('is loading until every cell is in, then loaded — counting as they land', async () => {
+    const cells = [held(), held()];
+    let call = 0;
+    loadTile.mockImplementation(() => cells[call++]?.promise);
+    const onStatusChange = vi.fn();
+    const { map } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange }));
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(2));
+    expect(onStatusChange).toHaveBeenLastCalledWith({
+      phase: 'loading',
+      cells: 2,
+      arrived: 0,
+      failed: 0,
+      shown: false,
+    });
+
+    cells[0]?.settle({} as ImageBitmap);
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith(
+        expect.objectContaining({ phase: 'loading', arrived: 1 }),
+      ),
+    );
+    cells[1]?.settle({} as ImageBitmap);
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith({
+        phase: 'loaded',
+        cells: 2,
+        arrived: 2,
+        failed: 0,
+        shown: true,
+      }),
+    );
+  });
+
+  it('never says loading for a view whose cells are all in memory', async () => {
+    isTileResident.mockReturnValue(true);
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const onStatusChange = vi.fn();
+    const { map } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange }));
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ phase: 'loaded' })),
+    );
+    for (const [status] of onStatusChange.mock.calls) expect(status.phase).not.toBe('loading');
+  });
+
+  it('says failed, with how many, when some or all of the cells did not come', async () => {
+    let call = 0;
+    loadTile.mockImplementation(async () => (call++ === 0 ? ({} as ImageBitmap) : null));
+    const onStatusChange = vi.fn();
+    const { map } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange }));
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith({
+        phase: 'failed',
+        cells: 2,
+        arrived: 1,
+        failed: 1,
+        shown: true,
+      }),
+    );
+  });
+
+  it('says failed with nothing shown when no cell came at all', async () => {
+    loadTile.mockResolvedValue(null);
+    const onStatusChange = vi.fn();
+    const { map } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange }));
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith({
+        phase: 'failed',
+        cells: 2,
+        arrived: 0,
+        failed: 2,
+        shown: false,
+      }),
+    );
+  });
+
+  it('is loaded again on a moveend back onto the drawn view, and null when the layer comes down', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const onStatusChange = vi.fn();
+    const { map, handlers } = fakeMap();
+    const { unmount } = renderHook(() =>
+      useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange }),
+    );
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'loaded' })),
+    );
+    const calls = onStatusChange.mock.calls.length;
+    handlers.get('moveend')?.();
+    await Promise.resolve();
+    // Unchanged, so not said again.
+    expect(onStatusChange).toHaveBeenCalledTimes(calls);
+    unmount();
+    expect(onStatusChange).toHaveBeenLastCalledWith(null);
+  });
+
+  it('is read through a ref: a fresh callback each render never re-mounts the layer', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map } = fakeMap();
+    const removeLayer = vi.spyOn(map, 'removeLayer');
+    const { rerender } = renderHook(() =>
+      useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange: () => {} }),
+    );
+    await waitFor(() => expect(map.getSource('imagery')).toBeDefined());
+    rerender();
+    rerender();
+    expect(removeLayer).not.toHaveBeenCalled();
+  });
+});
+
+describe('cells in flight are shared between views', () => {
+  it('a moveend onto the same cells mid-load neither aborts nor re-asks them', async () => {
+    // Measured on the live service: a nudge one second into a cold view aborted all four renders
+    // and asked the same four URLs again from zero, so each nudge restarted the clock.
+    let release: (value: unknown) => void = () => {};
+    loadTile.mockReturnValue(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    const onStatusChange = vi.fn();
+    const { map, handlers } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange }));
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(2));
+    const signals = loadTile.mock.calls.map((call) => call[2] as AbortSignal);
+
+    handlers.get('moveend')?.();
+    await Promise.resolve();
+    expect(loadTile).toHaveBeenCalledTimes(2);
+    for (const signal of signals) expect(signal.aborted).toBe(false);
+
+    release({});
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'loaded' })),
+    );
+  });
+
+  it('a pan elsewhere still abandons the cells it no longer wants', async () => {
+    loadTile.mockReturnValue(new Promise(() => {}));
+    const { map, handlers, away } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS }));
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(2));
+    const first = loadTile.mock.calls.map((call) => call[2] as AbortSignal);
+    away();
+    handlers.get('moveend')?.();
+    for (const signal of first) expect(signal.aborted).toBe(true);
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(4));
+  });
+
+  it('a cell settled is off the list: asked again later, it is fetched again', async () => {
+    loadTile.mockResolvedValue(null);
+    const { map } = fakeMap();
+    const { result } = renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS }));
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(2));
+    await Promise.resolve();
+    result.current.retry();
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(4));
+  });
+});
+
+describe('progressive — the first view paints as its cells land', () => {
+  function heldCells(n: number) {
+    const settles: ((value: ImageBitmap | null) => void)[] = [];
+    const promises = Array.from(
+      { length: n },
+      () =>
+        new Promise<ImageBitmap | null>((resolve) => {
+          settles.push(resolve);
+        }),
+    );
+    let call = 0;
+    loadTile.mockImplementation(() => promises[call++] ?? Promise.resolve({} as ImageBitmap));
+    return settles;
+  }
+
+  it('puts the first cell on screen while the second is still on its way', async () => {
+    const settles = heldCells(2);
+    const onStatusChange = vi.fn();
+    const { map } = fakeMap();
+    renderHook(() =>
+      useImageryReveal({
+        map,
+        loaded: true,
+        masks: MASKS,
+        unmasked: true,
+        progressive: true,
+        onStatusChange,
+      }),
+    );
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(2));
+    expect(map.getSource('imagery')).toBeUndefined();
+    settles[0]?.({} as ImageBitmap);
+    await waitFor(() => expect(map.getSource('imagery')).toBeDefined());
+    expect(onStatusChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ phase: 'loading', arrived: 1, shown: true }),
+    );
+    settles[1]?.({} as ImageBitmap);
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'loaded' })),
+    );
+  });
+
+  it('off by default: nothing is drawn until the whole view is in', async () => {
+    const settles = heldCells(2);
+    const { map } = fakeMap();
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, unmasked: true }));
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(2));
+    settles[0]?.({} as ImageBitmap);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(map.getSource('imagery')).toBeUndefined();
+    settles[1]?.({} as ImageBitmap);
+    await waitFor(() => expect(map.getSource('imagery')).toBeDefined());
+  });
+
+  it('over a photograph already up, a new view swaps in whole', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map, handlers, away } = fakeMap();
+    renderHook(() =>
+      useImageryReveal({ map, loaded: true, masks: MASKS, unmasked: true, progressive: true }),
+    );
+    await waitFor(() => expect(map.getSource('imagery')).toBeDefined());
+    const source = map.getSource('imagery') as unknown as { setCoordinates: () => void };
+    const moved = vi.spyOn(source, 'setCoordinates');
+
+    const settles = heldCells(2);
+    away();
+    handlers.get('moveend')?.();
+    await waitFor(() => expect(loadTile).toHaveBeenCalledTimes(4));
+    settles[0]?.({} as ImageBitmap);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(moved).not.toHaveBeenCalled();
+    settles[1]?.({} as ImageBitmap);
+    await waitFor(() => expect(moved).toHaveBeenCalledTimes(1));
+  });
+});
+
+describe('retry', () => {
+  it('asks again only for the cells that did not come', async () => {
+    let call = 0;
+    loadTile.mockImplementation(async (_tile, key: string) => {
+      call += 1;
+      return call === 2 ? null : ({ key } as unknown as ImageBitmap);
+    });
+    const onStatusChange = vi.fn();
+    const { map } = fakeMap();
+    const { result } = renderHook(() =>
+      useImageryReveal({ map, loaded: true, masks: MASKS, onStatusChange }),
+    );
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'failed' })),
+    );
+    const failedKey = loadTile.mock.calls[1]?.[1];
+    // The cell that came is in memory now.
+    isTileResident.mockImplementation((key: string) => key !== failedKey);
+    loadTile.mockClear();
+    loadTile.mockImplementation(async (_tile, key: string) => ({ key }) as unknown as ImageBitmap);
+
+    result.current.retry();
+    await waitFor(() =>
+      expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'loaded' })),
+    );
+    // Both cells pass through the cache; the failed one is the one that wasn't resident.
+    expect(loadTile.mock.calls.map((c) => c[1])).toContain(failedKey);
+    expect(onStatusChange).toHaveBeenCalledWith(expect.objectContaining({ phase: 'loading' }));
+  });
+
+  it('does nothing once the layer is down', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map } = fakeMap();
+    const { result, unmount } = renderHook(() =>
+      useImageryReveal({ map, loaded: true, masks: MASKS }),
+    );
+    await waitFor(() => expect(loadTile).toHaveBeenCalled());
+    const retry = result.current.retry;
+    unmount();
+    loadTile.mockClear();
+    retry();
+    await Promise.resolve();
+    expect(loadTile).not.toHaveBeenCalled();
+  });
+});
