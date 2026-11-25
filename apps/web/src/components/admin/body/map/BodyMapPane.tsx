@@ -48,7 +48,14 @@ import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescri
  *   the key (Review 13 #5).
  * - **An embed goes without the rack** (`rack={false}`, the Inbox's): no switches at all, and the
  *   `plate` slot (a legend, a caption) takes the rack's corner; beside a rack, a plate goes top right.
+ * - **The summer aerial** (`consoleAerial`) is the rack's last row (`aerial`): not a scene's layer
+ *   but the ground under all of them, so it is never disabled and never reset by a tab — the
+ *   viewer's own switch, kept by the frame. While it is on, its credit (`credit`) sits in the dock
+ *   before the scale, as board 4.3 draws it.
  */
+
+/** The summer aerial's rack row: not the winter pass (*Aerial*, Imagery's), the NAIP photograph. */
+export const AERIAL_SWITCH_LABEL = 'Summer aerial';
 
 export const LAYER_LABELS: Record<BodyMapLayer, string> = {
   outline: 'Outline',
@@ -92,6 +99,10 @@ export interface BodyMapPaneProps {
    * rack; top right beside one. Marked `data-map-ui`, so the graticule's labels keep clear of it.
    */
   plate?: ReactNode;
+  /** The summer aerial's switch, as the rack's last row (a map with a rack only). */
+  aerial?: { on: boolean; onChange: (on: boolean) => void };
+  /** The summer aerial's credit while it is on, in the dock before the scale. */
+  credit?: string | null;
   className?: string;
 }
 
@@ -108,6 +119,8 @@ export function BodyMapPane({
   hoverId: forcedHover = null,
   foot,
   plate,
+  aerial,
+  credit = null,
   className,
 }: BodyMapPaneProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
@@ -125,7 +138,7 @@ export function BodyMapPane({
     paneRef,
     surface?.width ?? 0,
     surface?.height ?? 0,
-    rows.length,
+    rows.length + (aerial === undefined ? 0 : 1),
     plate != null,
   );
 
@@ -205,7 +218,9 @@ export function BodyMapPane({
         </div>
       )}
       {rack !== false && (
-        <MapLayerRack>
+        // The summer aerial's row names itself in two words, a step past the kit rack's 8rem: the
+        // rack takes 9 when it holds that row, so no name runs off its plate.
+        <MapLayerRack className={cn(aerial !== undefined && 'w-[9rem]')}>
           {rows.map((row) => (
             <SwitchRow
               key={row.layer}
@@ -216,6 +231,14 @@ export function BodyMapPane({
               onCheckedChange={(on) => onLayerChange?.(row.layer, on)}
             />
           ))}
+          {aerial !== undefined && (
+            <SwitchRow
+              data-layer="summerAerial"
+              label={AERIAL_SWITCH_LABEL}
+              checked={aerial.on}
+              onCheckedChange={(on) => aerial.onChange(on)}
+            />
+          )}
         </MapLayerRack>
       )}
       {plate != null && (
@@ -231,6 +254,14 @@ export function BodyMapPane({
         </div>
       )}
       <MapDock>
+        {credit !== null && (
+          <span
+            data-slot="body-map-aerial-credit"
+            className="pb-(--space-1) text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg2 uppercase"
+          >
+            {credit}
+          </span>
+        )}
         {surface !== null && (
           <MapScaleBar
             metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}

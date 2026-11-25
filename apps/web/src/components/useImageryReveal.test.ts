@@ -291,3 +291,49 @@ describe('the redraw skip', () => {
     await waitFor(() => expect(loadTile.mock.calls.length).toBeGreaterThan(2));
   });
 });
+
+describe('a host’s own floor, anchor and paint (the console map’s summer aerial)', () => {
+  it('by default: the zoom floor, under the basemap’s roads, plain paint', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map } = fakeMap();
+    const addLayer = vi.spyOn(map, 'addLayer');
+    renderHook(() => useImageryReveal({ map, loaded: true, masks: MASKS, unmasked: true }));
+    await waitFor(() => expect(addLayer).toHaveBeenCalled());
+    const [layer, before] = addLayer.mock.calls[0] as unknown as [{ paint: object }, string];
+    expect(before).toBe('roads_minor');
+    expect(layer.paint).toEqual({ 'raster-opacity': 1, 'raster-fade-duration': 0 });
+  });
+
+  it('a host’s anchor places the layer, and its paint is laid over the plain', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map } = fakeMap();
+    const addLayer = vi.spyOn(map, 'addLayer');
+    renderHook(() =>
+      useImageryReveal({
+        map,
+        loaded: true,
+        masks: MASKS,
+        unmasked: true,
+        anchor: () => 'console-fields',
+        paint: { 'raster-brightness-max': 0.42 },
+      }),
+    );
+    await waitFor(() => expect(addLayer).toHaveBeenCalled());
+    const [layer, before] = addLayer.mock.calls[0] as unknown as [{ paint: object }, string];
+    expect(before).toBe('console-fields');
+    expect(layer.paint).toEqual({
+      'raster-opacity': 1,
+      'raster-fade-duration': 0,
+      'raster-brightness-max': 0.42,
+    });
+  });
+
+  it('a host’s floor of 0 draws where the default floor would not', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map } = fakeMap(9);
+    renderHook(() =>
+      useImageryReveal({ map, loaded: true, masks: MASKS, unmasked: true, minZoom: 0 }),
+    );
+    await waitFor(() => expect(loadTile).toHaveBeenCalled());
+  });
+});

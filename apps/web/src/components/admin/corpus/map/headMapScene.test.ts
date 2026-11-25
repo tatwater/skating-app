@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-
+import { metersBetween } from '../../inbox/map/inboxMapFrame';
 import { embedBodyOf, headMapState, outlineLabelOf } from './CorpusHeadMap';
 import { GROTON_UNNAMED, OSMORE_POND, TAYLOR_POND, THE_BASIN } from './corpusMapFixtures';
-import { embedOutline, HEAD_MAP_GROW, headMapScene } from './headMapScene';
+import { embedOutline, HEAD_MAP_GROW, HEAD_MAP_MIN_SPAN_M, headMapScene } from './headMapScene';
 
 const BASIN = { id: 'wbbasin', name: 'The Basin', outline: THE_BASIN };
 const TAYLOR = { id: 'wbtaylor', name: 'Taylor Pond', outline: TAYLOR_POND };
@@ -20,6 +20,33 @@ describe('the head map’s scene', () => {
     expect(view.reach?.minLat).toBeLessThan(44.1);
     expect(view.legend).toEqual([]);
     expect(view.caption).toBeNull();
+  });
+
+  it('frames a five-acre pond on itself, not on the Inbox’s 400 m floor for a lone point', () => {
+    const view = headMapScene({ body: { id: 'wbgroton', name: '', outline: GROTON_UNNAMED } });
+    const { minLng, maxLng, minLat, maxLat } = view.frame;
+    const across = metersBetween([minLng, (minLat + maxLat) / 2], [maxLng, (minLat + maxLat) / 2]);
+    // Groton's box is about 186 m across; a fifth more each side, well under 400.
+    expect(across).toBeGreaterThan(186 * 1.35);
+    expect(across).toBeLessThan(186 * 1.45);
+    // A speck still gets the floor's room.
+    const speck: GeoJSON.Polygon = {
+      type: 'Polygon',
+      coordinates: [
+        [
+          [-72.28, 44.29],
+          [-72.2799, 44.29],
+          [-72.2799, 44.2901],
+          [-72.28, 44.29],
+        ],
+      ],
+    };
+    const tiny = headMapScene({ body: { id: 'wbspeck', name: '', outline: speck } }).frame;
+    const tinyAcross = metersBetween(
+      [tiny.minLng, (tiny.minLat + tiny.maxLat) / 2],
+      [tiny.maxLng, (tiny.minLat + tiny.maxLat) / 2],
+    );
+    expect(tinyAcross).toBeGreaterThanOrEqual(HEAD_MAP_MIN_SPAN_M);
   });
 
   it('draws the neighbor under the body, named at its shore nearest the body', () => {

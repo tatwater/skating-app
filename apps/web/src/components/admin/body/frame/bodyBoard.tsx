@@ -39,6 +39,9 @@ import { BODY_TAB_LABELS } from './tabRegistry';
 
 const TAPE = seasonTape(BODY_NOW);
 
+/** When the stories' summer aerial was flown over Mascoma (its NAIP scene, `m_4307231_ne_18_030_20230622`). */
+export const MASCOMA_AERIAL_AT = Date.UTC(2023, 5, 22);
+
 /** Its parent's size, measured: what the still map is drawn at. */
 function Measured({ children }: { children: (w: number, h: number) => ReactNode }) {
   const ref = useRef<HTMLDivElement | null>(null);
@@ -88,6 +91,8 @@ export type BodyBoardProps = Partial<
   bare?: boolean;
   /** The map pane's content in place of the still (a story's probe of the pane's box). */
   map?: ReactNode;
+  /** The summer aerial's switch as the board opens (its stand-in on the still). */
+  aerial?: boolean;
   className?: string;
 };
 
@@ -146,6 +151,7 @@ export function BodyBoard({
   tabScene = null,
   bare = false,
   map: mapOverride,
+  aerial = false,
   className = 'h-[56.25rem] w-[90rem]',
 }: BodyBoardProps) {
   const identity = loading ? undefined : givenIdentity;
@@ -197,6 +203,8 @@ export function BodyBoard({
                   height={h}
                   hoverId={hoverId}
                   foot={foot}
+                  aerial={aerial}
+                  aerialCapturedAt={MASCOMA_AERIAL_AT}
                 />
               )}
             </Measured>

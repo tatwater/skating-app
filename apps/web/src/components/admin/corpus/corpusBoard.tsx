@@ -33,13 +33,7 @@ import { BOARD_LANES } from './corpusBoardFixtures';
 import type { CorpusLanesView, CorpusTaskItemView } from './corpusTypes';
 import { CLASSES_MAP_HEIGHT, ClassesInspector } from './handlers/Classes/ClassesInspector';
 import type { ClassesItem } from './handlers/Classes/classesModel';
-import {
-  BASIN_MAP,
-  BOARD_PANE,
-  GROTON_MAP,
-  STORY_ZONE,
-  StillMap,
-} from './handlers/CorpusInspectorStory';
+import { BASIN_MAP, GROTON_MAP, STORY_ZONE, StillMap } from './handlers/CorpusInspectorStory';
 import { NAMES_MAP_SIZE, NamesInspector } from './handlers/Names/NamesInspector';
 import type { NamesItem } from './handlers/Names/namesModel';
 import type { CorpusHandler, CorpusHandlerProps } from './inspector/handlerRegistry';
@@ -93,7 +87,7 @@ function StoryClasses({ item, locked, now }: CorpusHandlerProps) {
       item={item as ClassesItem}
       locked={locked}
       now={now}
-      map={<StillMap state={GROTON_MAP} height={CLASSES_MAP_HEIGHT} width={BOARD_PANE.width} />}
+      map={<StillMap state={GROTON_MAP} height={CLASSES_MAP_HEIGHT} aerial />}
       bodyLink={bodyLink(item.body.id)}
       onDecide={decide}
       pending={null}

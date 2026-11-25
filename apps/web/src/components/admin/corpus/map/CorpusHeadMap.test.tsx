@@ -4,7 +4,7 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { InspectorProvider } from '../../inspector/inspectorContext';
-import { CorpusHeadMap } from './CorpusHeadMap';
+import { CorpusHeadMap, HEAD_MAP_MAX_ZOOM } from './CorpusHeadMap';
 import { TAYLOR_POND, THE_BASIN } from './corpusMapFixtures';
 
 /**
@@ -27,17 +27,23 @@ vi.mock('../../inbox/map/InboxMap', () => ({
     mode,
     height,
     viewOnly,
+    aerial,
+    maxZoom,
   }: {
     view: { scene: { items: { id: string }[] } };
     mode: string;
     height: number;
     viewOnly?: boolean;
+    aerial?: boolean;
+    maxZoom?: number;
   }) => (
     <div
       data-slot="stub-map"
       data-mode={mode}
       data-height={height}
       data-view-only={viewOnly ? '' : undefined}
+      data-aerial={aerial ? '' : undefined}
+      data-max-zoom={maxZoom}
       data-items={view.scene.items.map((i) => i.id).join(' ')}
     />
   ),
@@ -109,6 +115,19 @@ describe('the head map, wired', () => {
     const drawn = document.querySelector<HTMLElement>('[data-slot="stub-map"]');
     expect(drawn).toHaveAttribute('data-view-only');
     expect(drawn?.dataset.mode).toBe('dark');
+  });
+
+  it('draws the summer aerial when its handler asks (4.3), none otherwise (4.2), and frames closer', () => {
+    stub.answers = { wbbasin: doc('wbbasin', 'The Basin', THE_BASIN) };
+    const { unmount } = render(basinMap);
+    let drawn = document.querySelector<HTMLElement>('[data-slot="stub-map"]');
+    expect(drawn).not.toHaveAttribute('data-aerial');
+    expect(drawn?.dataset.maxZoom).toBe(String(HEAD_MAP_MAX_ZOOM));
+    unmount();
+    render(<CorpusHeadMap bodyId={'wbbasin' as never} neighbors={[]} height={250} aerial />);
+    drawn = document.querySelector<HTMLElement>('[data-slot="stub-map"]');
+    expect(drawn).toHaveAttribute('data-aerial');
+    expect(HEAD_MAP_MAX_ZOOM).toBeGreaterThan(17);
   });
 
   it('says a failed body read with Try again, which asks the reads again', async () => {

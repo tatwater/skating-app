@@ -197,6 +197,87 @@ describe('the rack’s switches', () => {
   });
 });
 
+describe('the summer aerial on the console map', () => {
+  it('is the rack’s last row, never disabled, and draws its stand-in and credit while on', async () => {
+    const user = userEvent.setup();
+    render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        aerialCapturedAt={Date.UTC(2023, 5, 22)}
+      />,
+    );
+    const rack = screen.getAllByRole('switch');
+    const aerial = screen.getByRole('switch', { name: 'Summer aerial' });
+    expect(rack.at(-1)).toBe(aerial);
+    expect(aerial).not.toBeChecked();
+    expect(aerial).not.toHaveAttribute('data-disabled');
+    // The winter pass's own row stays what it was: disabled with no pass in the scene.
+    expect(screen.getByRole('switch', { name: 'Aerial' })).toHaveAttribute('data-disabled');
+    expect(document.querySelector('[data-slot="body-map-aerial-still"]')).toBeNull();
+    expect(document.querySelector('[data-slot="body-map-aerial-credit"]')).toBeNull();
+
+    await user.click(aerial);
+    expect(aerial).toBeChecked();
+    expect(document.querySelector('[data-slot="body-map-aerial-still"]')).not.toBeNull();
+    const credit = document.querySelector('[data-slot="body-map-aerial-credit"]');
+    expect(credit).toHaveTextContent('Aerial · NAIP Jun 2023');
+    // In the dock, before the scale and the zoom pair: board 4.3's corner.
+    expect(credit?.parentElement).toHaveAttribute('data-slot', 'map-dock');
+    expect(credit?.parentElement?.firstElementChild).toBe(credit);
+  });
+
+  it('draws over the fills and under every line: the shore stays on top', () => {
+    render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        aerial
+      />,
+    );
+    const svg = document.querySelector('[data-slot="body-map-still"]') as SVGElement;
+    const children = [...svg.children];
+    const stand = children.findIndex(
+      (c) => c.getAttribute('data-slot') === 'body-map-aerial-still',
+    );
+    const shore = children.findIndex((c) => c.getAttribute('data-id')?.startsWith('body'));
+    expect(stand).toBeGreaterThan(0);
+    expect(shore).toBeGreaterThan(stand);
+  });
+
+  it('a switch a tab change resets (Put-ins) is not the aerial’s: it stays as the viewer left it', async () => {
+    const user = userEvent.setup();
+    const { rerender } = render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+      />,
+    );
+    await user.click(screen.getByRole('switch', { name: 'Summer aerial' }));
+    await user.click(screen.getByRole('switch', { name: 'Put-ins' }));
+    rerender(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="names"
+        width={W}
+        height={H}
+      />,
+    );
+    expect(screen.getByRole('switch', { name: 'Put-ins' })).toBeChecked();
+    expect(screen.getByRole('switch', { name: 'Summer aerial' })).toBeChecked();
+  });
+});
+
 describe('BodyMapKey', () => {
   const words = () => screen.getAllByRole('listitem').map((i) => i.textContent);
 

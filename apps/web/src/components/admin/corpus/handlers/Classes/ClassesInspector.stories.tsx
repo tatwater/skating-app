@@ -59,7 +59,9 @@ function Classes({
           locked={locked}
           now={CLASSES_NOW}
           map={
-            map ? <StillMap state={GROTON_MAP} height={CLASSES_MAP_HEIGHT} width={WIDTH} /> : null
+            map ? (
+              <StillMap state={GROTON_MAP} height={CLASSES_MAP_HEIGHT} width={WIDTH} aerial />
+            ) : null
           }
           bodyLink={<a href="/admin/body/wbgroton?tab=names">Open in Body</a>}
           onDecide={onDecide}

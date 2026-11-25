@@ -149,7 +149,12 @@ export function CorpusTaskView({
       data-narrow={narrow ? '' : undefined}
       {...panes.pageProps}
       className={cn(
-        'h-full min-h-0',
+        // The lanes keep the console's 236 (wider than the boards' 212, the founder's call); the list
+        // is the boards' 420, so a lane's tabs fit one row and its search hint isn't cut; the
+        // inspector takes the rest. Set here on the page, as the Inbox sets its own pair, so the
+        // narrow rule (`useColumnsFit`, which reads the tokens off this element) measures the same —
+        // the console's token, and the library's and People's lists, stay 340.
+        'h-full min-h-0 [--size-list:26.25rem]',
         narrow
           ? 'flex flex-col overflow-x-hidden'
           : 'grid grid-cols-[var(--size-lanes)_var(--size-list)_minmax(0,1fr)]',

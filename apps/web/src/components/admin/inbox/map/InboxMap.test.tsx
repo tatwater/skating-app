@@ -64,6 +64,41 @@ describe('the embed', () => {
     expect(zoomIn).toBeDisabled();
   });
 
+  it('goes closer than the street when its caller raises the ceiling', async () => {
+    const user = userEvent.setup();
+    const presses = async (maxZoom?: number) => {
+      const { unmount } = render(
+        <InboxMapStill view={reportPointScene(REPORT_POINT)} width={280} maxZoom={maxZoom} />,
+      );
+      const zoomIn = screen.getByRole('button', { name: 'Zoom in' });
+      let n = 0;
+      for (; n < 12 && !(zoomIn as HTMLButtonElement).disabled; n++) await user.click(zoomIn);
+      unmount();
+      return n;
+    };
+    expect(await presses(19)).toBe((await presses()) + 2);
+  });
+
+  it('draws the summer aerial’s stand-in and its credit only when asked', () => {
+    const { container, rerender } = render(<InboxMapStill view={alertScene(ALERT)} width={300} />);
+    expect(container.querySelector('[data-slot="body-map-aerial-still"]')).toBeNull();
+    expect(container.querySelector('[data-slot="body-map-aerial-credit"]')).toBeNull();
+    rerender(
+      <InboxMapStill
+        view={alertScene(ALERT)}
+        width={300}
+        aerial
+        aerialCapturedAt={Date.UTC(2023, 5, 22)}
+      />,
+    );
+    expect(container.querySelector('[data-slot="body-map-aerial-still"]')).not.toBeNull();
+    expect(container.querySelector('[data-slot="body-map-aerial-credit"]')).toHaveTextContent(
+      'Aerial · NAIP Jun 2023',
+    );
+    // An embed has no rack: no switch of its own for it.
+    expect(screen.queryByRole('switch', { name: 'Summer aerial' })).toBeNull();
+  });
+
   it('view only, on a phone: no zoom pair, and the map takes no pointer', () => {
     const { container } = render(
       <InboxMapStill view={reportPointScene(REPORT_POINT)} width={328} viewOnly />,
