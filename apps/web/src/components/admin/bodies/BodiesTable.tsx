@@ -379,6 +379,11 @@ export function BodiesTable({
 
   const onKeyDown = (event: KeyboardEvent<HTMLTableElement>) => {
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
+    // A group's *See all* is a button of its own inside the grid: its ⏎ and Space press it, and
+    // never open the row under the cursor (or that row's body).
+    if (event.target instanceof Element && event.target.closest('[data-slot="bodies-more"]')) {
+      return;
+    }
     const at = rowEntries.findIndex((r) => r.id === cursor);
     const step = (to: number) => {
       event.preventDefault();

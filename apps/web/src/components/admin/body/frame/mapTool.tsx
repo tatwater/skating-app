@@ -27,7 +27,7 @@ import type { BBoxLike } from '@/lib/mapSurface';
  *   tool's kind) changes, never because a callback or the mode bar's words did. The callbacks are
  *   read through a ref, so a claim may pass fresh closures every render.
  * - **Esc leaves the tool** (`onExit`), unless something else already took the key (a dialog, an
- *   open menu) — the same call as the mode bar's Esc cap.
+ *   open menu) or it was pressed in a field — the same call as the mode bar's Esc cap.
  */
 
 export type MapToolEngine =
@@ -72,6 +72,9 @@ export interface MapToolClaim {
   onExit: () => void;
 }
 
+/** Where a typed Esc belongs to the field, not the map's tool. */
+const EDITABLE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
+
 const ClaimContext = createContext<MapToolClaim | null>(null);
 const SetClaimContext = createContext<((claim: MapToolClaim | null) => void) | null>(null);
 
@@ -85,6 +88,9 @@ export function MapToolProvider({ children }: { children: ReactNode }) {
     if (!held) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
+      // Esc in a field (a bay's name, its pasted GeoJSON) is the field's: it never throws away
+      // the drawing and everything typed with it.
+      if (e.target instanceof Element && e.target.closest(EDITABLE)) return;
       e.preventDefault();
       exit.current?.();
     };

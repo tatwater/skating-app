@@ -340,6 +340,26 @@ describe('the bay task — arrivals', () => {
     mocks.search = { task: 'rq9' };
     render(<Mounted />);
     await waitFor(() => expect(toasts.map((t) => t.title)).toContain('Nothing to draw'));
+    expect(toasts[0]?.description).toBe('That ask isn’t open any more.');
+    expect(mocks.claim).toBeNull();
+  });
+
+  it('an ask past the read’s bound is never called closed', async () => {
+    mocks.search = { task: 'rq9' };
+    set(api.corpusRequests.openBayRequestsForBody, { bays: [], more: true });
+    render(<Mounted />);
+    await waitFor(() => expect(toasts.map((t) => t.title)).toContain('Nothing to draw'));
+    expect(toasts[0]?.description).not.toMatch(/isn’t open/);
+    expect(mocks.claim).toBeNull();
+  });
+
+  it('a read that fails says so and lets the arrival go, rather than sit armed and silent', async () => {
+    mocks.search = { task: 'rq2' };
+    set(api.corpusRequests.openBayRequestsForBody, new Error('read failed'));
+    render(<Mounted />);
+    await waitFor(() => expect(toasts.map((t) => t.title)).toContain('Nothing to draw'));
+    expect(toasts[0]?.description).toMatch(/couldn’t be read/);
+    expect(mocks.navigate).toHaveBeenCalledWith(expect.objectContaining({ replace: true }));
     expect(mocks.claim).toBeNull();
   });
 

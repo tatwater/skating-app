@@ -28,9 +28,12 @@ const engines = vi.hoisted(() => ({
   ring: [] as {
     polygon?: unknown;
     editing: boolean;
+    editCalls: number;
     drawing: boolean;
     destroyed: boolean;
+    singleShape?: boolean | undefined;
     fire: (p: unknown) => void;
+    finish: (p: unknown) => void;
   }[],
   ringFails: false,
   ringGate: null as null | Promise<void>,
@@ -59,7 +62,14 @@ vi.mock('@/lib/chordDraw', () => ({
   },
 }));
 vi.mock('@/lib/polygonDraw', () => ({
-  createPolygonDraw: async (_map: unknown, options: { onChange: (p: unknown) => void }) => {
+  createPolygonDraw: async (
+    _map: unknown,
+    options: {
+      onChange: (p: unknown) => void;
+      onFinish?: (p: unknown) => void;
+      singleShape?: boolean;
+    },
+  ) => {
     if (engines.ringGate) await engines.ringGate;
     if (engines.ringFails) throw new Error('chunk failed');
     const e = {
@@ -67,7 +77,14 @@ vi.mock('@/lib/polygonDraw', () => ({
       drawing: false,
       destroyed: false,
       polygon: undefined as unknown,
+      editCalls: 0,
+      singleShape: options.singleShape,
       fire: (p: unknown) => options.onChange(p),
+      // As the engine does on a ring's close and after each vertex drag: finish, then the change.
+      finish: (p: unknown) => {
+        options.onFinish?.(p);
+        options.onChange(p);
+      },
     };
     engines.ring.push(e);
     return {
@@ -76,6 +93,7 @@ vi.mock('@/lib/polygonDraw', () => ({
       },
       startEditing: () => {
         e.editing = true;
+        e.editCalls += 1;
       },
       setPolygon: (p: unknown) => {
         e.polygon = p;
@@ -208,6 +226,12 @@ describe('the map tool claim', () => {
     window.removeEventListener('keydown', dialog, { capture: true });
     expect(onExit).toHaveBeenCalledTimes(1);
     fireEvent.keyDown(window, { key: 'x' });
+    expect(onExit).toHaveBeenCalledTimes(1);
+    // Esc in a field is the field's: the drawing and what was typed with it stay.
+    const field = document.createElement('input');
+    document.body.append(field);
+    fireEvent.keyDown(field, { key: 'Escape' });
+    field.remove();
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 
@@ -356,6 +380,32 @@ describe('the engine on the map', () => {
     });
   });
 
+  it('keeps the operator’s view on a map re-created mid-session, and frames a session the map was down for', () => {
+    const first = fakeMap();
+    const second = fakeMap();
+    const claim = base({ focus: { point: { lat: 1, lng: 2 } } });
+    const { rerender } = render(
+      <MapToolProvider>
+        <Tab claim={claim} />
+        <MapHalf map={null} />
+      </MapToolProvider>,
+    );
+    rerender(
+      <MapToolProvider>
+        <Tab claim={claim} />
+        <MapHalf map={first} />
+      </MapToolProvider>,
+    );
+    expect(first.moves).toEqual([{ fly: { center: [2, 1], zoom: 13 } }]);
+    rerender(
+      <MapToolProvider>
+        <Tab claim={claim} />
+        <MapHalf map={second} />
+      </MapToolProvider>,
+    );
+    expect(second.moves).toEqual([]);
+  });
+
   it('hands a ring to edit to the vertex editor, or starts a new one', async () => {
     const ring = (polygon?: GeoJSON.Polygon, session = 'r1') =>
       base({
@@ -385,6 +435,31 @@ describe('the engine on the map', () => {
     await act(async () => {});
     expect(engines.ring[0]?.destroyed).toBe(true);
     expect(engines.ring[1]).toMatchObject({ drawing: true, editing: false });
+  });
+
+  it('hands a traced ring to the vertex editor as it closes, and keeps it there through every drag', async () => {
+    const heard: unknown[] = [];
+    render(
+      <MapToolProvider>
+        <Tab
+          claim={base({
+            session: 'r1',
+            engine: { kind: 'ring', onChange: (p) => heard.push(p), onUnavailable: () => {} },
+          })}
+        />
+        <MapHalf map={fakeMap()} />
+      </MapToolProvider>,
+    );
+    await act(async () => {});
+    const e = engines.ring[0];
+    // Never the single-shape default, which goes static on every finish.
+    expect(e).toMatchObject({ drawing: true, editing: false, singleShape: false });
+    act(() => e?.finish(RING));
+    expect(e).toMatchObject({ editing: true, editCalls: 1 });
+    // A vertex drag finishes too: the editor stays as it is, and the new ring is heard.
+    act(() => e?.finish(RING));
+    expect(e?.editCalls).toBe(1);
+    expect(heard).toEqual([RING, RING]);
   });
 
   it('never attaches a ring engine that loads after its session ended', async () => {

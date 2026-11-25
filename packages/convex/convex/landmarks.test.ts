@@ -768,6 +768,76 @@ describe('landmarks and bays', () => {
     expect(audits.at(-1)?.action).toBe('restore');
   });
 
+  test('re-doing an undone bay retires its landmark again, and undoing that brings it back', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // Drawn under another name, so nothing but the promotion ties the two.
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Shaker Cove',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Shaker Bay',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+      promoteLandmarkId: id,
+    });
+    const newestOnBay = async () => {
+      const rows = await t.run((ctx) =>
+        ctx.db
+          .query('moderationActions')
+          .withIndex('by_target', (q) =>
+            q.eq('targetType', 'waterBodySubArea').eq('targetId', bay as string),
+          )
+          .collect(),
+      );
+      const last = rows.at(-1);
+      if (!last) throw new Error('no row on the bay');
+      return last._id;
+    };
+    const landmarkRemoved = async () => (await t.run((ctx) => ctx.db.get(id)))?.removedAt;
+
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.undo.run, { actionId: await createRow(t, bay) });
+    expect(await landmarkRemoved()).toBeUndefined();
+
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.undo.run, { actionId: await newestOnBay() });
+    expect((await t.run((ctx) => ctx.db.get(bay)))?.removedAt).toBeUndefined();
+    expect(await landmarkRemoved()).toBeDefined();
+
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.undo.run, { actionId: await newestOnBay(), reason: 'Not a bay' });
+    expect((await t.run((ctx) => ctx.db.get(bay)))?.removedAt).toBeDefined();
+    expect(await landmarkRemoved()).toBeUndefined();
+  });
+
+  test('a bay restored by hand leaves alone a landmark it does not name', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Shaker Cove',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Shaker Bay',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+      promoteLandmarkId: id,
+    });
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.undo.run, { actionId: await createRow(t, bay) });
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.subAreas.restore, { subAreaId: bay });
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeUndefined();
+  });
+
   test('a landmark the bay retired by its name comes back with the undo too; one removed since stays removed', async () => {
     const t = harness();
     const body = await seedBody(t);

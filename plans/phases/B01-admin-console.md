@@ -13048,7 +13048,12 @@ The Hazards tab's own comment says *Add a feature* and *Edit shape* have no writ
   `create_sub_area`'s undo now restores, through the landmark's own restore, every landmark the bay
   retired when it was drawn (promoted from Places, or claimed by its name) and still holds retired —
   one removed since stays removed; one another live bay names, or a lake at its cap, stays retired
-  and the bay's undo still lands. The request it answered still isn't reopened.
+  and the bay's undo still lands. Each restore names the bay, so re-doing the bay (undoing its
+  removal) retires them again, and undoing that brings them back. The request it answered still
+  isn't reopened.
+- **Owed, small:** a bay traced or pasted for an ask someone decided meanwhile doesn't say the ask
+  kept its other answer — `subAreas.create` returns only the id, where `createFromChord` returns the
+  ask's outcome too. Widening `create`'s return touches the old editor's callers; left for 6b.
 - **Owed:** the look pass on the boards no board draws (the redraw, the mouth, the paste, the lit
   bay's tools); a device-free check against dev of the chord and freehand on a real body.
 

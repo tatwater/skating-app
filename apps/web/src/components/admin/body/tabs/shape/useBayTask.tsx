@@ -5,7 +5,7 @@ import { useNavigate, useRouter, useSearch } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 
-import { loaded, read, useConsoleReads } from '@/components/admin/reads/consoleReads';
+import { isFailed, loaded, read, useConsoleReads } from '@/components/admin/reads/consoleReads';
 import { sayRefusal } from '@/components/admin/said';
 import type { BBoxLike } from '@/lib/mapSurface';
 import { returnPathOf, validateBodySearch } from '../../frame/bodySearch';
@@ -91,6 +91,9 @@ export function useBayTask({
   });
   const asks = loaded(reads.asks);
   const landmarks = loaded(reads.landmarks);
+  // A read that failed says so and lets the arrival go, rather than leaving it armed and silent.
+  const asksFailed = isFailed(reads.asks);
+  const landmarksFailed = isFailed(reads.landmarks);
 
   // Each arrival is taken once, then dropped from the address (a reload or Back never re-arms it).
   const dropArrival = () =>
@@ -104,11 +107,27 @@ export function useBayTask({
     } as never);
   // biome-ignore lint/correctness/useExhaustiveDependencies: taken once, when the asks are read.
   useEffect(() => {
-    if (search.task === undefined || asks === undefined) return;
+    if (search.task === undefined) return;
+    if (asksFailed) {
+      sayRefusal({
+        title: 'Nothing to draw',
+        description: 'This lake’s bay asks couldn’t be read. Open the ask from the Inbox again.',
+      });
+      dropArrival();
+      return;
+    }
+    if (asks === undefined) return;
     const task = search.task;
     const row = asks.bays.find((b) => b.requestId === task || b.requestIds.includes(task as never));
     if (row === undefined) {
-      sayRefusal({ title: 'Nothing to draw', description: 'That ask isn’t open any more.' });
+      sayRefusal({
+        title: 'Nothing to draw',
+        // The read takes the lake's oldest open asks up to its bound: past it, an ask can be open
+        // and still not in it.
+        description: asks.more
+          ? 'That ask isn’t among the open asks this page could read for this lake.'
+          : 'That ask isn’t open any more.',
+      });
     } else {
       setDraft(
         startDraft(
@@ -123,10 +142,19 @@ export function useBayTask({
       setReturnAfter(search.from !== undefined);
     }
     dropArrival();
-  }, [search.task, asks]);
+  }, [search.task, asks, asksFailed]);
   // biome-ignore lint/correctness/useExhaustiveDependencies: taken once, when the landmarks are read.
   useEffect(() => {
-    if (search.promote === undefined || landmarks === undefined) return;
+    if (search.promote === undefined) return;
+    if (landmarksFailed) {
+      sayRefusal({
+        title: 'Nothing to draw',
+        description: 'This lake’s landmarks couldn’t be read. Try Draw as a bay again.',
+      });
+      dropArrival();
+      return;
+    }
+    if (landmarks === undefined) return;
     const id = search.promote;
     const landmark = landmarks.find((l) => l._id === id && l.removedAt === undefined);
     if (landmark === undefined) {
@@ -143,7 +171,7 @@ export function useBayTask({
       );
     }
     dropArrival();
-  }, [search.promote, landmarks]);
+  }, [search.promote, landmarks, landmarksFailed]);
 
   const rowOf = (bayId: string) => rows?.find((r) => `bay:${r._id}` === bayId && !r.removed);
 

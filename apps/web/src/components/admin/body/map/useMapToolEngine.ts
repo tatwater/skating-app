@@ -73,12 +73,16 @@ export function useMapToolEngine(
     });
   }, [draft, held, liveMap, palette]);
 
-  // The camera, once per session: to the point asked about, or framing the thing being redrawn.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: a session's focus is read when it starts.
+  // The camera, once per session: to the point asked about, or framing the thing being redrawn. Once
+  // — a map re-created mid-session (a theme switch) keeps the operator's own view, as the console's
+  // map does; a session that started while the map was down is framed when it comes up.
+  const focused = useRef<string | null>(null);
   useEffect(() => {
     const map = liveMap();
+    if (!map || session === null || focused.current === session) return;
+    focused.current = session;
     const focus = claimRef.current?.focus;
-    if (!map || !focus) return;
+    if (!focus) return;
     if ('point' in focus) {
       map.flyTo({ center: [focus.point.lng, focus.point.lat], zoom: Math.max(map.getZoom(), 13) });
     } else {
@@ -123,7 +127,18 @@ export function useMapToolEngine(
     if (engine.kind === 'ring') {
       let gone = false;
       let control: PolygonDrawControl | null = null;
+      // A traced ring goes to the vertex editor as it closes, and the editor stays armed through
+      // every drag: the engine's single-shape default would go static on each `finish` — the ring's
+      // close, and every vertex drag after it — leaving a ring the mode bar says can be adjusted
+      // frozen after one move.
+      let tracing = engine.polygon === undefined;
       createPolygonDraw(map, {
+        singleShape: false,
+        onFinish: () => {
+          if (gone || !tracing) return;
+          tracing = false;
+          control?.startEditing();
+        },
         onChange: (polygon) => {
           const live = claimRef.current?.engine;
           if (!gone && live?.kind === 'ring') live.onChange(polygon);

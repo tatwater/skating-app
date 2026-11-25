@@ -1096,7 +1096,16 @@ export const restore = mutation({
 export async function restoreLandmarkImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  { landmarkId, reason }: { landmarkId: Id<'bodyLandmarks'>; reason?: string },
+  {
+    landmarkId,
+    reason,
+    withBay,
+  }: {
+    landmarkId: Id<'bodyLandmarks'>;
+    reason?: string;
+    /** The bay whose undo brought it back (B01-6a): recorded, so the bay's return retires it again. */
+    withBay?: Id<'waterBodySubAreas'>;
+  },
 ): Promise<void> {
   {
     const row = await ctx.db.get(landmarkId);
@@ -1142,6 +1151,7 @@ export async function restoreLandmarkImpl(
       reason ?? composed`Restored "${row.name}"`,
       {
         prev,
+        ...(withBay !== undefined ? { withBay } : {}),
       },
     );
   }

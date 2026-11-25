@@ -513,6 +513,28 @@ describe('the search', () => {
     expect(next).toMatchObject({ q: 'mor', state: 'VT', facets: {}, sort: { column: 'match' } });
   });
 
+  it('presses *See all* from the keyboard, never the row under the cursor', async () => {
+    const [dormant] = LIST_SEARCH.others ?? [];
+    if (dormant === undefined) throw new Error('fixture');
+    const spy = vi.fn();
+    render(
+      <Harness
+        spy={spy}
+        initial={queryOf({ q: 'mor' })}
+        list={{
+          ...LIST_SEARCH,
+          others: [{ ...dormant, more: [{ lane: 'inactive', count: 23, capped: false }] }],
+        }}
+      />,
+    );
+    const seeAll = screen.getByRole('button', { name: /See all 23 in Dormant · inactive/ });
+    act(() => seeAll.focus());
+    await userEvent.keyboard('{Enter}');
+    const next = spy.mock.lastCall?.[0] as BodiesQuery;
+    expect(next.lane.id).toBe('inactive');
+    expect(next.bodyId).toBeNull();
+  });
+
   it('ends the list on the lane’s own rows, never the other standings’', () => {
     render(
       <Harness initial={queryOf({ q: 'mor' })} list={{ ...LIST_SEARCH, rows: [], total: null }} />,
