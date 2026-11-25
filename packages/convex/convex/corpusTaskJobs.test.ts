@@ -439,6 +439,39 @@ describe('the drift repair', () => {
     expect(r.lap.done).toBe(false);
   });
 
+  test('its lap is gated on what the transaction has really left: past heavy bodies it waits a pass', async () => {
+    const t = harness();
+    // Sixteen bodies near the document limit (six rings of 8,000 points, about 0.92 MiB each): the
+    // oldest open tasks' items read close to the whole transaction before the lap starts, which the
+    // plan's budget can't see — a page sized by it alone read past Convex's 16 MiB.
+    const heavy = (x: number): Polygon => ({
+      type: 'Polygon',
+      coordinates: Array.from({ length: 6 }, (_, r) => {
+        const ring = Array.from({ length: 7_999 }, (_, i) => [
+          x + (i % 100) * 1e-4 + r * 1e-6,
+          Math.floor(i / 100) * 1e-4,
+        ]);
+        ring.push(ring[0] as number[]);
+        return ring;
+      }),
+    });
+    for (let i = 0; i < 16; i++) await rawBody(t, i, ['name-conflict'], { polygon: heavy(i * 2) });
+    await runToDone(t);
+    const lap = { phase: 'reason:name-conflict', cursor: null };
+
+    const r = await t.mutation(internal.corpusTaskJobs.repair, { pageCap: 16, lap });
+    expect(r.checked).toBeGreaterThan(0);
+    expect(r).toMatchObject({ lapped: 0, failed: 0 });
+    expect(r.lap).toEqual({ ...lap, done: false });
+    const row = await t.run((ctx) => ctx.db.query('corpusTaskJobRuns').collect());
+    expect(row.find((x) => x.job === 'repair')).toMatchObject(lap);
+
+    // A pass whose items leave room reads the page, and the lap goes on.
+    const next = await t.mutation(internal.corpusTaskJobs.repair, { pageCap: 2, lap });
+    expect(next.lapped).toBeGreaterThan(0);
+    expect(next.lap.cursor).not.toBeNull();
+  });
+
   test('a pass that can’t afford an item starts none, and its lap stays where it was', async () => {
     const { t } = await drifted();
     vi.spyOn(recurringWork, 'affords').mockResolvedValue(false);

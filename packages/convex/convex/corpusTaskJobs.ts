@@ -116,6 +116,35 @@ function bodiesFor(budget: ReadBudget, cap: number): number {
   return Math.max(1, budget.rows('waterBody', cap, 0, ROW_MAX.waterBody + ITEM_BYTES));
 }
 
+/**
+ * What reading a page of `n` bodies costs at its worst, with one body's whole item after it (so a
+ * page read is never paid for with nothing left to visit) and the item's reserve past that.
+ */
+function lapPageBudget(n: number): ItemBudget {
+  return {
+    limits: {
+      bytesRead: n * ROW_MAX.waterBody + ITEM_LIMITS.bytesRead,
+      documentsRead: n + ITEM_LIMITS.documentsRead,
+      databaseQueries: 1 + ITEM_LIMITS.databaseQueries,
+      documentsWritten: ITEM_LIMITS.documentsWritten,
+    },
+    reserve: ITEM.reserve,
+  };
+}
+
+/**
+ * **The most of `planned` bodies whose page the transaction can still read**, from its live metrics
+ * ({@link affords} over {@link lapPageBudget}) — 0 when not even one fits. The plan's `ReadBudget`
+ * can't see what the nested items before the page really read (an open task's body near 1 MiB is
+ * charged to this transaction, not to the plan), so a page sized by it alone can pass the limit.
+ */
+async function pageThatFits(ctx: QueryCtx, planned: number): Promise<number> {
+  for (let n = planned; n > 0; n--) {
+    if (await affords(ctx, lapPageBudget(n))) return n;
+  }
+  return 0;
+}
+
 /** One body's tasks synced from its fields, as its own transaction (the backfill's and the retry's). */
 export const syncOne = internalMutation({
   args: { waterBodyId: v.id('waterBodies') },
@@ -356,16 +385,22 @@ async function repairPass(
     lapAt = { phase: BODY_PHASES[0] as string, cursor: null };
   }
   const at = lapAt;
-  const n = Math.min(cap, bodiesFor(budget, cap));
-  const page = await budget.page('waterBody', n, (k) => bodyPage(ctx, at.phase, at.cursor, k));
-  for (const body of page.page) {
-    if (!(await affords(ctx, ITEM))) break;
-    answer.lapped++;
-    if (!seen.has(body._id)) await visit(body._id);
+  // Sized by the plan, then held to what the transaction has really left after step 1's items: a
+  // page that doesn't fit is skipped for this pass, and the lap stays where it was.
+  const n = await pageThatFits(ctx, Math.min(cap, bodiesFor(budget, cap)));
+  if (n === 0) {
+    answer.lap = { ...at, done: false };
+  } else {
+    const page = await budget.page('waterBody', n, (k) => bodyPage(ctx, at.phase, at.cursor, k));
+    for (const body of page.page) {
+      if (!(await affords(ctx, ITEM))) break;
+      answer.lapped++;
+      if (!seen.has(body._id)) await visit(body._id);
+    }
+    // A lap cut short by the transaction resumes at the same page: the bodies it did are idempotent.
+    const finished = answer.lapped === page.page.length;
+    answer.lap = finished ? advance(at.phase, page) : { ...at, done: false };
   }
-  // A lap cut short by the transaction resumes at the same page: the bodies it did are idempotent.
-  const finished = answer.lapped === page.page.length;
-  answer.lap = finished ? advance(at.phase, page) : { ...at, done: false };
   if (!dry) {
     if (row === null || row.done) {
       const fresh = await freshRow(ctx, 'repair', row, now);
