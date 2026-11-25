@@ -10,6 +10,7 @@ import { sayRefusal } from '@/components/admin/said';
 import type { BBoxLike } from '@/lib/mapSurface';
 import { returnPathOf, validateBodySearch } from '../../frame/bodySearch';
 import { type MapToolClaim, useClaimMapTool } from '../../frame/mapTool';
+import { heldEngine, useTaskDraft } from '../../frame/taskDraft';
 import { useTabAction } from '../useTabAction';
 import { BayTask } from './BayTask';
 import {
@@ -76,8 +77,8 @@ export function useBayTask({
   const search = useMemo(() => validateBodySearch(raw), [raw]);
   const navigate = useNavigate();
   const router = useRouter();
-  const [draft, setDraft] = useState<BayDraft | null>(null);
-  const [saving, setSaving] = useState(false);
+  // Held still while a save is out: its edits wait (`useTaskDraft`).
+  const { draft, setDraft, edit, saving, setSaving } = useTaskDraft<BayDraft>();
   /** An Inbox arrival: the save goes back to where it came from. */
   const [returnAfter, setReturnAfter] = useState(false);
 
@@ -176,7 +177,7 @@ export function useBayTask({
   const discard = useCallback(() => {
     setDraft(null);
     setReturnAfter(false);
-  }, []);
+  }, [setDraft]);
 
   // The claim on the map, read off the draft.
   const claim = useMemo((): MapToolClaim | null => {
@@ -195,8 +196,7 @@ export function useBayTask({
               : t.kind === 'mouth' && t.mouth !== null
                 ? { mouth: t.mouth }
                 : {}),
-            onChange: (state, mouth, preview) =>
-              setDraft((d) => (d === null ? d : withChord(d, state, mouth, preview))),
+            onChange: (state, mouth, preview) => edit((d) => withChord(d, state, mouth, preview)),
           }
         : draft.way === 'freehand' && !draft.ringUnavailable
           ? {
@@ -207,14 +207,13 @@ export function useBayTask({
                 : t.kind === 'redraw' && t.polygon !== null
                   ? { polygon: t.polygon }
                   : {}),
-              onChange: (polygon) => setDraft((d) => (d === null ? d : withRing(d, polygon))),
-              onUnavailable: () =>
-                setDraft((d) => (d === null ? d : { ...d, ringUnavailable: true })),
+              onChange: (polygon) => edit((d) => withRing(d, polygon)),
+              onUnavailable: () => edit((d) => ({ ...d, ringUnavailable: true })),
             }
           : { kind: 'none' };
     return {
       session: `bay:${draft.session}:${draft.ringUnavailable ? 'paste' : draft.way}`,
-      engine,
+      engine: heldEngine(saving, engine),
       mode: bar.mode,
       line: bar.line,
       ...(bar.step !== undefined ? { step: bar.step } : {}),
@@ -223,7 +222,7 @@ export function useBayTask({
       focus: draft.focus,
       onExit: discard,
     };
-  }, [draft, parent, discard]);
+  }, [draft, parent, discard, edit, saving]);
   useClaimMapTool(claim);
 
   const create = useMutation(api.subAreas.create);
@@ -336,10 +335,10 @@ export function useBayTask({
       <BayTask
         draft={draft}
         saving={saving}
-        onName={(name) => setDraft((d) => (d === null ? d : { ...d, name }))}
-        onAliases={(aliases) => setDraft((d) => (d === null ? d : { ...d, aliases }))}
-        onWay={(way) => setDraft((d) => (d === null ? d : withWay(d, way)))}
-        onPaste={(paste) => setDraft((d) => (d === null ? d : withPaste(d, paste)))}
+        onName={(name) => edit((d) => ({ ...d, name }))}
+        onAliases={(aliases) => edit((d) => ({ ...d, aliases }))}
+        onWay={(way) => edit((d) => withWay(d, way))}
+        onPaste={(paste) => edit((d) => withPaste(d, paste))}
         onSave={() => void save()}
         onDiscard={discard}
       />

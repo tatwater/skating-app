@@ -30,10 +30,11 @@ import {
  * each a column of choices, the value in use wearing Now — where the weather is sampled and why
  * there, and the bathymetry state, the section's chip amber while the record lacks it.
  *
- * Every control is drawn only when its handler is passed. Choosing a depth source and filing a
- * survey wait on their server writes: for a viewer who could make them (`canChooseDepth`,
- * `canFileSurvey`) each is drawn where the board draws it and says *Not available yet*. The
- * sample-point preview is a map mode, not built. What no read records says *Not recorded yet*.
+ * Every control is drawn only when its handler is passed. Filing a survey waits on its server
+ * write: for a viewer who could make one (`canFileSurvey`) it is drawn where the board draws it and
+ * says *Not available yet*. The sample points are suggested as a grid and previewed on the map, in
+ * the task the caller draws (`sampleTask`), or cleared. What no read records says *Not recorded
+ * yet*.
  */
 
 /** What the unbuilt controls will do, in the operator's words. */
@@ -60,6 +61,12 @@ export type WaterViewProps = {
   canChooseDepth?: boolean;
   /** The viewer could file a survey: with no `onSurvey` yet, the field says so. */
   canFileSurvey?: boolean;
+  /** Suggest a grid of sample points, previewed on the map. Absent: not drawn. */
+  onSuggestPoints?: () => void;
+  /** Clear the points set by hand (back to the interior point). Absent: not drawn. */
+  onClearPoints?: () => Promise<unknown>;
+  /** The suggested grid's task, drawn in the section while it is up; the section's tools rest. */
+  sampleTask?: ReactNode;
 };
 
 /**
@@ -83,6 +90,9 @@ export function WaterView({
   enrichmentLink,
   canChooseDepth = false,
   canFileSurvey = false,
+  onSuggestPoints,
+  onClearPoints,
+  sampleTask,
 }: WaterViewProps) {
   if (data === undefined) {
     return (
@@ -109,7 +119,13 @@ export function WaterView({
     <TabBody data-slot="water-tab">
       <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
       <DepthSection data={data} lit={lit} onChoose={onChooseDepth} canChoose={canChooseDepth} />
-      <SamplingSection data={data} lit={lit} />
+      <SamplingSection
+        data={data}
+        lit={lit}
+        onSuggest={onSuggestPoints}
+        onClear={onClearPoints}
+        task={sampleTask}
+      />
       <BathymetrySection
         data={data}
         onSurvey={onSurvey}
@@ -291,8 +307,33 @@ function ChooseButton({
   );
 }
 
-function SamplingSection({ data, lit }: { data: WaterData; lit: string | null }) {
+function SamplingSection({
+  data,
+  lit,
+  onSuggest,
+  onClear,
+  task,
+}: {
+  data: WaterData;
+  lit: string | null;
+  onSuggest: WaterViewProps['onSuggestPoints'];
+  onClear: WaterViewProps['onClearPoints'];
+  task: ReactNode;
+}) {
   const { sampling } = data;
+  const tasked = task != null;
+  const [clearing, setClearing] = useState(false);
+  const clear =
+    onClear === undefined || sampling.points === null
+      ? undefined
+      : async () => {
+          setClearing(true);
+          try {
+            await onClear();
+          } finally {
+            setClearing(false);
+          }
+        };
   const note = samplingNote(data.name, sampling);
   const mono = 'font-(family-name:--family-mono) text-mono-sm font-medium text-fg';
   return (
@@ -337,6 +378,26 @@ function SamplingSection({ data, lit }: { data: WaterData; lit: string | null })
         </KeyValueRow>
       </KeyValueList>
       {note !== null && <p className="text-assist leading-(--lead-list) text-fg3">{note}</p>}
+      {task}
+      {!tasked && (onSuggest !== undefined || clear !== undefined) && (
+        <div className="flex items-center gap-(--space-2)">
+          {onSuggest !== undefined && (
+            <Button size="sm" data-slot="sampling-suggest" onClick={onSuggest}>
+              Suggest a grid
+            </Button>
+          )}
+          {clear !== undefined && (
+            <Button
+              size="sm"
+              data-slot="sampling-clear"
+              loading={clearing}
+              onClick={() => void clear()}
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      )}
     </Section>
   );
 }

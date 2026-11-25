@@ -55,6 +55,10 @@ export type PutInRow = {
   walk: { meters: number; atLeast: boolean } | null;
   /** The routed walk, to draw. */
   approach: LatLng[] | null;
+  /** The lot linked to it, by id; `null` with none (what a link task starts from). */
+  lotId: string | null;
+  /** Its approach is asserted a hike-in (D144) — what a long link needs. */
+  hikeIn: boolean;
   /** Where it is, by the nearest landmark's name; `null` when none is close. */
   where: Loadable<string | null>;
 };
@@ -74,7 +78,7 @@ export type AlertRow = {
  * The Access tab's data. **What its reads return and the tab doesn't keep, and why** (nothing is
  * dropped by accident):
  * - `accessPoints.accessForBody`: a lot's `amenities`, `capacity` and `fee`, and a put-in's
- *   `approachAscentM`, `approachKindOverride` and `postedAccess`: the skater's
+ *   `approachAscentM`, its `approachKindOverride` past whether it asserts a hike-in, and `postedAccess`: the skater's
  *   sheet says these; the console's tab is about who rules and who vouches, and the board draws
  *   none of them. `blockedIds` is drawn through the alerts that block.
  * - `landmarks.listForBody`: only the name and point, for where each launch is.
@@ -261,6 +265,7 @@ export type AccessInput = {
     /** `false`: `approachMeters` is a straight line, a floor. */
     approachRouted?: boolean | undefined;
     approachPath?: LatLng[] | undefined;
+    approachKindOverride?: string | undefined;
   }>;
   parking: ReadonlyArray<{ id: string; coord: LatLng; name?: string | undefined }>;
   alerts: ReadonlyArray<{
@@ -298,6 +303,8 @@ export function accessFrom(
               { meters: Math.round(p.approachMeters), atLeast: p.approachRouted === false }
             : null,
         approach: p.approachPath && p.approachPath.length > 1 ? p.approachPath : null,
+        lotId: p.parkingAreaId ?? null,
+        hikeIn: p.approachKindOverride === 'hike_in',
         where: source === 'official' ? null : whereOf(p.coord, landmarks),
       };
     })

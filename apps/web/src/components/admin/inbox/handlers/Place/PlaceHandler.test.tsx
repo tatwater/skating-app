@@ -71,7 +71,7 @@ function Pane({
       <PlaceBody item={item} now={PLACE_NOW} map={null} timeZone="America/New_York" />
       <PlaceActions
         item={item}
-        editorHref="/admin/water/wb"
+        onDraw={vi.fn()}
         onSamePlace={onSamePlace}
         onApprove={onApprove}
         onDecline={onDecline}
@@ -158,7 +158,7 @@ describe('the slots', () => {
       'Gains the alias “the Narrows”',
     );
     expect(screen.getByRole('region', { name: 'If drawn' })).toHaveTextContent(
-      'The old editor · in a new tab',
+      'The Body console, ready to place the landmark',
     );
   });
 

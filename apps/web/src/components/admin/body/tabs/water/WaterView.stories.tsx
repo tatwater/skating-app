@@ -192,6 +192,33 @@ export const WideBody: Story = {
   },
 };
 
+/** A moderator's sampling tools: suggest a grid, and clear the points set by hand. */
+export const SamplingTools: Story = {
+  args: { data: CHAMPLAIN_WATER, onSuggestPoints: fn(), onClearPoints: fn(async () => true) },
+  play: async ({ canvasElement, args }) => {
+    const sampling = within(slot(canvasElement, 'sampling'));
+    await userEvent.click(sampling.getByRole('button', { name: 'Suggest a grid' }));
+    await expect(args.onSuggestPoints).toHaveBeenCalled();
+    await userEvent.click(sampling.getByRole('button', { name: 'Clear' }));
+    await expect(args.onClearPoints).toHaveBeenCalled();
+  },
+};
+
+/** While a grid is shown, its task stands in the section and the tools rest. */
+export const SamplingTasked: Story = {
+  args: {
+    data: CHAMPLAIN_WATER,
+    onSuggestPoints: fn(),
+    onClearPoints: fn(),
+    sampleTask: <fieldset aria-label="Suggested sample points" />,
+  },
+  play: async ({ canvasElement }) => {
+    const sampling = within(slot(canvasElement, 'sampling'));
+    await expect(sampling.getByRole('group', { name: 'Suggested sample points' })).toBeVisible();
+    await expect(sampling.queryByRole('button', { name: /Suggest a grid|Clear/ })).toBeNull();
+  },
+};
+
 export const Loading: Story = {
   args: { data: undefined },
   play: async ({ canvasElement }) => {

@@ -37,6 +37,30 @@ const engines = vi.hoisted(() => ({
   }[],
   ringFails: false,
   ringGate: null as null | Promise<void>,
+  point: [] as {
+    options: { point?: unknown; snap?: (p: unknown) => unknown; onPick: (p: unknown) => void };
+    destroyed: boolean;
+  }[],
+  line: [] as {
+    line?: unknown;
+    editing: boolean;
+    drawing: boolean;
+    destroyed: boolean;
+    finish: (l: unknown) => void;
+  }[],
+}));
+
+vi.mock('@/lib/pointDraw', () => ({
+  createPointDraw: (_map: unknown, options: (typeof engines.point)[number]['options']) => {
+    const e = { options, destroyed: false };
+    engines.point.push(e);
+    return {
+      set: () => {},
+      destroy: () => {
+        e.destroyed = true;
+      },
+    };
+  },
 }));
 
 vi.mock('@/lib/chordDraw', () => ({
@@ -62,6 +86,37 @@ vi.mock('@/lib/chordDraw', () => ({
   },
 }));
 vi.mock('@/lib/polygonDraw', () => ({
+  createLineDraw: async (
+    _map: unknown,
+    options: { onChange: (l: unknown) => void; onFinish?: (l: unknown) => void },
+  ) => {
+    const e = {
+      editing: false,
+      drawing: false,
+      destroyed: false,
+      line: undefined as unknown,
+      finish: (l: unknown) => {
+        options.onFinish?.(l);
+        options.onChange(l);
+      },
+    };
+    engines.line.push(e);
+    return {
+      startDrawing: () => {
+        e.drawing = true;
+      },
+      startEditing: () => {
+        e.editing = true;
+      },
+      setLine: (l: unknown) => {
+        e.line = l;
+      },
+      clear: () => {},
+      destroy: () => {
+        e.destroyed = true;
+      },
+    };
+  },
   createPolygonDraw: async (
     _map: unknown,
     options: {
@@ -110,10 +165,13 @@ function fakeMap() {
   const sources = new Map<string, { data: unknown }>();
   const layers: string[] = [];
   const moves: unknown[] = [];
+  const canvas = { style: { cursor: '' } };
   return {
     sources,
     layers,
     moves,
+    canvas,
+    getCanvas: () => canvas,
     getSource: (id: string) => {
       const s = sources.get(id);
       return s
@@ -189,6 +247,8 @@ beforeEach(() => {
   engines.ring.length = 0;
   engines.ringFails = false;
   engines.ringGate = null;
+  engines.point.length = 0;
+  engines.line.length = 0;
 });
 
 describe('the map tool claim', () => {
@@ -503,6 +563,150 @@ describe('the engine on the map', () => {
     );
     await act(async () => {});
     expect(onUnavailable).toHaveBeenCalledTimes(1);
+  });
+
+  it('a point: placed or moved through the claim, snapped to the outline it names', () => {
+    const picks: unknown[] = [];
+    const { rerender } = render(
+      <MapToolProvider>
+        <Tab
+          claim={base({
+            session: 'p1',
+            engine: {
+              kind: 'point',
+              point: { lat: 0.2, lng: 0.2 },
+              snapTo: PARENT,
+              onPick: (p) => picks.push(p),
+            },
+          })}
+        />
+        <MapHalf map={fakeMap()} />
+      </MapToolProvider>,
+    );
+    const e = engines.point[0];
+    expect(e?.options.point).toEqual({ lat: 0.2, lng: 0.2 });
+    // The shore snap is core's edge snap against the claimed outline: a point inside lands on it.
+    const snapped = e?.options.snap?.({ lat: 0.5, lng: 0.9 }) as { lat: number; lng: number };
+    expect(snapped.lng).toBeCloseTo(1, 6);
+    act(() => e?.options.onPick({ lat: 0.3, lng: 0.4 }));
+    expect(picks).toEqual([{ lat: 0.3, lng: 0.4 }]);
+    rerender(
+      <MapToolProvider>
+        <Tab claim={null} />
+        <MapHalf map={fakeMap()} />
+      </MapToolProvider>,
+    );
+    expect(e?.destroyed).toBe(true);
+    // A reach: a pointer past it stays where it is, so the server's refusal answers.
+    render(
+      <MapToolProvider>
+        <Tab
+          claim={base({
+            session: 'p3',
+            engine: { kind: 'point', snapTo: PARENT, snapWithinM: 500, onPick: () => {} },
+          })}
+        />
+        <MapHalf map={fakeMap()} />
+      </MapToolProvider>,
+    );
+    const reach = engines.point.at(-1)?.options.snap ?? ((p: unknown) => p);
+    expect(reach({ lat: 0.5, lng: 1.5 })).toEqual({ lat: 0.5, lng: 1.5 }); // ~55 km out
+    expect((reach({ lat: 0.5, lng: 1.001 }) as { lng: number }).lng).toBeCloseTo(1, 6);
+    // No outline named: no snap, the click is the spot.
+    render(
+      <MapToolProvider>
+        <Tab claim={base({ session: 'p2', engine: { kind: 'point', onPick: () => {} } })} />
+        <MapHalf map={fakeMap()} />
+      </MapToolProvider>,
+    );
+    expect(engines.point.at(-1)?.options.snap).toBeUndefined();
+    expect(engines.point.at(-1)?.options.point).toBeUndefined();
+  });
+
+  it('a line: traced under a crosshair, then edited; a stored line opens to edit', async () => {
+    const heard: unknown[] = [];
+    const LINE: GeoJSON.LineString = {
+      type: 'LineString',
+      coordinates: [
+        [0, 0],
+        [1, 1],
+      ],
+    };
+    const map = fakeMap();
+    const { rerender } = render(
+      <MapToolProvider>
+        <Tab
+          claim={base({
+            session: 'l1',
+            engine: { kind: 'line', onChange: (l) => heard.push(l), onUnavailable: () => {} },
+          })}
+        />
+        <MapHalf map={map} />
+      </MapToolProvider>,
+    );
+    await act(async () => {});
+    const e = engines.line[0];
+    expect(e).toMatchObject({ drawing: true, editing: false });
+    expect(map.canvas.style.cursor).toBe('crosshair');
+    act(() => e?.finish(LINE));
+    expect(e?.editing).toBe(true);
+    expect(heard).toEqual([LINE]);
+    rerender(
+      <MapToolProvider>
+        <Tab
+          claim={base({
+            session: 'l2',
+            engine: { kind: 'line', line: LINE, onChange: () => {}, onUnavailable: () => {} },
+          })}
+        />
+        <MapHalf map={map} />
+      </MapToolProvider>,
+    );
+    await act(async () => {});
+    expect(e?.destroyed).toBe(true);
+    expect(engines.line[1]).toMatchObject({ line: LINE, editing: true, drawing: false });
+  });
+
+  it('a ring traces under a crosshair, and gives the cursor back when it goes', async () => {
+    const map = fakeMap();
+    const ring = base({
+      session: 'r1',
+      engine: { kind: 'ring', onChange: () => {}, onUnavailable: () => {} },
+    });
+    const { rerender } = render(
+      <MapToolProvider>
+        <Tab claim={ring} />
+        <MapHalf map={map} />
+      </MapToolProvider>,
+    );
+    await act(async () => {});
+    expect(map.canvas.style.cursor).toBe('crosshair');
+    rerender(
+      <MapToolProvider>
+        <Tab claim={null} />
+        <MapHalf map={map} />
+      </MapToolProvider>,
+    );
+    expect(map.canvas.style.cursor).toBe('');
+  });
+
+  it('draws points in the draft as hollow rings, beside the area and line layers', () => {
+    const map = fakeMap();
+    const grid: GeoJSON.MultiPoint = {
+      type: 'MultiPoint',
+      coordinates: [
+        [0.1, 0.1],
+        [0.2, 0.2],
+      ],
+    };
+    render(
+      <MapToolProvider>
+        <Tab claim={base({ engine: { kind: 'none' }, draft: grid })} />
+        <MapHalf map={map} />
+      </MapToolProvider>,
+    );
+    expect(map.layers).toContain('body-console-tool-draft-points');
+    expect(draftFeatures(map)[0]?.geometry).toEqual(grid);
   });
 
   it('attaches nothing for a paste, and nothing to a map that is down', () => {

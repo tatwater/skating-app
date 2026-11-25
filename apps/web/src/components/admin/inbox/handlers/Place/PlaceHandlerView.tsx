@@ -65,7 +65,7 @@ import type { PlaceAct } from './usePlaceWrites';
  * - **Body** — the body and the name asked for, where and who asked (one asker as the board's rows;
  *   several as the shared ask list), the map; for a landmark ask, *Same place?* — the ask against
  *   its lookalike in the compare table — then the two futures.
- * - **Bar** — *Same place* (S), *Approve* (A), *Draw in Body →* (B, the old editor in a new tab),
+ * - **Bar** — *Same place* (S), *Approve* (A), *Draw in Body →* (B, the Body console in this tab),
  *   *Decline* (D, its note asked: the asker reads it). Each only where the item's `can` allows it.
  *
  * No reads, no writes: the container binds them. A refusal is the shell's toast (D268).
@@ -78,13 +78,12 @@ export type PlaceHandlerProps = {
   map: ReactNode;
   /** The body's Places tab: an anchor element (the router's `Link`), unstyled. */
   bodyLink: ReactElement;
-  /** The old editor, where a landmark is placed until the console's landmark tools land (B01-6b). */
-  editorHref: string;
   /**
-   * Draw the place in the Body console instead (B01-6a: a bay ask, `?task=`), in this tab — the
-   * console's own page; the save comes back to this item. Absent: the old editor, in a new tab.
+   * Draw the place in the Body console (a bay ask's bay task, `?task=`, B01-6a; a landmark ask's
+   * Places task, `?landmarkAsk=`, B01-6b), in this tab — the console's own page; the save comes
+   * back to this item.
    */
-  onDraw?: () => void;
+  onDraw: () => void;
   onSamePlace: (l: NonNullable<ReturnType<typeof landmarkLookalike>>) => Promise<boolean>;
   onApprove: () => Promise<boolean>;
   /** Sends the decline with its note; resolves whether it landed (the dialog closes on `true`). */
@@ -157,7 +156,7 @@ export function PlaceBody({
       : []),
     answered
       ? { key: 'approved', title: W.ifApproved, rows: ifApproved(item) }
-      : { key: 'drawn', title: W.ifDrawn, rows: ifDrawn() },
+      : { key: 'drawn', title: W.ifDrawn, rows: ifDrawn(item) },
     { key: 'declined', title: W.ifDeclined, rows: ifDeclined(item) },
   ].slice(0, 2);
   const where = ask?.fromReport ?? null;
@@ -305,7 +304,6 @@ export function PlaceBody({
 
 export function PlaceActions({
   item,
-  editorHref,
   onDraw,
   onSamePlace,
   onApprove,
@@ -314,7 +312,7 @@ export function PlaceActions({
   pane,
 }: Pick<
   PlaceHandlerProps,
-  'item' | 'editorHref' | 'onDraw' | 'onSamePlace' | 'onApprove' | 'onDecline' | 'pending' | 'pane'
+  'item' | 'onDraw' | 'onSamePlace' | 'onApprove' | 'onDecline' | 'pending' | 'pane'
 >) {
   const bar = placeBar(item);
   const [asking, setAsking] = useState(false);
@@ -352,11 +350,9 @@ export function PlaceActions({
             id: 'draw',
             label: `${W.drawInBody} →`,
             hotkey: 'B' as const,
-            what: onDraw !== undefined ? W.whatDrawInBody : W.whatDraw,
-            // The Body console is the console's own page: this tab. The old editor is outside it:
-            // a new tab (the console's link rule).
-            onPress: () =>
-              onDraw !== undefined ? onDraw() : void window.open(editorHref, '_blank', 'noopener'),
+            what: item.placeKind === 'name_bay' ? W.whatDrawBay : W.whatDrawLandmark,
+            // The Body console is the console's own page: this tab.
+            onPress: onDraw,
           },
         ]
       : []),
@@ -410,8 +406,7 @@ export function placeSlots(props: PlaceHandlerProps): {
     actions: (
       <PlaceActions
         item={props.item}
-        editorHref={props.editorHref}
-        {...(props.onDraw !== undefined ? { onDraw: props.onDraw } : {})}
+        onDraw={props.onDraw}
         onSamePlace={props.onSamePlace}
         onApprove={props.onApprove}
         onDecline={props.onDecline}

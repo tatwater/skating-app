@@ -85,72 +85,203 @@ export const setOfficial = mutation({
   },
   handler: async (ctx, { waterBodyId, coord, name, reason }) => {
     const actor = await requireCapability(ctx, 'body.access');
-    const body = await ctx.db.get(waterBodyId);
-    if (!body) throw new ConvexError('Water body not found');
-    const trimmedName = name?.trim();
-    if (trimmedName && trimmedName.length > MAX_PUT_IN_NAME_LENGTH) {
-      throw new ConvexError(
-        `Keep the name under ${MAX_PUT_IN_NAME_LENGTH} characters — it labels a pin on a map.`,
-      );
-    }
-
-    // **Snap to the shoreline, like every other rung already does** (A06f). `derived` clusters are
-    // snapped in `listForBody` because a report's `point` is where somebody *skated*, which is often
-    // mid-lake; `osm` launches arrive on the shore by construction. `official` — the one rung a human
-    // places by hand — was the only one stored raw, so an operator's click landed exactly where they
-    // tapped and a slightly-off tap left a pin floating on the water.
-    //
-    // That is not merely untidy. A put-in coord is the **directions destination** (D#7), and the
-    // stated reason put-ins exist at all is that routing to a point on the water sends someone into
-    // the middle of the lake. A hand-placed floating pin reintroduces precisely that, one lake at a
-    // time.
-    const polygon = body.polygon as unknown as Polygon | MultiPolygon;
-    const outsideM = distanceToPolygonMeters(coord, polygon);
-    if (outsideM > OPERATOR_PUT_IN_SNAP_MAX_M) {
-      throw new ConvexError(
-        `That point is ${Math.round(outsideM)} m from the water — too far to snap to the shore. If you meant the parking, place a parking area instead.`,
-      );
-    }
-    const snapped = snapToEdge(coord, polygon);
-    // The bay this launch serves (A09) — by distance to the bay's outline, since the coord was just
-    // snapped onto the shoreline that outline traces. Absent on the ~99% of bodies with no bays.
-    const subAreaId = await resolveSubAreaForPutIn(ctx, waterBodyId, snapped);
-
-    const id = await ctx.db.insert('putIns', {
-      waterBodyId,
-      coord: snapped,
-      source: 'official',
-      status: 'visible',
-      // Absent rather than empty, so `resolvePutInName` falls back to the compass label instead of
-      // rendering a launch with a blank name.
-      ...(trimmedName ? { name: trimmedName } : {}),
-      ...(subAreaId !== undefined ? { subAreaId } : {}),
-      createdByUserId: actor._id,
-      createdAt: Date.now(),
-    });
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'set_put_in', // a dedicated verb — placing an official marker, not un-hiding one
-      targetType: 'waterbody',
-      targetId: waterBodyId,
-      reason:
-        reason ??
-        (trimmedName ? composed`Set official put-in: ${trimmedName}` : 'Set official put-in'),
-      // The **snapped** coord, which is what was stored — an audit row recording the raw click
-      // would describe a marker that never existed.
-      metadata: { coord: snapped, putInId: id, ...(trimmedName ? { name: trimmedName } : {}) },
-      createdAt: Date.now(),
-    });
-    // Standing (A07b, founder call): an official put-in on a dormant body brings it back — a human
-    // saying "you can get on the ice here" is evidence of access, and access is what the seed
-    // partitions on. And it keeps the body active through the July rollover for as long as it is
-    // saved and not hidden (D245, reversing D177's "a put-in alone does not keep a body active").
-    // Then the denormalized `accessKind`, recomputed from the visible put-ins (PR #43 review), and
-    // the library row — the steps every put-in write owes, shared with `promote`.
-    await afterPutInChange(ctx, waterBodyId, true);
-    return id;
+    return (await placePutInImpl(ctx, actor, { waterBodyId, coord, name, reason })).putInId;
   },
 });
+
+/**
+ * `setOfficial`'s body — also what undoing a placement's undo runs (D313: placing has an undo,
+ * every one), so the snap, the far-from-water refusal and the put-in's after-effects apply to the
+ * redo too. The row records `direction: 'placed'` so its undo knows what it is.
+ */
+export async function placePutInImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    waterBodyId: Id<'waterBodies'>;
+    coord: { lat: number; lng: number };
+    name?: string | undefined;
+    reason?: string | undefined;
+  },
+): Promise<{ putInId: Id<'putIns'>; actionId: Id<'moderationActions'> }> {
+  const { waterBodyId, coord, name, reason } = args;
+  const body = await ctx.db.get(waterBodyId);
+  if (!body) throw new ConvexError('Water body not found');
+  const trimmedName = name?.trim();
+  if (trimmedName && trimmedName.length > MAX_PUT_IN_NAME_LENGTH) {
+    throw new ConvexError(
+      `Keep the name under ${MAX_PUT_IN_NAME_LENGTH} characters — it labels a pin on a map.`,
+    );
+  }
+
+  // **Snap to the shoreline, like every other rung already does** (A06f). `derived` clusters are
+  // snapped in `listForBody` because a report's `point` is where somebody *skated*, which is often
+  // mid-lake; `osm` launches arrive on the shore by construction. `official` — the one rung a human
+  // places by hand — was the only one stored raw, so an operator's click landed exactly where they
+  // tapped and a slightly-off tap left a pin floating on the water.
+  //
+  // That is not merely untidy. A put-in coord is the **directions destination** (D#7), and the
+  // stated reason put-ins exist at all is that routing to a point on the water sends someone into
+  // the middle of the lake. A hand-placed floating pin reintroduces precisely that, one lake at a
+  // time.
+  const polygon = body.polygon as unknown as Polygon | MultiPolygon;
+  const outsideM = distanceToPolygonMeters(coord, polygon);
+  if (outsideM > OPERATOR_PUT_IN_SNAP_MAX_M) {
+    throw new ConvexError(
+      `That point is ${Math.round(outsideM)} m from the water — too far to snap to the shore. If you meant the parking, place a parking area instead.`,
+    );
+  }
+  const snapped = snapToEdge(coord, polygon);
+  // The bay this launch serves (A09) — by distance to the bay's outline, since the coord was just
+  // snapped onto the shoreline that outline traces. Absent on the ~99% of bodies with no bays.
+  const subAreaId = await resolveSubAreaForPutIn(ctx, waterBodyId, snapped);
+
+  const id = await ctx.db.insert('putIns', {
+    waterBodyId,
+    coord: snapped,
+    source: 'official',
+    status: 'visible',
+    // Absent rather than empty, so `resolvePutInName` falls back to the compass label instead of
+    // rendering a launch with a blank name.
+    ...(trimmedName ? { name: trimmedName } : {}),
+    ...(subAreaId !== undefined ? { subAreaId } : {}),
+    createdByUserId: actor._id,
+    createdAt: Date.now(),
+  });
+  const actionId = await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_put_in', // a dedicated verb — placing an official marker, not un-hiding one
+    targetType: 'waterbody',
+    targetId: waterBodyId,
+    reason:
+      reason ??
+      (trimmedName ? composed`Set official put-in: ${trimmedName}` : 'Set official put-in'),
+    // The **snapped** coord, which is what was stored — an audit row recording the raw click
+    // would describe a marker that never existed.
+    metadata: {
+      coord: snapped,
+      putInId: id,
+      direction: 'placed',
+      ...(trimmedName ? { name: trimmedName } : {}),
+    },
+    createdAt: Date.now(),
+  });
+  // Standing (A07b, founder call): an official put-in on a dormant body brings it back — a human
+  // saying "you can get on the ice here" is evidence of access, and access is what the seed
+  // partitions on. And it keeps the body active through the July rollover for as long as it is
+  // saved and not hidden (D245, reversing D177's "a put-in alone does not keep a body active").
+  // Then the denormalized `accessKind`, recomputed from the visible put-ins (PR #43 review), and
+  // the library row — the steps every put-in write owes, shared with `promote`.
+  await afterPutInChange(ctx, waterBodyId, true);
+  return { putInId: id, actionId };
+}
+
+// ── Undoing a placement (D313) ───────────────────────────────────────────────────────────────
+
+/**
+ * How many of a body's access alerts a placement's undo reads to see whether one was filed on the
+ * launch since. A body holds a handful across seasons; past this the check is refused, not guessed.
+ */
+export const PLACEMENT_ALERTS_READ = 100;
+
+/** What a body with more alerts than the check reads is told: refused, not decided on a window. */
+export const PLACEMENT_ALERTS_UNCHECKED =
+  'This body has more access alerts than one check can read, so this put-in can’t be removed here. Hide it instead.';
+
+/**
+ * **Why removing a put-in placed by hand is refused**, or `null` — one rule for the undo's offer and
+ * its write. The undo removes the row outright (a `hidden` row would suppress every launch near the
+ * spot, which is a different statement), so it is offered only while nothing hangs off the put-in:
+ *
+ * - it is still the launch that was placed — there, by that name, official and visible;
+ * - nobody has linked a lot to it, set its approach or posted a rule on it (the console's own later
+ *   writes, audited on the put-in, so they don't overtake the body's row);
+ * - no skater has attached a photo of it or filed an access alert on it.
+ *
+ * A report that named the launch as its put-in keeps the id (nothing displays it, and the sheet
+ * re-sends only the put-ins the body lists), so it doesn't hold the undo. Past any of these the
+ * launch is hidden instead, which keeps its history.
+ */
+export function placementRefusalOf(
+  row: Doc<'putIns'> | null,
+  expected: LaunchAsRecorded,
+  hangsOff: { photo: boolean; alerts: readonly { putInId?: Id<'putIns'> | undefined }[] },
+): string | null {
+  if (!row) return 'That put-in is already gone.';
+  if (
+    row.source !== 'official' ||
+    row.status !== 'visible' ||
+    row.coord.lat !== expected.coord.lat ||
+    row.coord.lng !== expected.coord.lng ||
+    (row.name ?? null) !== expected.name
+  ) {
+    return 'That put-in changed since it was placed, so undo can’t remove it now.';
+  }
+  if (row.parkingAreaId !== undefined) {
+    return 'A lot is linked to that put-in now. Unlink it first, then undo.';
+  }
+  if (row.approachKindOverride !== undefined || row.postedAccess !== undefined) {
+    return 'That put-in has its own approach or posted rule now, so undo can’t remove it. Hide it instead.';
+  }
+  if (hangsOff.photo) return 'Someone added a photo of that put-in. Hide it instead.';
+  if (hangsOff.alerts.length > PLACEMENT_ALERTS_READ) return PLACEMENT_ALERTS_UNCHECKED;
+  if (hangsOff.alerts.some((a) => a.putInId === row._id)) {
+    return 'Someone filed an access alert on that put-in. Hide it instead.';
+  }
+  return null;
+}
+
+/** A photo of the launch, for {@link placementRefusalOf}: is there one. */
+export function placementPhoto(ctx: QueryCtx | MutationCtx, putInId: Id<'putIns'>) {
+  return ctx.db
+    .query('accessPhotos')
+    .withIndex('by_put_in', (q) => q.eq('putInId', putInId))
+    .first();
+}
+
+/** A body's access alerts, every status, newest first — the check reads one past its bound. */
+export function bodyAlerts(ctx: QueryCtx | MutationCtx, waterBodyId: Id<'waterBodies'>) {
+  return ctx.db
+    .query('accessAlerts')
+    .withIndex('by_water_body_status_kind_expires_at', (q) => q.eq('waterBodyId', waterBodyId))
+    .order('desc');
+}
+
+/**
+ * Undo a placement: the put-in removed — its row deleted, so no skater sees a trace of it — when
+ * {@link placementRefusalOf} allows. Written as `set_put_in` with `direction: 'unplaced'`, recording
+ * where it was and what it was called, so undoing this places it again.
+ */
+export async function unplacePutInImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: { putInId: Id<'putIns'>; expected: LaunchAsRecorded; reason: string },
+): Promise<void> {
+  const row = await ctx.db.get(args.putInId);
+  const refused = placementRefusalOf(row, args.expected, {
+    photo: (await placementPhoto(ctx, args.putInId)) !== null,
+    alerts: row ? await bodyAlerts(ctx, row.waterBodyId).take(PLACEMENT_ALERTS_READ + 1) : [],
+  });
+  if (refused !== null || !row) throw new ConvexError(refused ?? 'That put-in is already gone.');
+  await ctx.db.delete(row._id);
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_put_in',
+    targetType: 'waterbody',
+    targetId: row.waterBodyId,
+    reason: args.reason,
+    metadata: {
+      putInId: row._id,
+      coord: row.coord,
+      direction: 'unplaced',
+      ...(row.name !== undefined ? { name: row.name } : {}),
+    },
+    createdAt: Date.now(),
+  });
+  // No evidence either way: the body's standing stays as it is; its access kind and row are read
+  // again without the launch.
+  await afterPutInChange(ctx, row.waterBodyId, false);
+}
 
 /**
  * Moderator: hide a put-in coord (decision #7). Writes a `hidden` suppression row so the coord stays

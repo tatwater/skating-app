@@ -15,6 +15,8 @@
  *   (`?task=<request id>`, Shape) or a landmark to draw as a bay (`?promote=<landmark id>`, Shape).
  *   An id of word characters only. The tab takes each once, into its own state, and drops it from
  *   the address; any other navigation drops it too ({@link searchFor}), so Back never re-arms it.
+ * - **`landmarkAsk`** — the same for Places (B01-6b): an Inbox landmark ask to place
+ *   (`?tab=places&landmarkAsk=<request id>`).
  */
 
 export const BODY_TABS = [
@@ -37,6 +39,7 @@ export type BodyConsoleSearch = {
   from?: string;
   task?: string;
   promote?: string;
+  landmarkAsk?: string;
 };
 
 /**
@@ -94,6 +97,8 @@ export function validateBodySearch(raw: Record<string, unknown>): BodyConsoleSea
   if (from !== null) out.from = from;
   if (typeof raw.task === 'string' && ARRIVAL_ID.test(raw.task)) out.task = raw.task;
   if (typeof raw.promote === 'string' && ARRIVAL_ID.test(raw.promote)) out.promote = raw.promote;
+  if (typeof raw.landmarkAsk === 'string' && ARRIVAL_ID.test(raw.landmarkAsk))
+    out.landmarkAsk = raw.landmarkAsk;
   return out;
 }
 
@@ -126,14 +131,19 @@ export function searchFor(
 }
 
 /**
- * The search that arms the Shape tab's bay task: an Inbox ask (`task`) or a landmark (`promote`),
- * keeping the return path. Lights nothing; the task lights the bay once it saves.
+ * The search that arms a map task: the Shape tab's bay task for an Inbox ask (`task`) or a landmark
+ * (`promote`), or the Places tab's for an Inbox landmark ask (`landmarkAsk`, which opens Places),
+ * keeping the return path. Lights nothing; the task lights what it saves.
  */
 export function arrivalSearch(
   search: BodyConsoleSearch,
-  arrival: { task: string } | { promote: string },
+  arrival: { task: string } | { promote: string } | { landmarkAsk: string },
 ): BodyConsoleSearch {
-  return { ...(search.from !== undefined ? { from: search.from } : {}), ...arrival };
+  return {
+    ...('landmarkAsk' in arrival ? { tab: 'places' as const } : {}),
+    ...(search.from !== undefined ? { from: search.from } : {}),
+    ...arrival,
+  };
 }
 
 /** The link that opens a body's console from a list, carrying the list's own address back. */

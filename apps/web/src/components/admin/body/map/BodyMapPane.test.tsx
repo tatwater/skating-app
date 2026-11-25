@@ -333,6 +333,36 @@ describe('the tool’s mode bar (B01-6a)', () => {
     expect(onExit).toHaveBeenCalledTimes(1);
   });
 
+  it('lets the pointer through the marks to a tool that takes it, and forgets their hover', () => {
+    const still = (tool: { mode: string; onExit: () => void; takesPointer?: boolean } | null) => (
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        tool={tool}
+      />
+    );
+    const { rerender } = render(still(null));
+    const marks = () => [...document.querySelectorAll('[data-slot="body-map-point"]')];
+    const plate = () => document.querySelector('[data-slot="map-hover-plate"]');
+    expect(marks().length).toBeGreaterThan(0);
+    for (const m of marks()) expect(m).toHaveClass('pointer-events-auto');
+    fireEvent.pointerEnter(marks()[0] as HTMLElement);
+    expect(plate()).not.toBeNull();
+    // Placing: a click on a lot is the tool's, and a landmark's mark never covers its drag handle.
+    rerender(still({ mode: 'Place mode', onExit: () => {}, takesPointer: true }));
+    for (const m of marks()) {
+      expect(m).toHaveClass('pointer-events-none');
+      expect(m).not.toHaveClass('pointer-events-auto');
+    }
+    expect(plate()).toBeNull();
+    // A tool with no engine on the map leaves the marks as they were.
+    rerender(still({ mode: 'Sample mode', onExit: () => {} }));
+    for (const m of marks()) expect(m).toHaveClass('pointer-events-auto');
+  });
+
   it('draws no bar while no tool is held', () => {
     render(<BodyMapPane surface={null} ground={null} drawn={drawn} rack={false} />);
     expect(document.querySelector('[data-slot="map-mode-bar"]')).toBeNull();

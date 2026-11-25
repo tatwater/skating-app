@@ -2874,6 +2874,10 @@ and the accessible long form naming the denominator.
 
 ## D87 — Approach distance is walked, not flown (A06d)
 
+> **Amended by D313 (2026-11-25, B01-6b).** A lot linked to a put-in in the Body console is walked
+> fresh, in the background, when the link is made; "never from a request path" still holds for
+> skaters.
+
 **Decided (2026-07-31; founder asked whether a trail-routing API exists — *"it could be 800 m as the crow
 flies but a full kilometer of weaving trail… and elevation gain is going to affect people just as much as
 distance."*)**
@@ -9396,3 +9400,33 @@ Corpus domain and the aerial was already joining 7a for board 4.3.
 **Related:** D3, D146, D147, D217, [`04-integrations`](./04-integrations.md) (NAIP),
 [`phase-B01`](./phases/B01-admin-console.md) *What the build found (B01-7a)*, the register's In30
 and Co15–Co18.
+
+## D313 — A lot linked in the console is walked fresh, in the background; B01-6b's placing calls (amends D87, B01)
+
+**Decided (2026-11-25, founder; the governor's rulings on what he didn't spell out are marked).**
+- **A link's walk is routed when it is made** (amends D87's "never from a request path"). A lot
+  linked to a put-in in the Body console, and a link put back by an undo, schedule one ORS
+  `foot-hiking` leg in the background; the straight line, flagged, stands until it lands and stays
+  if ORS refuses or the quota is spent (never cached as if routed). D87's rule was about quota: a
+  skater's request path could spend it at the public's rate. A staff link is a handful a day against
+  ~2,000, so the reason doesn't reach it. A link's undo restores only which lot, and re-walks.
+- **Placing has an undo, every one (D226).** A put-in placed by hand is removed by its undo. A lot
+  placed by hand is deleted with its lake links by its undo, refused once a put-in links to it.
+- **A known feature is drawn as any of its three shapes**: a polygon, a point with a radius, a line
+  with a width, and each is redrawn the same way. `bodyFeatures.create` checks the shape as
+  `updateShape` does (on the lake, under the position cap).
+- **A landmark moves by a click or a drag**, in move mode, each saved with Undo.
+- **The map's cursor is a crosshair whenever a click will place something**; a mark that can be
+  dragged shows the grab cursor only under the pointer. (The skater web map's placing mode already
+  does; the phone has no cursor.)
+- **The weather sample points stay the old tool's** (the governor's ruling): suggest a grid, save,
+  clear; points placed one by one are later.
+- **The governor's rulings:** a put-in's spot is shown snapped to the shore while hovering; placing
+  an emailed name or a proposal also needs the capability the Places tab gates it on, on the server
+  too; a landmark's undo doesn't reopen the ask or the emailed name it answered, as a bay's doesn't;
+  removing a landmark is in; an Inbox landmark ask's *Draw in Body →* opens Places and returns to the
+  Inbox after the save.
+
+**Why.** The founder's answers to B01-6b's forks (the phase doc's *B01-6b, the calls*).
+
+**Related:** D87, D202, D226, D299.

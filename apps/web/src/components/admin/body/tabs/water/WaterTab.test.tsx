@@ -4,8 +4,8 @@ import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 /**
  * Body › Water as the console mounts it: the record and the bathymetry state (mocked at the Convex
- * hooks), read-only until its writes exist — drawn *Not available yet* for a viewer who could make
- * them, and every read's state said in its place.
+ * hooks): the survey drawn *Not available yet* for a viewer who could file one, and every read's
+ * state said in its place. The sample-point task's own wiring is `SampleTask.wiring.test.tsx`.
  */
 
 const mocks = vi.hoisted(() => ({

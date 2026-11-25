@@ -1,8 +1,14 @@
+import { distanceToPolygonMeters, snapToEdge } from '@skating/core';
 import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
-
 import { type ChordDrawControl, type ChordMap, createChordDraw } from '@/lib/chordDraw';
-import { createPolygonDraw, type PolygonDrawControl } from '@/lib/polygonDraw';
+import { createPointDraw } from '@/lib/pointDraw';
+import {
+  createLineDraw,
+  createPolygonDraw,
+  type LineDrawControl,
+  type PolygonDrawControl,
+} from '@/lib/polygonDraw';
 import type { MapToolClaim } from '../frame/mapTool';
 import type { BodyMapPalette } from './bodyMapPalette';
 
@@ -24,6 +30,7 @@ import type { BodyMapPalette } from './bodyMapPalette';
 export const DRAFT_SOURCE = 'body-console-tool-draft';
 const DRAFT_FILL = 'body-console-tool-draft-fill';
 const DRAFT_LINE = 'body-console-tool-draft-line';
+const DRAFT_POINTS = 'body-console-tool-draft-points';
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
 function draftData(draft: MapToolClaim['draft']): GeoJSON.FeatureCollection {
@@ -70,6 +77,19 @@ export function useMapToolEngine(
       type: 'line',
       source: DRAFT_SOURCE,
       paint: { 'line-color': palette.lit.line, 'line-width': palette.lit.width },
+    });
+    // Points (a suggested grid) as hollow rings: proposed, not placed.
+    map.addLayer({
+      id: DRAFT_POINTS,
+      type: 'circle',
+      source: DRAFT_SOURCE,
+      filter: ['in', ['geometry-type'], ['literal', ['Point', 'MultiPoint']]],
+      paint: {
+        'circle-radius': 5,
+        'circle-color': 'rgba(0,0,0,0)',
+        'circle-stroke-color': palette.lit.line,
+        'circle-stroke-width': 2,
+      },
     });
   }, [draft, held, liveMap, palette]);
 
@@ -150,6 +170,8 @@ export function useMapToolEngine(
             return;
           }
           control = built;
+          // A click traces (D313): the crosshair, never MapLibre's grab hand.
+          map.getCanvas().style.cursor = 'crosshair';
           if (engine.polygon) {
             built.setPolygon(engine.polygon);
             built.startEditing();
@@ -165,6 +187,78 @@ export function useMapToolEngine(
         try {
           control?.clear();
           control?.destroy();
+          map.getCanvas().style.cursor = '';
+        } catch {
+          // As above: the map may already be gone.
+        }
+      };
+    }
+    if (engine.kind === 'point') {
+      const parent = engine.snapTo;
+      const control = createPointDraw(map as unknown as ChordMap, {
+        ...(engine.point ? { point: engine.point } : {}),
+        ...(parent
+          ? {
+              snap: (p) =>
+                engine.snapWithinM !== undefined &&
+                distanceToPolygonMeters(p, parent as never) > engine.snapWithinM
+                  ? p
+                  : snapToEdge(p, parent as never),
+            }
+          : {}),
+        color: palette.lit.line,
+        onPick: (p, scale) => {
+          const live = claimRef.current?.engine;
+          if (live?.kind === 'point') live.onPick(p, scale);
+        },
+      });
+      return () => {
+        try {
+          control.destroy();
+        } catch {
+          // As above: the map may already be gone.
+        }
+      };
+    }
+    if (engine.kind === 'line') {
+      let gone = false;
+      let control: LineDrawControl | null = null;
+      // As the ring's: a traced line goes to the vertex editor once, as it ends.
+      let tracing = engine.line === undefined;
+      createLineDraw(map, {
+        onFinish: () => {
+          if (gone || !tracing) return;
+          tracing = false;
+          control?.startEditing();
+        },
+        onChange: (line) => {
+          const live = claimRef.current?.engine;
+          if (!gone && live?.kind === 'line') live.onChange(line);
+        },
+      }).then(
+        (built) => {
+          if (gone) {
+            built.destroy();
+            return;
+          }
+          control = built;
+          map.getCanvas().style.cursor = 'crosshair';
+          if (engine.line) {
+            built.setLine(engine.line);
+            built.startEditing();
+          } else built.startDrawing();
+        },
+        () => {
+          const live = claimRef.current?.engine;
+          if (!gone && live?.kind === 'line') live.onUnavailable();
+        },
+      );
+      return () => {
+        gone = true;
+        try {
+          control?.clear();
+          control?.destroy();
+          map.getCanvas().style.cursor = '';
         } catch {
           // As above: the map may already be gone.
         }

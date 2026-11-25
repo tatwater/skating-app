@@ -30,6 +30,7 @@
  */
 
 import {
+  type ApproachLeg,
   bodyAccessKind,
   distanceToPolygonMeters,
   externalIdFits,
@@ -40,9 +41,14 @@ import {
   type LatLng,
   MAX_ACCESS_PHOTOS,
   nameTooLong,
+  ORS_FOOT_HIKING_URL,
+  type OrsRouteResponse,
+  orsFootHikingBody,
   PARKING_INFER_RADIUS_M,
   type PostedAccess,
   PUTIN_SHORE_RADIUS_M,
+  parseOrsFootHikingRoute,
+  plausibleApproach,
   requiresHikeInAssertion,
   resolveApproachKind,
   resolvePutInName,
@@ -51,9 +57,12 @@ import {
 } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
+import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import {
+  internalAction,
   internalMutation,
+  internalQuery,
   type MutationCtx,
   mutation,
   type QueryCtx,
@@ -922,89 +931,223 @@ export const setOfficialParking = mutation({
   },
   handler: async (ctx, args) => {
     const actor = await requireCapability(ctx, 'body.access');
-    const now = Date.now();
-    const name = args.name?.trim() || undefined;
-    if (args.waterBodyIds.length > MAX_LOT_LAKES) {
-      throw new ConvexError(`A lot serves at most ${MAX_LOT_LAKES} lakes`);
-    }
-
-    let parkingAreaId = args.parkingAreaId;
-    const existing = parkingAreaId ? await ctx.db.get(parkingAreaId) : null;
-    if (parkingAreaId && !existing) throw new ConvexError('Parking area not found');
-    // Only a name this edit introduces is held to the cap: an edit around a lot's name stored past
-    // it keeps that name (B01-3h).
-    if (name === undefined || name !== existing?.name?.trim()) {
-      const tooLong = nameTooLong(name ?? '', 'A lot’s name');
-      if (tooLong !== null) throw new ConvexError(tooLong);
-    }
-    // What an edit replaced, for the Access tab's undo (D226, §3); a new lot replaced nothing.
-    let prev: Record<string, unknown> | null = null;
-    if (parkingAreaId && existing) {
-      prev = {
-        coord: existing.coord,
-        name: existing.name ?? null,
-        source: existing.source,
-        amenities: existing.amenities,
-        capacity: existing.capacity ?? null,
-        fee: existing.fee ?? null,
-      };
-      await ctx.db.patch(parkingAreaId, {
-        coord: args.coord,
-        name,
-        source: 'official',
-        amenities: args.amenities,
-        capacity: args.capacity,
-        fee: args.fee,
-      });
-    } else {
-      parkingAreaId = await ctx.db.insert('parkingAreas', {
-        coord: args.coord,
-        name,
-        source: 'official',
-        status: 'visible',
-        amenities: args.amenities,
-        capacity: args.capacity,
-        fee: args.fee,
-        createdByUserId: actor._id,
-        createdAt: now,
-      });
-    }
-
-    // Reconcile the association set. An association this pass does not name is removed **only if it
-    // was itself asserted** — an OSM inference the operator simply didn't think about is left alone,
-    // because silently deleting the ETL's work on every hand edit would make the two paths fight.
-    const existingLinks = await ctx.db
-      .query('parkingAreaBodies')
-      .withIndex('by_parking_area', (q) =>
-        q.eq('parkingAreaId', parkingAreaId as Id<'parkingAreas'>),
-      )
-      .take(MAX_ACCESS_ROWS_PER_BODY);
-    const wanted = new Set(args.waterBodyIds.map(String));
-    const unlinked: Id<'waterBodies'>[] = [];
-    for (const link of existingLinks) {
-      if (!wanted.has(String(link.waterBodyId)) && !link.inferred) {
-        await ctx.db.delete(link._id);
-        unlinked.push(link.waterBodyId);
-      }
-    }
-    for (const waterBodyId of args.waterBodyIds) {
-      await linkParkingToBody(ctx, parkingAreaId, waterBodyId, false);
-    }
-
-    await writeAudit(ctx, {
-      actorId: actor._id,
-      action: 'set_parking_area',
-      targetType: 'parkingArea',
-      targetId: parkingAreaId,
-      reason: args.reason ?? 'Set an official parking area',
-      metadata: { coord: args.coord, waterBodyIds: args.waterBodyIds, name, prev },
-      createdAt: now,
-    });
-    // The audit row refreshed the bodies this lot serves now; the ones it stopped serving lost it.
-    for (const waterBodyId of unlinked) await refreshBodyLibrary(ctx, waterBodyId);
-    return parkingAreaId;
+    return setOfficialParkingImpl(ctx, actor, args);
   },
 });
+
+export interface SetOfficialParkingArgs {
+  parkingAreaId?: Id<'parkingAreas'> | undefined;
+  coord: LatLng;
+  name?: string | undefined;
+  amenities: Doc<'parkingAreas'>['amenities'];
+  capacity?: number | undefined;
+  fee?: boolean | undefined;
+  waterBodyIds: Id<'waterBodies'>[];
+  reason?: string | undefined;
+}
+
+/**
+ * `setOfficialParking`'s body — also what undoing a lot's removal runs (D313), so a lot put back is
+ * created as a placed one is, its lake links asserted again.
+ */
+export async function setOfficialParkingImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: SetOfficialParkingArgs,
+): Promise<Id<'parkingAreas'>> {
+  const now = Date.now();
+  const name = args.name?.trim() || undefined;
+  if (args.waterBodyIds.length > MAX_LOT_LAKES) {
+    throw new ConvexError(`A lot serves at most ${MAX_LOT_LAKES} lakes`);
+  }
+
+  let parkingAreaId = args.parkingAreaId;
+  const existing = parkingAreaId ? await ctx.db.get(parkingAreaId) : null;
+  if (parkingAreaId && !existing) throw new ConvexError('Parking area not found');
+  // Only a name this edit introduces is held to the cap: an edit around a lot's name stored past
+  // it keeps that name (B01-3h).
+  if (name === undefined || name !== existing?.name?.trim()) {
+    const tooLong = nameTooLong(name ?? '', 'A lot’s name');
+    if (tooLong !== null) throw new ConvexError(tooLong);
+  }
+  // What an edit replaced, for the Access tab's undo (D226, §3); a new lot replaced nothing.
+  let prev: Record<string, unknown> | null = null;
+  if (parkingAreaId && existing) {
+    prev = {
+      coord: existing.coord,
+      name: existing.name ?? null,
+      source: existing.source,
+      amenities: existing.amenities,
+      capacity: existing.capacity ?? null,
+      fee: existing.fee ?? null,
+    };
+    await ctx.db.patch(parkingAreaId, {
+      coord: args.coord,
+      name,
+      source: 'official',
+      amenities: args.amenities,
+      capacity: args.capacity,
+      fee: args.fee,
+    });
+  } else {
+    parkingAreaId = await ctx.db.insert('parkingAreas', {
+      coord: args.coord,
+      name,
+      source: 'official',
+      status: 'visible',
+      amenities: args.amenities,
+      capacity: args.capacity,
+      fee: args.fee,
+      createdByUserId: actor._id,
+      createdAt: now,
+    });
+  }
+
+  // Reconcile the association set. An association this pass does not name is removed **only if it
+  // was itself asserted** — an OSM inference the operator simply didn't think about is left alone,
+  // because silently deleting the ETL's work on every hand edit would make the two paths fight.
+  const existingLinks = await ctx.db
+    .query('parkingAreaBodies')
+    .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', parkingAreaId as Id<'parkingAreas'>))
+    .take(MAX_ACCESS_ROWS_PER_BODY);
+  const wanted = new Set(args.waterBodyIds.map(String));
+  const unlinked: Id<'waterBodies'>[] = [];
+  for (const link of existingLinks) {
+    if (!wanted.has(String(link.waterBodyId)) && !link.inferred) {
+      await ctx.db.delete(link._id);
+      unlinked.push(link.waterBodyId);
+    }
+  }
+  for (const waterBodyId of args.waterBodyIds) {
+    await linkParkingToBody(ctx, parkingAreaId, waterBodyId, false);
+  }
+
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_parking_area',
+    targetType: 'parkingArea',
+    targetId: parkingAreaId,
+    reason: args.reason ?? 'Set an official parking area',
+    metadata: { coord: args.coord, waterBodyIds: args.waterBodyIds, name, prev },
+    createdAt: now,
+  });
+  // The audit row refreshed the bodies this lot serves now; the ones it stopped serving lost it.
+  for (const waterBodyId of unlinked) await refreshBodyLibrary(ctx, waterBodyId);
+  return parkingAreaId;
+}
+
+// ── Undoing a lot placed by hand (D313) ──────────────────────────────────────────────────────────
+
+/**
+ * Why removing a lot placed by hand is refused, or `null` — one rule for the undo's offer and its
+ * write. The lot is deleted with its lake links, so it is offered only while nothing hangs off it:
+ * it is still the lot that was placed (an edit writes its own row, which overtakes the placement's),
+ * no put-in links to it (`putIns.by_parking_area`), and no skater has attached a photo of it or filed
+ * an access alert on it. Each is an exact "is there one".
+ */
+export function lotRemovalRefusalOf(
+  lot: Doc<'parkingAreas'> | null,
+  expected: { coord: LatLng; name: string | null },
+  hangsOff: { putIn: boolean; photo: boolean; alert: boolean },
+): string | null {
+  if (!lot) return 'That lot is already gone.';
+  if (
+    lot.source !== 'official' ||
+    lot.status !== 'visible' ||
+    lot.coord.lat !== expected.coord.lat ||
+    lot.coord.lng !== expected.coord.lng ||
+    (lot.name ?? null) !== expected.name
+  ) {
+    return 'That lot changed since it was placed, so undo can’t remove it now.';
+  }
+  if (hangsOff.putIn) return 'A put-in is linked to that lot now. Unlink it first, then undo.';
+  if (hangsOff.photo) return 'Someone added a photo of that lot, so undo can’t remove it.';
+  if (hangsOff.alert) return 'Someone filed an access alert on that lot, so undo can’t remove it.';
+  return null;
+}
+
+/** The three exact reads {@link lotRemovalRefusalOf} decides on. */
+export async function lotHangsOff(
+  ctx: QueryCtx | MutationCtx,
+  parkingAreaId: Id<'parkingAreas'>,
+): Promise<{ putIn: boolean; photo: boolean; alert: boolean }> {
+  const [putIn, photo, alert] = await Promise.all([
+    ctx.db
+      .query('putIns')
+      .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', parkingAreaId))
+      .first(),
+    ctx.db
+      .query('accessPhotos')
+      .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', parkingAreaId))
+      .first(),
+    ctx.db
+      .query('accessAlerts')
+      .withIndex('by_parking_area_status_kind_expires_at', (q) =>
+        q.eq('parkingAreaId', parkingAreaId),
+      )
+      .first(),
+  ]);
+  return { putIn: putIn !== null, photo: photo !== null, alert: alert !== null };
+}
+
+/**
+ * Undo a lot placed by hand: the lot deleted, with every lake link it holds, when
+ * {@link lotRemovalRefusalOf} allows. Written as `set_parking_area` on the lot with `removed: true`,
+ * recording where it was, what it was called and the lakes it served, so undoing this places it again.
+ */
+export async function removeOfficialLotImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  args: {
+    parkingAreaId: Id<'parkingAreas'>;
+    expected: { coord: LatLng; name: string | null };
+    reason: string;
+  },
+): Promise<void> {
+  const lot = await ctx.db.get(args.parkingAreaId);
+  const refused = lotRemovalRefusalOf(
+    lot,
+    args.expected,
+    await lotHangsOff(ctx, args.parkingAreaId),
+  );
+  if (refused !== null || !lot) throw new ConvexError(refused ?? 'That lot is already gone.');
+  // A lot placed by hand serves the lakes it was placed for (at most `MAX_LOT_LAKES`); one past the
+  // forward write's own read is refused rather than part-deleted.
+  const links = await ctx.db
+    .query('parkingAreaBodies')
+    .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', lot._id))
+    .take(MAX_ACCESS_ROWS_PER_BODY + 1);
+  if (links.length > MAX_ACCESS_ROWS_PER_BODY) {
+    throw new ConvexError('That lot serves more lakes than undo can unlink at once.');
+  }
+  const waterBodyIds = links.filter((l) => !l.inferred).map((l) => l.waterBodyId);
+  // The row first, while the links still say which lakes' History it belongs in.
+  await writeAudit(ctx, {
+    actorId: actor._id,
+    action: 'set_parking_area',
+    targetType: 'parkingArea',
+    targetId: lot._id,
+    reason: args.reason,
+    metadata: {
+      coord: lot.coord,
+      ...(lot.name !== undefined ? { name: lot.name } : {}),
+      waterBodyIds,
+      amenities: lot.amenities,
+      // Every field a placement writes, so undoing this places the same lot again, not a lesser one.
+      ...(lot.capacity !== undefined ? { capacity: lot.capacity } : {}),
+      ...(lot.fee !== undefined ? { fee: lot.fee } : {}),
+      removed: true,
+      prev: null,
+    },
+    createdAt: Date.now(),
+  });
+  for (const link of links) await ctx.db.delete(link._id);
+  await ctx.db.delete(lot._id);
+  // Every lake the lot served has lost it now; their rows are read again without it.
+  for (const waterBodyId of new Set(links.map((l) => l.waterBodyId))) {
+    await refreshBodyLibrary(ctx, waterBodyId);
+  }
+}
 
 /**
  * Attach a put-in to a parking area, and/or override its derived approach kind (moderator).
@@ -1083,9 +1226,10 @@ export async function setPutInAccessImpl(
     const lot = await ctx.db.get(args.parkingAreaId);
     if (!lot) throw new ConvexError('Parking area not found');
     parkingAreaId = args.parkingAreaId;
-    // Straight-line, flagged. A hand association gets no ORS call — this is a request path, and
-    // "never route from a request path" is the one rule D87 asks to be written at the call site.
-    // The ETL's next pass replaces it with a routed figure.
+    // Straight-line, flagged, until the walk is routed. Not routed here: this is a request path, and
+    // D87 keeps ORS off it. A staff link is walked fresh in the background instead (D313, amending
+    // D87 — a handful a day against the quota), scheduled below; the flagged line stands until that
+    // lands, and stays if ORS refuses.
     const leg = straightLineApproach(lot.coord, putIn.coord);
     approachMeters = Math.round(leg.meters);
     approachAscentM = undefined;
@@ -1103,6 +1247,15 @@ export async function setPutInAccessImpl(
     );
   }
 
+  // A link that will be walked fresh gets its own id, carried by the route it schedules (below). An
+  // edit that leaves the lot alone (a hike-in choice alone) keeps the link's id, so a walk still in
+  // flight for it lands; unlinking drops it, so nothing lands on a put-in with no lot.
+  const walked = Boolean(args.parkingAreaId && !args.clearParking && approachRouted === false);
+  const approachLinkId = walked
+    ? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`
+    : args.clearParking
+      ? undefined
+      : putIn.approachLinkId;
   await ctx.db.patch(args.putInId, {
     parkingAreaId,
     approachMeters,
@@ -1110,6 +1263,7 @@ export async function setPutInAccessImpl(
     approachRouted,
     approachPath,
     approachKindOverride: override,
+    approachLinkId,
   });
 
   // **The denormalization has two writers, not one.** Everything this mutation touches is an input
@@ -1140,4 +1294,169 @@ export async function setPutInAccessImpl(
     },
     createdAt: Date.now(),
   });
+
+  // A lot linked (or put back by an undo) is walked fresh, in the background (D313): one ORS
+  // `foot-hiking` leg, which lands only if this link still stands when it answers.
+  if (walked && args.parkingAreaId && approachLinkId !== undefined) {
+    await ctx.scheduler.runAfter(0, internal.accessPoints.routeLinkedApproach, {
+      putInId: args.putInId,
+      parkingAreaId: args.parkingAreaId,
+      linkId: approachLinkId,
+    });
+  }
 }
+
+/**
+ * Why putting a lot (or `'none'`) back on a launch is refused, or `null` — what an undo of a link
+ * checks before it offers itself: the launch or the lot gone, or the D144 gate, which the write would
+ * refuse too (a straight line past `HIKE_IN_ASSERT_M` that the launch, with `override`, doesn't assert
+ * is a hike-in).
+ */
+export function relinkRefusalOf(
+  putIn: Doc<'putIns'> | null,
+  lot: Doc<'parkingAreas'> | null | 'none',
+  override: Doc<'putIns'>['approachKindOverride'] | null,
+): string | null {
+  if (!putIn) return 'That put-in no longer exists.';
+  if (lot === 'none') return null;
+  if (!lot) return 'The lot it was linked to is gone, so undo can’t link it again.';
+  const meters = Math.round(straightLineApproach(lot.coord, putIn.coord).meters);
+  if (requiresHikeInAssertion(meters) && override !== 'hike_in') {
+    return `That lot is over ${HIKE_IN_ASSERT_M.toLocaleString('en-US')} m from the put-in in a straight line, so linking it again needs the walk marked a hike-in. Link it by hand.`;
+  }
+  return null;
+}
+
+// ── The walk, routed fresh (D313) ────────────────────────────────────────────────────────────────
+
+/** The pair a link's walk is routed between, as it stands — or `null` when the link is gone. */
+export const linkedPair = internalQuery({
+  args: {
+    putInId: v.id('putIns'),
+    parkingAreaId: v.id('parkingAreas'),
+    /** The link asked for: a newer link since, and there is nothing to route for this one. */
+    linkId: v.optional(v.string()),
+  },
+  handler: async (ctx, { putInId, parkingAreaId, linkId }) => {
+    const putIn = await ctx.db.get(putInId);
+    if (
+      !putIn ||
+      putIn.parkingAreaId !== parkingAreaId ||
+      putIn.approachRouted !== false ||
+      (linkId !== undefined && putIn.approachLinkId !== linkId)
+    ) {
+      return null;
+    }
+    const lot = await ctx.db.get(parkingAreaId);
+    if (!lot) return null;
+    return { from: lot.coord, to: putIn.coord };
+  },
+});
+
+/**
+ * One `foot-hiking` leg from ORS, as the ETL asks for it (`orsFootHikingBody`, the GeoJSON endpoint,
+ * `elevation: true`) and reads it (`parseOrsFootHikingRoute`, then `plausibleApproach`) — or `null`
+ * for anything short of a routed answer: no key, a refusal (a 403 is the quota spent), a failure, a
+ * body that can't be read, no path. `null` leaves the flagged straight line, never marked routed.
+ */
+export async function fetchFootHikingLeg(from: LatLng, to: LatLng): Promise<ApproachLeg | null> {
+  const apiKey = process.env.ORS_API_KEY;
+  if (!apiKey) {
+    console.warn('ORS_API_KEY not set — a linked lot’s walk stays a straight line');
+    return null;
+  }
+  try {
+    const res = await fetch(ORS_FOOT_HIKING_URL, {
+      method: 'POST',
+      headers: { Authorization: apiKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify(orsFootHikingBody(from, to)),
+    });
+    if (!res.ok) {
+      console.warn(`ORS foot-hiking request failed: ${res.status}`);
+      return null;
+    }
+    const leg = parseOrsFootHikingRoute((await res.json()) as OrsRouteResponse);
+    if (leg === null) return null;
+    // A leg ORS routed the long way round the water is not an approach (A06e Workstream 0).
+    const applied = plausibleApproach(leg, from, to);
+    return applied.routed ? applied : null;
+  } catch (err) {
+    console.warn('ORS foot-hiking request threw', err);
+    return null;
+  }
+}
+
+/**
+ * Route a linked lot's walk (D313): read the pair, ask ORS once, store what it answered. Scheduled
+ * by `setPutInAccessImpl` whenever a lot is linked — from the console, the old editor or an undo.
+ */
+export const routeLinkedApproach = internalAction({
+  args: { putInId: v.id('putIns'), parkingAreaId: v.id('parkingAreas'), linkId: v.string() },
+  handler: async (ctx, { putInId, parkingAreaId, linkId }) => {
+    const pair = await ctx.runQuery(internal.accessPoints.linkedPair, {
+      putInId,
+      parkingAreaId,
+      linkId,
+    });
+    if (pair === null) return;
+    const leg = await fetchFootHikingLeg(pair.from, pair.to);
+    if (leg === null) return;
+    await ctx.runMutation(internal.accessPoints.storeRoutedApproach, {
+      putInId,
+      linkId,
+      parkingAreaId,
+      from: pair.from,
+      to: pair.to,
+      meters: Math.round(leg.meters),
+      ...(leg.ascentM !== undefined ? { ascentM: Math.round(leg.ascentM) } : {}),
+      ...(leg.path !== undefined ? { path: thinPath(leg.path) } : {}),
+    });
+  },
+});
+
+/**
+ * Store a routed walk on the link it was asked for — **only while that link stands as it was asked**:
+ * the same link (its `approachLinkId`, so not an earlier link to the same lot), the same lot, both
+ * ends where they were, and the walk still the flagged straight line the link
+ * wrote. A later link, an unlink, a moved lot or launch, or another answer already landed, and this
+ * one is dropped, so a slow answer never overwrites a newer link. No audit row: it is the link's own
+ * follow-up, and a row here would overtake the link's undo.
+ */
+export const storeRoutedApproach = internalMutation({
+  args: {
+    putInId: v.id('putIns'),
+    linkId: v.string(),
+    parkingAreaId: v.id('parkingAreas'),
+    from: latLng,
+    to: latLng,
+    meters: v.number(),
+    ascentM: v.optional(v.number()),
+    path: v.optional(v.array(latLng)),
+  },
+  handler: async (ctx, args) => {
+    const putIn = await ctx.db.get(args.putInId);
+    const lot = await ctx.db.get(args.parkingAreaId);
+    const same = (a: LatLng, b: LatLng) => a.lat === b.lat && a.lng === b.lng;
+    if (
+      !putIn ||
+      !lot ||
+      putIn.parkingAreaId !== args.parkingAreaId ||
+      putIn.approachLinkId !== args.linkId ||
+      putIn.approachRouted !== false ||
+      !same(putIn.coord, args.to) ||
+      !same(lot.coord, args.from)
+    ) {
+      return false;
+    }
+    await ctx.db.patch(args.putInId, {
+      approachMeters: args.meters,
+      approachAscentM: args.ascentM,
+      approachRouted: true,
+      approachPath: args.path,
+    });
+    // The routed distance is an input to the lake's chip, and the library row reads the walk.
+    await recomputeAccessKind(ctx, putIn.waterBodyId);
+    await refreshBodyLibrary(ctx, putIn.waterBodyId);
+    return true;
+  },
+});

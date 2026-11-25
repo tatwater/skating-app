@@ -52,12 +52,12 @@ const OTHER_NAME_WRITERS: Record<string, string> = {
   'lib/landmarkProposals.ts:fileLandmarkProposals': 'a landmark proposal (`waterBodyRequests`)',
   'subAreas.ts:insertSubArea': 'a bay (its own `searchText`)',
   'subAreas.ts:renameSubAreaImpl': 'a bay (its own `searchText`)',
-  'putIns.ts:setOfficial': 'a launch',
+  'putIns.ts:placePutInImpl': 'a launch',
   'putIns.ts:promotePutInImpl': 'a launch',
   'putIns.ts:demotePutInImpl': 'a launch',
   'adminAreas.ts:importCanonical': 'a boundary',
   'accessPoints.ts:matchAndImportParking': 'a parking lot',
-  'accessPoints.ts:setOfficialParking': 'a parking lot',
+  'accessPoints.ts:setOfficialParkingImpl': 'a parking lot',
   // `landmarks.ts:importOneBody` writes a landmark's name through its recorded write (`put`, and an
   // insert of a built row), which a dry run also replays in memory — no literal `name` here to list.
   'landmarks.ts:create': 'a landmark',

@@ -10,13 +10,24 @@
 import {
   type BodyStanding,
   type DepthSource,
+  distanceToPolygonMeters,
+  type LatLng,
   MAX_LANDMARKS_PER_BODY,
   normalizeLandmarkNames,
+  OPERATOR_PUT_IN_SNAP_MAX_M,
   standingOf,
 } from '@skating/core';
 import { ConvexError } from 'convex/values';
+import type { MultiPolygon, Polygon } from 'geojson';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx } from '../_generated/server';
+import {
+  lotRemovalRefusalOf,
+  relinkRefusalOf,
+  removeOfficialLotImpl,
+  setOfficialParkingImpl,
+  setPutInAccessImpl,
+} from '../accessPoints';
 import { setOverrideImpl } from '../imageryOverrides';
 import {
   type LandmarkEditPrev,
@@ -27,12 +38,19 @@ import {
   updateLandmarkImpl,
 } from '../landmarks';
 import {
+  bodyAlerts,
   demotePutInImpl,
   directionRefusal,
   hiddenLaunches,
   launchRefusalOf,
+  PLACEMENT_ALERTS_READ,
+  PLACEMENT_ALERTS_UNCHECKED,
+  placementPhoto,
+  placementRefusalOf,
+  placePutInImpl,
   promotePutInImpl,
   SUPPRESSION_ROWS_READ,
+  unplacePutInImpl,
 } from '../putIns';
 import { setStandingImpl } from '../standing';
 import {
@@ -68,6 +86,7 @@ import {
   setWeatherSamplePointsImpl,
 } from '../waterBodies';
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
+import { resolveSurvivor } from './bodies';
 import { NAMES_NEED_THE_BAY, nameListRefusal } from './bodyNames';
 import { reopenFlagsClosedBy } from './inboxFlags';
 import {
@@ -878,34 +897,89 @@ const undoImageryOverride: UndoHandler = {
 };
 
 /**
- * set_put_in → a promotion undone (the source and name it replaced), or that undo undone (promoted
- * again). A row from `setOfficial` placing a new point has no undo yet.
+ * set_put_in → by the row's direction:
+ * - `promoted` → demoted (the source and name it replaced); `demoted` → promoted again (B01-3d);
+ * - `placed` (or a row from `setOfficial` before the direction was recorded) → the put-in removed
+ *   (D313), refused once anything hangs off it (`placementRefusalOf`); `unplaced` → placed again
+ *   where it was, by its name, through `setOfficial`'s own path.
  */
+type PutInDirection = 'promoted' | 'demoted' | 'placed' | 'unplaced';
+const directionOf = (row: Doc<'moderationActions'>): PutInDirection | null => {
+  const m = meta(row) as { direction?: unknown; putInId?: unknown };
+  if (
+    m.direction === 'promoted' ||
+    m.direction === 'demoted' ||
+    m.direction === 'placed' ||
+    m.direction === 'unplaced'
+  ) {
+    return m.direction;
+  }
+  // A placement recorded before its direction was: `setOfficial` wrote the put-in it made.
+  return m.direction === undefined && typeof m.putInId === 'string' ? 'placed' : null;
+};
+
 const undoPutIn: UndoHandler = {
-  blocked: (row) => {
-    const direction = (meta(row) as { direction?: unknown }).direction;
-    return direction === 'promoted' || direction === 'demoted'
-      ? null
-      : 'Undoing a newly placed official put-in is not built yet.';
-  },
-  undoTakesAway: (row) =>
-    UNDO_POLICY.set_put_in.takesAway((meta(row) as { direction?: unknown }).direction),
+  blocked: (row) => (directionOf(row) === null ? PREDATES : null),
+  undoTakesAway: (row) => UNDO_POLICY.set_put_in.takesAway(directionOf(row)),
   // A hide is audited on the put-in and an import moves or drops a launch with no row, so neither
   // overtakes this body's row: the launch is read as it stands, by the write's own checks. A launch
   // row is bounded at its writers (`ROW_MAX.launch`, B01-3h), so the body's hidden launches the
   // suppression rule reads can be reserved: the launch and up to `SUPPRESSION_ROWS_READ` of them.
-  refusalCost: () => ({
-    bytes: ROW_MAX.launch * (2 + SUPPRESSION_ROWS_READ),
-    reads: 2,
-    docs: 2 + SUPPRESSION_ROWS_READ,
-  }),
+  // A placement's removal reads the launch, whether a photo of it exists, and the body's alerts to
+  // one past `PLACEMENT_ALERTS_READ`; placing it again reads the body, for its outline.
+  refusalCost: (_scope, row) => {
+    const direction = directionOf(row);
+    if (direction === 'placed') {
+      return {
+        bytes: ROW_MAX.launch + ROW_MAX.small + ROW_MAX.accessAlert * (PLACEMENT_ALERTS_READ + 1),
+        reads: 3,
+        docs: 2 + PLACEMENT_ALERTS_READ + 1,
+      };
+    }
+    if (direction === 'unplaced') return { bytes: ROW_MAX.waterBody, reads: 1 };
+    return {
+      bytes: ROW_MAX.launch * (2 + SUPPRESSION_ROWS_READ),
+      reads: 2,
+      docs: 2 + SUPPRESSION_ROWS_READ,
+    };
+  },
   refusal: async (ctx, row, read) => {
     const m = meta(row) as {
       putInId: Id<'putIns'>;
       coord: { lat: number; lng: number };
-      direction: 'promoted' | 'demoted';
       name?: string;
     };
+    const direction = directionOf(row);
+    const recorded = { coord: m.coord, name: m.name ?? null };
+    if (direction === 'placed') {
+      const launch = await read.row('launch', m.putInId);
+      const photo = await read.take('small', 1, async () => {
+        const one = await placementPhoto(ctx, m.putInId);
+        return one ? [one] : [];
+      });
+      // One past the bound, so a body with more alerts than the check reads is refused, not decided
+      // on a window.
+      const alerts = launch
+        ? await read.take('accessAlert', PLACEMENT_ALERTS_READ + 1, () =>
+            bodyAlerts(ctx, launch.waterBodyId).take(PLACEMENT_ALERTS_READ + 1),
+          )
+        : [];
+      if (alerts.length > PLACEMENT_ALERTS_READ) return PLACEMENT_ALERTS_UNCHECKED;
+      return placementRefusalOf(launch, recorded, { photo: photo.length > 0, alerts });
+    }
+    if (direction === 'unplaced') {
+      // Placed again as `setOfficial` places: refused where that would be — the body gone, or its
+      // outline redrawn away from the spot.
+      const body = await read.row('waterBody', row.targetId as Id<'waterBodies'>);
+      if (!body) return 'That body no longer exists.';
+      const outsideM = distanceToPolygonMeters(
+        m.coord,
+        body.polygon as unknown as Polygon | MultiPolygon,
+      );
+      return outsideM > OPERATOR_PUT_IN_SNAP_MAX_M
+        ? 'The lake’s outline moved away from that spot since, so undo can’t place it again.'
+        : null;
+    }
     const launch = await read.row('launch', m.putInId);
     if (launch === null) return 'That put-in no longer exists';
     // One past the bound, so a body with more than the check reads is refused, not decided on a window.
@@ -914,16 +988,12 @@ const undoPutIn: UndoHandler = {
     );
     const refused = launchRefusalOf(launch, hidden);
     if (refused !== null) return refused;
-    return directionRefusal(launch, m.direction === 'promoted' ? 'demote' : 'promote', {
-      coord: m.coord,
-      name: m.name ?? null,
-    });
+    return directionRefusal(launch, direction === 'promoted' ? 'demote' : 'promote', recorded);
   },
   run: async ({ ctx, actor, row, reason }) => {
     const m = meta(row) as {
       putInId: Id<'putIns'>;
       coord: { lat: number; lng: number };
-      direction: 'promoted' | 'demoted';
       name?: string;
       prev: {
         source: 'osm' | 'derived' | 'official';
@@ -931,7 +1001,25 @@ const undoPutIn: UndoHandler = {
         createdByUserId?: Id<'profiles'> | null;
       };
     };
-    if (m.direction === 'promoted') {
+    const direction = directionOf(row);
+    if (direction === 'placed') {
+      await unplacePutInImpl(ctx, actor, {
+        putInId: m.putInId,
+        expected: { coord: m.coord, name: m.name ?? null },
+        reason,
+      });
+      return;
+    }
+    if (direction === 'unplaced') {
+      await placePutInImpl(ctx, actor, {
+        waterBodyId: row.targetId as Id<'waterBodies'>,
+        coord: m.coord,
+        ...(m.name !== undefined ? { name: m.name } : {}),
+        reason,
+      });
+      return;
+    }
+    if (direction === 'promoted') {
       await demotePutInImpl(ctx, actor, {
         putInId: m.putInId,
         prev: {
@@ -955,6 +1043,149 @@ const undoPutIn: UndoHandler = {
   },
 };
 
+// ── Lots and links (D313) ─────────────────────────────────────────────────────────────────────────
+
+interface LinkPrev {
+  parkingAreaId: Id<'parkingAreas'> | null;
+  approachKindOverride: Doc<'putIns'>['approachKindOverride'] | null;
+}
+
+/** Which of `set_parking_area`'s three rows this is: a lot placed, a lot's removal, or a link. */
+type ParkingRow = 'lotPlaced' | 'lotRemoved' | 'lotEdited' | 'link';
+const parkingRowOf = (row: Doc<'moderationActions'>): ParkingRow | null => {
+  const m = meta(row) as { prev?: unknown; removed?: unknown };
+  if (row.targetType === 'putIn') return m.prev === undefined ? null : 'link';
+  if (m.removed === true) return 'lotRemoved';
+  if (m.prev === null) return 'lotPlaced';
+  return m.prev === undefined ? null : 'lotEdited';
+};
+
+/**
+ * set_parking_area → by its target (D313):
+ * - **on a lot placed by hand** (`prev: null`): the lot deleted with its lake links, refused once
+ *   anything hangs off it (`lotRemovalRefusalOf`); **its removal** (`removed`): the lot placed again,
+ *   where it was, by its name, for the lakes it served (a new lot, as a placement makes);
+ * - **on a lot edited** (`prev` the lot's old fields): not built yet;
+ * - **on a put-in** (a link): only which lot (or none) put back, through `setPutInAccessImpl` — the
+ *   hike-in gate and the access-kind recompute included — and the walk routed again.
+ */
+const undoParkingArea: UndoHandler = {
+  blocked: (row) => {
+    const kind = parkingRowOf(row);
+    if (kind === null) return PREDATES;
+    return kind === 'lotEdited' ? 'Undoing a lot’s edit isn’t built yet.' : null;
+  },
+  undoTakesAway: (row) => UNDO_POLICY.set_parking_area.takesAway(parkingRowOf(row) === 'lotPlaced'),
+  // A lot's row weighs at most a document (its name is uncapped on an imported lot), as an old
+  // put-in's does; the joins and the alert are small.
+  refusalCost: (_scope, row) => {
+    const kind = parkingRowOf(row);
+    if (kind === 'lotPlaced') {
+      return {
+        bytes: ROW_MAX.putIn + ROW_MAX.launch + ROW_MAX.small + ROW_MAX.accessAlert,
+        reads: 4,
+      };
+    }
+    if (kind === 'link') return { bytes: ROW_MAX.putIn * 2, reads: 2 };
+    return null;
+  },
+  refusal: async (ctx, row, read) => {
+    const kind = parkingRowOf(row);
+    if (kind === 'lotPlaced') {
+      const m = meta(row) as { coord: LatLng; name?: string };
+      const lotId = ctx.db.normalizeId('parkingAreas', row.targetId);
+      if (!lotId) return 'That lot is already gone.';
+      const lot = await read.row('putIn', lotId);
+      const putIn = await read.take('launch', 1, async () => {
+        const one = await ctx.db
+          .query('putIns')
+          .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', lotId))
+          .first();
+        return one ? [one] : [];
+      });
+      const photo = await read.take('small', 1, async () => {
+        const one = await ctx.db
+          .query('accessPhotos')
+          .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', lotId))
+          .first();
+        return one ? [one] : [];
+      });
+      const alert = await read.take('accessAlert', 1, async () => {
+        const one = await ctx.db
+          .query('accessAlerts')
+          .withIndex('by_parking_area_status_kind_expires_at', (q) => q.eq('parkingAreaId', lotId))
+          .first();
+        return one ? [one] : [];
+      });
+      return lotRemovalRefusalOf(
+        lot as Doc<'parkingAreas'> | null,
+        { coord: m.coord, name: m.name ?? null },
+        { putIn: putIn.length > 0, photo: photo.length > 0, alert: alert.length > 0 },
+      );
+    }
+    if (kind !== 'link') return null;
+    const { prev } = meta(row) as { prev: LinkPrev };
+    const putIn = await read.row('launch', row.targetId as Id<'putIns'>);
+    const lot = prev.parkingAreaId === null ? 'none' : await read.row('putIn', prev.parkingAreaId);
+    return relinkRefusalOf(
+      putIn,
+      lot as Doc<'parkingAreas'> | null | 'none',
+      putIn?.approachKindOverride ?? null,
+    );
+  },
+  run: async ({ ctx, actor, row, reason }) => {
+    const kind = parkingRowOf(row);
+    const m = meta(row) as {
+      coord: LatLng;
+      name?: string;
+      waterBodyIds?: Id<'waterBodies'>[];
+      amenities?: Doc<'parkingAreas'>['amenities'];
+      capacity?: number;
+      fee?: boolean;
+      prev: LinkPrev | null;
+    };
+    if (kind === 'lotPlaced') {
+      await removeOfficialLotImpl(ctx, actor, {
+        parkingAreaId: row.targetId as Id<'parkingAreas'>,
+        expected: { coord: m.coord, name: m.name ?? null },
+        reason,
+      });
+      return;
+    }
+    if (kind === 'lotRemoved') {
+      // The lakes it served, as they stand: one merged away since is its survivor; one gone, dropped.
+      const lakes: Id<'waterBodies'>[] = [];
+      for (const id of (m.waterBodyIds ?? []) as Id<'waterBodies'>[]) {
+        const lake = await resolveSurvivor(ctx, id);
+        if (lake !== null && !lakes.includes(lake._id)) lakes.push(lake._id);
+      }
+      // A lot that served lakes and has none left would come back serving nothing it served; one
+      // placed serving none comes back as it was.
+      if (lakes.length === 0 && (m.waterBodyIds ?? []).length > 0) {
+        throw new ConvexError('Every lake this lot served is gone.');
+      }
+      await setOfficialParkingImpl(ctx, actor, {
+        coord: m.coord,
+        ...(m.name !== undefined ? { name: m.name } : {}),
+        amenities: m.amenities ?? [],
+        ...(m.capacity !== undefined ? { capacity: m.capacity } : {}),
+        ...(m.fee !== undefined ? { fee: m.fee } : {}),
+        waterBodyIds: lakes,
+        reason,
+      });
+      return;
+    }
+    const prev = m.prev as LinkPrev;
+    await setPutInAccessImpl(ctx, actor, {
+      putInId: row.targetId as Id<'putIns'>,
+      ...(prev.parkingAreaId !== null
+        ? { parkingAreaId: prev.parkingAreaId }
+        : { clearParking: true }),
+      reason,
+    });
+  },
+};
+
 /** Verb-level handlers (verbs only this area writes). */
 export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   set_curated_boost: undoCuratedBoost,
@@ -966,6 +1197,7 @@ export const BODY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> 
   set_lake_depth: undoLakeDepth,
   choose_depth_source: undoDepthSource,
   set_put_in: undoPutIn,
+  set_parking_area: undoParkingArea,
   set_imagery_override: undoImageryOverride,
   set_satellite_imagery: undoSatelliteImagery,
   set_weather_sample_points: undoWeatherSamplePoints,

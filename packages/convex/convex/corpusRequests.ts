@@ -1031,8 +1031,15 @@ export const reviewState = query({
  * surface here as these are answered (Greptile P2 on #84). A lake's asks are not capped at filing.
  */
 export const openLandmarkRequestsForBody = query({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /**
+     * An ask the reader arrived for (the Inbox's *Draw in Body →*, B01-6b): read by its id when the
+     * bounded read leaves it out, so an open ask past the first {@link QUEUE_CAP} still opens.
+     */
+    including: v.optional(v.id('waterBodyRequests')),
+  },
+  handler: async (ctx, { waterBodyId, including }) => {
     await requireCapability(ctx, 'body.read');
     const rows = await ctx.db
       .query('waterBodyRequests')
@@ -1040,7 +1047,19 @@ export const openLandmarkRequestsForBody = query({
         q.eq('waterBodyId', waterBodyId).eq('kind', 'name_landmark').eq('status', 'open'),
       )
       .take(QUEUE_CAP + 1);
-    const read = rows.slice(0, QUEUE_CAP).sort((x, y) => x.createdAt - y.createdAt);
+    const kept = rows.slice(0, QUEUE_CAP);
+    if (including !== undefined && !kept.some((r) => r._id === including)) {
+      const asked = await ctx.db.get(including);
+      if (
+        asked !== null &&
+        asked.waterBodyId === waterBodyId &&
+        asked.kind === 'name_landmark' &&
+        asked.status === 'open'
+      ) {
+        kept.push(asked);
+      }
+    }
+    const read = kept.sort((x, y) => x.createdAt - y.createdAt);
     const places = groupLandmarkAsks(read.map((r) => ({ ...landmarkAskOf(r), row: r })));
     // The body's landmarks read once, however many places are proposed.
     const landmarks = await liveLandmarksForBody(ctx, waterBodyId);
@@ -1054,9 +1073,21 @@ export const openLandmarkRequestsForBody = query({
       for (const { row } of place) {
         if (row.reportId && !reportIds.includes(row.reportId)) reportIds.push(row.reportId);
       }
+      // The place's other spellings, from every ask in it, the name itself left out.
+      const name = first.row.name ?? '';
+      const aliases: string[] = [];
+      for (const { row } of place) {
+        for (const alias of [row.name ?? '', ...(row.aliases ?? [])]) {
+          if (alias.trim() !== '' && alias !== name && !aliases.includes(alias))
+            aliases.push(alias);
+        }
+      }
       proposals.push({
         requestId: first.row._id,
-        name: first.row.name ?? '',
+        /** Every open ask for the place, so an Inbox item's own ask finds its row (B01-6b). */
+        requestIds: place.map(({ row }) => row._id),
+        name,
+        aliases,
         coord: first.row.coord,
         askers: place.length,
         reportIds,

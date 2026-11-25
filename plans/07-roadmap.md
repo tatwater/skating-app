@@ -796,7 +796,7 @@ lack of signal.*
 - The founder's device pass of the sheet on the Android preview build (every door; offline; the silhouette picker) — and `convex dev --once` before it (`contentRevisions`, `author_delete`)
 
 ## Phase B01 — The admin console: one surface, organized by what an operator is doing
-🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267 D268 D269 D270 D271 D275 D277 D282 D283 D284 D285 D286 D287 D288 D289 D291 D293 D299 D300 D301 D302 D303 D304 D305 D306 D307 D308 D309 D310 D311 D312
+🟡 **In progress** 2026-10-14 · [plan](./phases/B01-admin-console.md) · D216 D217 D218 D219 D220 D221 D222 D223 D224 D225 D226 D227 D245 D246 D247 D248 D249 D250 D251 D252 D253 D254 D255 D256 D257 D258 D259 D261 D265 D266 D267 D268 D269 D270 D271 D275 D277 D282 D283 D284 D285 D286 D287 D288 D289 D291 D293 D299 D300 D301 D302 D303 D304 D305 D306 D307 D308 D309 D310 D311 D312 D313
 
 Phase 07 built `/admin` as work queues plus a control room, and every phase since added a page
 for its own feature; sixteen nav items later the surface is organized by table, not by task — an

@@ -110,7 +110,8 @@ test('one audit-reason cap: AUDIT_REASON_MAX, nowhere a second', () => {
   // note is its row's audit reason) and an imagery pass override's reason (quoted after "Hid the …
   // pass") — and their row's limit holds them under the audit cap, so that cap never bites them.
   // A support note is a `supportMessages` row (B01-5f): its audit row carries the default reason,
-  // never the note.
+  // never the note. A known feature's note is its `bodyFeatures` row's: its audit row carries the
+  // write's reason, never the note.
   const notReasons = new Set([
     'FLAG_NOTE_MAX_CHARS',
     'ACCESS_ALERT_NOTE_MAX_CHARS',
@@ -121,6 +122,7 @@ test('one audit-reason cap: AUDIT_REASON_MAX, nowhere a second', () => {
     'MAX_PUBLIC_ACCESS_NOTE_LENGTH',
     'MAX_DEPTH_NOTE_LENGTH',
     'MAX_SUPPORT_NOTE_LENGTH',
+    'MAX_BODY_FEATURE_NOTE_LENGTH',
   ]);
   expect(found.filter((name) => !notReasons.has(name)).sort()).toEqual(['AUDIT_REASON_MAX']);
   // An exemption whose cap is gone would let a new cap under that name past unseen.

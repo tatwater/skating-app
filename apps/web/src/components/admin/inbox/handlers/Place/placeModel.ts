@@ -193,11 +193,14 @@ export function ifSamePlace(ask: PlaceAsk): Row[] {
   ];
 }
 
-/** *If drawn*: where the drawing is done while the console's map tools aren't built. */
-export function ifDrawn(): Row[] {
+/** *If drawn*: the Body console with its tool ready (B01-6), and back to the item once it saves. */
+export function ifDrawn(item: Pick<PlaceItem, 'placeKind'>): Row[] {
   return [
-    { label: W.opens, value: W.oldEditorNewTab },
-    { label: W.thenLabel, value: W.approveThere },
+    {
+      label: W.opens,
+      value: item.placeKind === 'name_bay' ? W.theBayTask : W.thePlacesTask,
+    },
+    { label: W.thenLabel, value: W.savingApproves },
   ];
 }
 

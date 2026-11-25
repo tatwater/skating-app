@@ -4773,6 +4773,13 @@ export default defineSchema({
     approachRouted: v.optional(v.boolean()),
 
     /**
+     * Which link the walk was asked for (B01-6b, D313): minted by each console link that schedules a
+     * fresh route, carried through it, and matched before the answer is stored — so an answer for an
+     * earlier link to the same lot (linked, switched, undone back) never lands on the newer one.
+     */
+    approachLinkId: v.optional(v.string()),
+
+    /**
      * The line the walk follows, parking → put-in, simplified to `APPROACH_PATH_TOLERANCE_M`
      * (A06e Workstream 0).
      *
@@ -4845,7 +4852,10 @@ export default defineSchema({
     .index('by_source_created', ['source', 'createdAt'])
     // And one person's placed put-ins by time, for *first-time*: `by_created_by` also holds every
     // derived marker a moderator hid (the hide is attributed to them), which would crowd them out.
-    .index('by_created_by_source_created', ['createdByUserId', 'source', 'createdAt']),
+    .index('by_created_by_source_created', ['createdByUserId', 'source', 'createdAt'])
+    // The launches one lot serves (B01-6b, D313): a lot placed by hand is removed by its undo only
+    // while no put-in links to it. `eq()` only: the field is optional and the index not sparse.
+    .index('by_parking_area', ['parkingAreaId']),
 
   /**
    * Where the car goes (A06d / D72) — modeled apart from `putIns`, and many-to-many with bodies.

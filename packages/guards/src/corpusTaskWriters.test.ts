@@ -62,7 +62,6 @@ const DELETE_WRITERS: Record<string, string> = {
 };
 /** …or deletes something else beside a body read, named here with why. */
 const DELETE_NOT_BODIES: Record<string, string> = {
-  'accessPoints.ts#setOfficialParking': 'deletes a parking row, not the body',
   'bodyGeo.ts#store': 'deletes a geometry fact row, not the body',
   'waterBodyFavorites.ts#toggle': 'deletes a favorite, not the body',
   // A seed person's drawing (dev only, `inboxSeed:clear`): drawn, never imported, so it carries no

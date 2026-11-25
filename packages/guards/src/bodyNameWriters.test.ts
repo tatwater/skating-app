@@ -61,7 +61,7 @@ const NAME_WRITERS: Record<string, { keepers: string[]; why: string }> = {
 /** Writes of those field names to tables the list doesn't hold, by function. */
 const OTHER_TABLES: Record<string, string> = {
   'accessPoints.ts:matchAndImportParking': 'a parking lot',
-  'accessPoints.ts:setOfficialParking': 'a parking lot',
+  'accessPoints.ts:setOfficialParkingImpl': 'a parking lot',
   'adminAreas.ts:importCanonical': 'a boundary',
   'corpusPlaceNames.ts:setLake': 'a corpus name’s lake (`corpusPlaceNames`)',
   'lib/landmarkRows.ts:placeCorpusName': 'a corpus name placed (`corpusPlaceNames`)',

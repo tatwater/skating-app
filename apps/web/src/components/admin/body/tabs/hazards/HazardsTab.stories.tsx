@@ -4,7 +4,6 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { faceLoaded, must } from '@/components/kit/storyKit';
-import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { ThemePair } from '../../../../../../.storybook/theme';
 import { HazardsTabView, type HazardsTabViewProps } from './HazardsTabView';
 import {
@@ -133,20 +132,15 @@ export const PastWinter: Story = {
 };
 
 /**
- * As the console wires it today: the tools with no writer drawn, each saying *Not available yet*;
- * beside this winter, last winter's strip marks each archived hazard's first report from its own
- * read, under the caption, its archived hazards unknown to the season's end in words.
+ * As the console wires it: the feature tools live; beside this winter, last winter's strip marks
+ * each archived hazard's first report from its own read, under the caption, its archived hazards
+ * unknown to the season's end in words.
  */
 export const Wired: Story = {
-  args: {
-    onAddFeature: UNAVAILABLE,
-    onEditShape: UNAVAILABLE,
-  },
   play: async ({ canvasElement }) => {
     const q = within(quad(canvasElement));
-    await expect(q.getByRole('button', { name: /Add a feature/ })).toHaveAttribute(
-      'aria-disabled',
-      'true',
+    await expect(q.getByRole('button', { name: /Add a feature/ })).not.toHaveAttribute(
+      'data-unavailable',
     );
     await expect(q.getByText(/archived reports have no recorded end/)).toBeVisible();
     await expect(q.getByText(/Each is marked on the day it was first reported/)).toBeVisible();

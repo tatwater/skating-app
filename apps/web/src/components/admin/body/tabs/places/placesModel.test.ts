@@ -145,7 +145,7 @@ describe('placeAsks', () => {
     const asks = placeAsks(
       [
         { _id: 'n1', name: 'The Cove', messages: 2 },
-        { _id: 'n2', name: 'the Narrows', messages: 12, alreadyNamed: true },
+        { _id: 'n2', name: 'the Narrows', messages: 12, alreadyNamed: true, aliases: ['Narrows'] },
         { _id: 'n3', name: 'Beta', messages: 2 },
       ],
       [
@@ -159,6 +159,7 @@ describe('placeAsks', () => {
         {
           requestId: 'r2',
           name: 'Pier',
+          aliases: ['The pier'],
           coord: { lat: 1, lng: 2 },
           askers: 2,
           existingLandmarkId: 'l2',
@@ -167,14 +168,19 @@ describe('placeAsks', () => {
       'hidden',
     );
     expect(asks.map((a) => a.id)).toEqual(['n2', 'n3', 'n1', 'r1', 'r2']);
-    expect(asks[0]).toMatchObject({ alreadyNamed: true });
-    expect(asks[1]).toMatchObject({ alreadyNamed: false });
+    expect(asks[0]).toMatchObject({ alreadyNamed: true, aliases: ['Narrows'] });
+    expect(asks[1]).toMatchObject({ alreadyNamed: false, aliases: [] });
     expect(asks[3]).toMatchObject({
       asker: 'hidden',
       existingLandmarkId: null,
       similar: { name: 'Dam' },
     });
-    expect(asks[4]).toMatchObject({ existingLandmarkId: 'l2', similar: null });
+    expect(asks[4]).toMatchObject({
+      existingLandmarkId: 'l2',
+      similar: null,
+      aliases: ['The pier'],
+    });
+    expect(asks[3]).toMatchObject({ aliases: [] });
   });
 });
 

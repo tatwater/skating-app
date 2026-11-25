@@ -176,4 +176,23 @@ describe('the map tool arrivals (task, promote)', () => {
       from: '/admin/corpus',
     });
   });
+
+  it('a landmark ask opens Places, validated and dropped as the others are', () => {
+    expect(validateBodySearch({ tab: 'places', landmarkAsk: 'rq_7' })).toEqual({
+      tab: 'places',
+      landmarkAsk: 'rq_7',
+    });
+    for (const bad of ['', 'a b', '../x', 7]) {
+      expect(validateBodySearch({ landmarkAsk: bad })).toEqual({});
+    }
+    const from = '/admin/inbox?lane=places&item=rq_7';
+    expect(arrivalSearch({ from, lit: 'bay:b' }, { landmarkAsk: 'rq_7' })).toEqual({
+      tab: 'places',
+      from,
+      landmarkAsk: 'rq_7',
+    });
+    expect(searchFor({ tab: 'places', landmarkAsk: 'rq_7', from }, { lit: 'landmark:l1' })).toEqual(
+      { tab: 'places', lit: 'landmark:l1', from },
+    );
+  });
 });

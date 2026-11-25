@@ -59,6 +59,11 @@ const EVERY_LEVER = {
   onDecline: fn(async () => true),
   onEditLandmark: fn(),
   onLitChange: fn(),
+  onDropLandmark: fn(),
+  onPlaceName: fn(),
+  onAddProposal: fn(),
+  onMoveLandmark: fn(),
+  onRemoveLandmark: fn(async () => true),
 };
 
 /** Board 5.4.3 as drawn: the asks, sixteen landmarks, the dam's row hovered. */
@@ -167,14 +172,73 @@ export const DeclineAProposal: Story = {
   },
 };
 
-/** A map tool that isn't built yet says so, and does nothing else. */
-export const NotAvailableYet: Story = {
+/**
+ * The map's landmark tools start from here: *Drop a landmark* (and L), *Place it* on an emailed name
+ * and *Add* on a skater's proposal each hand the wiring what to open the drop card with.
+ */
+export const LandmarkTools: Story = {
   args: { ...EVERY_LEVER },
+  play: async ({ canvasElement, args }) => {
+    const page = within(canvasElement);
+    await userEvent.click(page.getByRole('button', { name: /Drop a landmark/ }));
+    await expect(args.onDropLandmark).toHaveBeenCalledTimes(1);
+    await userEvent.click(page.getByRole('button', { name: 'Place it' }));
+    await expect(args.onPlaceName).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ask-narrows', name: 'the Narrows' }),
+    );
+    await userEvent.click(page.getByRole('button', { name: 'Add' }));
+    await expect(args.onAddProposal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'ask-flats', point: { lat: 43.6468, lng: -72.1787 } }),
+    );
+  },
+};
+
+/** While a landmark is dropped, its card stands over the list, and the list is out of reach. */
+export const Dropping: Story = {
+  args: {
+    ...EVERY_LEVER,
+    lit: SELECTED_UPPER,
+    drop: <div data-slot="drop-stand-in">The drop card</div>,
+  },
   play: async ({ canvasElement }) => {
-    const drop = within(canvasElement).getByRole('button', { name: /Drop a landmark/ });
-    await expect(drop).toHaveAttribute('aria-disabled', 'true');
-    await userEvent.hover(drop);
-    await expect(await within(document.body).findByText('Not available yet')).toBeInTheDocument();
+    await expect(slot(canvasElement, 'drop-stand-in')).toBeVisible();
+    // The drop is the one card: a lit landmark's card waits.
+    await expect(canvasElement.querySelector('[data-slot="inset-card"]')).toBeNull();
+    await expect(slot(canvasElement, 'tab-body')).toHaveAttribute('data-dimmed');
+    await expect(slot(canvasElement, 'drop-landmark')).toHaveAttribute('aria-pressed', 'true');
+  },
+};
+
+/** Move (M) on the card hands the landmark to the map; moving, it reads *Done moving*. */
+export const MoveALandmark: Story = {
+  args: { ...EVERY_LEVER, lit: SELECTED_UPPER, moving: 'lm-upper' },
+  play: async ({ canvasElement, args }) => {
+    const card = within(slot(canvasElement, 'inset-card'));
+    const move = card.getByRole('button', { name: /Done moving/ });
+    await expect(move).toHaveAttribute('aria-pressed', 'true');
+    await userEvent.click(move);
+    await expect(args.onMoveLandmark).toHaveBeenCalledWith('lm-upper');
+  },
+};
+
+/** Remove asks why — it takes a label away from skaters — and waits for the reason. */
+export const RemoveALandmark: Story = {
+  args: { ...EVERY_LEVER, lit: SELECTED_UPPER },
+  play: async ({ canvasElement, args }) => {
+    await userEvent.click(
+      within(slot(canvasElement, 'inset-card')).getByRole('button', { name: 'Remove' }),
+    );
+    const dialog = await within(document.body).findByRole('alertdialog');
+    await expect(within(dialog).getByText('Remove “Upper Shaker Village”')).toBeInTheDocument();
+    const action = within(dialog).getByRole('button', { name: /^Remove/ });
+    await expect(action).toBeDisabled();
+    await userEvent.type(within(dialog).getByRole('textbox'), 'The village, not the lake');
+    await userEvent.click(action);
+    await expect(args.onRemoveLandmark).toHaveBeenCalledWith(
+      'lm-upper',
+      'The village, not the lake',
+    );
+    await waitFor(() => expect(document.querySelector('[data-slot="reason-ask"]')).toBeNull());
   },
 };
 

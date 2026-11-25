@@ -68,11 +68,12 @@ export const PLACE_WORDS = {
   landmarksAdded: (added: string, asked: string) => `${added} of ${asked} landmark asks added`,
   firstLandmarkAsk: 'first landmark ask',
   pts: 'pts',
-  /** *If drawn*: the old editor, while the console's map tools are not built. */
+  /** *If drawn*: the Body console, its tool ready, and back here once it saves. */
   opens: 'Opens',
-  oldEditorNewTab: 'The old editor · in a new tab',
+  theBayTask: 'The Body console, ready to draw the bay',
+  thePlacesTask: 'The Body console, ready to place the landmark',
   thenLabel: 'Then',
-  approveThere: 'Approve it there, or here once it is drawn',
+  savingApproves: 'Saving it approves the ask and comes back here',
   /** *If approved*: an ask the place already answers (a bay drawn, a landmark there). */
   ifApproved: 'If approved',
   answeredBy: 'Answered by',
@@ -87,8 +88,9 @@ export const PLACE_WORDS = {
   approve: 'Approve',
   /** Each button's tooltip (the bar has no explaining line). */
   whatSamePlace: 'Answers the ask with the landmark already there; the asker is told.',
-  whatDraw: 'Opens the old editor in a new tab, to draw the place; approve it once drawn.',
-  whatDrawInBody: 'Opens the bay in the Body console, ready to draw; saving it approves the ask.',
+  whatDrawBay: 'Opens the bay in the Body console, ready to draw; saving it approves the ask.',
+  whatDrawLandmark:
+    'Opens the landmark in the Body console, ready to place; saving it approves the ask.',
   whatApprove: 'Answers the ask with the place already drawn; the asker is told.',
   whatDecline: 'Closes the ask; the asker reads your note.',
   bar: 'Place ask',

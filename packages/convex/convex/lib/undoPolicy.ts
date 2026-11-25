@@ -371,19 +371,24 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
 
   // ── Access ──────────────────────────────────────────────────────────────────────────────────────
   // B01-3d: a promotion's undo puts the launch's source and name back (taking official status away,
-  // so it asks a reason); the undo of that undo promotes again (giving, so it asks none). A new
-  // official point placed by `setOfficial` has no undo yet (its handler refuses that row).
+  // so it asks a reason); the undo of that undo promotes again (giving, so it asks none). B01-6b
+  // (D313): a put-in placed by hand (`placed`, or a row from before the direction was recorded) is
+  // removed by its undo — taking it away, so asking a reason — and undoing that removal (`unplaced`)
+  // places it again, asking none. `takesAway` is read with the row's direction: whether undoing it
+  // takes something away.
   set_put_in: {
     undo: setPrev,
-    takesAway: (direction) => direction !== 'demoted',
+    takesAway: (direction) => direction !== 'demoted' && direction !== 'unplaced',
     capability: 'body.access',
   },
+  // One verb, two targets (B01-6b, D313). On a lot (`parkingArea`): a lot placed by hand is deleted
+  // with its lake links by its undo — taking it away, so asking a reason — refused once a put-in links
+  // to it; undoing that removal places it again. An edit of an existing lot has no undo yet (Bo22's).
+  // On a put-in: a link's undo restores only which lot (or none), and the walk is routed again; it
+  // takes nothing away. `takesAway` is read with whether the undo removes a lot.
   set_parking_area: {
-    undo: later(
-      '§3 Body console',
-      'Lot removal and edit are new in the Access tab; undo uses them.',
-    ),
-    takesAway: never,
+    undo: setPrev,
+    takesAway: (removesLot) => removesLot === true,
     capability: 'body.access',
   },
   set_approach_kind: { undo: setPrev, takesAway: never, capability: 'body.access' },

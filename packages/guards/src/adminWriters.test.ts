@@ -37,14 +37,19 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/frame/BodyConsoleRoute.tsx': 'the boost: sendFor',
   'components/admin/body/tabs/access/AccessTab.tsx': 'the pick store; act (sendFor)',
   'components/admin/body/tabs/hazards/HazardsTab.tsx': 'sendFor',
+  'components/admin/body/tabs/hazards/useFeatureTask.tsx': 'the feature task: act (sendFor)',
   'components/admin/body/tabs/imagery/ImageryTab.tsx': 'sendFor, through the pick store',
   'components/admin/body/tabs/links/LinksTab.tsx': 'the list queue; sendFor',
   'components/admin/body/tabs/names/NamesTab.tsx': 'the pick store; the list queue; sendFor',
   'components/admin/body/tabs/places/PlacesTab.tsx': 'act (sendFor)',
+  'components/admin/body/tabs/places/useLandmarkTask.tsx':
+    'the landmark tools (drop, move): act (sendFor)',
   'components/admin/body/tabs/shape/ShapeTabRoute.tsx': 'the merge: attempt (sendFor)',
   'components/admin/body/tabs/shape/useBayTask.tsx': 'the bay task: act (sendFor)',
+  'components/admin/body/tabs/access/useAccessTask.tsx': 'the access tasks: act (sendFor)',
   'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
+  'components/admin/body/tabs/water/useSampleTask.tsx': 'the sample-point task: act (sendFor)',
   'components/admin/corpus/handlers/Classes/useClassWrites.ts':
     'useDecisionRunner (admin/actions): said, naming the body',
   'components/admin/corpus/handlers/Names/useNameWrites.ts':

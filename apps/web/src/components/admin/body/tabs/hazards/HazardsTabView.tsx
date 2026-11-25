@@ -37,11 +37,6 @@ import { RetryNote, type RetryNoteProps } from '@/components/kit/retry-note';
 import { Section } from '@/components/kit/section-slug';
 import { SkeletonBlock } from '@/components/kit/skeleton';
 import { ToggleGroup, ToggleGroupItem } from '@/components/kit/toggle-group';
-import {
-  sayUnavailable,
-  UNAVAILABLE,
-  UnavailableButton,
-} from '@/components/kit/unavailable-button';
 import { cn } from '@/lib/utils';
 import { useTabKeys } from '../../frame/tabKeys';
 import { LoadingSection } from '../tabParts';
@@ -67,8 +62,8 @@ import { CROSSING_WORDS, HAZARDS_WORDS, VOTE_WORDS, wordsContext } from './hazar
 /**
  * Board 5.4.7, Body › Hazards, the default view: the winters as a bar over the tab, this winter's
  * hazards on the lake — or, before any, *no hazard reports yet* over the empty winter beside last
- * winter's record — then the body's known features, the promotion queue's count, and *Mark a
- * hazard* floating at the pane's foot.
+ * winter's record — then the body's known features and the promotion queue's count. While a known
+ * feature is drawn, its task stands over the tab (D313); no hazard is ever marked here (D299).
  *
  * **D3.** The tab describes the record, never the lake: an empty list says no hazard reports are
  * on record, never that nothing is there. A stale hazard keeps its row, faded, never removed; an
@@ -136,18 +131,17 @@ export type HazardsTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
    * whether it landed: a refusal is a toast, and the dialog stays open over the reason.
    */
   onDemote?: (id: string, reason: string) => Promise<boolean>;
-  /** Add a known feature (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
-  onAddFeature?: (() => void) | typeof UNAVAILABLE;
-  /** Redraw a feature's footprint (a map mode). Absent: not drawn; `'unavailable'`: not built yet. */
-  onEditShape?: ((id: string) => void) | typeof UNAVAILABLE;
+  /** Add a known feature (the feature task, on the map). Absent: not drawn. */
+  onAddFeature?: () => void;
+  /** Redraw a feature's shape (the feature task, on its shape). Absent: not drawn. */
+  onEditShape?: (id: string) => void;
+  /**
+   * The feature task, drawn over the tab while it is up; *Add a feature* and *Edit shape* rest
+   * until it is saved or discarded.
+   */
+  task?: ReactNode;
   lit: string | null;
   onLitChange: (lit: string | null) => void;
-};
-
-/** What each unbuilt tool will do, for its *Not available yet*. */
-const TOOLS = {
-  add: 'Drawing a known feature comes with the map’s hazard tools.',
-  edit: 'Redrawing a known feature’s footprint comes with the map’s hazard tools.',
 };
 
 const isList = <T,>(r: Read<readonly T[]>): r is readonly T[] => Array.isArray(r);
@@ -169,6 +163,7 @@ export function HazardsTabView({
   onDemote,
   onAddFeature,
   onEditShape,
+  task,
   lit,
   onLitChange,
   className,
@@ -176,16 +171,17 @@ export function HazardsTabView({
 }: HazardsTabViewProps) {
   const pane = useRef<HTMLDivElement>(null);
   const current = season === currentSeason;
-  // A past winter is a record: nothing on it acts.
-  const add = current ? onAddFeature : undefined;
+  const tasked = task != null;
+  // A past winter is a record: nothing on it acts. A feature being drawn holds the tools until it ends.
+  const add = current && !tasked ? onAddFeature : undefined;
   const demote = current ? onDemote : undefined;
-  const edit = current ? onEditShape : undefined;
+  const edit = current && !tasked ? onEditShape : undefined;
   const [demoting, setDemoting] = useState<FeatureRowWithGlyph | null>(null);
 
   useTabKeys(pane, [
     {
       key: 'F',
-      run: () => (add === UNAVAILABLE ? sayUnavailable(TOOLS.add) : add?.()),
+      run: () => add?.(),
       enabled: add !== undefined,
       label: 'Add a feature',
     },
@@ -228,6 +224,7 @@ export function HazardsTabView({
         className={cn('flex flex-col gap-(--space-5_5)', className)}
         {...props}
       >
+        {task}
         <SeasonBar season={season} currentSeason={currentSeason} onSeasonChange={onSeasonChange} />
 
         <Section
@@ -300,16 +297,10 @@ export function HazardsTabView({
         {!listed && (
           <Section title="Known features" count={isList(features) ? features.length : undefined}>
             {featureBlock}
-            {add === UNAVAILABLE ? (
-              <UnavailableButton size="sm" className="self-start" what={TOOLS.add}>
+            {add !== undefined && (
+              <Button size="sm" className="self-start" onClick={add}>
                 Add a feature <Kbd variant="dim">F</Kbd>
-              </UnavailableButton>
-            ) : (
-              add !== undefined && (
-                <Button size="sm" className="self-start" onClick={add}>
-                  Add a feature <Kbd variant="dim">F</Kbd>
-                </Button>
-              )
+              </Button>
             )}
           </Section>
         )}
@@ -797,16 +788,10 @@ function FeatureListBody({
               <span className="text-assist leading-(--lead-snug) text-fg3">{f.sub}</span>
             </span>
             <span className="flex flex-col items-stretch gap-(--space-1_5)">
-              {edit === UNAVAILABLE ? (
-                <UnavailableButton size="xs" what={TOOLS.edit}>
+              {edit !== undefined && (
+                <Button size="xs" onClick={() => edit(f.id)}>
                   Edit shape
-                </UnavailableButton>
-              ) : (
-                edit !== undefined && (
-                  <Button size="xs" onClick={() => edit(f.id)}>
-                    Edit shape
-                  </Button>
-                )
+                </Button>
               )}
               {demote !== undefined && (
                 <Button size="xs" onClick={() => onAsk(f)}>

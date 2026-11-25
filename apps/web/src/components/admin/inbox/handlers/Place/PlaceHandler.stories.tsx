@@ -69,7 +69,7 @@ function Inspector({
       />
     ),
     bodyLink: <a href="/admin/body/wb_newfound?tab=places">Open in Body</a>,
-    editorHref: '/admin/water/wb_newfound',
+    onDraw: () => {},
     onSamePlace: async () => true,
     onApprove: async () => true,
     onDecline: async () => true,

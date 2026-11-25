@@ -82,6 +82,7 @@ export function BodyMap({
               ...(tool.line !== undefined ? { line: tool.line } : {}),
               ...(tool.step !== undefined ? { step: tool.step } : {}),
               onExit: tool.onExit,
+              takesPointer: tool.engine.kind !== 'none',
             }
       }
       className={className}

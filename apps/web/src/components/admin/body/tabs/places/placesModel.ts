@@ -57,12 +57,16 @@ export type PlaceNameAsk = {
   messages: number;
   /** The emails name a landmark already on the map, without saying which. */
   alreadyNamed: boolean;
+  /** The emails' other spellings of it: what placing it fills in. */
+  aliases: string[];
 };
 
 export type ProposalAsk = {
   kind: 'proposal';
   id: string;
   name: string;
+  /** The other names the skaters gave the place: what adding it fills in. */
+  aliases: string[];
   point: LatLng;
   askers: number;
   /** When it was first asked (the read's `createdAt`); `null` when the read doesn't say. */
@@ -86,11 +90,11 @@ export type PlaceAsk = PlaceNameAsk | ProposalAsk;
 
 /**
  * The Places tab's data. **What its reads return and the tab doesn't keep, and why**:
- * - `corpusPlaceNames.openForBody`: a name's `aliases` and `skatedMessages`: the emails' other
- *   spellings and how many of the messages were from skated days; the ask says how many emails use
- *   the name, the board's one figure.
+ * - `corpusPlaceNames.openForBody`: a name's `skatedMessages`: how many of the messages were from
+ *   skated days; the ask says how many emails use the name, the board's one figure.
  * - `corpusRequests.openLandmarkRequestsForBody`: a proposal's `reportIds`: the reports it came
- *   with, which the Inbox opens; the ask links to its place on the map instead.
+ *   with, which the Inbox opens; the ask links to its place on the map instead. Its `requestIds`
+ *   (every ask for the place) are the Inbox arrival's, read on their own.
  * - `landmarks.listForEditor`: a removed landmark (`removedAt` and its reason), which is History's.
  * - `bodyConsole.landmarkProvenance`: every field kept (the card's *Added* and *Changed*).
  * - `subAreas.listForBody`: only each bay's name, for the bay a landmark falls in.
@@ -195,10 +199,17 @@ export function landmarkRows(
 
 /** The asks, the community's names first (most-mentioned first), then the skaters' proposals. */
 export function placeAsks(
-  names: ReadonlyArray<{ _id: string; name: string; messages: number; alreadyNamed?: boolean }>,
+  names: ReadonlyArray<{
+    _id: string;
+    name: string;
+    messages: number;
+    alreadyNamed?: boolean;
+    aliases?: readonly string[];
+  }>,
   proposals: ReadonlyArray<{
     requestId: string;
     name: string;
+    aliases?: readonly string[];
     coord: LatLng;
     askers: number;
     createdAt?: number;
@@ -218,6 +229,7 @@ export function placeAsks(
           name: n.name,
           messages: n.messages,
           alreadyNamed: n.alreadyNamed === true,
+          aliases: [...(n.aliases ?? [])],
         }),
       ),
     ...proposals.map(
@@ -225,6 +237,7 @@ export function placeAsks(
         kind: 'proposal',
         id: p.requestId,
         name: p.name,
+        aliases: [...(p.aliases ?? [])],
         point: p.coord,
         askers: p.askers,
         asked: p.createdAt ?? null,

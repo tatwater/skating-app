@@ -13099,6 +13099,30 @@ The Hazards tab's own comment says *Add a feature* and *Edit shape* have no writ
   one item; the counter, ‹ › and approving similar asks together are Bo23's remainder (founder
   call 2026-11-25: later).
 
+#### B01-6b, the calls (2026-11-25)
+
+The survey of 6b against the code found the design's table wrong in two places: a put-in placed by
+hand has no undo (its handler refuses the row), and no write removes an official put-in or a lot. The
+founder's answers, recorded as D313:
+
+- **Every placing has an undo.** A put-in placed by hand is removed by its undo; a lot placed by hand
+  is deleted with its lake links, refused once a put-in links to it (a new `putIns.by_parking_area`).
+- **A link is walked fresh** (amends D87): a lot linked in the console, or put back by an undo,
+  schedules one ORS `foot-hiking` leg; the flagged straight line stands until it lands. An undo
+  restores only which lot.
+- **A known feature is drawn as any of its three shapes** (a polygon, a point with a radius, a line
+  with a width), and redrawn the same way; `create` checks the shape as `updateShape` does.
+- **A landmark moves by a click or a drag** in move mode.
+- **A crosshair whenever a click places** (the skater web map's placing mode already has one).
+- The governor's rulings: the sample points stay the old tool's (suggest a grid, save, clear); a
+  put-in's spot shows snapped while hovering; placing an emailed name or a proposal is gated on the
+  server as the tab gates it; a landmark's undo doesn't reopen its ask; removing a landmark is in;
+  an Inbox landmark ask opens Places and returns to the Inbox after the save.
+
+The frame's contract gains two engines — a **point** (`lib/pointDraw.ts`: click to place, drag the
+mark, an optional edge snap shown as a ghost) and a **line** (`createLineDraw`, terra-draw's line
+mode from the ring's chunk) — and a draft that is any geometry (points draw as hollow rings).
+
 ### What B01 still owes (the register, 2026-11-17)
 
 The Bodies and People parts of B01, everything deferred, owed, left or "later", in one place. The

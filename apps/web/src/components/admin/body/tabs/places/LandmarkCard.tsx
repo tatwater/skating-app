@@ -1,4 +1,5 @@
 import {
+  AUDIT_REASON_MAX,
   LANDMARK_KIND_LABELS,
   LANDMARK_KINDS,
   type LandmarkKind,
@@ -28,6 +29,7 @@ import { SPELLINGS_KEPT_MOVING } from '../../consoleWords';
 import { statusDate } from '../../frame/bodyModel';
 import { listChanged, sayNotSaved, useBodyHold } from '../../frame/currentBody';
 import { useTabKeys } from '../../frame/tabKeys';
+import { ReasonAsk } from '../access/ReasonAsk';
 import { chipChange, sameList, useListWriter } from '../listWriter';
 import { BLOCK_GAP, useDraft } from '../tabParts';
 import { CouldntRead, LoadingLine, NotRecorded } from '../tabStates';
@@ -44,8 +46,9 @@ import {
  * Board 5.4.3 | Landmark: the selected landmark on the inset card over the list. Its fields save as
  * they change — the server's `update` writes one edit at a time and records what it replaced, so
  * each undoes from its toast and from History — so the card has no Save; its foot holds what can be
- * done to the landmark itself: drawing it as a bay (the Shape tab's bay task, B01-6a), and moving or
- * removing it, map tools not built yet, which say so.
+ * done to the landmark itself: moving it on the map (B01-6b: the point tool, each move saved with
+ * Undo, until Move again or Esc), drawing it as a bay (the Shape tab's bay task, B01-6a), and
+ * removing it, with a reason kept in History (it takes a label away from skaters).
  */
 
 /** One edit to a landmark: its name, its other spellings, or its kind. */
@@ -56,9 +59,7 @@ export type LandmarkEdit =
   | { kind: LandmarkKind };
 
 const TOOLS = {
-  move: 'Moving a landmark on the map comes with the map’s landmark tools.',
   bay: 'Drawing a landmark as a bay comes with the bay tools.',
-  remove: 'Removing a landmark, with its reason, comes with the landmark tools.',
 };
 
 /** A field's kicker over its control, 7 px apart (the card's `.in`). */
@@ -79,10 +80,19 @@ export function LandmarkCard({
   onBack,
   onEdit,
   onDrawAsBay,
+  moving = false,
+  onMove,
+  onRemove,
 }: {
   landmark: LandmarkRow;
   canPlace: boolean;
   onBack: () => void;
+  /** The map's point tool holds this landmark: a click or a drag moves it. */
+  moving?: boolean;
+  /** Start moving it on the map, or stop. */
+  onMove?: (() => void) | undefined;
+  /** Take it off the map, with the reason; resolves whether it landed (a refusal is a toast). */
+  onRemove?: ((reason: string) => Promise<boolean>) | undefined;
   /**
    * Draw this landmark as a bay (B01-6a): the Shape tab's bay task, its name filled in; the landmark
    * goes away when the bay saves (D299). Absent: *Not available yet* (a viewer who can't draw bays).
@@ -131,7 +141,7 @@ export function LandmarkCard({
     void pushAliases(chipChange(l.aliases, aliases, landmarkNameKey));
   const promotable = PROMOTABLE.has(l.kind);
   useTabKeys(card, [
-    { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },
+    { key: 'M', run: () => onMove?.(), enabled: canPlace && onMove !== undefined },
     {
       key: 'B',
       run: () => (onDrawAsBay ? onDrawAsBay() : sayUnavailable(TOOLS.bay)),
@@ -161,13 +171,34 @@ export function LandmarkCard({
       className="absolute -inset-x-(--space-2) -top-(--space-3) bottom-(--space-3)"
       foot={
         canPlace ? (
-          <InsetCardFoot end={<UnavailableButton what={TOOLS.remove}>Remove</UnavailableButton>}>
-            <UnavailableButton what={TOOLS.move}>
-              Move
-              <Kbd variant="dim" aria-hidden="true">
-                M
-              </Kbd>
-            </UnavailableButton>
+          <InsetCardFoot
+            end={
+              onRemove ? (
+                <ReasonAsk
+                  trigger={
+                    <Button variant="danger" data-slot="landmark-remove">
+                      Remove
+                    </Button>
+                  }
+                  title={`Remove “${l.name}”`}
+                  description="It comes off the map and out of the report sheet. The next import won’t bring it back; Undo or History will."
+                  confirm="Remove"
+                  label="Reason · kept in History"
+                  placeholder="Why it comes off the map"
+                  maxLength={AUDIT_REASON_MAX}
+                  onConfirm={onRemove}
+                />
+              ) : undefined
+            }
+          >
+            {onMove && (
+              <Button data-slot="landmark-move" aria-pressed={moving} onClick={onMove}>
+                {moving ? 'Done moving' : 'Move'}
+                <Kbd variant="dim" aria-hidden="true">
+                  M
+                </Kbd>
+              </Button>
+            )}
             {promotable && onDrawAsBay ? (
               <Button data-slot="landmark-draw-as-bay" onClick={onDrawAsBay}>
                 Draw as a bay

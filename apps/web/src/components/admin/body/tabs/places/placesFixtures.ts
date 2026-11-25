@@ -156,11 +156,13 @@ export const MASCOMA_PLACES: PlacesData = {
       name: 'the Narrows',
       messages: 12,
       alreadyNamed: false,
+      aliases: ['The Narrows'],
     },
     {
       kind: 'proposal',
       id: 'ask-flats',
       name: 'the flats by the dam',
+      aliases: [],
       point: { lat: 43.6468, lng: -72.1787 },
       askers: 1,
       // First asked at local midday, so the date reads the same in every zone.

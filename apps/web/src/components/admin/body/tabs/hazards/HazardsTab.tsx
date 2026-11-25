@@ -16,7 +16,6 @@ import {
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { useMinuteNow } from '@/components/admin/shell/presence';
 import { useUndo } from '@/components/admin/shell/undo';
-import { UNAVAILABLE } from '@/components/kit/unavailable-button';
 import { useRole } from '@/lib/useRole';
 import { sendFor, useBodyHold } from '../../frame/currentBody';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
@@ -28,7 +27,13 @@ import {
   type PatternsWaiting,
   type Read,
 } from './HazardsTabView';
-import { type HazardsMapData, hazardsMapScene, seasonOfLit, winterLit } from './hazardsMap';
+import {
+  featureLit,
+  type HazardsMapData,
+  hazardsMapScene,
+  seasonOfLit,
+  winterLit,
+} from './hazardsMap';
 import {
   archivedRows,
   type DailyHazards,
@@ -39,6 +44,7 @@ import {
   type Winters,
   wintersFrom,
 } from './hazardsModel';
+import { type FeatureToolRow, useFeatureTask } from './useFeatureTask';
 
 /**
  * Body › Hazards, wired:
@@ -56,9 +62,10 @@ import {
  *   (`recurrence.listForBodyAdmin`, `body.read`).
  *
  * Demote writes `bodyFeatures.demote` (`corpus.preIce`) with its reason, announced to the shell's
- * Undo (which says when there is none). Add a feature and Edit shape are drawn and say *Not available
- * yet* until the map's tools reach this tab (B01-6b). A hazard is never marked here: hazards come
- * from the skater apps alone (D299).
+ * Undo (which says when there is none). *Add a feature* and *Edit shape* open the feature task on
+ * the console map (`useFeatureTask`, B01-6b): a feature drawn as an outline, a point with a radius
+ * or a line with a band, saved by `bodyFeatures.create` or `updateShape` (`corpus.preIce`). A hazard
+ * is never marked here: hazards come from the skater apps alone (D299).
  *
  * Every read is keyed on its values and comes back as a value, a wait or a failure, which the view
  * draws in its own place with *Try again*; the tab opens on the current winter, empty or not, and
@@ -115,6 +122,12 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
   const navigate = useNavigate();
 
   const features = got.features;
+  // The feature task (B01-6b): drawn on the console map, saved from the task block.
+  const featureTask = useFeatureTask({
+    bodyId: id,
+    rows: Array.isArray(features) ? (features as readonly FeatureToolRow[]) : undefined,
+    onSaved: (featureId) => setLit(featureLit(featureId)),
+  });
   const featureView = useMemo(() => readOf(features, (f) => withGlyphs(f)), [features]);
   const { hazards, withArchived, waiting } = got;
   // The day-by-day reads take the hour: a new hour is a new read, which keeps the winter it had
@@ -170,10 +183,11 @@ function HazardsReads({ bodyId: id, lit: framed = null, onLitChange }: BodyTabPr
       onRetry={retry}
       retryPending={pending}
       onOpenRecurrence={() => void navigate({ to: '/admin/recurrence' })}
+      task={featureTask.task}
       {...(featureTools
         ? {
-            onAddFeature: UNAVAILABLE,
-            onEditShape: UNAVAILABLE,
+            onAddFeature: featureTask.startNew,
+            onEditShape: featureTask.redraw,
             onDemote: (featureId: string, reason: string) =>
               sendFor(hold, {
                 body: waterBodyId,

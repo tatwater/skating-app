@@ -24,6 +24,8 @@ const putIn = (
   at: { lat: at[0], lng: at[1] },
   walk: walkM === null ? null : { meters: walkM, atLeast },
   approach: null,
+  lotId: walkM === null ? null : 'lot-1',
+  hikeIn: false,
   where,
 });
 
