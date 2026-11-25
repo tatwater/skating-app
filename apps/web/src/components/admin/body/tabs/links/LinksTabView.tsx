@@ -1,11 +1,6 @@
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faArrowUpRightFromSquare } from '@fortawesome/sharp-regular-svg-icons';
-import {
-  MAX_REFERENCE_LINK_LABEL,
-  MAX_URL_CHARS,
-  type ReferenceLinkBody,
-  referenceLinkError,
-} from '@skating/core';
+import { MAX_REFERENCE_LINK_LABEL, MAX_URL_CHARS, referenceLinkError } from '@skating/core';
 import {
   type ComponentProps,
   type KeyboardEvent,
@@ -28,7 +23,9 @@ import {
   carryIds,
   type DerivedRow,
   derivedRows,
+  googleMapsRow,
   type KeyedLink,
+  type LinksBody,
   linkChanges,
   type StaffLink,
   sameLinks,
@@ -36,14 +33,15 @@ import {
 
 /**
  * Board 5.4.9, Body › Links, the default view: the links built from the lake (derived at render
- * time, stored nowhere), the links staff added — rows that reorder by a grip, each with Edit — and
+ * time, stored nowhere) — the lake sheet's, then one for staff alone, the lake on Google Maps, which
+ * skaters never read and the section's count leaves out — the links staff added — rows that reorder by a grip, each with Edit — and
  * where skaters read them all, in this order, under *Elsewhere* in the lake sheet.
  *
  * Everything arrives as props; the wiring (`LinksTab`) reads the body and writes the list.
  */
 
 export type LinksTabViewProps = Omit<ComponentProps<'div'>, 'children'> & {
-  body: ReferenceLinkBody;
+  body: LinksBody;
   now: number;
   /** The viewer holds `body.identity` (the staff links are theirs to edit). */
   canEdit: boolean;
@@ -122,6 +120,7 @@ export function LinksTabView({
   ...props
 }: LinksTabViewProps) {
   const derived = derivedRows(body, now);
+  const maps = googleMapsRow(body);
   // Each link's id: the page's own sends name it exactly; any other list carries it only to a link
   // with exactly its words (`carryIds`).
   // The rows' ids and the lists this page sent live beside the queue (`useListMemory`): a change
@@ -369,6 +368,7 @@ export function LinksTabView({
           {derived.map((row) => (
             <DerivedLinkRow key={row.id} row={row} />
           ))}
+          {maps !== null && <DerivedLinkRow row={{ ...maps, offered: true }} staffOnly />}
         </ul>
       </Section>
 
@@ -505,7 +505,7 @@ function OpenLink({
     <a
       href={href}
       target="_blank"
-      rel="noreferrer"
+      rel="noopener noreferrer"
       data-slot="button"
       aria-label={`${label} (opens in a new tab)`}
       className={buttonVariants({ size: 'icon-xs' })}
@@ -522,11 +522,20 @@ const ROW =
 const STAFF_ROW =
   'grid items-start gap-x-(--space-3_5) border-0 border-b border-dotted border-line py-(--space-2_5) in-[li:first-child]:pt-0 in-[li:last-child]:border-b-0 in-[li:last-child]:pb-0';
 
-function DerivedLinkRow({ row }: { row: DerivedRow }) {
+function DerivedLinkRow({
+  row,
+  staffOnly = false,
+}: {
+  row: Omit<DerivedRow, 'id'> & { id: string };
+  /** Built for staff alone (never in the lake sheet): full strength, outside the count. */
+  staffOnly?: boolean;
+}) {
   return (
     <li
       data-slot="link-row"
-      data-offered={row.offered ? '' : undefined}
+      data-link-id={row.id}
+      data-staff-only={staffOnly ? '' : undefined}
+      data-offered={row.offered && !staffOnly ? '' : undefined}
       className={cn(
         ROW,
         'grid-cols-[minmax(0,1fr)_auto]',

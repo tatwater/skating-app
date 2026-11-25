@@ -9,6 +9,8 @@ import {
   windyUrl,
 } from '@skating/core';
 
+import type { BBoxLike } from '@/lib/mapSurface';
+
 /**
  * Body › Links' arithmetic: the links built from the lake (core's `allReferenceLinks`, derived at
  * render time and stored nowhere), what each is built from, and the staff's own links, keyed so a
@@ -66,6 +68,80 @@ export function derivedRows(body: ReferenceLinkBody, now: number): DerivedRow[] 
     });
   }
   return rows;
+}
+
+/** The body as the Links tab reads it: the lake sheet's facts, and its box to frame a map on. */
+export type LinksBody = ReferenceLinkBody & { bbox?: BBoxLike };
+
+/** A link built from the lake for staff only: never in the lake sheet, so never in its count. */
+export type StaffOnlyRow = {
+  id: 'googleMaps';
+  label: string;
+  sub: string;
+  url: string;
+};
+
+/** The browser tab a Google Maps link is framed for, px (its side panel takes the rest). */
+const MAPS_VIEW = { width: 1000, height: 600 } as const;
+/** Google Maps' zoom range worth asking for: a region at the widest, a pond's shore at the closest. */
+const MAPS_ZOOM = { min: 3, max: 18, unframed: 14 } as const;
+
+/** A latitude as a share of the Web Mercator world's height, 0 at the top. */
+const mercY = (lat: number) => {
+  const s = Math.sin((Math.max(-85, Math.min(85, lat)) * Math.PI) / 180);
+  return 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI);
+};
+
+/**
+ * Google Maps' zoom that shows the whole of `bbox` around `center` in {@link MAPS_VIEW} — the
+ * center being the interior point, not the box's middle, the frame reaches the box's far side
+ * both ways. Its 256 px tiles: the world is `256 · 2^z` px across. Clamped to {@link MAPS_ZOOM}.
+ */
+export function mapsZoom(center: LatLng, bbox: BBoxLike): number {
+  const halfX = Math.max(center.lng - bbox.minLng, bbox.maxLng - center.lng) / 360;
+  const cy = mercY(center.lat);
+  const halfY = Math.max(Math.abs(mercY(bbox.maxLat) - cy), Math.abs(mercY(bbox.minLat) - cy));
+  const zoomFor = (px: number, half: number) =>
+    half > 0 ? Math.log2(px / (256 * 2 * half)) : Number.POSITIVE_INFINITY;
+  const z = Math.floor(Math.min(zoomFor(MAPS_VIEW.width, halfX), zoomFor(MAPS_VIEW.height, halfY)));
+  return Math.max(MAPS_ZOOM.min, Math.min(MAPS_ZOOM.max, z));
+}
+
+/**
+ * Google Maps' documented map URL (`/maps/@?api=1&map_action=map`): no key, nothing about the
+ * viewer — only the lake's point and a zoom that frames it.
+ */
+export function googleMapsUrl(center: LatLng, zoom: number): string {
+  const params = new URLSearchParams({
+    api: '1',
+    map_action: 'map',
+    center: `${center.lat.toFixed(5)},${center.lng.toFixed(5)}`,
+    zoom: String(zoom),
+  });
+  return `https://www.google.com/maps/@?${params.toString()}`;
+}
+
+/**
+ * **The lake on Google Maps**, opened in a new tab for staff — at the body's **interior point**
+ * (never `centroid` / `representativePoint`: that is Turf's point-on-feature, which sits on the
+ * shoreline of a curved lake), zoomed to frame the whole lake. Without an interior point it
+ * centers on the box's middle; with neither there is no row.
+ */
+export function googleMapsRow(body: LinksBody): StaffOnlyRow | null {
+  const box = body.bbox;
+  const center =
+    body.interiorPoint ??
+    (box === undefined
+      ? undefined
+      : { lat: (box.minLat + box.maxLat) / 2, lng: (box.minLng + box.maxLng) / 2 });
+  if (center === undefined) return null;
+  const zoom = box === undefined ? MAPS_ZOOM.unframed : mapsZoom(center, box);
+  return {
+    id: 'googleMaps',
+    label: 'The lake on Google Maps',
+    sub: 'Framed on the whole lake · Staff only, not in the lake sheet',
+    url: googleMapsUrl(center, zoom),
+  };
 }
 
 /**
