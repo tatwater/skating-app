@@ -243,7 +243,7 @@ describe('people and provenance', () => {
     expect(personFrom(KATE)).toEqual({
       name: 'Kate Donovan',
       handle: 'kdonovan',
-      href: '/admin/users/u1',
+      href: '/admin/people/u1',
     });
     // No real name on record: the handle stands in, never a blank.
     expect(personFrom({ ...KATE, displayName: '  ' }).name).toBe('kdonovan');

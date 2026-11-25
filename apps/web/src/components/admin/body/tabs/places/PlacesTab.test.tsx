@@ -311,7 +311,7 @@ describe('PlacesTab', () => {
     expect(ask).toHaveTextContent('Kate Donovan');
     expect(within(ask as HTMLElement).getByRole('link', { name: '@kdonovan' })).toHaveAttribute(
       'href',
-      '/admin/users/u1',
+      '/admin/people/u1',
     );
   });
 

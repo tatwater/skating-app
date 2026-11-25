@@ -107,7 +107,7 @@ describe('clerkAdmin.setBanned', () => {
     const rows = await scheduled(t);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.name).toContain('operatorAlerts');
-    expect(rows[0]?.args[0]).toMatchObject({ deepLinkPath: '/admin/users' });
+    expect(rows[0]?.args[0]).toMatchObject({ deepLinkPath: '/admin/people' });
     // The unban direction has to say "the user is locked out", not just "something failed".
     expect(JSON.stringify(rows[0]?.args[0])).toMatch(/locked out/);
   });
@@ -469,7 +469,7 @@ describe('clerkAdmin.deleteUser', () => {
     expect(rows[0]?.name).toContain('operatorAlerts');
     expect(rows[0]?.args[0]).toMatchObject({
       subject: 'Clerk delete failed — manual fix needed',
-      deepLinkPath: '/admin/users',
+      deepLinkPath: '/admin/people',
     });
     expect(JSON.stringify(rows[0]?.args[0])).toMatch(/after 4 attempt\(s\)/);
     expect(JSON.stringify(rows[0]?.args[0])).toMatch(/delete it in the Clerk dashboard/);
