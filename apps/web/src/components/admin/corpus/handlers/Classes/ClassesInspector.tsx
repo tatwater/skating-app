@@ -27,8 +27,10 @@ import { attachedWords } from '../taskFacts';
 import {
   type ClassesItem,
   type ClassLever,
+  type ClassRung,
   catalogColumns,
   catalogRows,
+  consequenceParts,
   defaultPick,
   depthWords,
   headLine,
@@ -52,8 +54,8 @@ import { CLASS_WORDS as W } from './classWords';
  *   drawing it is.
  * - **What each class would do** (`ConsequenceLadder`): every class a person may choose, *Now* on
  *   the body's, *Suggested* only where the item says so, each catalog's token in its column, and
- *   what choosing it does (the server's words). Before the campaign that records the claims the
- *   ladder draws without catalog columns.
+ *   what choosing it does (the server's words, a refusal's lead words bright). Before the campaign
+ *   that records the claims the ladder draws without catalog columns.
  * - **The catalogs** (each claim's class, token and acres, or *not recorded*) and **The body**.
  * - **The bar**: one button naming the pick (*Set as Wetland*, *Keep as Lake or pond*), ⏎ in the
  *   pane; drawn only where the item's `can` allows the pick's verb.
@@ -82,6 +84,20 @@ const MICRO =
 
 function Part({ className, ...props }: ComponentProps<'div'>) {
   return <div className={cn('px-(--space-5) pt-(--space-5_5)', className)} {...props} />;
+}
+
+/** A rung's consequence: a refusal's lead words in the bright ink (the board's *Leaves the corpus*). */
+function Consequence({ consequence }: { consequence: ClassRung['consequence'] }) {
+  const { lead, rest } = consequenceParts(consequence);
+  if (lead === null) return rest;
+  return (
+    <>
+      <b data-slot="rung-lead" className="font-medium text-fg">
+        {lead}
+      </b>
+      {rest}
+    </>
+  );
 }
 
 export function ClassesInspector({
@@ -196,8 +212,7 @@ export function ClassesInspector({
                 suggested: r.suggested,
                 disabled: !decided && !pickable(item, r),
                 marks: rungMarks(r),
-                consequence: r.consequence.words,
-                emphasis: r.consequence.kind === 'leaves',
+                consequence: <Consequence consequence={r.consequence} />,
               }))}
             />
           </Section>

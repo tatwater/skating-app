@@ -1,6 +1,6 @@
 import type { ClaimSource, WaterBodyClass } from '@skating/core';
 
-import { bodyId, LANES, NOW, taskId } from './corpusFixtures';
+import { bodyId, LANES, NOW, rowConsequence, taskId } from './corpusFixtures';
 import type { CorpusLanesView, CorpusRowOf } from './corpusTypes';
 import { GROTON } from './handlers/Classes/classesFixtures';
 import { BASIN } from './handlers/Names/namesFixtures';
@@ -75,6 +75,8 @@ function classRow(
   nhd: WaterBodyClass,
   osm: WaterBodyClass,
   acres: number,
+  /** The body's class now: OSM's, unless the row says otherwise. */
+  now: WaterBodyClass = osm,
 ): CorpusRowOf<'classConflicts'> {
   const claim = (source: ClaimSource, cls: WaterBodyClass) => ({
     source,
@@ -82,6 +84,7 @@ function classRow(
     token: null,
     acres: null,
   });
+  const claims = [claim('nhd', nhd), claim('osm', osm)];
   return {
     lane: 'classConflicts',
     taskId: taskId(seed),
@@ -90,19 +93,27 @@ function classRow(
         ? 'wetlandOrLake'
         : 'otherPairs',
     filedAt: NOW - 4 * 86_400_000,
-    body: { id: bodyId(seed), name, place, cls: osm, acres },
+    body: { id: bodyId(seed), name, place, cls: now, acres },
     can: ALLOWED_CLASSES,
     decided: null,
-    claims: [claim('nhd', nhd), claim('osm', osm)],
+    claims,
+    consequence: rowConsequence({ name, acres, cls: now }, claims),
   };
 }
 
-/** Board 4.3's list, in its order; Groton's unnamed water is the open row. */
+/**
+ * Board 4.3's list, in its order; Groton's unnamed water is the open row. Each row's consequence
+ * line is core's, so it differs from the board's in three places: a refusal reads *Refused if a
+ * wetland* (the board's *Leaves if wetland*); *Little Black Deadwater* draws none, since a river
+ * reach keeps the body (the board's *Moving water if a reach* is not said); and *Spruce Pond*, named
+ * but 3 ac, draws one the board left out, since the size rules refuse a wetland that small.
+ */
 export const CLASS_BOARD_ROWS: CorpusRowOf<'classConflicts'>[] = [
   classRow('bog', 'Bog Pond', 'Holland, VT', 'wetland', 'lakePond', 38),
   classRow('errol', '', 'Errol, NH', 'wetland', 'reservoir', 31),
   classRow('deadwater', 'Little Black Deadwater', 'Ashland, ME', 'wetland', 'river', 27),
-  classRow('rand', 'Rand Cove', 'Norton, VT', 'lakePond', 'bay', 22),
+  // A lake or pond to the merge, a bay to OSM (the board's *Needs a parent if a bay*).
+  classRow('rand', 'Rand Cove', 'Norton, VT', 'lakePond', 'bay', 22, 'lakePond'),
   classRow('mud', 'Mud Pond', 'Craftsbury, VT', 'wetland', 'lakePond', 16),
   classRow('barnet', '', 'Barnet, VT', 'wetland', 'lakePond', 9),
   {
@@ -114,6 +125,7 @@ export const CLASS_BOARD_ROWS: CorpusRowOf<'classConflicts'>[] = [
     can: GROTON.can,
     decided: null,
     claims: GROTON.claims,
+    consequence: rowConsequence(GROTON.body, GROTON.claims),
   },
   classRow('black', 'Black Pond', 'Hubbardton, VT', 'wetland', 'lakePond', 5),
   classRow('lyme', '', 'Lyme, NH', 'wetland', 'lakePond', 4),

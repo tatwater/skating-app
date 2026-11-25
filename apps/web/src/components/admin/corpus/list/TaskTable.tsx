@@ -261,6 +261,14 @@ export function TaskTable({
             {row.place !== '' && (
               <span className="break-words text-meta leading-list text-fg3">{row.place}</span>
             )}
+            {row.consequence !== null && (
+              <span
+                data-slot="corpus-row-consequence"
+                className="break-words text-meta leading-list text-fg2 in-data-selected:text-fg"
+              >
+                {row.consequence}
+              </span>
+            )}
             {row.decision !== null && (
               <span data-slot="corpus-row-decision" className="truncate text-meta text-fg3">
                 {row.decision}

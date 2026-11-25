@@ -1,5 +1,11 @@
 import type { Id } from '@skating/convex/dataModel';
-import { zonedInstant } from '@skating/core';
+import {
+  classConsequence,
+  classConsequenceLine,
+  SQM_PER_ACRE,
+  type WaterBodyClass,
+  zonedInstant,
+} from '@skating/core';
 
 import type {
   CorpusDecidedView,
@@ -91,6 +97,26 @@ export const NAME_ROWS: CorpusRowOf<'nameConflicts'>[] = [
   nameRow('crystal', 'Crystal Lake', 'Eaton Pond', 'different', 'Eaton, NH', null, 20),
 ];
 
+/**
+ * A class row's consequence line as the read serves it: core's `classConsequenceLine` over the
+ * row's claims, with the body's name and acres (one rule with the server, so a story's line is one
+ * the server could say).
+ */
+export function rowConsequence(
+  body: { name: string; acres: number | null; cls: WaterBodyClass },
+  claims: CorpusRowOf<'classConflicts'>['claims'],
+): CorpusRowOf<'classConflicts'>['consequence'] {
+  if (claims === null) return null;
+  return classConsequenceLine(
+    {
+      name: body.name,
+      surfaceAreaSqM: body.acres === null ? null : body.acres * SQM_PER_ACRE,
+    },
+    body.cls,
+    claims.map((c) => c.cls),
+  );
+}
+
 function classRow(
   seed: string,
   name: string,
@@ -108,6 +134,7 @@ function classRow(
     can: ALL_ALLOWED_CLASSES,
     decided: null,
     claims,
+    consequence: rowConsequence({ name, acres, cls: 'lakePond' }, claims),
   };
 }
 
@@ -209,25 +236,14 @@ export const CLASS_ITEM: CorpusItemOf<'classConflicts'> = {
   // Its geometry facts aren't computed yet: no neighbors to name, never "none".
   neighbors: null,
   depth: null,
-  ladder: [
-    {
-      cls: 'lakePond',
-      now: true,
-      suggested: false,
-      byCatalog: { osm: 'osm:water=pond' },
-      consequence: { kind: 'stays', words: 'Stays in the corpus as a lake or pond' },
-    },
-    {
-      cls: 'wetland',
-      now: false,
-      suggested: false,
-      byCatalog: { nhd: 'nhd:fcode=46600' },
-      consequence: {
-        kind: 'leaves',
-        words: 'Leaves the corpus next campaign, as unnamed wetland under 50 ac',
-      },
-    },
-  ],
+  // Core's consequences for a named 7 ac pond, as the read serves them.
+  ladder: (['lakePond', 'wetland'] as const).map((cls) => ({
+    cls,
+    now: cls === 'lakePond',
+    suggested: false,
+    byCatalog: cls === 'lakePond' ? { osm: 'osm:water=pond' } : { nhd: 'nhd:fcode=46600' },
+    consequence: classConsequence({ name: 'Hatch Pond', surfaceAreaSqM: 7 * SQM_PER_ACRE }, cls),
+  })),
 };
 
 /** A task decided by a colleague (a tail row opened, or one decided while open). */

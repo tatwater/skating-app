@@ -55,12 +55,69 @@ export const NamesSearched: Story = {
   },
 };
 
+/** The consequence lines a class row carries (board 4.3's third line), from the fixtures' rows. */
+const consequenceLines = (root: HTMLElement) =>
+  [...root.querySelectorAll<HTMLElement>('[data-slot="corpus-row-consequence"]')].map(
+    (s) => s.textContent,
+  );
+
 export const ClassesLoaded: Story = {
   args: {
     lane: 'classConflicts',
     label: 'Class conflicts',
     list: { status: 'done', rows: CLASS_BOARD_ROWS, pending: false },
     selectedId: null,
+  },
+  play: async ({ canvasElement }) => {
+    for (const grid of grids(canvasElement)) {
+      // Board 4.3's third line where a choice has a consequence, and only there.
+      // Errol, Rand Cove, Barnet, Groton, Lyme, Spruce Pond (named, but 3 ac: the board drew it
+      // no line), Orford and Peacham.
+      await expect(consequenceLines(grid)).toEqual([
+        'Refused if a wetland',
+        'Waits for a parent if a bay',
+        ...Array.from({ length: 6 }, () => 'Refused if a wetland'),
+      ]);
+    }
+  },
+};
+
+/**
+ * The list at the boards' 420 px (the pane the console is widening to): each consequence a single
+ * line under its town, and no row wider than the pane; the open row's line in the bright ink.
+ */
+export const ClassesAtTheBoardsWidth: Story = {
+  args: {
+    lane: 'classConflicts',
+    label: 'Class conflicts',
+    list: { status: 'done', rows: CLASS_BOARD_ROWS, pending: false },
+    selectedId: CLASS_BOARD_ROWS[6]?.taskId ?? null,
+  },
+  decorators: [
+    (Story) => (
+      <div className="flex h-[36rem] w-[420px] flex-col">
+        <Story />
+      </div>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    for (const grid of grids(canvasElement)) {
+      const lines = [...grid.querySelectorAll<HTMLElement>('[data-slot="corpus-row-consequence"]')];
+      await expect(lines).toHaveLength(8);
+      for (const line of lines) {
+        const lineHeight = Number.parseFloat(getComputedStyle(line).lineHeight);
+        await expect(line.getBoundingClientRect().height).toBeLessThan(lineHeight * 1.5);
+      }
+      const scroller = grid.closest<HTMLElement>('[data-slot="corpus-task-scroll"]');
+      await expect(scroller?.scrollWidth).toBeLessThanOrEqual(scroller?.clientWidth ?? 0);
+      const open = grid.querySelector<HTMLElement>(
+        '[aria-selected="true"] [data-slot="corpus-row-consequence"]',
+      );
+      await expect(open).toHaveTextContent('Refused if a wetland');
+      await expect(getComputedStyle(open as HTMLElement).color).not.toBe(
+        getComputedStyle(lines[0] as HTMLElement).color,
+      );
+    }
   },
 };
 

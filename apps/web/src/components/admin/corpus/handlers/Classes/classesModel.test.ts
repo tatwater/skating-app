@@ -11,12 +11,15 @@ import {
   type ClassesItem,
   catalogColumns,
   catalogRows,
+  consequenceParts,
   defaultPick,
   depthWords,
   headLine,
   leverOf,
   nameWords,
+  nearestOf,
   nearestWords,
+  offsetWords,
   raisedAgainNote,
   refusalSaid,
   rungMarks,
@@ -108,9 +111,81 @@ describe('the body', () => {
       '2.4 m max · a state survey',
     );
     expect(depthWords({ meters: 3, source: '', measure: 'mean' })).toBe('3 m mean');
-    expect(nearestWords(GROTON.neighbors)).toBe('Osmore Pond');
+    expect(nearestWords(GROTON.neighbors)).toBe('Osmore Pond · 1.1 mi north');
     expect(nearestWords([])).toBe('None on file');
     expect(nearestWords(null)).toBe('Not computed yet');
     expect(raisedAgainNote(GROTON)).toBeNull();
+  });
+});
+
+describe('the nearest body', () => {
+  const at = (meters: number, bearingDeg = 0) => ({ meters, bearingDeg });
+  const n = (name: string, offset?: { meters: number; bearingDeg: number } | null) => ({
+    id: name as never,
+    name,
+    ...(offset === undefined ? {} : { offset }),
+  });
+
+  it('is the one whose middle is closest among those on file, else the first', () => {
+    const far = n('Far Pond', at(4000));
+    const close = n('Close Pond', at(900));
+    const unknown = n('Unknown Pond', null);
+    expect(nearestOf([far, close])?.name).toBe('Close Pond');
+    expect(nearestOf([unknown, far, close])?.name).toBe('Close Pond');
+    // An offset not on file loses to one that is, wherever it stands.
+    expect(nearestOf([close, unknown])?.name).toBe('Close Pond');
+    // None on file (or a fixture from before offsets): the stored order's first.
+    expect(nearestOf([unknown, n('Old Pond')])?.name).toBe('Unknown Pond');
+    expect(nearestOf([])).toBeUndefined();
+    // Without an offset, just its name; an unnamed one as unnamed water.
+    expect(nearestWords([n('Old Pond')])).toBe('Old Pond');
+    expect(nearestWords([n('', at(3000, 180))])).toBe('Unnamed water · 1.9 mi south');
+  });
+
+  it('says miles to a tenth under ten, whole past, and the nearest of eight directions', () => {
+    const mi = 1609.344;
+    expect(offsetWords(at(1.1 * mi, 2))).toBe('1.1 mi north');
+    expect(offsetWords(at(0.1 * mi, 45))).toBe('0.1 mi northeast');
+    expect(offsetWords(at(9.94 * mi, 90))).toBe('9.9 mi east');
+    expect(offsetWords(at(12.4 * mi, 135))).toBe('12 mi southeast');
+    expect(offsetWords(at(2 * mi, 225))).toBe('2.0 mi southwest');
+    expect(offsetWords(at(2 * mi, 270))).toBe('2.0 mi west');
+    expect(offsetWords(at(2 * mi, 315))).toBe('2.0 mi northwest');
+    // North either side of 0 / 360: the wrap is north, never a ninth direction.
+    expect(offsetWords(at(2 * mi, 359.9))).toBe('2.0 mi north');
+    expect(offsetWords(at(2 * mi, 22.4))).toBe('2.0 mi north');
+    expect(offsetWords(at(2 * mi, 337.6))).toBe('2.0 mi north');
+    expect(offsetWords(at(2 * mi, 22.6))).toBe('2.0 mi northeast');
+    // So close a direction would be noise: none.
+    expect(offsetWords(at(0.09 * mi, 90))).toBe('under 0.1 mi');
+    expect(offsetWords(at(0, 0))).toBe('under 0.1 mi');
+  });
+});
+
+describe('a rung’s consequence', () => {
+  const must = <T>(x: T | undefined): T => {
+    if (x === undefined) throw new Error('expected the rung');
+    return x;
+  };
+
+  it('splits a refusal’s lead words from the rest, and leaves every other consequence whole', () => {
+    const refusal = must(GROTON.ladder.find((r) => r.cls === 'wetland')).consequence;
+    expect(consequenceParts(refusal)).toEqual({
+      lead: 'Refused by the size rules',
+      rest: ' next campaign, as unnamed wetland under 50 ac',
+    });
+    const stays = must(GROTON.ladder.find((r) => r.cls === 'reservoir')).consequence;
+    expect(consequenceParts(stays)).toEqual({ lead: null, rest: stays.words });
+    const bay = must(GROTON.ladder.find((r) => r.cls === 'bay')).consequence;
+    expect(consequenceParts(bay).lead).toBeNull();
+    // A rung from before the lead was served, or one whose lead doesn't begin its words: whole.
+    expect(consequenceParts({ kind: 'leaves', words: 'Refused …' })).toEqual({
+      lead: null,
+      rest: 'Refused …',
+    });
+    expect(
+      consequenceParts({ kind: 'leaves', words: 'Refused …', lead: 'Leaves' }).lead,
+    ).toBeNull();
+    expect(consequenceParts({ kind: 'leaves', words: 'Refused …', lead: '' }).lead).toBeNull();
   });
 });
