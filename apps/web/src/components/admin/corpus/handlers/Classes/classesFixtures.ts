@@ -1,3 +1,5 @@
+import { zonedInstant } from '@skating/core';
+
 import type { DecidedState } from '../../../inspector/InspectorFrame';
 import type { ClassesItem } from './classesModel';
 
@@ -9,7 +11,11 @@ import type { ClassesItem } from './classesModel';
  * board's words for what core's `classConsequence` will say.
  */
 
-export const CLASSES_NOW = new Date(2026, 9, 14, 12, 0).getTime();
+/**
+ * The board's “today”: noon on 14 Oct 2026 in the board's zone, an absolute instant whatever the
+ * runner's zone (as `NAMES_NOW` is).
+ */
+export const CLASSES_NOW = zonedInstant(2026, 10, 14, 12 * 60, 'America/New_York');
 const D = 24 * 3_600_000;
 const id = (s: string) => s.padEnd(32, '0') as never;
 

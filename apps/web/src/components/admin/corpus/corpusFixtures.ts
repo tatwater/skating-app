@@ -1,4 +1,5 @@
 import type { Id } from '@skating/convex/dataModel';
+import { zonedInstant } from '@skating/core';
 
 import type {
   CorpusDecidedView,
@@ -16,8 +17,11 @@ import type {
  * A handler's own fixtures build on these (`{ ...NAME_ITEM, names: […] }`).
  */
 
-/** The boards' clock: mid-October, the console's working season. */
-export const NOW = new Date(2026, 9, 14, 12, 0).getTime();
+/**
+ * The boards' clock: mid-October, the console's working season — noon on 14 Oct 2026 in the boards'
+ * zone, an absolute instant whatever the runner's zone (as `NAMES_NOW` is).
+ */
+export const NOW = zonedInstant(2026, 10, 14, 12 * 60, 'America/New_York');
 const DAY = 86_400_000;
 
 /** A Convex-shaped id (32 lowercase characters) from a readable seed. */
@@ -165,7 +169,7 @@ export const LANES: CorpusLanesView = {
 // ── Items ────────────────────────────────────────────────────────────────────────────────────────────────
 
 const ITEM_EXTRAS = {
-  raisedBy: { campaignId: 'n7-3-20260809', at: new Date(2026, 7, 9).getTime() },
+  raisedBy: { campaignId: 'n7-3-20260809', at: zonedInstant(2026, 8, 9, 0, 'America/New_York') },
   raisedAgain: null,
   attached: { reports: 14, landmarks: 3, asks: 1, capped: false },
   neighbors: [{ id: bodyId('taylor'), name: 'Taylor Pond' }],
