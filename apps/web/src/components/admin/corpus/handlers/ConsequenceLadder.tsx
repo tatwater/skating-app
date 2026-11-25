@@ -1,5 +1,5 @@
 import { Radio as RadioPrimitive } from '@base-ui/react/radio';
-import { type ReactNode, useId } from 'react';
+import { type CSSProperties, type ReactNode, useId } from 'react';
 
 import { Badge } from '@/components/kit/badge';
 import { RadioGroup } from '@/components/kit/radio';
@@ -21,6 +21,9 @@ import { cn } from '@/lib/utils';
  * - **A row whose consequence is a loss** (`emphasis`, 4.3's *Leaves the corpus*) says it in the
  *   bright ink. The words are the caller's; this never says anything about the ice (D3).
  * - **Table rules**: a hairline between rows, none under the last (Review 10 rule 2).
+ * - **Narrow** (the ladder under {@link NARROW_LADDER}, an inspector at its least — 380 px at the
+ *   narrowest page that keeps the columns): the consequence goes under its row's value and marks,
+ *   across the row, and its head goes, so no column is squeezed to a word a line.
  *
  * Promoting it: as `ChoiceRows`, its circle is `kit/radio`'s `Dot`, redrawn here.
  */
@@ -58,11 +61,20 @@ export type ConsequenceLadderProps<V extends string = string> = {
   className?: string;
 };
 
+/** The grid's columns, wide or narrow, from the custom properties the root sets. */
+const COLUMNS = 'grid-cols-(--ladder-cols) @max-[36rem]:grid-cols-(--ladder-cols-narrow)';
+
 const HEAD =
   'text-kick leading-none font-semibold tracking-kick text-fg3 uppercase whitespace-nowrap truncate';
 
 /** The value column, each source's, then the consequence: one template for the heads and every row. */
 const template = (n: number) => `minmax(0,12.5rem) ${'minmax(0,6.25rem) '.repeat(n)}minmax(0,1fr)`;
+/** Narrow: the value takes what the sources leave; the consequence runs under them, full width. */
+const narrowTemplate = (n: number) => `minmax(0,1fr) ${'minmax(0,5.5rem) '.repeat(n)}`.trim();
+// (Narrow, the value's words wrap beside the dot, never cut, and its badges go under them.)
+
+/** The ladder's width below which a row's consequence goes under it (its container's query). */
+export const NARROW_LADDER = '36rem';
 
 export function ConsequenceLadder<V extends string = string>({
   rungs,
@@ -78,14 +90,27 @@ export function ConsequenceLadder<V extends string = string>({
   ...props
 }: ConsequenceLadderProps<V>) {
   const id = useId();
-  const grid = { gridTemplateColumns: template(columns.length) };
+  const grid = {
+    '--ladder-cols': template(columns.length),
+    '--ladder-cols-narrow': narrowTemplate(columns.length),
+    // Narrow, the consequence starts under the value's words: past the dot and its gap.
+    '--ladder-indent': 'calc(var(--type-kick) + var(--space-2_5))',
+    // …and the value's words take the rest of the first line, so its badges go under them.
+    '--ladder-label': 'calc(100% - var(--type-kick) - var(--space-2_5))',
+  } as CSSProperties;
   const picked = rungs.findIndex((r) => r.value === value);
   return (
-    <div data-slot="consequence-ladder" className={cn('flex min-w-0 flex-col', className)}>
+    <div
+      data-slot="consequence-ladder"
+      className={cn('@container flex min-w-0 flex-col', className)}
+    >
       <div
         data-slot="ladder-head"
         aria-hidden="true"
-        className="grid items-center gap-x-(--space-3) border-0 border-b-(length:--stroke-hair) border-solid border-line2 px-(--space-2_5) pb-(--space-2_5)"
+        className={cn(
+          'grid items-center gap-x-(--space-3) border-0 border-b-(length:--stroke-hair) border-solid border-line2 px-(--space-2_5) pb-(--space-2_5)',
+          COLUMNS,
+        )}
         style={grid}
       >
         <span className={HEAD}>{valueHead}</span>
@@ -94,7 +119,9 @@ export function ConsequenceLadder<V extends string = string>({
             {c.label}
           </span>
         ))}
-        <span className={HEAD}>{consequenceHead}</span>
+        <span data-slot="ladder-consequence-head" className={cn(HEAD, '@max-[36rem]:hidden')}>
+          {consequenceHead}
+        </span>
       </div>
       <RadioGroup
         aria-label={props['aria-label']}
@@ -119,6 +146,8 @@ export function ConsequenceLadder<V extends string = string>({
             data-last={i === rungs.length - 1 ? '' : undefined}
             className={cn(
               'group/rung grid min-h-[2.75rem] items-center gap-x-(--space-3) px-(--space-2_5) py-(--space-1_5) text-start',
+              COLUMNS,
+              '@max-[36rem]:gap-y-(--space-1_5) @max-[36rem]:py-(--space-2_5)',
               'border-0 border-b-(length:--stroke-hair) border-solid border-line data-last:border-b-0 data-before-pick:border-b-transparent',
               'cursor-pointer rounded-container outline-none',
               'transition-[background-color,box-shadow] duration-(--duration-fast) ease-standard',
@@ -130,7 +159,7 @@ export function ConsequenceLadder<V extends string = string>({
             )}
             style={grid}
           >
-            <span className="flex min-w-0 items-center gap-(--space-2_5)">
+            <span className="flex min-w-0 items-center gap-(--space-2_5) @max-[36rem]:flex-wrap @max-[36rem]:gap-y-(--space-1_5)">
               <span
                 data-slot="rung-dot"
                 className="relative inline-flex size-(--type-kick) shrink-0 rounded-full border border-solid border-(--rim) transition-[border-color] duration-(--duration-instant) ease-standard"
@@ -139,17 +168,26 @@ export function ConsequenceLadder<V extends string = string>({
               </span>
               <span
                 data-slot="rung-label"
-                className="min-w-0 truncate text-body leading-none font-medium text-fg1 group-data-checked/rung:text-fg"
+                className="min-w-0 truncate text-body leading-none font-medium text-fg1 group-data-checked/rung:text-fg @max-[36rem]:basis-(--ladder-label) @max-[36rem]:overflow-visible @max-[36rem]:leading-snug @max-[36rem]:whitespace-normal"
               >
                 {r.label}
               </span>
               {r.now && (
-                <Badge variant="outline" tone="lit" data-slot="rung-now">
+                <Badge
+                  variant="outline"
+                  tone="lit"
+                  data-slot="rung-now"
+                  className="@max-[36rem]:ms-(--ladder-indent)"
+                >
                   {nowLabel}
                 </Badge>
               )}
               {r.suggested && (
-                <Badge variant="outline" data-slot="rung-suggested">
+                <Badge
+                  variant="outline"
+                  data-slot="rung-suggested"
+                  className="@max-[36rem]:ms-(--ladder-indent)"
+                >
                   {suggestedLabel}
                 </Badge>
               )}
@@ -175,7 +213,7 @@ export function ConsequenceLadder<V extends string = string>({
               id={`${id}-${i}`}
               data-slot="rung-consequence"
               data-emphasis={r.emphasis ? '' : undefined}
-              className="min-w-0 text-row leading-snug text-fg2 data-emphasis:font-medium data-emphasis:text-fg group-data-checked/rung:text-fg1 group-data-checked/rung:data-emphasis:text-fg"
+              className="min-w-0 text-row leading-snug text-fg2 data-emphasis:font-medium data-emphasis:text-fg group-data-checked/rung:text-fg1 group-data-checked/rung:data-emphasis:text-fg @max-[36rem]:col-span-full @max-[36rem]:ps-(--ladder-indent)"
             >
               {r.consequence}
             </span>

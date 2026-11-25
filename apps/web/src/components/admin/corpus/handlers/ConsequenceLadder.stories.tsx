@@ -41,10 +41,19 @@ const COLUMNS = [
   { key: 'osm', label: 'OSM' },
 ];
 
-function Ladder({ columns = true, readOnly = false }: { columns?: boolean; readOnly?: boolean }) {
+function Ladder({
+  columns = true,
+  readOnly = false,
+  width = 'w-[46rem]',
+}: {
+  columns?: boolean;
+  readOnly?: boolean;
+  /** The box's width: the board's pane, or an inspector at its least. */
+  width?: string;
+}) {
   const [value, setValue] = useState<string | null>('wetland');
   return (
-    <div className="w-[46rem] max-w-full p-(--space-5)">
+    <div className={`${width} max-w-full p-(--space-5)`}>
       <ConsequenceLadder
         aria-label="Pick the class"
         valueHead="Class"
@@ -100,5 +109,53 @@ export const ReadOnly: Story = {
   play: async ({ canvasElement }) => {
     const quad = must(canvasElement.querySelector<HTMLElement>('[data-theme-scope]'));
     for (const r of within(quad).getAllByRole('radio')) await expect(r).not.toBeChecked();
+  },
+};
+
+/** A rung's cells, measured. */
+const boxOf = (rung: HTMLElement, slot: string) =>
+  must(rung.querySelector<HTMLElement>(`[data-slot="${slot}"]`)).getBoundingClientRect();
+
+/**
+ * An inspector at its least (380 px, the narrowest page that keeps the task lanes' columns): each
+ * consequence goes under its row's value and marks, across the row, its head gone — never a column
+ * squeezed to a word a line — and a value's badge under its words, never over them.
+ */
+export const Narrow: Story = {
+  render: () => <Ladder width="w-[23.75rem]" />,
+  play: async ({ canvasElement }) => {
+    const quad = must(canvasElement.querySelector<HTMLElement>('[data-theme-scope]'));
+    const head = must(quad.querySelector<HTMLElement>('[data-slot="ladder-consequence-head"]'));
+    await expect(head).not.toBeVisible();
+    const rungs = [...quad.querySelectorAll<HTMLElement>('[data-slot="ladder-rung"]')];
+    for (const rung of rungs) {
+      const label = boxOf(rung, 'rung-label');
+      const cell = must(rung.querySelector<HTMLElement>('[data-slot="rung-consequence"]'));
+      const consequence = cell.getBoundingClientRect();
+      await expect(consequence.top).toBeGreaterThanOrEqual(label.bottom - 0.5);
+      // Its words start under the value's, past the dot.
+      const text = consequence.left + parseFloat(getComputedStyle(cell).paddingInlineStart);
+      await expect(Math.abs(text - label.left)).toBeLessThan(1);
+    }
+    const wetland = must(rungs[1]);
+    const badge = boxOf(wetland, 'rung-suggested');
+    await expect(badge.top).toBeGreaterThanOrEqual(boxOf(wetland, 'rung-label').bottom - 0.5);
+  },
+};
+
+/** The board's width keeps the consequence beside its row, its head drawn (one map: a quad is narrower). */
+export const WideKeepsColumns: Story = {
+  parameters: { fourUp: false },
+  render: () => <Ladder />,
+  play: async ({ canvasElement }) => {
+    const quad = canvasElement;
+    await expect(
+      must(quad.querySelector<HTMLElement>('[data-slot="ladder-consequence-head"]')),
+    ).toBeVisible();
+    for (const rung of quad.querySelectorAll<HTMLElement>('[data-slot="ladder-rung"]')) {
+      await expect(boxOf(rung, 'rung-consequence').left).toBeGreaterThan(
+        boxOf(rung, 'rung-label').right,
+      );
+    }
   },
 };

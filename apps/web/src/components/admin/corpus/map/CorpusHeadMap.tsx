@@ -72,12 +72,19 @@ export function headMapState(
   };
 }
 
+/**
+ * How close a head map may frame: past the console's ceiling, so a five-acre pond fills its band
+ * over the aerial (NAIP's 0.3 m holds to about here) rather than reading as a speck.
+ */
+export const HEAD_MAP_MAX_ZOOM = 19;
+
 export function CorpusHeadMap({
   bodyId,
   neighbors,
   height,
   square = false,
   legend = false,
+  aerial = false,
 }: {
   bodyId: Id<'waterBodies'>;
   neighbors: readonly Neighbor[];
@@ -87,6 +94,8 @@ export function CorpusHeadMap({
   square?: boolean;
   /** Draw the legend plate naming whose outline it is (4.3). */
   legend?: boolean;
+  /** Draw the summer aerial under the outlines (4.3: *Aerial · NAIP*). */
+  aerial?: boolean;
 }): ReactNode {
   const near = neighbors.slice(0, MAX_NEIGHBORS);
   const { reads, retry, pending } = useConsoleReadSet({
@@ -110,7 +119,16 @@ export function CorpusHeadMap({
       square={square}
       onRetry={retry}
       retrying={pending}
-      renderMap={(view) => <InboxMap view={view} mode={mode} height={height} viewOnly={narrow} />}
+      renderMap={(view) => (
+        <InboxMap
+          view={view}
+          mode={mode}
+          height={height}
+          viewOnly={narrow}
+          aerial={aerial}
+          maxZoom={HEAD_MAP_MAX_ZOOM}
+        />
+      )}
     />
   );
 }

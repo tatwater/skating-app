@@ -161,6 +161,77 @@ export const WideFourUp: Story = {
   parameters: { fourUp: true },
 };
 
+/** The tabs' row and the search's field, for the width checks below. */
+async function expectListFits(root: HTMLElement) {
+  const page = slot(root, 'corpus-task-page');
+  await expect(page).not.toHaveAttribute('data-narrow');
+  // The list is the boards' 420, whatever the page's width; the lanes the console's 236.
+  const list = must(page.querySelector<HTMLElement>('[data-pane="middle"]'));
+  const lanes = must(page.querySelector<HTMLElement>('[data-pane="lanes"]'));
+  await expect(Math.round(list.getBoundingClientRect().width)).toBe(420);
+  await expect(Math.round(lanes.getBoundingClientRect().width)).toBe(236);
+  // Every tab on one row: one top among them.
+  const tabs = within(slot(root, 'corpus-tools')).getAllByRole('button');
+  const tops = new Set(tabs.map((t) => Math.round(t.getBoundingClientRect().top)));
+  await expect(tops.size).toBe(1);
+  // The search's hint is drawn whole: the field holds it without cutting.
+  const search = within(root).getByRole('searchbox', { name: 'Find a body' }) as HTMLInputElement;
+  const probe = document.createElement('span');
+  const style = getComputedStyle(search);
+  probe.style.font = style.font;
+  probe.style.letterSpacing = style.letterSpacing;
+  probe.style.position = 'absolute';
+  probe.style.whiteSpace = 'pre';
+  probe.textContent = search.placeholder;
+  document.body.append(probe);
+  const hint = probe.getBoundingClientRect().width;
+  probe.remove();
+  const room = search.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight);
+  await expect(hint).toBeLessThanOrEqual(room);
+}
+
+/** Board 4.3's columns at 1440 × 900: lanes 236, the list the boards' 420, the inspector the rest. */
+export const ListWidth: Story = {
+  args: CLASSES,
+  play: async ({ canvasElement }) => {
+    await faceLoaded(slot(canvasElement, 'page-word'));
+    await expectListFits(canvasElement);
+    const inspector = must(canvasElement.querySelector<HTMLElement>('[data-pane="detail"]'));
+    await expect(Math.round(inspector.getBoundingClientRect().width)).toBe(720);
+  },
+};
+
+/**
+ * The narrowest page that keeps the three columns (`useColumnsFit`: 236 + 420 + the inspector's
+ * 380): every tab still on one row, the hint whole, the inspector at its least.
+ */
+export const NarrowestColumns: Story = {
+  args: { ...CLASSES, className: 'h-[56.25rem] w-[68.75rem]' },
+  play: async ({ canvasElement }) => {
+    await faceLoaded(slot(canvasElement, 'page-word'));
+    await expectListFits(canvasElement);
+    const inspector = must(canvasElement.querySelector<HTMLElement>('[data-pane="detail"]'));
+    await expect(Math.round(inspector.getBoundingClientRect().width)).toBe(380);
+  },
+};
+
+/** The same narrowest page on board 4.2: the name's head and its square map share 380. */
+export const NamesNarrowestColumns: Story = {
+  args: { className: 'h-[56.25rem] w-[68.75rem]' },
+  play: async ({ canvasElement }) => {
+    await faceLoaded(slot(canvasElement, 'page-word'));
+    await expectListFits(canvasElement);
+  },
+};
+
+/** One step narrower than that: the lanes over the list, the open task its own page. */
+export const BelowTheColumns: Story = {
+  args: { ...CLASSES, className: 'h-[56.25rem] w-[68.6875rem]' },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'corpus-task-page')).toHaveAttribute('data-narrow', '');
+  },
+};
+
 /** Narrow: the open task takes the page, with Back to the list; four maps. */
 export const NarrowFourUp: Story = {
   name: 'Narrow, four-up',

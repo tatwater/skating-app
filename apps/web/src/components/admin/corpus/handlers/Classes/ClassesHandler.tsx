@@ -33,6 +33,7 @@ export function ClassesHandler({ item, locked, now }: CorpusHandlerProps) {
           neighbors={classes.neighbors ?? NOT_COMPUTED}
           height={CLASSES_MAP_HEIGHT}
           legend
+          aerial
         />
       }
       bodyLink={linkFor?.(path) ?? <a href={path}>{path}</a>}

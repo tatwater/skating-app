@@ -29,6 +29,13 @@ export type HeadMapInput = {
 /** The room round the body, as a share of its own size on each side (the boards' `pad: 0.2`). */
 export const HEAD_MAP_GROW = 0.2;
 
+/**
+ * The smallest frame a head map draws, meters a side — under the Inbox's 400 (sized for a lone
+ * point), so a five-acre pond fills its band as the boards draw it rather than sitting small in
+ * the middle of a field. The camera's ceiling (`HEAD_MAP_MAX_ZOOM`) bounds a smaller one.
+ */
+export const HEAD_MAP_MIN_SPAN_M = 100;
+
 const outline = (b: EmbedBody, style: 'body' | 'neighbor'): MapItem => ({
   kind: 'outline',
   id: `${style === 'body' ? 'body' : 'neighbor'}:${b.id}`,
@@ -71,7 +78,10 @@ export function headMapScene({
 }: HeadMapInput): InboxMapView {
   const own = outlineCoords(body.outline);
   if (own.length === 0) throw new Error('A head map needs the body’s outline.');
-  const frame = growBox(frameBox(own as [(typeof own)[number], ...typeof own]), HEAD_MAP_GROW);
+  const frame = growBox(
+    frameBox(own as [(typeof own)[number], ...typeof own], HEAD_MAP_MIN_SPAN_M),
+    HEAD_MAP_GROW,
+  );
   const middle: [number, number] = [
     (frame.minLng + frame.maxLng) / 2,
     (frame.minLat + frame.maxLat) / 2,
