@@ -63,6 +63,8 @@ const NO_CAPPED_WRITE: Record<string, string> = {
     'a point’s radius or a line’s band in meters: a number held to its bounds by min and max, never text',
   'components/admin/body/tabs/hazards/FeatureTask.tsx :: #3':
     'a pasted GeoJSON shape: parsed here, and the write is a geometry, never this text',
+  'components/admin/body/tabs/water/SampleTask.tsx :: #1':
+    'a grid’s spacing in km: a number held to its bounds by min and max, and the write is the grid’s points, never this text',
   'components/admin/inbox/list/LaneFacets.tsx :: #1':
     'the filter menu’s search for a body or a person: a read, never refused for its length',
 };

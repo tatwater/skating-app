@@ -46,6 +46,7 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/tabs/shape/useBayTask.tsx': 'the bay task: act (sendFor)',
   'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
+  'components/admin/body/tabs/water/useSampleTask.tsx': 'the sample-point task: act (sendFor)',
   'components/admin/inbox/handlers/Access/useAccessWrites.ts': 'said, naming the body',
   'components/admin/inbox/handlers/Drawn/useDrawnWrites.ts':
     'useDecisionRunner (inbox/actions): said, naming the body',

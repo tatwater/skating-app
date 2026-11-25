@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import type { DepthSource } from '@skating/core';
+import type { DepthSource, LatLng } from '@skating/core';
 import { useMutation } from 'convex/react';
 import { useMemo } from 'react';
 import {
@@ -15,6 +15,7 @@ import { PICK_WHAT, RECEIPTS } from '../../consoleWords';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { LANDED, type PickOutcome, useLatestPick } from '../latestPick';
 import { useTabAction } from '../useTabAction';
+import { useSampleTask } from './useSampleTask';
 import { WaterView } from './WaterView';
 import {
   type DepthChoicesRead,
@@ -32,6 +33,8 @@ import {
  */
 export function useWaterRead(bodyId: string): {
   data: Loadable<WaterData>;
+  /** The body's outline, once read: what a grid of sample points is suggested over. */
+  outline: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
   retry: () => void;
   pending: boolean;
 } {
@@ -56,7 +59,11 @@ export function useWaterRead(bodyId: string): {
           ),
     [body, extras, choices],
   );
-  return { data, retry, pending };
+  const outline =
+    body === undefined || isFailed(body)
+      ? null
+      : ((body as { polygon?: GeoJSON.Polygon | GeoJSON.MultiPolygon }).polygon ?? null);
+  return { data, outline, retry, pending };
 }
 
 /** The drawing's data: the tab's, once the record is read. */
@@ -66,14 +73,15 @@ export function useWaterData(bodyId: string): WaterData | undefined {
 }
 
 /**
- * Body › Water, wired: the record and the bathymetry state. Read-only today — the board's two edits
- * (choosing a depth source, filing a survey) wait on server writes, so for a viewer who could make
- * them (`body.water`) each is drawn where the board draws it and says *Not available yet*. The
- * other sources' depths aren't stored (the loader keeps each measurement's winner) and what was
- * searched for contours isn't recorded: each says *Not recorded yet*.
+ * Body › Water, wired: the record and the bathymetry state. For a viewer with `body.water`, a
+ * depth's source is chosen (`chooseDepthSource`), and the weather sample points are suggested as a
+ * grid, previewed on the map, saved or cleared (`useSampleTask`, B01-6b). Filing a survey waits on
+ * its server write, drawn where the board draws it and saying *Not available yet*. The other
+ * sources' depths aren't stored (the loader keeps each measurement's winner) and what was searched
+ * for contours isn't recorded: each says *Not recorded yet*.
  */
 export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
-  const { data, retry, pending } = useWaterRead(bodyId);
+  const { data, outline, retry, pending } = useWaterRead(bodyId);
   const { can } = useRole();
   const canEdit = can('body.water');
   const choose = useMutation(api.waterBodies.chooseDepthSource);
@@ -108,6 +116,12 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
     depth?.maxFrom ?? null,
     choose1('max'),
   );
+  const samples = useSampleTask({
+    bodyId,
+    outline,
+    stored: data !== undefined && !isFailed(data) ? (data.sampling.points ?? NONE) : NONE,
+    box: data !== undefined && !isFailed(data) ? data.box : null,
+  });
   const shown =
     data === undefined || isFailed(data) || depth === null
       ? data
@@ -120,8 +134,11 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
       lit={lit}
       canChooseDepth={canEdit}
       canFileSurvey={canEdit}
+      sampleTask={samples.task}
       {...(canEdit
         ? {
+            ...(samples.start !== undefined ? { onSuggestPoints: samples.start } : {}),
+            onClearPoints: samples.clear,
             // `chooseDepthSource`: the measure follows this source (a depth is the basin's; it says
             // nothing about ice). The server refuses a source with no value or a mean deeper than
             // the max, said in a toast in its words.
@@ -132,6 +149,8 @@ export function WaterTab({ bodyId, lit = null }: BodyTabProps) {
     />
   );
 }
+
+const NONE: readonly LatLng[] = [];
 
 /** The Water tab's registration in the frame's registry. */
 export const WATER_TAB: BodyTabRegistration<WaterData> = {
