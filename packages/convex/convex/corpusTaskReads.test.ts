@@ -17,6 +17,7 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { NO_SUCH_TAB, SEARCH_SCAN } from './corpusTasks';
+import { DELETION_PENDING_MESSAGE } from './lib/auth';
 import * as rules from './lib/corpusRules';
 import { settleReason, syncBodyTasks, TASK_LEFT } from './lib/corpusTasks';
 import { ATTACHED_CAP, NAMESAKES_CAP } from './lib/corpusTaskViews';
@@ -34,11 +35,9 @@ vi.mock('./lib/corpusRules', async (importOriginal) => {
  * and body the read asked the rule about.
  */
 const useMarker = () =>
-  vi
-    .mocked(rules.corpusCan)
-    .mockImplementation(async (_ctx, _viewer, task, body) => ({
-      pickName: `asked about ${task._id} on ${body?.removedAt ? 'removed' : (body?.mergedIntoId ?? 'live')}`,
-    }));
+  vi.mocked(rules.corpusCan).mockImplementation(async (_ctx, _viewer, task, body) => ({
+    pickName: `asked about ${task._id} on ${body?.removedAt ? 'removed' : (body?.mergedIntoId ?? 'live')}`,
+  }));
 
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
@@ -1014,10 +1013,13 @@ test('a class-dissent reason or stored classRefusals changes nothing these reads
 // ── can, against the real rule ─────────────────────────────────────────────────────────────────────────
 
 describe('can on every row and item equals corpusCan', () => {
-  test('for a moderator and an admin, on an open task, a decided one, and a body merged away or removed', async () => {
+  test('for a moderator, an admin and one leaving, on an open task, a decided one, and a body merged away or removed', async () => {
     const t = harness();
     const mod = await person(t, 'Casey Example');
     const admin = await person(t, 'Avery Example', 'admin');
+    // Still reads the lanes, but every write would refuse: the rule must be asked as this viewer.
+    const leaving = await person(t, 'Jordan Example');
+    await t.run((ctx) => ctx.db.patch(leaving.id, { deletionRequestedAt: NOW }));
     const survivor = await lake(t, {
       name: 'Lake Auburn',
       reviewReasons: undefined,
@@ -1042,7 +1044,7 @@ describe('can on every row and item equals corpusCan', () => {
         const viewer = (await ctx.db.get(viewerId)) as Doc<'profiles'>;
         return rules.corpusCan(ctx, viewer, task, await ctx.db.get(task.waterBodyId));
       });
-    for (const who of [mod, admin]) {
+    for (const who of [mod, admin, leaving]) {
       for (const id of [open, decided, merged, removed, cls]) {
         const task = (await tasksOf(t, id))[0] as Doc<'corpusTasks'>;
         const { item } = await who.as.query(api.corpusTasks.item, { ref: task._id });
@@ -1071,6 +1073,12 @@ describe('can on every row and item equals corpusCan', () => {
     expect(await can(removed)).toEqual({
       pickName: TASK_LEFT.removed,
       keepName: TASK_LEFT.removed,
+    });
+    const leavingCan = (await leaving.as.query(api.corpusTasks.item, { ref: `body:${open}` })).item
+      ?.can;
+    expect(leavingCan).toEqual({
+      pickName: DELETION_PENDING_MESSAGE,
+      keepName: DELETION_PENDING_MESSAGE,
     });
   });
 });
