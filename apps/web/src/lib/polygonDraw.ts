@@ -149,6 +149,93 @@ export async function createPolygonDraw(
   };
 }
 
+/** The line's control (B01-6b): a known feature drawn as a line with a width. The ring's shape. */
+export interface LineDrawControl {
+  /** Arm line drawing: a click per vertex, the last one clicked again (or a double-click) to end. */
+  startDrawing: () => void;
+  /** Vertex editing on the tracked line: drag, insert at midpoints, delete. */
+  startEditing: () => void;
+  /** Replace the tracked line, ready to edit. */
+  setLine: (line: GeoJSON.LineString | null) => void;
+  clear: () => void;
+  destroy: () => void;
+}
+
+export interface LineDrawOptions {
+  /** A line was finished (its last vertex placed) — once per drawn line. */
+  onFinish?: (line: GeoJSON.LineString) => void;
+  /** The tracked line changed: a finish, or a vertex moved; `null` once removed. */
+  onChange?: (line: GeoJSON.LineString | null) => void;
+}
+
+/**
+ * Attach a line draw control: terra-draw's line mode and its vertex editor, from the same lazy chunk
+ * as the polygon's (one dynamic import names both). Multi-shape on purpose, as the console's ring is:
+ * select mode fires a `finish` on each vertex drag, and a single-shape control would go static there.
+ */
+export async function createLineDraw(
+  map: maplibregl.Map,
+  options: LineDrawOptions,
+): Promise<LineDrawControl> {
+  const [
+    { TerraDraw, TerraDrawLineStringMode, TerraDrawSelectMode },
+    { TerraDrawMapLibreGLAdapter },
+  ] = await Promise.all([import('terra-draw'), import('terra-draw-maplibre-gl-adapter')]);
+
+  const draw = new TerraDraw({
+    adapter: new TerraDrawMapLibreGLAdapter({ map }),
+    modes: [
+      new TerraDrawLineStringMode(),
+      new TerraDrawSelectMode({
+        flags: {
+          linestring: {
+            feature: {
+              // As the ring's: vertices move, the line as a whole doesn't.
+              draggable: false,
+              coordinates: { draggable: true, midpoints: true, deletable: true },
+            },
+          },
+        },
+      }),
+    ],
+  });
+  draw.start();
+
+  const currentLine = (): GeoJSON.LineString | null => {
+    for (const feature of draw.getSnapshot()) {
+      if (feature.geometry?.type === 'LineString') return feature.geometry as GeoJSON.LineString;
+    }
+    return null;
+  };
+
+  draw.on('finish', (id) => {
+    const feature = draw.getSnapshotFeature(id);
+    if (feature?.geometry?.type !== 'LineString') return;
+    options.onFinish?.(feature.geometry as GeoJSON.LineString);
+    options.onChange?.(feature.geometry as GeoJSON.LineString);
+  });
+  draw.on('change', (_ids, type) => {
+    if (type === 'create') return; // a line still being drawn isn't a draft yet
+    options.onChange?.(currentLine());
+  });
+
+  return {
+    startDrawing: () => draw.setMode('linestring'),
+    startEditing: () => draw.setMode('select'),
+    setLine: (line) => {
+      draw.clear();
+      if (!line) return;
+      draw.addFeatures([
+        { type: 'Feature', geometry: line, properties: { mode: 'linestring' } },
+      ] as Parameters<typeof draw.addFeatures>[0]);
+    },
+    clear: () => draw.clear(),
+    destroy: () => {
+      draw.stop();
+    },
+  };
+}
+
 /**
  * Parse a pasted GeoJSON string into a Polygon/MultiPolygon, or say why it isn't one.
  *

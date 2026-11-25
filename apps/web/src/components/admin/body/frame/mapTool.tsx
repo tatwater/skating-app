@@ -15,8 +15,8 @@ import type { BBoxLike } from '@/lib/mapSurface';
  * **The map's tools** (B01-6, D299): how a tab draws on the Body console's map without touching it.
  *
  * The tab contract (`tabRegistry`) says a tab never touches the map, and that stays true: a tab
- * *claims* a tool here — a chord across a bay's mouth, a ring to trace or edit, or none at all (a
- * pasted shape, only previewed) — with what the map should show while it is held (the mode bar's
+ * *claims* a tool here — a chord across a bay's mouth, a ring or a line to trace or edit, a point to
+ * place or move, or none at all (a pasted shape or a suggested grid, only previewed) — with what the map should show while it is held (the mode bar's
  * words, the draft) and the callbacks the drawing answers through. The frame's map attaches the
  * engine to its own MapLibre instance (`useMapToolEngine`) and hands the results back.
  *
@@ -26,6 +26,8 @@ import type { BBoxLike } from '@/lib/mapSurface';
  * - **`session`** says when the drawing starts over: the engine is re-attached only when it (or the
  *   tool's kind) changes, never because a callback or the mode bar's words did. The callbacks are
  *   read through a ref, so a claim may pass fresh closures every render.
+ * - **The cursor is a crosshair** whenever a click on the map will place something (D300); a mark
+ *   that drags shows the grab hand only under the pointer.
  * - **Esc leaves the tool** (`onExit`), unless something else already took the key (a dialog, an
  *   open menu) or it was pressed in a field — the same call as the mode bar's Esc cap.
  */
@@ -53,7 +55,28 @@ export type MapToolEngine =
       /** The draw engine couldn't be loaded (its chunk failed). */
       onUnavailable: () => void;
     }
-  /** Nothing to draw with: the shape comes from elsewhere (a paste), and the map only shows it. */
+  | {
+      kind: 'line';
+      /** A line to edit; absent starts a new one. */
+      line?: GeoJSON.LineString;
+      /** The line as it stands (finished, or a vertex moved); `null` when it was removed. */
+      onChange: (line: GeoJSON.LineString | null) => void;
+      /** The draw engine couldn't be loaded (its chunk failed). */
+      onUnavailable: () => void;
+    }
+  | {
+      kind: 'point';
+      /** The mark already there (a landmark being moved); absent starts with none. */
+      point?: LatLng;
+      /**
+       * Snap the mark to this outline's edge (a put-in to the shore), shown while hovering; absent
+       * places it where the click is.
+       */
+      snapTo?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+      /** A click, or a drag's release: the mark is here now. */
+      onPick: (point: LatLng) => void;
+    }
+  /** Nothing to draw with: the shape comes from elsewhere (a paste, a grid), and the map shows it. */
   | { kind: 'none' };
 
 export interface MapToolClaim {
@@ -64,8 +87,11 @@ export interface MapToolClaim {
   mode: string;
   line?: string;
   step?: string;
-  /** The shape the drawing makes, as it would be saved, drawn under the engine's own marks. */
-  draft?: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
+  /**
+   * The shape the drawing makes, as it would be saved, drawn under the engine's own marks: an area
+   * filled, a line stroked, points as hollow rings (a suggested grid).
+   */
+  draft?: GeoJSON.Geometry | null;
   /** Where to take the camera when the session starts: a point, or a box to frame. */
   focus?: { point: LatLng } | { bbox: BBoxLike } | null;
   /** Leave the tool (Esc, or the mode bar's cap). */
