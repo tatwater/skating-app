@@ -333,6 +333,16 @@ describe('listPage', () => {
     // Page one, read fresh, has lost its decided row.
     const fresh = await mod.as.query(api.corpusTasks.listPage, args);
     expect(fresh.rows.map((r) => r.body.name)).toEqual(['Pond 1', 'Pond 2']);
+
+    // A decision inside page two shrinks it in place: the pinned page never pulls Pond 4 up.
+    await decide(t, ids[2] as Id<'waterBodies'>, mod.id, NOW + 2);
+    const pinned = await mod.as.query(api.corpusTasks.listPage, {
+      ...args,
+      cursor: one.continueCursor,
+      endCursor: two.continueCursor,
+    });
+    expect(pinned.rows.map((r) => r.body.name)).toEqual(['Pond 3']);
+    expect(pinned.continueCursor).toBe(two.continueCursor);
   });
 
   test('each tab: All holds every open task (notRecorded too), a facet its own, notRecorded is no tab', async () => {
