@@ -9008,6 +9008,15 @@ the console look finished where it isn't (D286's reasoning, applied to navigatio
 **Related:** D216, D226, D286, D293, D304, [`phase-B01`](./phases/B01-admin-console.md) §5.3, §8 §4,
 *The Corpus tasks (B01-6, the design)*.
 
+**Amended 2026-11-24 (founder call) — built whole at its measured size.** Told that the wave measures
+about 90,000–100,000 lines by the Inbox wave's ratio (its six designed PRs landed at 4.9× their
+designs), against the 35,000–60,000 he first agreed to, the founder: *"Actually let's go with A, build
+the whole thing."* All four PRs go ahead, and **B01-6a is one PR** at its measured size, not a
+server-then-web pair as the Inbox's first two were. (6a was measured at ~28,000–32,000 lines; with
+Contested as water moved to 6b by D306 it is re-estimated at ~25,000–28,000.) **Why** (the founder
+gave no reason beyond the choice; this is the design's reading): a lane lands whole or not at all,
+and a server PR with no lane to show is a second Greptile round for a review that reads worse apart.
+
 ## D300 — "Pre-Season Pass" is the visible name of the pass that was "the pre-ice pass" (B01)
 
 **Decided (2026-11-24, founder).** Every visible label says *Pre-Season Pass*: Corpus's sidebar group,
@@ -9044,6 +9053,36 @@ it is due.
 
 **Related:** D3, D63, D78, D300, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks (B01-6,
 the design)*.
+
+**Amended 2026-11-24 (the founder's answers to the design's forks 8, 9, 11, 12, 13 and 18) — a done
+pass collapses; it does not disappear.** What changed:
+- **A done pass stays, collapsed and undressed** (fork 11). In the founder's words: *"It's probably
+  wise to allow any pre-season pass decision to be viewed in retrospect, maybe even changed, but at
+  least no disappeared forever. But it should look dismissed/complete/normal, not highlighted like
+  when they're urgent. And collapsed feels even better."* When the pass's last task is decided, the
+  group loses its dress and collapses to one plain line that can be expanded; its lanes then open
+  their decided tabs, and a decision can still be undone or changed from there. This replaces *"then
+  it should disappear for the remainder of the season"*: the call's point — nothing looks urgent once
+  nothing is — holds; what changed is that a season's decisions are never out of reach. The group
+  still first appears in July.
+- **The dress is the bracketed card** (fork 18: *"I prefer the bracketed card, #2!"*): the group in
+  the kit's `Plate` card with the warn tone — a hairline box with amber corner ticks, the console's
+  mark for the thing being worked on — and the meter inside at its foot. The other three candidates
+  (the inverted plate, the taped outline, the amber edge) were offered as Storybook variants and are
+  deleted with the pick.
+- **The group is first in the sidebar** (fork 18, *"At the top!"*): Pre-Season Pass, Tasks, Views,
+  Standing.
+- **The edges**, each the design's recommendation, agreed: the pass is what the July rollover found,
+  and a pattern found mid-season waits on its body's Hazards tab and next July's pass (fork 8); the
+  meter counts patterns seen in two or more winters, and *1 winter* is read-only (fork 9, D78); the
+  group appears on 1 July saying the pass is being computed, red past 7 July if the run hasn't
+  finished (fork 12); an undo after the pass is done reopens it — the group takes its dress back and
+  expands until that task is decided (fork 13).
+- Where Known features lives is D308.
+
+**Why:** the collapse is the founder's reason above. The edges are the design's reading (he agreed
+without giving one): the meter must never say *done* with work open, a failed run must not read as
+nothing to do, and a pattern seen in one winter isn't advisable (D78), so it can't be owed a decision.
 
 ## D302 — Enrichment gaps and script-filed bay asks are deferred out of Corpus's first wave (B01)
 
@@ -9091,3 +9130,93 @@ to the phase's close are a second surface to maintain and a second place for a m
 
 **Related:** D299, [`phase-B01`](./phases/B01-admin-console.md) §12.7, *The Inbox (B01-5, the design)*'s
 *Legacy retirement*, *The Corpus tasks (B01-6, the design)*'s *Legacy retirement*.
+
+## D305 — A settled Corpus question holds until the evidence behind it changes, then is asked again (B01)
+
+**Decided (2026-11-24, founder: the Corpus design's fork 2, option (b)).** A moderator's decision on an
+intake question — keeping the shown name or choosing another, keeping a class or changing it — holds
+through every later campaign **until the evidence it was made on changes**. Then the next campaign
+asks it again, and its task reopens saying the catalogs changed.
+- **The evidence is one rule in core** (`reviewEvidence`), used by the settle and by the import, so
+  the two can't drift: a name conflict's catalog name claims (never a moderator's own `user` claim);
+  a class conflict's class claims, with each catalog's own token. It is stored with the decision on
+  the body (`reviewSettled`).
+- **A question settled before its evidence is stored** — every class conflict on a body imported
+  before B01-3d's claims — is settled on *not recorded* evidence, so the first campaign that records
+  the claims asks it again, once (the governor's ruling, building what the briefs proposed): the
+  decision wasn't made on the facts that campaign brings. The alternative, adopting the first
+  recorded evidence silently, was not taken.
+- Every such decision has an undo that puts the question back (D226).
+
+**Why** (the founder's call gave no reason; this is the design's reading): a decision holds against
+the facts it was made on, and new facts deserve a look. Today every campaign re-raises every reason
+whatever a moderator decided, which is how the intake queue reached 2,010 rows; settling for good
+would hide a catalog's real change.
+
+**Related:** D110, D226, D299, D306, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks
+(B01-6, the design)*.
+
+## D306 — Contested as water leaves the first Corpus PR: its refusals are stored first, and the founder rules its shape on real rows (B01)
+
+**Decided (2026-11-24, founder; the governor's recommendation).**
+- **B01-6a ships Name conflicts and Class conflicts only.** Bodies a catalog refuses as water while
+  another classes it (`class-dissent`) stay on the old review page, and the Overview keeps today's
+  count for them.
+- **B01-6a still stores what the lane will need**: each refusing catalog's own token and that
+  feature's area (`classRefusals`), and each class claim's token and area, written from the next
+  campaign on.
+- **After that campaign the founder looks at the real rows and rules the lane's shape** — its tabs,
+  its words, whether it is one lane — and it lands in B01-6b.
+- **When it lands, every moderator can finish it** (fork 4, option (b)): moderators get *Set dormant*
+  (off the map, kept, reversible), admins *Remove*.
+
+**Why:** the last merge queued 20 dissents — 18 refusals by OpenStreetMap's bare `natural=water` and 2
+tidal flats — and none of the board's examples, so its *Built* tab would stay empty and *Not water*
+would hold water. A lane designed before anyone has seen what it holds risks answering a different
+question from the one the queue asks; storing the refusals now costs two optional fields and lets
+the next campaign show them. *Set dormant* is the design's reading of fork 4 (the founder agreed
+without giving one): every moderator can finish every task, and removal stays with admins, where D37
+and the capability map (D217) put it.
+
+**Related:** D37, D217, D299, D305, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks
+(B01-6, the design)*.
+
+## D307 — The community's email mentions are loaded as counts, never text, for Place names and Name conflicts (B01-6c)
+
+**Decided (2026-11-24, founder: the Corpus design's fork 5, revised).** The founder first agreed to
+leave the email facts out of the wave. Told that leaving them out also takes *Suggested* off Name
+conflicts — the board's suggested name is the one the community's emails use — he revised it: they
+are loaded.
+- **What loads:** the mention counts from the private corpus extraction's mention inventory (L5a),
+  **by body, by name and by winter — counts only**, never message text, a sender or a date finer than
+  the winter.
+- **Where they show:** Place names' counts by winter; Name conflicts' emails strip and its
+  *Suggested* — the name the emails use most, where they decide it, and otherwise no suggestion.
+- **When:** B01-6c. B01-6a's Name conflicts ships with no email facts and no suggestion; its default
+  pick is the shown name (*Now*).
+
+**Why:** the founder's revision follows the board: the emails are the evidence for which name the
+community actually uses, and without them nothing names a suggestion. Counts only, because L5a's
+line — derived labels and counts in the tree, no message text out of `training_data/` — holds for
+the deployment as for the repo.
+
+**Related:** D202, D299, [`08`](./08-legal-feasibility-checklist.md) L5a,
+[`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks (B01-6, the design)*.
+
+## D308 — Known features are reviewed in the Pre-Season Pass, not browsed across lakes year-round (B01; the reading to confirm before B01-6d)
+
+**Decided (2026-11-24, founder: the Corpus design's fork 10, option (c)).** In his words: *"known
+features don't need to be found/browsed in aggregate unless the point is to authorize/clean them up
+between seasons."*
+- **The governor's reading, to confirm with the founder before B01-6d:** Known features is never a
+  lane in *Views*. It is a lane inside the Pre-Season Pass group, as board 4.10 draws it, outside the
+  pass's meter (a record, not a queue); otherwise a body's known features are reached on that body,
+  in the Body console's Hazards tab. When the pass is done the lane collapses with its group, still
+  reachable there (D301, amended).
+- **The other reading** is no cross-lake lane at all, with board 4.10 not built.
+
+**Why:** the founder's, above: a known feature is looked over between seasons, and browsing them in
+aggregate has no purpose outside that review.
+
+**Related:** D53, D301, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks (B01-6, the
+design)*.

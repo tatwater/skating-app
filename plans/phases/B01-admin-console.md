@@ -272,7 +272,8 @@ and *Redraw in Body* hand off, drawn unavailable until task modes, D303); Duplic
 and the dedup flags are two unconnected systems today, joined by that design; Orphan bays' *done* is
 *Make a bay of …*, *Demote to landmark* or *Not a bay*; Standing and Curated are already the library's;
 Enrichment gaps is deferred to Machinery (D302); and "the pre-ice pass" is *the Pre-Season Pass* in
-every visible word (D300), a seasonal group shown from July until its last decision (D301).
+every visible word (D300), a seasonal group shown from July until its last decision and then
+collapsed to one plain line (D301, amended).
 
 ### §5.4 — Body console
 
@@ -1066,7 +1067,9 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   lane in four PRs, each whole with its undo and its old page's retirement; "clearing `reviewReason`"
   becomes a settled reason the next campaign honors until its evidence changes; "the pre-ice pass
   dated" becomes a stored pass record that also closes the recurrence rollover's skip bug; enrichment
-  gaps and script-filed bay asks are deferred (D302).
+  gaps and script-filed bay asks are deferred (D302). The forks were ruled the same day (D305–D308,
+  D299 and D301 amended): Contested as water moves to the second PR (D306), and the email mention
+  counts load in the third (D307).
 - **§5 — Machinery.** The job registry with where-it-runs, trigger or instructions (D218); run
   scope, heartbeat and event stream; the cron list with last outcome and next due; the cost
   ledger (D219) with the meters generalized and the invoice form; the catalog-coverage card;
@@ -1295,7 +1298,12 @@ taken away). **Added 2026-10-16:** D227 (invoices edited by named people — Tea
 land lane by lane, each whole; no placeholder entries), D300 (*Pre-Season Pass* is the visible name),
 D301 (the pass group is seasonal and dressed apart), D302 (enrichment gaps and script-filed bay asks
 deferred), D303 (task modes stay their own wave; their hand-offs drawn unavailable), D304 (an old page's
-code goes with the PR that retires it).
+code goes with the PR that retires it). **Added 2026-11-24, the forks ruled (B01-6):** D305 (a settled
+question holds until its evidence changes), D306 (Contested as water leaves 6a; its refusals stored
+first; its shape ruled on real rows), D307 (the email mentions loaded as counts in 6c), D308 (Known
+features reviewed in the pass, not browsed year-round; the reading to confirm); D299 amended (built
+whole at its measured size, 6a one PR) and D301 amended (a done pass collapses; the bracketed card;
+the group first).
 
 ## §10 — Season statistics: the options (picked 2026-10-12: all of tiers 1 and 2)
 
@@ -13068,6 +13076,7 @@ Row ids: `Bo` is Bodies, `Pe` is People, `Sh` is shared or engine.
 | Pe26 | The People rows backfill (status terms, B01-4f) on real data | `peopleJobs:backfillRows` | blocked on dev seed data: dev has no suspended or banned person, and seeding is on hold (founder, below) | ops | — | Seeded moderated content |
 | Pe27 | The Post-restore chooser on the phone | roadmap Owed | blocked on another surface (the phone has no restore) | missing | M | — |
 | Pe28 | The ledger editor's seed on dev (`ledger:seedEditor`, §5.7) | — | can't be verified without a dev read (the dev agent's) | ops | — | — |
+| Pe29 | People's trust panel is gone and nothing replaced it: `ContributorTrend.tsx` was deleted in B01-4, and `analytics.contributorTrend` (still built and tested) has no web caller. Found by B01-6a's legacy strip (2026-11-24) | `analytics.ts` `contributorTrend`; the person page | blocked on the founder: whether the person page draws a trust trend at all | missing planned | M (web) if yes; else the query and its tests go | His call; then a board, or the deletion |
 
 #### The shared and engine rows
 
@@ -13134,6 +13143,18 @@ needs you*.
 | In29 | `BayRequestQueue`, `LandmarkTool`, `useReviewWatch`, `ReviewClosedNotice` and `corpusRequests.reviewState` stay with the old editor | the close-out's (b); Bo23 | task modes | nothing | open |
 | In30 | No aerial on `itemMap`; no NAIP for catalog candidates | *What the build found (PR 1)* | a later mode | nothing | open |
 | In31 | Nearby drawings, a drawing's distance and a skate's distance aren't served on the drawn-body item | *B01-5c: the server integrated* | a later mode | nothing | open |
+
+#### The Corpus wave's rows (2026-11-24)
+
+What the founder's rulings on the Corpus design (B01-6) left owed outside the wave's four PRs, or
+waiting on him. The design and its briefs are *The Corpus tasks (B01-6, the design)*.
+
+| # | Item | Where recorded | Who can act | Blocks | Status |
+|---|---|---|---|---|---|
+| Co1 | The shape of Contested as water — its tabs, its words, whether it is one lane — ruled on the real rows the next campaign stores (`classRefusals`) | D306; *After merge, on dev* (6a), step 7 | the founder, after a full campaign | 6b's Contested lane | open |
+| Co2 | A cross-lake list of the season's automatic hazard merges, with *Unmerge*: fork 14 moved *Unmerge* to the Body console's Hazards tab and History, and `/admin/recurrence`'s list goes with 6d | fork 14; *Legacy retirement* | Machinery (its hazard-identity job) | nothing | open |
+| Co3 | Fork 10's reading: Known features as a lane inside the Pre-Season Pass group, never in *Views* — or no cross-lake lane at all | D308 | the founder (a confirmation) | 6d's Known features | open |
+| Co4 | The next full campaign (merge and load): without it Class conflicts' rows sit under *All* with the catalogs *not recorded*, and Co1 can't be looked at | *What the founder sees on dev after 6a* | the founder | Co1; Class conflicts' tabs | open |
 
 Skater-app questions are on B04's running list: a report's photo cap (2026-11-22) and the phone's
 cached copy of a taken-down photo (2026-11-23).
@@ -13908,10 +13929,12 @@ page's retirement — and a sidebar entry appears only once its lane is built (D
 is the visible name (D300); the pass group is seasonal and dressed apart (D301); enrichment gaps and
 script-filed bay asks are deferred (D302); task modes stay their own wave (D303); an old page retires,
 and its code goes, in the PR that replaces it (D304). The boards are the spec where they and §5.3
-differ. **The forks** at the end are the decisions the code and the calls could not make; until they
-are ruled, the design carries the recommendation of each. The governor's were ruled the same day and
-the founder's are pending (*How the forks were ruled (2026-11-24)*); 6a's builds are in *Briefs
-(B01-6a)*, which stands where it and this design differ for 6a.
+differ. **The forks** at the end are the decisions the code and the calls could not make; all twenty
+were ruled the same day (*How the forks were ruled (2026-11-24)*, D305–D308, D299 and D301 amended),
+and the text below carries each ruling. Two things stay open: fork 10's reading, to confirm with the
+founder before 6d, and the shape of Contested as water, which he rules on the next campaign's real
+rows before 6b (D306). 6a's builds are in *Briefs (B01-6a)*, which stands where it and this design
+differ for 6a.
 
 #### What the code says today
 
@@ -14057,11 +14080,13 @@ equals its tally; the drift repair finds nothing. Mutation checks the builder ru
 
 ##### The intake lanes: settling a reason, and making it hold
 
-**A settled reason holds through the next campaign until its evidence changes** (fork 2, pending). New on
+**A settled reason holds through the next campaign until its evidence changes** (fork 2, ruled (b);
+D305). New on
 `waterBodies`: `reviewSettled?: { reason, evidence, at, actionId }[]`, where `evidence` is a short
 fingerprint of what raised the reason — the sorted name claims for a name conflict; the class claims for
-a class conflict; the refusing catalog and token for dissent; the candidate parents' keys for an orphan
-bay. `mergeFields` drops an incoming reason whose settled fingerprint equals the incoming one, and files
+a class conflict; the refusing catalog and token for dissent (6b); the candidate parents' keys for an
+orphan bay (6b). A reason settled before its evidence is stored is settled on *not recorded* evidence,
+so the first campaign that records it asks it again, once (D305). `mergeFields` drops an incoming reason whose settled fingerprint equals the incoming one, and files
 it again when it differs — the task reopens, its row saying *Raised again by the 3 Mar campaign: the
 catalogs changed* (invented, for the copy pass). One rule in core, `reviewEvidence(reason, record)`,
 computes the fingerprint for the settle and for the import, so the two can't drift.
@@ -14078,10 +14103,10 @@ so a decision can't half-land:
 | Name conflicts | *Display “Lake Auburn” instead* (⏎) | `decideName({ taskId, pick })` | `setWaterBodyName`'s impl (the refused name stays a claim and searchable) | `body.identity` |
 | | the shown name picked | `decideName({ taskId, pick: 'shown' })` | none — the settle is the decision (`kept`) | `corpus.intake` (new) |
 | Class conflicts | *Set as Wetland* (⏎) | `decideClass({ taskId, bodyClass })` | `setClassImpl` | `body.identity` |
-| Contested as water | *Keep as Lake or pond* (K) | `decideClass({ taskId, bodyClass: <current> })` | none (`kept`) | `corpus.intake` |
+| Contested as water (6b, D306; the rows below are the design's, its shape ruled on real rows first) | *Keep as Lake or pond* (K) | `decideClass({ taskId, bodyClass: <current> })` | none (`kept`) | `corpus.intake` |
 | | *Another class ▾* | `decideClass` | `setClassImpl` | `body.identity` |
-| | *Remove* (R) | `decideContested({ taskId, verb: 'remove', note })` | `remove`'s impl | `body.remove` (admin; fork 4, pending) |
-| | *Set dormant* (the moderator's way out, fork 4, pending) | `decideContested({ taskId, verb: 'dormant', note })` | `setStanding`'s impl (dormant, with the note) | `body.standing` |
+| | *Remove* (R) | `decideContested({ taskId, verb: 'remove', note })` | `remove`'s impl | `body.remove` (admin; fork 4, ruled (b)) |
+| | *Set dormant* (the moderator's way out, fork 4, ruled (b)) | `decideContested({ taskId, verb: 'dormant', note })` | `setStanding`'s impl (dormant, with the note) | `body.standing` |
 | Orphan bays | *Make a bay of Newfound Lake* (M) | `makeBay({ taskId, parentId, reason? })` | below | `corpus.duplicates` and `body.shape` |
 | | *Demote to landmark* (D) | `bayToLandmark({ taskId, parentId })` | below | `corpus.duplicates` and `body.places` |
 | | *Not a bay ▾* (a class) | `decideClass` | `setClassImpl` | `body.identity` |
@@ -14097,24 +14122,32 @@ capability (D217), which every moderator holds except `body.remove`.
   ETL (`scripts/etl/src/mergeRules.ts:601`), moved to core at 6a's T0; *Elsewhere*, a
   namesake count, bounded (`bodyLibraryRows.by_scope_name`, `eq(nameKey)`, 51 rows, "50+"); the split
   from one rule in core over the two names; *Search finds it by either name already* (true by
-  construction: `searchText` holds every claim). **The emails by winter are not served** (fork 5,
-  pending).
+  construction: `searchText` holds every claim). **The emails by winter are served from 6c** (fork 5,
+  revised; D307): a new table of mention counts by body, name and winter — counts only, never message
+  text — loaded from the A10 seed's mention inventory, gives each name its *Emails · 9 mentions* and
+  its strip by winter, and the name the emails use most wears *Suggested* (no suggestion where the
+  counts don't decide it). The board's *the last Jan 2026* reads as the last winter with a mention: a
+  month would be a date per message, which the counts don't keep. In 6a no email fact is drawn and no
+  name is suggested; the default pick is *Now*.
 - **Classes (4.3)**: `classClaims` by catalog — a stored claim is `{ source, value }` only (checked
   2026-11-24): the merge holds each catalog's own token (the FCODE) and area and drops them, and no
   edit date is read anywhere in the ETL; 6a carries `token` and `areaSqM` on the claim from the next
-  campaign if the governor agrees, and never draws the edit date (*Briefs (B01-6a)*, question 2); the ladder *What each class would do* from one rule in core,
+  campaign (the governor's ruling, *Briefs (B01-6a)*, question 2), and never draws the edit date; the ladder *What each class would do* from one rule in core,
   `classConsequence(body, cls)` ("Leaves the corpus next campaign, as unnamed wetland under 50 ac" from
   `belongsInCorpus`; "Waits for a parent: no lake holds it" for a bay); and *The body* (name, depth,
   what is attached, the nearest body from `bodyGeo`'s stored neighbors). A body imported before B01-3d
   has no class claims: the ladder still draws, and *The catalogs* reads *Not recorded until the next
   campaign*.
-- **Contested (4.4)**: the asserting claim from `classClaims`; the **refusing** catalog and its token need
-  the ETL to keep them — `classRefusals?: { source, token }[]` on the body (`masterList.ts:938-985` keeps
-  them today only for run stats) — with the facet (*Seasonal*, *Built*, *Not water*) from one rule in
-  core over the token. A body loaded before that campaign reads *The refusing catalog isn't recorded
-  until the next campaign*, in a `notRecorded` facet that reads under *All* only — not in *Not water*,
-  which would say something unknown. In the last merge the queued dissents were OSM's bare
-  `natural=water` and two tidal flats, not the board's vernal pools (*Briefs (B01-6a)*, question 3).
+- **Contested (4.4), 6b (D306)**: the asserting claim from `classClaims`; the **refusing** catalog and
+  its token need the ETL to keep them — `classRefusals?: { source, token, areaSqM? }[]` on the body
+  (`masterList.ts:938-985` keeps them today only for run stats), **stored from 6a on** so the next
+  campaign records them. The board's facets (*Seasonal*, *Built*, *Not water*) from one rule in core
+  over the token, and a `notRecorded` facet for a body loaded before that campaign that reads under
+  *All* only (never *Not water*, which would say something unknown), are the design's starting point,
+  not a ruling: in the last merge the queued dissents were 18 refusals by OSM's bare `natural=water`
+  and 2 tidal flats, none of the board's examples, so *Built* would stay empty and *Not water* would
+  hold water. The founder looks at the next campaign's real rows and rules the lane's shape before
+  6b builds it.
 - **Orphan bays (4.5)**: `corpusTasks.bayParents({ taskId })` — the listed bodies within the bay's box
   grown by its own diagonal (`listedBodiesNearCoord` with `marginMeters`, never without), at most 12 by
   prominence, each with the share of the bay inside it (core's `coveredFraction`, the merge suggestion's
@@ -14128,7 +14161,9 @@ merge machinery, which already moves every child row, records a change set and h
 - `makeBay`: `mergeBodyInto(parent, bay)` (the bay's reports, hazards, features, put-ins and favorites
   move; `assertMergeFits` bounds it), then a sub-area from the bay's outline **clipped to the parent's**
   through `subAreas.create`'s impl (its name and catalog keys; the existing restamp files reports and
-  hazards under it). Refused when the clip keeps less than a core floor of the bay (fork 6) — a bay
+  hazards under it). Refused when the clip keeps less than a core floor of the bay (fork 6, ruled (a):
+  clip and drop; the floor is a quarter of the bay, the design's number until the founder gives
+  another) — a bay
   entirely outside its shore (*Outside everything*) can only become a landmark or *not a bay* — and when
   the parent isn't listed or is itself a bay.
 - `bayToLandmark`: the same merge, then a landmark on the parent at the bay's representative point,
@@ -14148,7 +14183,8 @@ merge machinery, which already moves every child row, records a change set and h
   The item adds `getDedupGroup`'s facts and *Why they are one body*, worded from a new `dedupReason`
   each flagging path stamps (`create-overlap`, `catalog-id`, `reconciliation`, `import-overlap`), and
   *Kept either way* from the merge's own union rules (`mergedModeratorLists`).
-- **The import's `duplicate-candidate` joins the dedup flag** (fork 3): the ETL carries `duplicateOf`
+- **The import's `duplicate-candidate` joins the dedup flag** (fork 3, ruled (a): one lane over both
+  systems, the partner backfill, same-source rows confirm-only): the ETL carries `duplicateOf`
   through `toCanonicalBody`, and `importCanonical` stamps it through `flagAsDuplicates`, so the next
   campaign writes each pair. Until then a one-time Convex backfill (`corpusTasks.backfillPartners`, dry
   by default, paged) finds each such body's partners among its listed neighbors by core's IoU rule and
@@ -14195,7 +14231,10 @@ merge machinery, which already moves every child row, records a change set and h
   `by_status_messages` (the People `endCursor` chain), tabs *Open · Placed · Dismissed*; each row its
   emails and skated emails, states, spellings (`aliases`), and the lake, or *Pick a lake · Met N lakes*,
   or *Already named · On N lakes* — the last from D282's stored `bodyNameLists` for each candidate body
-  (at most 8). **Counts by winter are not stored** and not drawn (fork 5, pending).
+  (at most 8). **Counts by winter** come from the mention counts 6c loads (fork 5, revised; D307): by
+  body, name and winter, counts only, never message text (L5a) — the same table Name conflicts' emails
+  strip and *Suggested* read. A place name's own counts are its name's, across the bodies the
+  inventory tied it to.
 - **Writes get their own verbs and undos**: `dismiss` writes `dismiss_place_name` (with `prev`: status,
   lake) and `reopen` writes `reopen_place_name`, each the other's inverse under `corpus.placeNames`,
   replacing the generic `remove`/`restore` rows (whose undo names `content.moderate` and has no
@@ -14222,24 +14261,31 @@ and decided figures are the `pass:<season>:*` count rows. Written by:
   per execution, self-scheduling. Then `open` and `computedAt`; with nothing filed, straight to `done`.
   The run becomes a Machinery job with a record (`jobFailures` for a body it parks).
 - **The writer**: deciding a pass task moves *decided*; when it equals the total, `done` and `doneAt`; an
-  undo that reopens a pass task sets the pass back to `open` (fork 13).
+  undo that reopens a pass task sets the pass back to `open` (fork 13, ruled (a)): the group takes its
+  dress back and expands until that task is decided.
 - **Mid-season**: a `recomputeForBody` or a merge's re-queue that finds a new pattern doesn't join the pass
-  (fork 8); it waits on that body's Hazards tab and in next July's pass, since the rollover recomputes
-  every body anyway.
+  (fork 8, ruled (a)); it waits on that body's Hazards tab and in next July's pass, since the rollover
+  recomputes every body anyway.
 
 **The seasonal rule**, one rule in core — `passVisibility(pass, now)` — asked by the read and held by a
 `fast-check` property over the season boundary and every state:
 
 | This season's pass | The group | Its meter | The Overview's row |
 |---|---|---|---|
-| none yet (1 July, before the first tick) | shown (fork 12) | *Starts this week* | *Not started for 2026–27* |
-| `computing` | shown, its lanes *Being computed* | *Being computed* | *Being computed* |
-| `computing` after 7 July (the run failed) | shown | *Not computed — see Machinery* (red) | the same, red |
-| `open` | shown | *3 of 10 decided* | *3 of 10 decided* (amber) |
-| `done` | **gone** until next July | — | *Done 14 Sep* (fork 11) |
+| none yet (1 July, before the first tick) | shown, dressed (fork 12, ruled (a)) | *Starts this week* | *Not started for 2026–27* |
+| `computing` | shown, dressed, its lanes *Being computed* | *Being computed* | *Being computed* |
+| `computing` after 7 July (the run failed) | shown, dressed | *Not computed — see Machinery* (red) | the same, red |
+| `open` | shown, dressed | *3 of 10 decided* | *3 of 10 decided* (amber) |
+| `done` | **collapsed**: undressed, one plain line that expands; its lanes open their decided tabs, where a decision can still be undone or changed (fork 11, the founder's (c); D301 amended) | *10 of 10 decided*, plain, inside the collapsed group | *Done 14 Sep*, plain; it opens the collapsed group's first lane, decided tab |
 
-Known features is **not in the meter** (a record, not a queue); where it lives is fork 10. The words
-are invented, for the copy pass.
+`passVisibility` answers `hidden` (before 1 July of the pass's season, or no season yet), `dressed`
+(with the meter's state) or `collapsed`; never "gone" within a season. An undo that reopens a task of a
+done pass moves it back to `open` and the group to `dressed` (fork 13). **Known features** is a lane
+inside the pass group, **not in the meter** (a record, not a queue), and never a lane in *Views*; the
+rest of the year a body's known features are reached on its Hazards tab (fork 10, the founder's (c);
+D308 — *the governor's reading, to confirm before 6d*; the other reading is no cross-lake lane at
+all, with board 4.10 not built). The patterns the meter counts are those seen in two or more winters;
+*1 winter* is read-only (fork 9, ruled (a)). The words are invented, for the copy pass.
 
 **The reads:**
 
@@ -14324,9 +14370,9 @@ restores recorded before-values through the forward paths (D291).
 | `suppress_recurrence`, `promote_recurrence`, `promote_body_feature` | as today | the undo also reopens the pass task |
 | `leave_hidden` | `reopen_corpus_task` (new) | — |
 | `demote_body_feature` | `reactivate_body_feature` (new; was `later('§3 Body console')`) | from the demote's new `prev` |
-| `unmerge_hazards` | re-merge (was `later('§4 Corpus')`) | only if fork 14 gives hazard unmerge a home in this wave |
+| `unmerge_hazards` | re-merge (was `later('§4 Corpus')`) | 6d: fork 14 ruled (a) — *Unmerge* moves to the merged hazard on the Body console's Hazards tab, with History's undo of an automatic `merge_hazards` row; a cross-lake list of the season's merges is owed to Machinery (the register's Co2) |
 
-`undoOwed()` loses `dismiss_duplicate`, `demote_body_feature` and (per fork 14) `unmerge_hazards`; it
+`undoOwed()` loses `dismiss_duplicate`, `demote_body_feature` and (fork 14) `unmerge_hazards`; it
 keeps `set_parking_area` and `promote_landmark` (§3). Each new verb joins `MODERATION_ACTIONS` and the
 registry (whose exhaustiveness test holds it), with a `convex-test` round trip, its overtaken case and
 its capability refusal.
@@ -14336,7 +14382,9 @@ its capability refusal.
 | Table | Change | Rollout |
 |---|---|---|
 | `corpusTasks`, `corpusTaskCounts`, `corpusTaskJobRuns` | new | deploy, then `corpusTaskJobs:backfill` to done; reads `pending` until it is |
-| `waterBodies` | `reviewSettled?`, `classRefusals?`, `absorbedFeatures?`, `dedupReason?` | widen only; the middle two are written by the next campaign, `dedupReason` also by the partner backfill; each reads *not recorded* until then |
+| `waterBodies` | `reviewSettled?`, `classRefusals?`, `absorbedFeatures?`, `dedupReason?`; `classClaims`' object gains `token?` and `areaSqM?` | widen only; `classRefusals` and the claims' two fields (6a) and `absorbedFeatures` (6b) are written by the next campaign, `dedupReason` also by the partner backfill; each reads *not recorded* until then |
+| `waterBodies` | the indexes `by_dormant_reason`, `by_removed_at`, `by_public_access_verdict` dropped (6a) | their only reader was `standing.listLane`, deleted with Standing's lanes half (fork 15); proven unread by grep before the drop. A narrowing of indexes only: the deploy deletes them, no data moves |
+| the email mention counts (6c, D307) | new: one row per body, name and winter with its count | deploy, then a loader in `scripts/` from the mention inventory's aggregate (gitignored under `training_data/`), dry first; counts only |
 | `subAreaRefits` | new | deploy; written going forward |
 | `corpusPasses` | new | deploy, then `corpusPasses:openNow '{"season":2026}'` once on dev (dry first): the season is past July, so the deploy opens this season's pass from the patterns and candidates as they stand |
 | `hazardRecurrence` | `by_suppressed`, `by_promoted`, `by_stale` | indexes only |
@@ -14344,8 +14392,8 @@ its capability refusal.
 | `moderationActions` | the verbs above join `action`; `targetType` gains `corpusTask` | widen only |
 | `jobFailures.job` | `corpusTaskBackfill`, `corpusTaskRepair`, `recurrencePass` | widen, each with its cron in `CRON_OF` |
 
-Nothing is narrowed. The `by_review_reason` index stays for the Body preview and the library until they
-read the tasks.
+No field is narrowed; three indexes are dropped (above). The `by_review_reason` index stays for the
+Body preview and the library until they read the tasks.
 
 #### The web design
 
@@ -14361,7 +14409,8 @@ validated and never trusted:
 
 - **`lane`**: the task lanes' ids — `duplicates`, `name-conflicts`, `class-conflicts`, `contested`,
   `orphan-bays`, `chord-refits`, `place-names`, `recurrence`, `promotion`, `known-features`; an id whose
-  lane isn't built is dropped, as today.
+  lane isn't built is dropped, as today (in 6a only `name-conflicts` and `class-conflicts` resolve;
+  `contested` joins in 6b).
 - **`tab`**: the lane's facet or status tab (*Near certain*, *Placed*, *Suppressed*, *Decided* …); one the
   lane doesn't have is dropped.
 - **`item`**: a task id or a source ref (above); anything else is dropped.
@@ -14372,46 +14421,33 @@ mode still opens on *Active* (D293); opening a lane resets the place, as the lib
 
 ##### The sidebar
 
-Groups, in order (fork 18, pending): **Pre-Season Pass** (while `passVisibility` shows it), **Tasks**, **Views**,
-**Standing**. Each lane's count comes from `corpusTasks.lanes` (amber where a person is waited on, dim
-at zero; no tooltips, Review 11 rule 1). The pass meter (*3 of 10 decided*, the kit `Meter`) sits with
-the pass group, inside its dress or at the sidebar's foot over a hairline (Review 9 rule 8), depending
-on the dress chosen. `Lanes` gains what every candidate needs — a per-group `dress` and a per-group
-`foot` — as a kit change (the governor's seam, §12.3), its stories four-up.
+Groups, in order (fork 18, ruled (a), the founder: *"At the top!"*): **Pre-Season Pass** (from 1 July,
+while `passVisibility` shows it), **Tasks**, **Views**, **Standing**. Each lane's count comes from
+`corpusTasks.lanes` (amber where a person is waited on, dim at zero; no tooltips, Review 11 rule 1). The
+pass meter (*3 of 10 decided*, the kit `Meter`) sits inside the pass group's dress, at its foot.
+`Lanes` gained a per-group `dress` and a per-group `foot` as a kit change (the governor's seam,
+§12.3), its stories four-up.
 
-##### The dress: candidates for the founder (D301)
+##### The dress: the bracketed card (D301, amended)
 
-Each is built from the kit and tokens that exist, and each is rendered as a Storybook variant of `Lanes`
-(`kit/lanes.stories.tsx`, a `PassDress` set of four named stories, four-up: both surfaces, both modes)
-for the founder to pick from. **None is picked here.** The cost is each one's, beyond the shared
-`dress`/`foot` API.
+**Picked by the founder on 2026-11-24** (*"I prefer the bracketed card, #2!"*): the group wrapped in the
+kit's `Plate` (`variant="card"`, `tone="warn"`) — a hairline box with amber corner ticks, the console's
+own mark for the thing being worked on — with the meter inside at its foot. It reads as applied and
+bounded, urgent through the amber ticks alone. The card's padding narrows the rows' labels (the 236 px
+column gives up about 16 px), so their inset is reconciled with the other groups' when 6d mounts it.
 
-1. **The inverted plate.** The group sits on an inverted ground — `inv-bg` with `inv-fg` ink, as
-   `SectionSlug`'s chip and the boards' lit tab already invert — inset from the sidebar's edges, square
-   (`radius.container`), its kicker in the plate's own ink, the meter inside at its foot. It reads as a
-   label stuck onto the sidebar, and as the loudest thing on it. *Cost:* the most. Every lane-row state
-   (the hover wash, the selected plate and its 2 px bar, the focus ring, dim, the amber and red counts)
-   needs an inverted counterpart — a new `lane-inv-*` token set in `packages/design` — and amber on the
-   inverted ground must pass contrast in both modes.
-2. **The bracketed card.** The group wrapped in the kit's `Plate` (`variant="card"`, `tone="warn"`): a
-   hairline box with amber corner ticks — the console's own mark for the thing being worked on — and the
-   meter inside at its foot. It reads as applied and bounded, urgent through the amber ticks alone.
-   *Cost:* low — `Plate` as the group's wrapper. The card's padding narrows the rows' labels (the 236 px
-   column gives up about 16 px), so their inset must be reconciled with the other groups'.
-3. **The taped outline.** A 1 px **dashed** amber outline (`warn-line`) round the group, a solid amber
-   `Badge` in the kicker's row (*Due*, or *3 of 10*), and the meter under the lanes. It reads as
-   temporary: tape, a sticker's die line. *Cost:* low. But **dashed already means something in this
-   console** — a layer with nothing to draw (Review 12 rule 3) and the outline badge's `dim` tone
-   (`badge.tsx:68`) — so the founder should weigh the clash.
-4. **The amber edge.** No box: a 2 px amber rule down the group's whole left edge (the `Note`
-   `tone="warn"` rule, `stroke-note`), the kicker in amber, a faint `warn-tint` wash behind the group,
-   the meter as its last row. It reads as flagged rather than applied. *Cost:* the lowest. But it
-   competes with the selected lane's own 2 px left bar (`shadow-select-rule`), so the rule must sit in
-   the gutter, outside the rows, or the selected bar change inside this group.
+**What was offered**, as four `PassDress` Storybook variants of `Lanes` (four-up, both surfaces, both
+modes): (1) the inverted plate, on `inv-bg` with `inv-fg` ink, which needed an inverted counterpart for
+every lane-row state; (2) the bracketed card; (3) the taped outline, a dashed amber outline whose dash
+already means *nothing to draw* in this console; (4) the amber edge, a 2 px rule that competed with the
+selected lane's own bar. The kit builder is deleting the three not picked, and the `inv-*` tokens made
+for the first, now (2026-11-24).
 
-The stories land in the first PR so the pick is made long before the pass's PR (fork 18, pending; a
-separate builder is making them, outside 6a's briefs); the unpicked
-stories go when the pick ships.
+**A done pass is undressed and collapsed** (fork 11; D301, amended): the group loses the card and
+collapses to one plain line that expands; expanded, its lanes open their decided tabs. The kit builder
+is adding the collapsed state to `Lanes`; 6d's `CorpusLanes` uses it as the kit lands it (this design
+doesn't specify its API). An undo that reopens a task puts the card back and expands the group (fork
+13).
 
 ##### The layout the boards share
 
@@ -14423,9 +14459,10 @@ decided tail as the Inbox's. The inspector is the Inbox's `InspectorFrame` (a 36
 in Body →*, the scroll, the floating `ActionBar` whose buttons carry their keys) and its `DecidedLock`.
 The head map is square (Review 11 rule 6) and real geography — `InboxMap`'s composition
 (`useBodyMapCanvas`, `BodyMapPane` with `rack={false}` and a `plate`), its legend a kit plate. **Now and
-Suggested** (Review 11 rule 3) on every choice: the current value wears *Now*; the queue's suggestion
-wears *Suggested* and is the default pick; the bar's button names the pick (*Display “Lake Auburn”
-instead*, *Set as Wetland*, *Take the re-fit*).
+Suggested** (Review 11 rule 3) on every choice: the current value wears *Now*; the queue's suggestion,
+where it has one, wears *Suggested* and is the default pick, else *Now* is; the bar's button names the
+pick (*Display “Lake Auburn” instead*, *Set as Wetland*, *Take the re-fit*). Names have no suggestion
+until 6c's email counts (D307).
 
 Under `apps/web/src/components/admin/corpus/` (the library stays in `bodies/`):
 
@@ -14435,8 +14472,8 @@ CorpusTaskView.tsx       a task lane's list and inspector, drawn from props (sto
 taskLanes.ts             the task lanes as data (id, group, title, word, tabs, reader)
 taskSearch.ts            tab and item validation (bodiesSearch.ts imports it)
 list/                    TaskList, TaskRow (a variant per lane), DecidedTail, taskReads.ts (the chain)
-handlers/                Duplicates/, Names/, Classes/, Contested/, Bays/, Refits/, PlaceNames/,
-                         Recurrence/, Promotion/, Features/
+handlers/                Names/, Classes/ (6a); Duplicates/, Contested/, Bays/ (6b); Refits/,
+                         PlaceNames/ (6c); Recurrence/, Promotion/, Features/ (6d)
 map/                     the head map and thumbnails, over InboxMap's pieces
 pass/                    PassMeter, passWords.ts (the seasonal states' words)
 actions/useCorpusWrites.ts  every write through `said` and the shared decision runner
@@ -14463,7 +14500,7 @@ two outlines), `PassMeter`.
 | 4.1 Duplicates | `corpus-v5.html` (and `?top=a`) | `Duplicates/` (the pair line, *A on top / B on top*, `CompareTable`, *Kept either way*, *Also on this body*) | `listPage`, `item` | `merge` (A, B), `dismissDuplicates` (N) |
 | 4.2 Name conflicts | `corpus-names-v5.html` | `Names/` (`ChoiceRows` of the claims with rank and namesakes, *Once … shows*, *In the app*) | `listPage`, `item` | `decideName` (⏎) |
 | 4.3 Class conflicts | `corpus-classes-v5.html` | `Classes/` (`ConsequenceLadder`, *The catalogs*, *The body*, the aerial) | the same | `decideClass` (⏎) |
-| 4.4 Contested as water | `corpus-dissent-v5.html` | `Contested/` (asserts and refutes, *If it stays* / *If it goes*, the two futures) | the same | `decideClass` (K, ▾), `decideContested` (R, admin) |
+| 4.4 Contested as water (6b, its shape ruled on real rows first, D306) | `corpus-dissent-v5.html` | `Contested/` (asserts and refutes, *If it stays* / *If it goes*, the two futures) | the same | `decideClass` (K, ▾), `decideContested` (R for an admin, *Set dormant* for a moderator) |
 | 4.5 Orphan bays | `corpus-bays-v5.html` | `Bays/` (*Who could hold it* with `OverlapGauge`, *As a bay of …*, *The other ways out*) | `item`, `bayParents` | `makeBay` (M), `bayToLandmark` (D), `decideClass` (▾) |
 | 4.6 Chord re-fits (and `?map=1`) | `corpus-refits-v5.html` | `Refits/` (thumbnail rows with their chip, *As drawn · Re-fit · Both*, the numbers, *What the campaign did*, the two outlines as `ChoiceRows`; the large map as the viewer modal) | `listPage`, `item` | `settleRefit` (⏎); *Redraw in Body →* unavailable |
 | 4.7 Place names (and `?pick=flats`) | `corpus-places-v5.html` | `PlaceNames/` (the spelling chips, *Which lake* cards, the Dismiss menu with its five reasons) | `listPage`, `item` | `setLake` (S), `setSpellings`, `dismiss` (D ▾), `reopen`; *Place it in Body →* unavailable |
@@ -14475,9 +14512,13 @@ Every board renders beside its mock at 1440 × 900 in both modes before handoff 
 
 **Where the boards and this design differ** (the design stands until the founder rules): every visible
 *pre-ice pass* reads *Pre-Season Pass* (D300), and the foot's *Not yet done for 2026–27* takes the
-seasonal states above; 4.2's emails-by-winter strip and 4.7's per-winter counts are not drawn (fork 5, pending);
+seasonal states above; 4.2's emails-by-winter strip, its *Emails* rows and its *Suggested*, and 4.7's
+per-winter counts, are drawn from 6c (D307) — 6a's Name conflicts draws none and suggests nothing — and
+4.2's *the last Jan 2026* is the last winter with a mention;
 4.5's second *as NHD draws it* row can't exist (one stored outline); 4.6's *as drawn* outline is missing
-on a re-fit recorded before the wave; 4.4's *Remove* is drawn for admins only, with *Set dormant* for moderators (fork 4, pending); *Place it in
+on a re-fit recorded before the wave; 4.4's *Remove* is drawn for admins only, with *Set dormant* for
+moderators (fork 4, ruled (b)), and its facets wait on the founder's look at real rows (D306); the
+sidebar puts the pass group first where the boards draw *Tasks* first (fork 18); *Place it in
 Body →* and *Redraw in Body →* say *Not available yet* (D303); the boards' 212 | 420 columns are the
 console's 236 | 340 (fork 19, ruled).
 
@@ -14487,14 +14528,18 @@ console's 236 | 340 (fork 19, ruled).
   `/admin/corpus?lane=<id>` **in the PR that lands its lane**. The pinning test (`overviewRoutes.test.ts`,
   every Corpus task "starts with `/admin/water`") becomes a per-task table — the lane once built, the old
   page until then — and the last PR drops the old-page half. The *Pre-Season Pass* row opens the pass's
-  first lane with an open task (never Standing, as today). `auditPath`'s `bodyFeature`,
+  first lane with an open task (never Standing, as today); once the pass is done, its *Done 14 Sep*
+  opens the collapsed group's first lane on its decided tab (D301, amended). `auditPath`'s `bodyFeature`,
   `hazardRecurrence` and `corpusPlaceName` move to their lanes' `?item=`. Audit rows for sub-areas,
   put-ins, lots, access alerts and landmarks open the `/admin/water` list today
   (`overviewRoutes.ts:99-103`); once that list retires they would land on its redirect, so the PR that
   retires it gives `FeedTarget` (`overviewData.ts:304`) the body id — a server field — and opens the Body
   console (fork 16, ruled).
 - **The Overview's Corpus card** reads `corpusTasks.lanes`: a row per built lane, the *Pre-Season Pass* row
-  by the seasonal table; *Awaiting enrichment* stays `null` (D302). The status bar's *pre-ice pass not
+  by the seasonal table; *Awaiting enrichment* stays `null` (D302). Until a lane is built its row keeps
+  today's read and old page — in 6a, Duplicates, Orphan bays and a *Contested as water* row split out
+  of *Class conflicts* (the dissent bodies, `reviewQueueCounts`' `class-dissent`, opening
+  `/admin/water/review`, D306). The status bar's *pre-ice pass not
   run* becomes *Pre-Season Pass not done*, shown while the pass is open from 1 October (the ice watch's
   default floor; invented, for the founder's look).
 - **Inbox Zero's *Corpus →*** goes live with the first lane: `ComingSoonLink` becomes a link to the first
@@ -14515,11 +14560,11 @@ serves a lane this wave builds.
 
 | Old page | What it still does | Retires with | Slice |
 |---|---|---|---|
-| `/admin/water/review` (`admin.water.review.tsx`) | the six reasons, list only, linking to the editor | the last intake lane (Duplicates, Orphan bays) | 6b |
+| `/admin/water/review` (`admin.water.review.tsx`) | the six reasons, list only, linking to the editor | the last intake lane (Duplicates, Orphan bays, Contested as water — D306) | 6b |
 | `/admin/water` index (`admin.water.index.tsx`) | open a lake (the palette does it); *Curated bodies* (`listCurated`, covered by the library's `curation` facet); *Suspected duplicates*, merge and **`dismissDuplicates`, whose only caller it is** (`:36`) | Duplicates: a redirect to `?lane=duplicates`. The `/admin/water` **tree** stays in `OLD_SHELL_TREES`: the old editor lives under it | 6b |
 | `/admin/water/place-names` (`PlaceNameQueue.tsx`) | the corpus-wide queue, `setLake`, `reopen` (dismiss and file-as-spelling also exist per body in the Places tab) | Place names | 6c |
 | `/admin/features` (`admin.features.tsx`) | `listRecent` and demote (demote also per body in the Hazards tab) | Known features | 6d |
-| `/admin/recurrence` (`admin.recurrence.tsx`) | the recurrence queue with suppress and unsuppress; **and** `hazards.listRecentMerges` with `hazards.unmerge` (`:35-36`): undoing an automatic hazard merge, which no console page offers and no board draws | Recurrence — **if** fork 14 gives hazard unmerge a home; else the page outlives the lane for it | 6d |
+| `/admin/recurrence` (`admin.recurrence.tsx`) | the recurrence queue with suppress and unsuppress; **and** `hazards.listRecentMerges` with `hazards.unmerge` (`:35-36`): undoing an automatic hazard merge, which no console page offers and no board draws | Recurrence, whole: fork 14 ruled (a) gives *Unmerge* its home on the Body console's Hazards tab and in History's undo; the cross-lake list is owed to Machinery (Co2) | 6d |
 | `/admin/water/standing` | the five lanes (already the library's), *Recently activated* (`standing.listRecentActivations`, Season's), the enrichment-awaiting column (Machinery's) | not this wave; its lanes half is stripped in 6a and `standing.listLane`, its only caller gone, deleted (fork 15, ruled) | 6a |
 | the old editor, `/admin/water/$id` | stays (task modes, D303). It also holds recurrence promote, suppress, unsuppress and recompute, and `bodyFeatures.create`/`promote`, per body — the Recurrence, Promotion and Known features lanes duplicate them cross-lake; both stay until the editor goes | — | — |
 | Dashboard, Ice calibration, Seasons, Tuning, Imports | stay (Instruments, Season, Machinery) | — | — |
@@ -14535,14 +14580,18 @@ component only the Inbox's retired pages used; nothing dead is left over from th
 Each PR lands at least one lane whole (D299), retires its old page (D304), and moves the Overview's and
 Inbox Zero's links for its lanes. Sizes are estimates with tests. *Corrected 2026-11-24:* they were
 scaled from #170's estimate (~4,800 lines), not its actual (29,193); measured against the Inbox wave,
-the designs ran 4.9× under, and *Briefs (B01-6a)*'s *Size, honestly* re-estimates each slice.
+the designs ran 4.9× under, and *Briefs (B01-6a)*'s *Size, honestly* re-estimates each slice. The
+founder took the measured size on 2026-11-24 — all four PRs, 6a as one (D299, amended).
 
-| PR | What it holds | Size (est.) | Builders |
+| PR | What it holds | Size (design; measured re-estimate) | Builders |
 |---|---|---|---|
-| **B01-6a — The task frame and the judgment lanes** | the stored tasks, counts, one writer and its guard, backfill, drift repair, property test; `lanes`, `listPage`, `item`; `lib/corpusRules`; the settle path, `reviewSettled` and the import honoring it (`mergeFields`, `reviewEvidence`), `classRefusals` in the ETL; `decideName`, `decideClass`, `decideContested` and their inverses; `corpus.intake`; the web frame (`CorpusLanes`, `CorpusTaskView`, the search, the moved inspector), **Name conflicts, Class conflicts, Contested as water**; the Overview's card on `corpusTasks.lanes`; Inbox Zero's *Corpus →*; the `Lanes` `dress`/`foot` API and **the four dress stories** (a separate builder's, under way 2026-11-24); fork 15's deletions (ruled) | ~6,500 lines, ~110 files (re-estimated ~28,000–32,000, *Size, honestly*) — over the guideline, because a frame with no lane can't ship (D299) and the server's machinery reviews worse apart from its first consumers | 4 and an executor |
-| **B01-6b — Duplicates and Orphan bays** | `duplicate` tasks over both systems, `dedupReason`, `absorbedFeatures`, the ETL's `duplicateOf`, the partner backfill; `dismissDuplicates`' `prev` and `redup_bodies`; `bayParents`, `makeBay`, `bayToLandmark`, `unmake_bay`, proven on a real local backend; boards 4.1 and 4.5; `/admin/water/review` and the `/admin/water` index retired; `FeedTarget`'s body id | ~5,000, ~75 | 3 |
-| **B01-6c — Chord re-fits and Place names** | `subAreaRefits` and its writers, `settleRefit`; the paged place-name read, its verbs and undos, `setSpellings`; boards 4.6 and 4.7; `/admin/water/place-names` retired | ~4,000, ~60 | 3 |
-| **B01-6d — The Pre-Season Pass** | `corpusPasses`, the rollover rewritten (the skip bug closed), the pass's opening, `passVisibility`, the new `hazardRecurrence` and `bodyFeatures` indexes, `leaveHidden`, `reactivate`, `recompute_recurrence`, hazard unmerge's home (fork 14); boards 4.8–4.10, the chosen dress, the meter, the seasonal states; every visible *pre-ice* word renamed (D300); the Overview's row, the status bar, the Hazards tab's link; `/admin/features` and `/admin/recurrence` retired | ~5,500, ~80 | 4 |
+| **B01-6a — The task frame and the judgment lanes** | the stored tasks, counts, one writer and its guard, backfill, drift repair, property test; `lanes`, `listPage`, `item`; `lib/corpusRules`; the settle path, `reviewSettled` and the import honoring it (`mergeFields`, `reviewEvidence`, D305); `classRefusals` and the claims' `token`/`areaSqM` stored from the next campaign (D306); `decideName`, `decideClass` and their inverses; `corpus.intake`; the web frame (`CorpusLanes`, `CorpusTaskView`, the search, the moved inspector), **Name conflicts and Class conflicts**; the Overview's card on `corpusTasks.lanes` for those two; Inbox Zero's *Corpus →*; the `Lanes` `dress`/`foot` API and the four dress stories (a separate builder's; the pick made, the three others being deleted); fork 15's deletions; the three `waterBodies` indexes `standing.listLane` alone read, dropped | ~5,700 lines; **~25,000–28,000 over ~160–190 files** (*Size, honestly*) — over the guideline, because a frame with no lane can't ship (D299) and the server's machinery reviews worse apart from its first consumers; one PR (D299, amended) | 5 and a seams builder |
+| **B01-6b — Duplicates, Orphan bays and Contested as water** | `duplicate` tasks over both systems, `dedupReason`, `absorbedFeatures`, the ETL's `duplicateOf`, the partner backfill (fork 3); `dismissDuplicates`' `prev` and `redup_bodies`; `bayParents`, `makeBay`, `bayToLandmark`, `unmake_bay`, proven on a real local backend (fork 6); **the Contested lane in the shape the founder rules on the next campaign's rows** — `class-dissent` tasks, its facets, `decideContested` with *Set dormant* for moderators and *Remove* for admins (fork 4), its inverses, the `contested` lane id joining core's union (D306); boards 4.1, 4.4 and 4.5; `/admin/water/review` and the `/admin/water` index retired; `FeedTarget`'s body id | ~5,900; ~26,000–27,000 | 4 |
+| **B01-6c — Chord re-fits and Place names** | `subAreaRefits` and its writers, `settleRefit`; the paged place-name read, its verbs and undos, `setSpellings`; **the email mention counts** — a table by body, name and winter, its loader from the mention inventory, counts only (D307) — drawn as Place names' counts by winter and as Name conflicts' emails strip and *Suggested*; boards 4.6 and 4.7, and 4.2's email facts; `/admin/water/place-names` retired | ~5,000 (the emails were "about 1,000"; nearer 5,000 measured); ~21,000 | 4 |
+| **B01-6d — The Pre-Season Pass** | `corpusPasses`, the rollover rewritten (the skip bug closed), the pass's opening, `passVisibility` with its collapsed state, the new `hazardRecurrence` and `bodyFeatures` indexes, `leaveHidden`, `reactivate`, `recompute_recurrence`, hazard *Unmerge* on the Hazards tab and History (fork 14); boards 4.8–4.10, Known features inside the pass group (D308, its reading confirmed first), the bracketed card and its collapsed done state, the meter, the seasonal states; every visible *pre-ice* word renamed (D300); the Overview's row, the status bar, the Hazards tab's link; `/admin/features` and `/admin/recurrence` retired | ~5,500; ~25,000 | 4 |
+
+**The wave, re-estimated after the rulings:** ~97,000–101,000 lines — 6a's Contested work moves to 6b
+rather than leaving the wave, and 6c gains the emails (~5,000). The founder took ~90,000–100,000.
 
 The pass's PR must merge before **1 July 2027**: the skip bug's deadline, and the first July the group
 has to appear on its own.
@@ -14553,21 +14602,25 @@ has to appear on its own.
 were (*Briefs (PR 1)*); `schema.ts`, the route tree, `consoleNav.ts`, `lib/theme.ts`, `AdminLayout.tsx`,
 `kit/`, `packages/design`, `package.json` and `plans/` are the governor's seams, applied by an executor.
 Each brief carries §12.4's invariants verbatim. *For 6a, superseded by Briefs (B01-6a):* a seams
-builder (X) in place of the executor, a reads builder (S3) split from S1, and the territories re-cut
-by function where they met.
+builder (X) in place of the executor, a reads builder (S3) split from S1, the territories re-cut by
+function where they met, and Contested as water moved to 6b (D306). The 6b–6d rows below are the
+first cut; each slice's briefs re-cut them.
 
 | Slice | Agent | Owns | Starts |
 |---|---|---|---|
 | 6a | **S1 — tasks** | `convex/corpusTasks.ts`, `lib/corpusTasks.ts`, `lib/corpusRules.ts`; the writer hooks in `waterBodies.ts` (`mergeFields`, `mergeBodyInto`, `remove`, `restore` only) and `unmerge.ts`; the backfill and repair; `console.ts`' Corpus card; `core/corpusTasks.ts`; `guards/src/corpusTaskWriters.test.ts` | T0 |
-| | **S2 — intake writes** | `convex/corpusWrites.ts` (`decideName`, `decideClass`, `decideContested`), `lib/undoPolicy.ts`, `lib/undoHandlersCorpus.ts`, `lib/decisionResult.ts`; `core/reviewEvidence.ts`, `core/capabilities.ts` (`corpus.intake`); `scripts/etl/src/masterList.ts`, `transform.ts` (`classRefusals`) | T1, on S1's writer |
+| | **S2 — intake writes** | `convex/corpusWrites.ts` (`decideName`, `decideClass`), `lib/undoPolicy.ts`, `lib/undoHandlersCorpus.ts`, `lib/decisionResult.ts`; `core/reviewEvidence.ts`, `core/capabilities.ts` (`corpus.intake`); `scripts/etl/src/masterList.ts`, `transform.ts` (`classRefusals`) | T1, on S1's writer |
 | | **W1 — frame** | `admin/bodies/` (`BodiesRoute.tsx`, `BodiesView.tsx`, `bodyLanes.ts`, `bodiesSearch.ts`); `admin/corpus/` but `handlers/`; `overview/` (card, routes, status bar); `inbox/list/InboxZero.tsx`, `InboxRoute.tsx`'s prop | T0, after the executor's moves |
-| | **W2 — handlers** | `admin/corpus/handlers/{Names,Classes,Contested}/`, `admin/corpus/map/` | T0, on `InspectorFrame` (moved, unchanged) |
+| | **W2 — handlers** | `admin/corpus/handlers/{Names,Classes}/`, `admin/corpus/map/` | T0, on `InspectorFrame` (moved, unchanged) |
 | | *executor* | the inspector and runner moves; the `Lanes` `dress`/`foot` API and the four `PassDress` stories; the schema | T0 |
 | 6b | **S3 — duplicates** | the dedup hooks, `dedupReason`, the partner backfill, `dismissDuplicates`' `prev` and `redup_bodies`; the ETL's `duplicateOf` and `absorbedFeatures` | T0 |
 | | **S4 — bays** | `bayParents`, `makeBay`, `bayToLandmark`, `unmake_bay` (in `corpusWrites.ts`, reusing `unmerge.ts`), the real-backend proof | T0 |
+| | **S4b — contested** | the `class-dissent` tasks and facets in the shape the founder rules (D306), `decideContested` and its inverses, the `contested` id joining core's union | T0, after the founder's look |
 | | **W3** | `handlers/{Duplicates,Bays}/`, the two-outline map pieces (the `body/map/` seam), the retirements, `FeedTarget` and its routes | T0 |
+| | **W3b** | `handlers/Contested/`, its sidebar entry and the Overview's row moved onto `lanes` | T0, after the founder's look |
 | 6c | **S5** | `subAreaRefits` and its writers in `subAreas.ts`, `settleRefit`; `corpusPlaceNames.ts` (the paged read, the verbs, `setSpellings`) and their undos | T0 |
-| | **W4**, **W5** | `handlers/Refits/` with the viewer modal; `handlers/PlaceNames/` and the retirement | T0 |
+| | **S5b — emails** | the mention-counts table, its loader in `scripts/`, its reads in the place-name rows and the Names item (counts by winter, *Suggested*) (D307) | T0 |
+| | **W4**, **W5** | `handlers/Refits/` with the viewer modal; `handlers/PlaceNames/` with its counts by winter, the retirement, and the Names handler's emails strip and *Suggested* | T0 |
 | 6d | **S6** | `corpusPasses`, `recurrence.ts`' rollover and the pass's opening, `passVisibility` in core, the candidates' discovery, `leaveHidden`, the new indexes' reads | T0 |
 | | **S7** | `bodyFeatures.ts` (`listPage`, `reactivate`, the demote's `prev`), `recompute_recurrence`, hazard unmerge per fork 14, their undos | T0 |
 | | **W6**, **W7** | `handlers/{Recurrence,Promotion}/` and `pass/`; `handlers/Features/`, the renames (`OverviewCards.tsx`, `overviewStatus.tsx`, `HazardsTabView.tsx`, `hazardsWords.ts`, `ConsoleShell.stories.tsx`), the Hazards tab's link, the retirements | T0 |
@@ -14594,16 +14647,19 @@ by function where they met.
    file, no `--campaign`), but the only merge output on hand predates D266, so that check runs on a
    throwaway backend before the PR, and on dev at the next campaign.
 3. 6b: `corpusTasks:backfillPartners` dry, its pairs read back against the *duplicate-candidate* rows,
-   then applied; a merge and its unmerge from the lane; a bay made and unmade, compared row by row.
-4. 6c: a re-fit settled each way and undone; a place name dismissed and its undo.
+   then applied; a merge and its unmerge from the lane; a bay made and unmade, compared row by row;
+   the backfill files the `class-dissent` tasks, and a contested body set dormant and undone.
+4. 6c: the mention counts' loader dry, then applied, its totals read back against the inventory's;
+   a re-fit settled each way and undone; a place name dismissed and its undo.
 5. 6d: `corpusPasses:openNow '{"season":2026}'` dry, then applied; the meter equals the patterns and
-   candidates filed; one decided and undone; the group's disappearance on its last decision checked on a
-   throwaway local backend, not on dev's real queue.
+   candidates filed; one decided and undone; the group's collapse on its last decision, and its return
+   on that decision's undo, checked on a throwaway local backend, not on dev's real queue.
 
 #### The forks
 
-Each is a decision the code and the founder's calls could not make; the design above carries the
-recommendation until it is ruled. **F** marks the founder's call, **G** the governor's.
+Each is a decision the code and the founder's calls could not make, as it was asked; every one was
+ruled on 2026-11-24 (the next section), and the design above carries the rulings. **F** marks the
+founder's call, **G** the governor's.
 
 1. **Stored task rows, or read the sources?** (G) The lanes could read today's sources directly — the
    review queue by `by_review_reason`, the dedup flags, the mouth indexes, the recurrence rows — with
@@ -14703,35 +14759,62 @@ recommendation until it is ruled. **F** marks the founder's call, **G** the gove
 
 #### How the forks were ruled (2026-11-24)
 
-The governor ruled its seven the day the design was written; the founder's are pending. The design text
-carries each ruling, and every passage that turns on a pending fork says *(fork N, pending)*, so a
-different answer is a local edit. 6a is built to the recommendation of each pending fork it touches.
+The governor ruled its seven the day the design was written; the founder answered his the same day.
+Where he gave his preference his words are quoted; everywhere else, in his words: *"Anywhere I didn't
+offer my preference is an agreement with your recommendation! Let's do this."* A ruling that only
+picks a mechanic lives in this table; the rest are D305–D308, with D299 and D301 amended. **Two things
+stay open:** fork 10's reading, to confirm with the founder before 6d, and the shape of Contested as
+water, which he rules on the next campaign's real rows before 6b (D306).
 
 | # | Fork | Ruling | Where it landed |
 |---|---|---|---|
 | 1 | Stored task rows, or read the sources | the governor: **stored rows** | *The unit*; S1's writer and S3's reads in *Briefs (B01-6a)* |
-| 2 | Does a settled question come back | **pending** (founder); 6a builds (b), settled until the evidence changes | `reviewSettled` and `reviewEvidence` (S1); the local edit is `mergeFields`' honoring rule |
-| 3 | One Duplicates lane over both systems | pending (founder); 6b | — |
-| 4 | Can a moderator take a contested body off the map | **pending** (founder); 6a builds (b), *Set dormant* for moderators and *Remove* for admins | `decideContested` (S2); the Contested handler (W2) |
-| 5 | The emails behind a name | **pending** (founder); 6a builds (a), the email facts left out | the Names item view (S3) and handler (W2) draw none |
-| 6 | What making a bay keeps | pending (founder); 6b | — |
+| 2 | Does a settled question come back | the founder: **(b)**, settled until the evidence behind it changes, then asked again saying the catalogs changed; a class question settled before its claims are stored is asked again once by the next campaign (the briefs' question 1, built as written) — **D305** | `reviewSettled`, `reviewEvidence` and `mergeFields`' honoring rule (S1) |
+| 3 | One Duplicates lane over both systems | the founder: **(a)**, one lane, the partner backfill, same-source rows confirm-only | *Duplicates*; 6b |
+| 4 | Can a moderator take a contested body off the map | the founder: **(b)**, *Set dormant* for moderators, *Remove* for admins — with the Contested lane, so in 6b (**D306**) | *The intake lanes*; 6b |
+| 5 | The emails behind a name | the founder, **revised**: the email facts are loaded, in 6c — mention counts by body, name and winter, never message text (L5a) — for Place names' counts by winter and Name conflicts' emails strip and *Suggested*; 6a's Name conflicts has neither email facts nor a suggestion, its default pick *Now* (**D307**) | *The facts each board asks for*; *Place names*; 6c's slice |
+| 6 | What making a bay keeps | the founder: **(a)**, clip and drop, refused under a floor of a quarter of the bay kept (the design's number stands until he gives another) | *Making a bay of a body*; 6b |
 | 7 | Re-fits recorded before the wave | the governor: **(a)**, only *Take the re-fit*, saying the drawn outline wasn't kept | *Chord re-fits*; 6c |
-| 8–14 | The pass as a snapshot; one-winter patterns; Known features' home; a done pass; July before the pass; an undo after done; hazard unmerge's home | pending (founder); 6d | — |
-| 15 | The old redirects, and Standing's half | the governor (the founder told): **delete** `/admin/flags`, `/admin/support`, `/admin/users`, `/admin/users/$id` in 6a, repointing `clerkAdmin.ts`' `deepLinkPath` and `placesModel.ts`' `personPath` to `/admin/people`; keep `/admin/water/requests` (In22); strip Standing's lanes half in 6a | *Legacy retirement*; builder X's second part |
+| 8 | Is the pass a snapshot | the founder: **(a)**, the pass is what July found (D301, amended) | *The Pre-Season Pass*; 6d |
+| 9 | Do one-winter patterns count | the founder: **(a)**, the meter counts patterns seen in two or more winters; *1 winter* is read-only (D301, amended) | *The seasonal rule*; 6d |
+| 10 | Where Known features lives | the founder: **(c)** — *"known features don't need to be found/browsed in aggregate unless the point is to authorize/clean them up between seasons"* (**D308**). *The governor's reading, to confirm before 6d:* never a lane in *Views*; a lane inside the Pre-Season Pass group (as board 4.10 draws it), outside the meter; otherwise reached per body on the Hazards tab. The other reading: no cross-lake lane, board 4.10 not built | *The seasonal rule*; 6d |
+| 11 | Reading a done pass | the founder: **(c)** — *"It's probably wise to allow any pre-season pass decision to be viewed in retrospect, maybe even changed, but at least no disappeared forever. But it should look dismissed/complete/normal, not highlighted like when they're urgent. And collapsed feels even better."* A done pass loses its dress and collapses to one plain line that expands; its lanes open their decided tabs, where a decision can still be undone or changed (**D301, amended**) | *The seasonal rule*, *The dress*, *Where the Overview links*; 6d |
+| 12 | Between 1 July and a computed pass | the founder: **(a)**, the group appears on 1 July saying it is being computed, red past 7 July (D301, amended) | *The seasonal rule*; 6d |
+| 13 | An undo after the pass is done | the founder: **(a)**, it reopens the pass: the group takes its dress back and expands until that task is decided (D301, amended) | *The Pre-Season Pass*; 6d |
+| 14 | Hazard unmerge's home | the founder: **(a)**, *Unmerge* on the Body console's Hazards tab and History's undo; a cross-lake list owed to Machinery (Co2) | *Undo*; *Legacy retirement*; 6d |
+| 15 | The old redirects, and Standing's half | the governor (the founder told): **delete** `/admin/flags`, `/admin/support`, `/admin/users`, `/admin/users/$id` in 6a, repointing `clerkAdmin.ts`' `deepLinkPath` and `placesModel.ts`' `personPath` to `/admin/people`; keep `/admin/water/requests` (In22); strip Standing's lanes half in 6a | *Legacy retirement*; builder X's second part (done) |
 | 16 | Audit links for a body's parts | the governor: `FeedTarget` gains the body id in 6b | 6b |
-| 17 | Four PRs or three | the governor (the founder told): **four** | *The slices* |
-| 18 | The sidebar's order, and when the dress is picked | **pending** (founder); 6a writes the recommendation (a) as data: the pass group first once it exists (6d), then *Tasks*, *Views*, *Standing* | `bodyLanes.ts` (W1); the dress stories are a separate builder's, already running |
+| 17 | Four PRs or three | the governor (the founder told): **four**; and the founder took the measured size (~90,000–100,000 lines) and 6a as one PR (**D299, amended**) | *The slices* |
+| 18 | The sidebar's order, and when the dress is picked | the founder: order **(a)**, *"At the top!"* — Pre-Season Pass, Tasks, Views, Standing; the dress **the bracketed card**, *"I prefer the bracketed card, #2!"* (**D301, amended**) | `bodyLanes.ts`' group order (W1, as data); *The dress*; 6d |
 | 19 | The boards' columns | the governor: **the console's tokens** (236 \| 340), named as a board difference | every render-compare in *Briefs (B01-6a)* |
 | 20 | A capability for settling | the governor: **`corpus.intake`** (moderator) | core's capability map, at 6a's T0 |
 
+**Also ruled on 2026-11-24:**
+
+- **Contested as water leaves 6a** (the briefs' question 3; the founder took the governor's
+  recommendation; **D306**). 6a ships Name conflicts and Class conflicts only, files no
+  `class-dissent` task and draws no Contested lane; it still stores the refusals (`classRefusals`)
+  and the claims' `token` and `areaSqM`, so the next campaign records them. After that campaign the
+  founder rules the lane's shape on the real rows, and it lands in 6b.
+- **The claims' token and area** (the briefs' question 2): yes, both carried from 6a's ETL change.
+- **Three `waterBodies` indexes are dropped in 6a's schema seam** (the governor): `by_dormant_reason`,
+  `by_removed_at` and `by_public_access_verdict` lost their only reader when `standing.listLane` was
+  deleted with Standing's lanes half. Each is dropped only after a grep proves nothing reads it.
+- **People's trust panel is owed a home** (found by the legacy strip): the register's Pe29.
+- **What needs the founder after 6a merges:** a full campaign (merge and load). Without it, Class
+  conflicts' rows sit under *All* with the catalogs *not recorded*, and no Contested row can be
+  looked at.
+
 #### Briefs (B01-6a)
 
-Written 2026-11-24 against `phase-b01-corpus` at `b213854b` (main at `28a6934c`). B01-6a is the
-design's first PR: the stored task rows and their one writer, the settle path and the import
-honoring it, the web frame, and the lanes **Name conflicts**, **Class conflicts** and **Contested as
-water**, with the Overview's Corpus card and Inbox Zero's *Corpus →* going live, and fork 15's
-deletions. Where this section and the design above differ for 6a, this section stands: it was
-checked against the code, and the design was not everywhere.
+Written 2026-11-24 against `phase-b01-corpus` at `b213854b` (main at `28a6934c`); **amended the same
+day** for the founder's rulings (*How the forks were ruled*): Contested as water left 6a for 6b (D306),
+the email facts went to 6c (D307), and every question below was ruled. B01-6a is the design's first
+PR: the stored task rows and their one writer, the settle path and the import honoring it (D305),
+the refusals and the claims' tokens stored for the next campaign, the web frame, and the lanes **Name
+conflicts** and **Class conflicts**, with the Overview's Corpus card and Inbox Zero's *Corpus →*
+going live, and fork 15's deletions (done). Where this section and the design above differ for 6a,
+this section stands: it was checked against the code, and the design was not everywhere.
 
 A brief is pasted as two blocks: *Every brief begins with this* (below, with its territory filled
 in) and the builder's own section.
@@ -14760,8 +14843,9 @@ You are a builder for B01-6a, the first PR of the Corpus tasks wave, in the `ska
 `plans/`). Read `CLAUDE.md`, then in `plans/phases/B01-admin-console.md`: §12 (the build model),
 `### The Corpus tasks (B01-6, the design)` and its `#### Briefs (B01-6a)` (this section — the
 schema, the snippets, the order). The boards are in `~/Code/skating-mockups/admin-variants/`
-(`corpus-names-v5.html`, `corpus-classes-v5.html`, `corpus-dissent-v5.html`; the sidebar and list
-frame are on all three).
+(`corpus-names-v5.html`, `corpus-classes-v5.html`; the sidebar and list frame are on both, and their
+sidebar draws lanes 6a doesn't build). Contested as water (`corpus-dissent-v5.html`) is not 6a's: it
+waits on the founder's look at real rows and lands in 6b (D306).
 
 You work in your own copy of the governor's worktree, on `phase-b01-corpus`, and commit there. Your
 changes come back to the governor by a file merge. Start with `pnpm install --frozen-lockfile`, once.
@@ -14813,19 +14897,20 @@ Each was checked against the code at `b213854b`; the briefs below build on the r
 | Paths that remove a body: `remove` / `restore` | also two **hard deletes**: `resolveIncomingMergeDuplicates` (`:8383`) and `resolveCampaignDuplicates` (`:8498`) delete bodies outright; the prunes demote, never delete (`:1846`) | S1 hooks both deletes, and the guard holds every body deleter |
 | A task with no decision is decided `superseded` | a decided tab must be one index range; filtering out `superseded` rows would scan, and Review 11 rule 7 says what a campaign did never reads as a decision | a third status, **`left`**, with `leftAt` and `leftBecause`; `decided` means a person decided |
 | `reopenTask(actionId)` | no index finds a task by its decision's row | `corpusTasks.by_decision_action` (`eq` only) |
-| "their rows carry `taskId`, so the undo also unsettles and reopens" | the impls (`setWaterBodyNameImpl`, `setClassImpl`, `removeBodyImpl`, `setStandingImpl`) return the body's id, not their audit row's; the standing row is written deep in `lib/standing.ts`' `transitionStanding` | the domain row's id becomes the task's `decisionActionId`; one hook in `lib/undo.ts` reopens the task after any undo whose row decided one (S2). How the id comes back is S2's call; the recommendation is a capture scoped to the mutation in `writeAudit` (the `inboxBatch` pattern), not four signature changes |
+| "their rows carry `taskId`, so the undo also unsettles and reopens" | the impls 6a calls (`setWaterBodyNameImpl`, `setClassImpl`) return the body's id, not their audit row's (6b's `removeBodyImpl` and `setStandingImpl` do too; the standing row is written deep in `lib/standing.ts`' `transitionStanding`) | the domain row's id becomes the task's `decisionActionId`; one hook in `lib/undo.ts` reopens the task after any undo whose row decided one (S2), so 6b's verbs need no second hook. How the id comes back is S2's call; the recommendation is a capture scoped to the mutation in `writeAudit` (the `inboxBatch` pattern), which 6b's two impls can use unchanged, rather than signature changes |
 | `lib/decisionResult.ts` renamed `DecisionResult` | five server files and three web files import `InboxDecisionResult` | no rename: T0 exports `UndoOffer` and adds `CorpusDecisionResult` beside it |
 | `NAME_SOURCE_RANK` gives the rank in words | it lives in the ETL (`scripts/etl/src/mergeRules.ts:601`), which Convex can't import | T0 moves it to `packages/core/src/nameClaims.ts`; the ETL imports it from core |
-| A class claim carries the board's FCODE and edit date (not verified) | `classClaims` is `{ source, value }` (`schema.ts:869`); the merge holds each member's own token (`sourceToken`: `nhd:fcode=46600`, `osm:water=pond`) and area (`areaSqM`) and drops both; **no edit date is read anywhere in the ETL** | the claim gains `token?` and `areaSqM?`, carried by the next campaign (the governor's call — question 2); no edit date is drawn |
-| The contested facet from the refusing token; a body loaded before reads *Not water* | the refusing tokens are dropped (`masterList.ts:938-985`); and in the last merge (`n7-3-20260809`) the 20 queued dissents were 18 refusals by OSM's bare `natural=water` and 2 by `wetland=tidalflat` (its log's per-token tally): every refusal of the *flowing* or *engineered* family is settled by `settledClassDissent` (`core/waterClass.ts:814`) and never queued | a body without stored refusals sits in **`notRecorded`**, which reads under *All* only, never under *Not water*; the facet table is one constant in core (question 3) |
-| The class facets (*Wetland or lake*, *Other pairs*) come from the claims | no body on dev has `classClaims`: they arrived in B01-3d, and the last campaign recorded is `n7-3-20260809` | the same `notRecorded` facet for a class conflict without claims |
-| *Suggested* is the queue's suggestion (Review 11 rule 3) | for names the board's only evidence for a suggestion is the emails, which fork 5 leaves out; nothing else names one | the server sends `suggested: false` on every name until a rule is given (question 4); the default pick is *Now* |
+| A class claim carries the board's FCODE and edit date (not verified) | `classClaims` is `{ source, value }` (`schema.ts:869`); the merge holds each member's own token (`sourceToken`: `nhd:fcode=46600`, `osm:water=pond`) and area (`areaSqM`) and drops both; **no edit date is read anywhere in the ETL** | the claim gains `token?` and `areaSqM?`, carried by the next campaign (question 2, ruled: yes); no edit date is drawn |
+| The contested facet from the refusing token; a body loaded before reads *Not water* | the refusing tokens are dropped (`masterList.ts:938-985`); and in the last merge (`n7-3-20260809`) the 20 queued dissents were 18 refusals by OSM's bare `natural=water` and 2 by `wetland=tidalflat` (its log's per-token tally): every refusal of the *flowing* or *engineered* family is settled by `settledClassDissent` (`core/waterClass.ts:814`) and never queued | **the Contested lane leaves 6a** (question 3, ruled; D306): 6a stores `classRefusals` (the import, from the next campaign) and files no `class-dissent` task; the lane's facets wait on the founder's look at the stored rows, and land in 6b |
+| The class facets (*Wetland or lake*, *Other pairs*) come from the claims | no body on dev has `classClaims`: they arrived in B01-3d, and the last campaign recorded is `n7-3-20260809` | a class conflict without claims sits in **`notRecorded`**, which reads under *All* only, never as a tab |
+| *Suggested* is the queue's suggestion (Review 11 rule 3) | for names the board's only evidence for a suggestion is the emails; nothing else names one | the server sends `suggested: false` on every name in 6a and the default pick is *Now*; 6c's email counts name the suggestion (question 4, ruled; D307) |
+| Standing's lanes read `waterBodies` through their own indexes | `standing.listLane` was their only reader, and X's second part deleted it; `by_dormant_reason`, `by_removed_at` and `by_public_access_verdict` have no reader left (grep, per table) | the schema seam drops the three (the governor's ruling), each after its grep |
 | The web reads the server's types | the web derives them from `api` (`inbox/list/inboxTypes.ts`), so a web builder can't compile against reads that don't exist | T0 lands typed stubs of `corpusTasks.ts` and `corpusWrites.ts` (bodies marked `PLACEHOLDER`), which S3 and S2 replace |
-| `InspectorFrame`, `DecidedLock` and `useDecisionRunner` move | the frame needs `inspectorContext.tsx`; the lock reads `DECISION_WORDS[locked.decision]`, an Inbox map, and `BACK_TO_QUEUE` / `decidedBy` from `inboxWords.ts`; `lockModel.ts`' phases are generic but `decidedStateOf` reads an Inbox view | T0 moves the frame, the lock, the context, `lockModel.ts` (leaving `decidedStateOf` in the Inbox) and the runner; `DecidedState.decision` becomes `decisionWord` |
+| `InspectorFrame`, `DecidedLock` and `useDecisionRunner` move | the frame needs `inspectorContext.tsx`; the lock reads `DECISION_WORDS[locked.decision]`, an Inbox map, and `BACK_TO_QUEUE` / `decidedBy` from `inboxWords.ts`; `lockModel.ts`' phases are generic but `decidedStateOf` reads an Inbox view | T0 moves the frame, the lock, the context, `lockModel.ts` (leaving `decidedStateOf` in the Inbox) and the runner; `DecidedState.decision` becomes `decisionWord`. That rename is the one edit to the Inbox's tests and stories beyond import paths: the fixtures that build a `DecidedState` name the field `decisionWord` (the word as its value), and `decidedStateOf`'s test case moves with it |
 | `actions/useCorpusWrites.ts` under the frame | each handler's verbs are its own | each handler keeps its writes in its own folder (W2), on the moved runner; the frame holds no write |
-| The Overview's card moves onto `corpusTasks.lanes` and stops reading `reviewQueueCounts` | the card is assembled on the web (`overviewData.ts:154`); Duplicates and Orphan bays are 6b's lanes | no `console.ts` change; the card reads `lanes` for its three rows (*Contested as water* becomes its own row, split out of *Class conflicts*) and the old reads for the rest until 6b |
+| The Overview's card moves onto `corpusTasks.lanes` and stops reading `reviewQueueCounts` | the card is assembled on the web (`overviewData.ts:154`); its *Class conflicts* row sums `class-conflict` and `class-dissent`; Duplicates and Orphan bays are 6b's lanes | no `console.ts` change; *Name conflicts* and *Class conflicts* read `lanes` (so *Class conflicts* is `class-conflict` alone, as its lane is), and the dissent bodies get their own *Contested as water* row on today's read (`reviewQueueCounts`' `class-dissent`, opening `/admin/water/review`) until 6b, as Duplicates and Orphan bays keep theirs |
 | `corpusTasks:backfill` | `corpusTasks.ts` holds the public reads; the Inbox keeps its jobs apart (`inbox.ts` reads, `inboxItems.ts` jobs) | the jobs are `corpusTaskJobs.ts`: `corpusTaskJobs:backfill` |
-| 6a files tasks for every intake reason | an orphan bay's facet needs 6b's share rule; Duplicates is 6b's kind | 6a files only `name-conflict`, `class-conflict` and `class-dissent` (D299: each lane lands whole) |
+| 6a files tasks for every intake reason | an orphan bay's facet needs 6b's share rule; Duplicates is 6b's kind; Contested waits on the founder (D306) | 6a files only `name-conflict` and `class-conflict` (D299: each lane lands whole) |
 | "#170 was ~4,800 lines of server" | that was #170's estimate; it landed at 29,193 lines | *Size, honestly*, below |
 
 ##### Territories (disjoint)
@@ -14835,12 +14920,12 @@ A builder who needs a line in a function it doesn't own asks for it in its repor
 
 | Builder | Owns | Requests as a seam, never edits |
 |---|---|---|
-| **X — seams, then the legacy** | *Part 1 (T0):* `packages/convex/convex/schema.ts` (the seam below); `waterBodies.ts`' `canonicalBody` validator only; `lib/enums.ts`' `MODERATION_ACTIONS` only; `lib/undoPolicy.ts`' two placeholder rows only; `lib/decisionResult.ts`; the typed stubs `convex/corpusTasks.ts`, `convex/corpusWrites.ts`, `lib/corpusTasks.ts`, `lib/corpusRules.ts`; `packages/core/src/corpusTasks.ts` (new), the stubs `reviewEvidence.ts`, `corpusFacets.ts`, `corpusFacts.ts` and their lines in `index.ts`, `capabilities.ts` (`corpus.intake`), `nameClaims.ts` (`NAME_SOURCE_RANK`) and the ETL's import of it (`scripts/etl/src/mergeRules.ts`); `apps/web/src/components/admin/shell/actionLabels.ts` (the two verbs); the moves into `apps/web/src/components/admin/inspector/` and `admin/actions/` and every importer they touch (`inbox/**`, `body/tabs/shape/ShapeTabRoute.tsx`); `convex/_generated`; `plans/06-data-model.md`. *Part 2 (any time after):* `routes/admin.flags.tsx`, `admin.support.tsx`, `admin.users.index.tsx`, `admin.users.$id.tsx`, `-admin.flags.test.tsx`, `-admin.support.test.tsx`, `routeTree.gen.ts`; `admin/body/tabs/places/placesModel.ts` (`personPath`), `placesFixtures.ts`, `PlacesView.stories.tsx`, `PlacesTab.test.tsx`, `placesModel.test.ts`; `packages/convex/convex/clerkAdmin.ts` (`deepLinkPath` at `:141`) and `clerkAdmin.test.ts` (`:110`, `:472`); `analytics.ts`' stale comment (`:396`); `routes/admin.water.standing.tsx` (its lanes half); `standing.ts`' `listLane` only and its cases in `standing.test.ts`; `admin/shell/consoleNav.ts`' comment (`:16`, to D304's rule) and `consoleNav.test.ts`' comments | the kit (`kit/lanes.tsx` belongs to the dress builder); `admin/overview/**` (W1's) |
-| **S1 — the writer and the import** | `packages/convex/convex/lib/corpusTasks.ts` (replacing the stub), `lib/corpusTaskRepair.ts` (new), `convex/corpusTaskJobs.ts` (new: `backfill`, `repair`, `syncOne`); `waterBodies.ts`' `mergeFields`, `classClaimFields` and a new `classRefusalFields`, `importCanonical`'s handler, `mergeBodyInto`, `removeBodyImpl`, `restoreBodyImpl`, `resolveIncomingMergeDuplicates`, `resolveCampaignDuplicates`; `unmerge.ts`; `lib/enums.ts`' `FAILING_JOBS` only; `recurringJobs.ts`' `CRON_OF`; `crons.ts`; `packages/core/src/reviewEvidence.ts`, `corpusFacets.ts` (replacing the stubs); `scripts/etl/src/load.ts` and `scripts/run-log/src/batchNdjson.ts` (the batch size, if the proof lowers it); `packages/guards/src/corpusTaskWriters.test.ts` (new); their tests | `schema.ts`; `lib/corpusRules.ts` (S2's); `lib/undo.ts` (S2's — S1 names the call, S2 adds it); `masterList.ts` / `transform.ts` (S2's) |
-| **S2 — decisions and their undo** | `convex/corpusWrites.ts` (replacing the stub: `decideName`, `decideClass`, `decideContested`); `lib/corpusRules.ts` (replacing the stub); `lib/undo.ts` (the reopen hook); `lib/undoPolicy.ts` (the two rows, final); `lib/undoHandlersCorpus.ts` (`settle_review_reason` ↔ `unsettle_review_reason`); `waterBodies.ts`' `setWaterBodyNameImpl` and `setClassImpl` only, `standing.ts`' `setStandingImpl` only, `lib/standing.ts` and `lib/audit.ts` — each only if the action id's way back needs it; `scripts/etl/src/masterList.ts`, `transform.ts`, `types.ts` (`classRefusals`, the claims' `token` and `areaSqM`); `packages/guards/src/writersDecideFirst.test.ts` and `importCycles.test.ts`, if `corpusWrites.ts` joins them; their tests | `schema.ts`; S1's `lib/corpusTasks.ts` (imports `settleReason`, `reopenTask`, `taskToDecide`; asks for any change) |
-| **S3 — the reads** | `convex/corpusTasks.ts` (replacing the stub: `lanes`, `listPage`, `item`); `lib/corpusTaskViews.ts` (new); `packages/core/src/corpusFacts.ts` (replacing the stub: the class ladder's consequences, the rank words, the name split's words); their tests | `schema.ts`; `lib/corpusRules.ts` (S2's: `can` calls it); `console.ts` (no change in 6a) |
-| **W1 — the frame** | `apps/web/src/components/admin/bodies/`: `BodiesRoute.tsx`, `BodiesView.tsx`, `BodiesView.stories.tsx`, `bodyLanes.ts`, `bodiesSearch.ts`, `bodiesReads.ts` and their tests; `admin/corpus/` but `handlers/` and `map/` (`CorpusLanes.tsx`, `CorpusTaskView.tsx`, `taskLanes.ts`, `taskSearch.ts`, `corpusTypes.ts`, `list/`, `inspector/` with the handler registry, `words/corpusWords.ts`, `testing/routeHarness.tsx`); `routes/admin.corpus.tsx` if it needs a line; `admin/overview/` (`OverviewCards.tsx`, `overviewData.ts`, `overviewLinks.tsx`, `overviewRoutes.ts`, `useOverviewHome.ts`, their fixtures, tests and stories); `admin/inbox/list/InboxZero.tsx`, `inbox/InboxRoute.tsx`' `notInInbox` prop, `inbox/words/inboxWords.ts`' `CORPUS_LINK`, and their tests | `kit/` (the dress builder's `Lanes`; a promotion is the governor's); `admin/inspector/` and `admin/actions/` (moved at T0, unchanged after); the route tree; `consoleNav.ts`; `packages/*` |
-| **W2 — the three handlers** | `admin/corpus/handlers/Names/`, `Classes/`, `Contested/` (each with `register.tsx`, its writes on the moved `useDecisionRunner`, its words, fixtures, stories and wiring test); `admin/corpus/map/`; the kit candidates `ChoiceRows` and `ConsequenceLadder` beside the handlers | the same as W1, plus W1's files; `body/map/` (a descriptor it needs is a seam request) |
+| **X — seams, then the legacy** | *Part 1 (T0):* `packages/convex/convex/schema.ts` (the seam below, with the three index drops); `waterBodies.ts`' `canonicalBody` validator only; `lib/enums.ts`' `MODERATION_ACTIONS` only; `lib/undoPolicy.ts`' two placeholder rows only; `lib/decisionResult.ts`; the typed stubs `convex/corpusTasks.ts`, `convex/corpusWrites.ts`, `lib/corpusTasks.ts`, `lib/corpusRules.ts`; `packages/core/src/corpusTasks.ts` (new), the stubs `reviewEvidence.ts`, `corpusFacets.ts`, `corpusFacts.ts` and their lines in `index.ts`, `capabilities.ts` (`corpus.intake`), `nameClaims.ts` (`NAME_SOURCE_RANK`) and the ETL's import of it (`scripts/etl/src/mergeRules.ts`); `apps/web/src/components/admin/shell/actionLabels.ts` (the two verbs); the moves into `apps/web/src/components/admin/inspector/` and `admin/actions/` and every importer they touch (`inbox/**` — imports only, plus `inboxWords.ts`' `BACK_TO_QUEUE` and `decidedBy` moving out and the fixtures' `decisionWord` — and `body/tabs/shape/ShapeTabRoute.tsx`); `convex/_generated`; `plans/06-data-model.md`; the root `.gitignore` (`apps/web/.pass-dress/`). *Part 2 (done and merged, `c739d67e`–`0da61869`):* `routes/admin.flags.tsx`, `admin.support.tsx`, `admin.users.index.tsx`, `admin.users.$id.tsx`, `-admin.flags.test.tsx`, `-admin.support.test.tsx`, `routeTree.gen.ts`; `admin/body/tabs/places/placesModel.ts` (`personPath`), `placesFixtures.ts`, `PlacesView.stories.tsx`, `PlacesTab.test.tsx`, `placesModel.test.ts`; `packages/convex/convex/clerkAdmin.ts` (`deepLinkPath` at `:141`) and `clerkAdmin.test.ts` (`:110`, `:472`); `analytics.ts`' stale comment (`:396`); `routes/admin.water.standing.tsx` (its lanes half); `standing.ts`' `listLane` only and its cases in `standing.test.ts`; `admin/shell/consoleNav.ts`' comment (`:16`, to D304's rule) and `consoleNav.test.ts`' comments | the kit (`kit/lanes.tsx` belongs to the dress builder); `admin/overview/**` (W1's) |
+| **S1 — the writer and the import** (`name-conflict` and `class-conflict` tasks; the refusals stored, no task for them) | `packages/convex/convex/lib/corpusTasks.ts` (replacing the stub), `lib/corpusTaskRepair.ts` (new), `convex/corpusTaskJobs.ts` (new: `backfill`, `repair`, `syncOne`); `waterBodies.ts`' `mergeFields`, `classClaimFields` and a new `classRefusalFields`, `importCanonical`'s handler, `mergeBodyInto`, `removeBodyImpl`, `restoreBodyImpl`, `resolveIncomingMergeDuplicates`, `resolveCampaignDuplicates`; `unmerge.ts`; `lib/enums.ts`' `FAILING_JOBS` only; `recurringJobs.ts`' `CRON_OF`; `crons.ts`; `packages/core/src/reviewEvidence.ts`, `corpusFacets.ts` (replacing the stubs); `scripts/etl/src/load.ts` and `scripts/run-log/src/batchNdjson.ts` (the batch size, if the proof lowers it); `packages/guards/src/corpusTaskWriters.test.ts` (new); their tests | `schema.ts`; `lib/corpusRules.ts` (S2's); `lib/undo.ts` (S2's — S1 names the call, S2 adds it); `masterList.ts` / `transform.ts` (S2's) |
+| **S2 — decisions and their undo** | `convex/corpusWrites.ts` (replacing the stub: `decideName`, `decideClass`); `lib/corpusRules.ts` (replacing the stub); `lib/undo.ts` (the reopen hook); `lib/undoPolicy.ts` (the two rows, final); `lib/undoHandlersCorpus.ts` (`settle_review_reason` ↔ `unsettle_review_reason`); `waterBodies.ts`' `setWaterBodyNameImpl` and `setClassImpl` only, and `lib/audit.ts` — each only if the action id's way back needs it; `scripts/etl/src/masterList.ts`, `transform.ts`, `types.ts` (`classRefusals`, the claims' `token` and `areaSqM`); `packages/guards/src/writersDecideFirst.test.ts` and `importCycles.test.ts`, if `corpusWrites.ts` joins them; their tests | `schema.ts`; S1's `lib/corpusTasks.ts` (imports `settleReason`, `reopenTask`, `taskToDecide`; asks for any change) |
+| **S3 — the reads** (two lanes) | `convex/corpusTasks.ts` (replacing the stub: `lanes`, `listPage`, `item`); `lib/corpusTaskViews.ts` (new); `packages/core/src/corpusFacts.ts` (replacing the stub: the class ladder's consequences, the rank words, the name split's words); their tests | `schema.ts`; `lib/corpusRules.ts` (S2's: `can` calls it); `console.ts` (no change in 6a) |
+| **W1 — the frame** | `apps/web/src/components/admin/bodies/`: `BodiesRoute.tsx`, `BodiesView.tsx`, `BodiesView.stories.tsx`, `bodyLanes.ts`, `bodiesSearch.ts`, `bodiesReads.ts` and their tests; `admin/corpus/` but `handlers/` and `map/` (`CorpusLanes.tsx`, `CorpusTaskView.tsx`, `taskLanes.ts`, `taskSearch.ts`, `corpusTypes.ts`, `list/`, `inspector/` with the handler registry, `words/corpusWords.ts`, `testing/routeHarness.tsx`); `routes/admin.corpus.tsx` if it needs a line; `admin/overview/` (`OverviewCards.tsx`, `overviewData.ts`, `overviewLinks.tsx`, `overviewRoutes.ts`, `useOverviewHome.ts`, their fixtures, tests and stories); `admin/inbox/list/InboxZero.tsx`, `inbox/InboxRoute.tsx`' `notInInbox` prop, `inbox/words/inboxWords.ts`' `CORPUS_LINK`, and their tests (X's T0 touched the last two for its moves only) | `kit/` (the dress builder's `Lanes`; a promotion is the governor's); `admin/inspector/` and `admin/actions/` (moved at T0, unchanged after); the route tree; `consoleNav.ts`; `packages/*` |
+| **W2 — the two handlers** | `admin/corpus/handlers/Names/`, `Classes/` (each with `register.tsx`, its writes on the moved `useDecisionRunner`, its words, fixtures, stories and wiring test); `admin/corpus/map/`; the kit candidates `ChoiceRows` and `ConsequenceLadder` beside the handlers | the same as W1, plus W1's files; `body/map/` (a descriptor it needs is a seam request) |
 
 ##### The seams (X's first part, merged before anyone else starts)
 
@@ -14849,13 +14934,15 @@ A builder who needs a line in a function it doesn't own asks for it in its repor
 ```ts
   /**
    * One Corpus task per question a machine raised about a body (B01-6). In 6a: one intake reason
-   * (`name-conflict`, `class-conflict`, `class-dissent`) on one body. Written only by
+   * (`name-conflict`, `class-conflict`) on one body. Written only by
    * `lib/corpusTasks.ts`; `corpusTaskWriters.test.ts` holds every writer of its sources to it.
    */
   corpusTasks: defineTable({
     /** `reason:<reason>:<bodyId>` in 6a; one open task per key. */
     key: v.string(),
-    kind: literals(CORPUS_TASK_KINDS),
+    // `CORPUS_TASK_KINDS` has one kind in 6a and `literals` needs two; 6b's `duplicate` makes it
+    // `literals(CORPUS_TASK_KINDS)` (a widening).
+    kind: v.literal('reason'),
     lane: literals(CORPUS_TASK_LANES),
     /** The lane's tab it sits in (`CORPUS_TASK_FACETS[lane]`); never `all`. */
     facet: v.string(),
@@ -14911,7 +14998,7 @@ On `waterBodies`, beside `reviewReason`:
     /**
      * The intake questions a moderator settled (B01-6a), each with the evidence it was settled on
      * (core's `reviewEvidence`): the import drops an incoming reason whose evidence is unchanged and
-     * asks again when it changed (fork 2, pending). At most one entry per reason.
+     * asks again when it changed (D305). At most one entry per reason.
      */
     reviewSettled: v.optional(
       v.array(
@@ -14928,7 +15015,8 @@ On `waterBodies`, beside `reviewReason`:
      * catalog's own token (`osm:natural=water`, `nhd:fcode=39004`) and that feature's area. Stored
      * by the import from the merge, which kept them only in its run stats before. Absent on every
      * body loaded before the first campaign that carries them: *not recorded*, never *none*.
-     * At most eight, as the class claims.
+     * At most eight, as the class claims. Stored from 6a so the next campaign records them; 6b's
+     * Contested lane reads them (D306).
      */
     classRefusals: v.optional(
       v.array(
@@ -14941,7 +15029,7 @@ On `waterBodies`, beside `reviewReason`:
     ),
 ```
 
-and `classClaims`' object widened (question 2; drop these two lines if the governor says no):
+and `classClaims`' object widened (question 2, ruled: carry both):
 
 ```ts
       v.array(
@@ -14958,7 +15046,13 @@ and `classClaims`' object widened (question 2; drop these two lines if the gover
 
 The same three widenings in `waterBodies.ts`' `canonicalBody` validator (`:346-352`), which is exact:
 a loader that sends `classRefusals` before this deploys is refused outright, so the deploy comes first.
-Nothing is narrowed. No `moderationActions.targetType` is added in 6a: every 6a row targets the body.
+No field is narrowed. No `moderationActions.targetType` is added in 6a: every 6a row targets the body.
+
+**The three index drops** (the governor's ruling): `waterBodies`' `by_dormant_reason`, `by_removed_at`
+and `by_public_access_verdict` go, each only after a grep proves nothing reads it —
+`withIndex('<name>'` on `waterBodies` anywhere in `packages/convex`, `scripts/` and the tests, read per
+table since index names repeat across tables. An index with a reader stays, and X's report names it.
+The deploy deletes them; no data moves.
 
 **2. Core** (`packages/core/src/corpusTasks.ts`, exported from `index.ts`; the schema and both sides
 import it):
@@ -14967,14 +15061,14 @@ import it):
 import type { ReviewReason } from './confidence';
 
 /** The task lanes 6a builds. 6b–6d widen the union with theirs (a widening; the schema follows). */
-export const CORPUS_TASK_LANES = ['nameConflicts', 'classConflicts', 'contested'] as const;
+export const CORPUS_TASK_LANES = ['nameConflicts', 'classConflicts'] as const;
 export type CorpusTaskLane = (typeof CORPUS_TASK_LANES)[number];
 export const CORPUS_TASK_KINDS = ['reason'] as const;
 export type CorpusTaskKind = (typeof CORPUS_TASK_KINDS)[number];
 /** `decided`: a person decided it. `left`: the question went away (no person, no tab). */
 export const CORPUS_TASK_STATUSES = ['open', 'decided', 'left'] as const;
 export type CorpusTaskStatus = (typeof CORPUS_TASK_STATUSES)[number];
-export const CORPUS_TASK_DECISIONS = ['kept', 'renamed', 'reclassed', 'dormant', 'removed'] as const;
+export const CORPUS_TASK_DECISIONS = ['kept', 'renamed', 'reclassed'] as const;
 export type CorpusTaskDecision = (typeof CORPUS_TASK_DECISIONS)[number];
 export const CORPUS_TASK_LEFT_REASONS = ['notAsserted', 'merged', 'removed', 'deleted'] as const;
 export type CorpusTaskLeftReason = (typeof CORPUS_TASK_LEFT_REASONS)[number];
@@ -14982,20 +15076,28 @@ export type CorpusTaskLeftReason = (typeof CORPUS_TASK_LEFT_REASONS)[number];
 export const CORPUS_REASON_LANE = {
   'name-conflict': 'nameConflicts',
   'class-conflict': 'classConflicts',
-  'class-dissent': 'contested',
 } as const satisfies Partial<Record<ReviewReason, CorpusTaskLane>>;
 /**
  * Each lane's facets, in the board's tab order after *All*. `notRecorded` holds a task whose facts
- * aren't stored yet (no class claims, no refusals): it reads under *All* only, never as a tab.
+ * aren't stored yet (no class claims): it reads under *All* only, never as a tab.
  */
 export const CORPUS_TASK_FACETS = {
   nameConflicts: ['different', 'oneLetter', 'qualifier'],
   classConflicts: ['wetlandOrLake', 'otherPairs', 'notRecorded'],
-  contested: ['seasonal', 'built', 'notWater', 'notRecorded'],
 } as const satisfies Record<CorpusTaskLane, readonly string[]>;
 export const CORPUS_NOT_RECORDED = 'notRecorded';
 export const CORPUS_PAGE_SIZE = 50;
 ```
+
+**The `contested` lane is left out of core at T0, not reserved unbuilt** (the governor's ruling, D306).
+Every map keyed by `CorpusTaskLane` is exhaustive — `CORPUS_TASK_FACETS`, `CorpusLanesView.lanes`, the
+row and item unions, W1's lane words and entries, S1's property over the count rows — so a reserved
+id is a dead entry each must fill with a placeholder that a test then has to explain (D299's "no
+placeholders", and an always-zero count row). Left out, 6b's edit is one widening: `'contested'` into
+`CORPUS_TASK_LANES`, its facets, `'class-dissent': 'contested'` into `CORPUS_REASON_LANE`, and
+`'dormant'`, `'removed'` into `CORPUS_TASK_DECISIONS` — after which the type checker names every map
+that needs its entry, which 6b fills with real content anyway. The schema follows by import, a
+widen-only deploy. The web search's `contested` id stays a dropped id until then.
 
 And: `capabilities.ts` gains `'corpus.intake': write('moderator', 'Settle an intake question without
 changing the body.')`; `NAME_SOURCE_RANK` moves from `scripts/etl/src/mergeRules.ts:601` to
@@ -15018,7 +15120,7 @@ UndoOffer` and `corpusDecisionResult(ctx, actorId, taskId, actionId)`, the offer
 
 **5. The typed stubs**, each a whole file whose owner replaces it: `convex/corpusTasks.ts` (the three
 queries with their validators and return types from the snippets, answering
-`{ …, pending: true }` and empty), `convex/corpusWrites.ts` (the three mutations, args validated,
+`{ …, pending: true }` and empty), `convex/corpusWrites.ts` (the two mutations, args validated,
 throwing `PLACEHOLDER`), `lib/corpusTasks.ts` and `lib/corpusRules.ts` (the signatures below,
 throwing). Each line says `PLACEHOLDER` and whose it is. Then `pnpm --filter @skating/convex codegen`.
 
@@ -15026,12 +15128,17 @@ throwing). Each line says `PLACEHOLDER` and whose it is. Then `pnpm --filter @sk
 `inspectorContext.tsx` and `lockModel.ts` (and its test) to `admin/inspector/`;
 `inbox/actions/useDecisionRunner.ts` and its two tests to `admin/actions/`. `BACK_TO_QUEUE` and
 `decidedBy` move from `inboxWords.ts` to `admin/inspector/inspectorWords.ts` (the Inbox imports them);
-`decidedStateOf` stays in the Inbox (`inbox/inspector/inboxLock.ts`), mapping `DECISION_WORDS`. The
-`data-slot` names (`inbox-inspector-frame`, …) stay, so no test changes for them. Both modes' imports
-updated; the Inbox's suites (both projects) green before the merge.
+`decidedStateOf` stays in the Inbox (`inbox/inspector/inboxLock.ts`, its test case with it), mapping
+`DECISION_WORDS`; `DecidedState.decision` becomes `decisionWord`. The `data-slot` names
+(`inbox-inspector-frame`, …) stay, so no test changes for them. Both modes' imports updated; the
+Inbox's suites (both projects) and the Shape tab's green before the merge, their tests untouched but
+for import paths and the renamed field.
 
 **7. `plans/06-data-model.md`**: one row each for `corpusTasks`, `corpusTaskCounts`,
-`corpusTaskJobRuns` (the register test).
+`corpusTaskJobRuns` (the register test), and the three dropped indexes out of `waterBodies`' row if it
+names them.
+
+**8. The root `.gitignore`** gains `apps/web/.pass-dress/` (the dress builder's render output).
 
 ##### Canonical type snippets
 
@@ -15077,14 +15184,14 @@ export async function corpusTaskBatch<T>(ctx: MutationCtx, work: () => Promise<T
 export type EvidenceRecord = {
   nameClaims?: readonly { source: string; value: string }[];
   classClaims?: readonly { source: string; value: string; token?: string }[];
-  classRefusals?: readonly { source: string; token: string }[];
 };
-/** Evidence over facts not yet stored (no class claims, no refusals). */
+/** Evidence over facts not yet stored (no class claims). */
 export const UNRECORDED_EVIDENCE = 'unrecorded';
 /**
  * What raised `reason` on `record`, as a deterministic string (at most 1 KiB): a name conflict's
- * catalog claims (never a `user` claim), a class conflict's claims, a dissent's claims and refusals.
- * `null` for a reason 6a doesn't settle. One rule for the settle and the import (fork 2, pending).
+ * catalog claims (never a `user` claim), a class conflict's claims with their tokens.
+ * `null` for a reason 6a doesn't settle (`class-dissent` included: 6b adds the refusals, D306).
+ * One rule for the settle and the import (D305).
  */
 export function reviewEvidence(reason: ReviewReason, record: EvidenceRecord): string | null;
 
@@ -15095,7 +15202,8 @@ export function facetOf(lane: CorpusTaskLane, record: EvidenceRecord & { name: s
 **The rule** (`lib/corpusRules.ts`, S2; S3's `can` and every write ask it):
 
 ```ts
-export type CorpusVerb = 'pickName' | 'keepName' | 'setClass' | 'keepClass' | 'remove' | 'setDormant';
+/** 6a's verbs; 6b's Contested lane adds `remove` and `setDormant` (D306). */
+export type CorpusVerb = 'pickName' | 'keepName' | 'setClass' | 'keepClass';
 /** `null`: allowed. A sentence: the write's own refusal. A verb absent: not this lane's. */
 export type CorpusCan = Partial<Record<CorpusVerb, string | null>>;
 /** In one order: capability (D217) → decided (D283's lock) → the body merged away or removed → the verb's preconditions. */
@@ -15116,9 +15224,7 @@ decideName({ taskId: v.id('corpusTasks'), pick: v.string() }): CorpusDecisionRes
 // `setClass`: a class not the body's → `setClassImpl`, `reclassed` (body.identity).
 // `keepClass`: the body's own class → `settle_review_reason`, `kept` (corpus.intake).
 decideClass({ taskId: v.id('corpusTasks'), bodyClass: literals(WATER_BODY_CLASSES) }): CorpusDecisionResult
-// Contested only. `remove` → `removeBodyImpl` with `junk` and the note, `removed` (body.remove, an
-// admin's); `dormant` → `setStandingImpl`, `dormant` (body.standing) (fork 4, pending).
-decideContested({ taskId: v.id('corpusTasks'), verb: v.union(v.literal('remove'), v.literal('dormant')), note: v.string() }): CorpusDecisionResult
+// No `decideContested` in 6a: it lands with the Contested lane in 6b (D306).
 ```
 
 Each is one mutation: the rule first (nothing refuses after the first audit row, D270), then the
@@ -15153,17 +15259,15 @@ type RowBase = {
 export type CorpusRowView = RowBase & (
   | { lane: 'nameConflicts'; shown: string; other: string }
   | { lane: 'classConflicts'; claims: ClassClaimView[] | null } // null: not recorded
-  | { lane: 'contested'; asserts: WaterBodyClass; refusals: ClassRefusalView[] | null }
 );
 export type ClassClaimView = { source: ClaimSource; cls: WaterBodyClass; token: string | null; acres: number | null };
-export type ClassRefusalView = { source: ClaimSource; token: string; acres: number | null };
 
 // item({ ref, lane?, now }): `ref` a task id, or `body:<id>` with `lane`.
 export type CorpusTaskItemRead = { item: CorpusTaskItemView | null; pending: boolean };
 type ItemBase = RowBase & {
   /** The campaign that last asserted the reason: the body's `lastCampaignId`'s run. */
   raisedBy: { campaignId: string; at: number } | null;
-  /** Asked again after a settle, because its evidence changed (fork 2, pending). */
+  /** Asked again after a settle, because its evidence changed (D305). */
   raisedAgain: { previous: CorpusDecidedState } | null;
   attached: { reports: number; landmarks: number; asks: number; capped: boolean };
   neighbors: { id: Id<'waterBodies'>; name: string }[]; // at most 3, from the stored geometry facts
@@ -15172,12 +15276,10 @@ export type CorpusTaskItemView = ItemBase & (
   | { lane: 'nameConflicts'; names: NameChoiceView[]; split: 'different' | 'oneLetter' | 'qualifier' }
   | { lane: 'classConflicts'; ladder: ClassRungView[]; claims: ClassClaimView[] | null;
       depth: { meters: number; source: string } | null }
-  | { lane: 'contested'; asserts: ClassClaimView | null; refusals: ClassRefusalView[] | null;
-      ifItStays: string[]; ifItGoes: string[] }
 );
 export type NameChoiceView = {
   value: string; sources: ClaimSource[]; rankWords: string; // "First: the authority on US names"
-  shown: boolean; suggested: boolean;                       // `suggested` false until question 4 is answered
+  shown: boolean; suggested: boolean;                       // `suggested` false on every name until 6c (D307)
   namesakes: { count: number; capped: boolean };            // other listed bodies with the name, "50+"
 };
 export type ClassRungView = {
@@ -15187,9 +15289,8 @@ export type ClassRungView = {
 };
 ```
 
-No email facts are served (fork 5, pending). The words in `ifItStays` / `ifItGoes` and the ladder say
-what the app does with the body, never anything about its ice (D3): the board's *Stays, as moving
-water under the ice* goes to the copy pass reworded.
+No email facts are served in 6a; 6c adds them to the Names item (D307). The ladder's words say what
+the app does with the body, never anything about its ice (D3).
 
 **The web's lane entry** (`bodyLanes.ts`, W1; W2 keys its handlers by `CorpusTaskLane`):
 
@@ -15198,10 +15299,10 @@ export type BodyLaneRead =
   | { kind: 'library'; lane: LibraryListLane }
   | { kind: 'openedByViewer' }
   | { kind: 'corpusTask'; task: CorpusTaskLane };
-// The task lanes, first in the sidebar (fork 18, pending: the pass group goes above them in 6d):
+// The task lanes, first in the sidebar (fork 18, ruled: the pass group goes above them in 6d):
 //   { id: 'name-conflicts', group: 'Tasks', label: 'Name conflicts', read: { kind: 'corpusTask', task: 'nameConflicts' } }
 //   { id: 'class-conflicts', group: 'Tasks', label: 'Class conflicts', read: { … 'classConflicts' } }
-//   { id: 'contested', group: 'Tasks', label: 'Contested as water', read: { … 'contested' } }
+// (6b adds `contested`, *Contested as water*, D306.)
 // A task lane carries no library columns, sort or facets: W1 makes `BodyLane` a union.
 ```
 
@@ -15238,15 +15339,15 @@ flowchart TB
   X1 --> S2["S2 decisions and undo"]
   X1 --> S3["S3 the reads"]
   X1 --> W1["W1 the frame"]
-  X1 --> W2["W2 the three handlers"]
-  X1 --> X2["X part 2: the legacy"]
+  X1 --> W2["W2 the two handlers"]
   S1 -- "settleReason, reopenTask, taskToDecide" --> S2
   S2 -- "corpusCan" --> S3
   W1 -- "registry, harness, CorpusTaskView" --> W2
 ```
 
-- **T0:** X's first part. The governor merges and commits it; nothing else starts before.
-- **T1, at once:** S1, S2, S3, W1, W2, and X's second part, each in a copy cut after the seams.
+- **T0:** X's first part. The governor merges and commits it; nothing else starts before. (X's
+  second part, the legacy strip, is done and merged already.)
+- **T1, at once:** S1, S2, S3, W1, W2, each in a copy cut after the seams.
 - **S2 waits on S1 for its tests, not its code.** It writes against the stubs; when S1's writer
   (`settleReason`, `reopenTask`, `taskToDecide`, `syncBodyTasks`, with their `convex-test` cases) is
   merged — **S1's first merge, before its hooks and jobs** — S2 pulls and its round trips run.
@@ -15257,13 +15358,13 @@ flowchart TB
   **W1's first merge** — W2 pulls and writes its wiring tests.
 - **W1 and W2 build on the stubs' types**; they meet the real reads at integration, where the
   governor's gate runs the web against S3's merge.
-- Merge order at integration: X1, S1 (first), W1 (first), S2, S3, S1 (rest), W1 (rest), W2, X2.
+- Merge order at integration: X1, S1 (first), W1 (first), S2, S3, S1 (rest), W1 (rest), W2.
 
 ---
 
 **X — seams, then the legacy.** Territory: the X row above.
 
-Part 1 is *The seams*, items 1–7, landed as they read. Part 2 is fork 15: delete the four redirect
+Part 1 is *The seams*, items 1–8, landed as they read. Part 2 (done and merged) was fork 15: delete the four redirect
 routes and their tests and regenerate the route tree; repoint `personPath` and `deepLinkPath` to
 `/admin/people` (a person's own page where the path names one), with every fixture, test and story
 that pins the old path; strip `/admin/water/standing` to its *Recently activated* list and its
@@ -15272,28 +15373,32 @@ enrichment column, and delete `standing.listLane` with its cases; rewrite `conso
 name `/admin/flags` or `/admin/users` in `inboxSearch.test.ts:77`, `overviewRoutes.test.ts:96`,
 `consoleSignedOut.test.tsx:33` and `RouteAnalytics.test.tsx` test parsers, not routes, and stay.
 
-- [ ] Part 1: `pnpm check-types`, lint, the convex package's `capabilities.test.ts` and
-  `undoPolicy.test.ts`, the guards (`pnpm --filter @skating/guards test`: the data-model register
-  with the three rows), and the web's Inbox and Body console suites, both projects, green on the
-  moved files.
-- [ ] Part 1: every stub line says `PLACEHOLDER` and whose it is; `convex/_generated` regenerated.
-- [ ] Part 2: each deleted path renders the console's not-found page (a route test); the Clerk alert's
+- [ ] Part 1: `pnpm check-types`, lint, the convex package's `capabilities.test.ts`,
+  `undoPolicy.test.ts` and schema tests, the guards (`pnpm --filter @skating/guards test`: the
+  data-model register with the three rows, the plan guards), and the web's Inbox and Shape tab
+  suites, both projects, green on the moved files; a web file can import every read and write the
+  snippets name.
+- [ ] Part 1: every stub line says `PLACEHOLDER` and whose it is; `convex/_generated` regenerated
+  (churn the stand-in makes in files whose content didn't change is named, not committed).
+- [ ] Part 1: the three indexes' greps in the report, each dropped or kept with its reader named.
+- [x] Part 2: each deleted path renders the console's not-found page (a route test); the Clerk alert's
   link and a Places row's asker link open People (their tests); the Standing page draws without
   its lanes (its story or test); no file names `standing.listLane`.
-- [ ] Part 2: the Legacy menu and the old-shell predicate's tests unchanged and green.
+- [x] Part 2: the Legacy menu and the old-shell predicate's tests unchanged and green.
 
 ---
 
 **S1 — the writer and the import.** Territory: the S1 row above.
 
 Build the writer to the snippet, the import's honoring rule, the hooks, the backfill, the drift
-repair and the guard. 6a files tasks for `name-conflict`, `class-conflict` and `class-dissent` only,
-never on a merged or removed body. The honoring rule (fork 2, pending; one local edit if it
-changes): `mergeFields(item, existing)` drops an incoming reason whose `reviewSettled` entry carries
+repair and the guard. 6a files tasks for `name-conflict` and `class-conflict` only, never on a
+merged or removed body; a `class-dissent` reason stays on the body (and on the old review page) with
+no task and is never settled in 6a (D306). The honoring rule (D305): `mergeFields(item, existing)`
+drops an incoming reason whose `reviewSettled` entry carries
 the same `reviewEvidence` as the incoming record, and when the evidence differs keeps the reason and
 drops the entry, so the task files again and its item says *raised again*. A settle made on
 `UNRECORDED_EVIDENCE` is asked again by the first campaign that records the evidence (once per body;
-question 1). `importCanonical` stores `classRefusals` (non-empty: stored; `[]`: removed; absent: an
+question 1, ruled). `importCanonical` stores `classRefusals` (non-empty: stored; `[]`: removed; absent: an
 older loader's record, the stored list kept) and passes the claims' `token` / `areaSqM` through, and
 returns two new counts, `settledHeld` and `raisedAgain`, which `load.ts` adds to its run row. The
 import's hook runs inside `corpusTaskBatch`, so a batch moves each count row once.
@@ -15306,7 +15411,8 @@ import's hook runs inside `corpusTaskBatch`, so a batch moves each count row onc
   independent of claim order and of `user` claims, and changes when any catalog claim changes.
 
 **Second merge — the hooks, the jobs, the guard:**
-- [ ] `convex-test` per hook: the import files a task per reason; drops a reason (task left,
+- [ ] `convex-test` per hook: the import files a task per 6a reason, and none for a `class-dissent`
+  (its `classRefusals` stored all the same); drops a reason (task left,
   `notAsserted`); holds a settled reason with unchanged evidence (no task, `settledHeld`); asks again
   on changed evidence (a new open task, `raisedAgain`, the decided one kept); `mergeBodyInto` leaves
   the loser's tasks (`merged`); the unmerge files them again; `removeBodyImpl` leaves (`removed`);
@@ -15319,8 +15425,9 @@ import's hook runs inside `corpusTaskBatch`, so a batch moves each count row onc
   `repair '{"dryRun":true}'` reports them and writes nothing (the after-merge step reads it).
 - [ ] **The one writer's property** (`fast-check` with `convex-test`): random sequences of a
   campaign asserting and dropping reasons with evidence changed or not, a settle by each decision
-  and its reopen, merges and unmerges, removes and restores, a hard delete; after each step every
-  live question is the member of exactly one open task whose key its fields give, no open task
+  and its reopen, merges and unmerges, removes and restores, a hard delete, with `class-dissent`
+  among the reasons drawn; after each step every live 6a question is the member of exactly one open
+  task whose key its fields give, no task is keyed by a reason 6a doesn't file, no open task
   lacks its question, every count row equals its tally, and the repair finds nothing. Run at 20×
   its runs before the report; its counterexamples pinned.
 - [ ] **Mutation checks**, each caught and named: drop the leave from the import's hook; skip the
@@ -15344,18 +15451,20 @@ import's hook runs inside `corpusTaskBatch`, so a batch moves each count row onc
 
 **S2 — decisions and their undo.** Territory: the S2 row above.
 
-Build the three mutations to the snippet, the rule, the undo, and the ETL's half of the refusals.
+Build the two mutations to the snippet, the rule, the undo, and the ETL's half of the refusals.
 The undo: `settle_review_reason` ↔ `unsettle_review_reason` in `undoHandlersCorpus.ts`; and one hook
 in `lib/undo.ts`, after any inverse runs, that calls `reopenTask` with the row it undid, so the undo
-of a `set_water_body_name`, `set_class`, `set_standing` or `remove` made from a lane also reopens
-its task — one rule, not four handlers. The ETL: `masterList.ts` keeps each refusing member as
+of a `set_water_body_name` or `set_class` made from a lane also reopens its task — one rule, not a
+handler per verb, so 6b's `set_standing` and `remove` from the Contested lane need nothing more. The
+ETL keeps the refusals now though no 6a lane reads them (D306): `masterList.ts` keeps each refusing member as
 `{ source, token: sourceToken, areaSqM }` and each class claim's `token` and `areaSqM`;
 `toCanonicalBody` emits `classRefusals` on every record (`[]` when none).
 
 - [ ] `convex-test` per verb: each decision is one transaction (a settle forced to throw leaves the
   domain write unapplied); `pickName` refuses a name that isn't a catalog claim; `keepName` and
-  `keepClass` write `settle_review_reason` and change nothing on the body but the queue; `remove` is
-  an admin's, `setDormant` a moderator's (fork 4, pending), refused on a body that isn't active.
+  `keepClass` write `settle_review_reason` and change nothing on the body but the queue; `setClass`
+  refuses the body's own class (that is `keepClass`); neither mutation accepts a task of a lane not
+  its own.
 - [ ] **The rule-versus-write table** (the Inbox's `inboxRulesVsWrites` shape): every verb × every
   refusal — the capability, the decided lock, the body merged away, the body removed, each verb's
   precondition — × moderator and admin: the read's `can` equals the write's thrown sentence. Its
@@ -15366,8 +15475,8 @@ its task — one rule, not four handlers. The ETL: `masterList.ts` keeps each re
 - [ ] **Overtaken cases**: the next campaign asked it again before the undo; a later rename or
   reclass on the body; the body merged away since — each refused with History's sentence, or (for
   a task already reopened) the domain undo alone.
-- [ ] **Capability refusals**: the undo of a lane's `remove` by a moderator (its inverse needs
-  `body.remove`); the undo of a *Keep* without `corpus.intake`; each write without its capability.
+- [ ] **Capability refusals**: the undo of a *Keep* without `corpus.intake`; the undo of a rename or
+  reclass without `body.identity`; each write without its capability.
 - [ ] Mutation checks, each caught and named: skip the reopen in `lib/undo.ts`; settle before the
   domain write's refusal; let `keepName` patch the name.
 - [ ] The ETL: Vitest over `masterList`'s kept records (a dissent's refusals with their tokens and
@@ -15395,6 +15504,8 @@ external id through the library's search, bounded; the rank words come from `NAM
   merged away or removed; each lane's view with its facts present and with them not recorded;
   `raisedAgain` after an evidence change; `raisedBy` from the body's campaign.
 - [ ] `can` on every row and item equals `corpusCan` (after the pull from S2).
+- [ ] A body with a `class-dissent` reason, or stored `classRefusals`, changes nothing these reads
+  return (no lane, no count, no facet for it in 6a, D306).
 - [ ] Core's `classConsequence` and the name split's words: Vitest, and a test that no word they
   produce says the ice is safe, unsafe or predictable (D3) — a list of banned stems, as the Inbox's
   words test has.
@@ -15410,13 +15521,16 @@ draws `BodiesView` as today, a task lane draws `CorpusTaskView` (list and inspec
 column. The task lanes' entries, the search's `tab` and `item`, the list (its head: the page word,
 *Name conflicts · 412 bodies*, the search, the tabs and *Filter ▾*; a row per lane as the boards draw
 it; the decided tail at its end from `listPage({ tab: 'decided', pageSize: 20 })`, as the Inbox's),
-the inspector column with its handler registry and lock, the Overview's Corpus card on
-`corpusTasks.lanes` (*Name conflicts*, *Class conflicts* and a new *Contested as water* row; the rest
-as today), its links to `/admin/corpus?lane=<id>` (`overviewLinks.tsx`' `?task=` becomes `?lane=`;
-`overviewRoutes.ts` routes each built lane there and the rest to their old pages, its pinning test a
-per-task table), and Inbox Zero's *Corpus →* live — a link to the first task lane with an open task,
-with `notInInbox.corpus` from `lanes`' open total. Group order as data: *Tasks*, *Views*, *Standing*
-(fork 18, pending). Mount the kit's `Lanes` as it stands: the dress builder owns it.
+the inspector column with its handler registry and lock, the Overview's Corpus card with *Name
+conflicts* and *Class conflicts* on `corpusTasks.lanes` (*Class conflicts* is now `class-conflict`
+alone, as its lane is) and a new *Contested as water* row for the dissent bodies on today's read
+(`reviewQueueCounts`' `class-dissent`, "50+" past 50, opening `/admin/water/review`, D306), the rest
+as today; its links to `/admin/corpus?lane=<id>` for the two built lanes (`overviewLinks.tsx`'
+`?task=` becomes `?lane=`; `overviewRoutes.ts` routes each built lane there and the rest to their old
+pages, its pinning test a per-task table), and Inbox Zero's *Corpus →* live — a link to the first task
+lane with an open task, with `notInInbox.corpus` from `lanes`' open total. Group order as data:
+*Tasks*, *Views*, *Standing* (fork 18, ruled: the pass group goes first when 6d builds it). Mount the
+kit's `Lanes` as it stands: the dress builder owns it.
 
 - [ ] **First merge**: the registry, `CorpusTaskView` (drawn from props), the inspector column and
   `testing/routeHarness.tsx` (the Inbox's harness shape: the real route around the real view, only
@@ -15426,38 +15540,39 @@ with `notInInbox.corpus` from `lanes`' open total. Group order as data: *Tasks*,
   decided task opened from the tail shows the lock; a colleague's decision while open locks it;
   opening a lane resets the place; a stale `?task=` or unknown `tab` / `item` is dropped; a library
   lane still draws the library.
-- [ ] The Overview: the card's three rows equal `lanes` on the same data; the *Corpus →* link and
-  the line; `overviewRoutes.test.ts` as a per-task table.
+- [ ] The Overview: the card's *Name conflicts* and *Class conflicts* rows equal `lanes` on the same
+  data; the *Contested as water* row reads `reviewQueueCounts`' `class-dissent` and opens the old
+  review page; the *Corpus →* link and the line; `overviewRoutes.test.ts` as a per-task table.
 - [ ] Stories four-up (`parameters: { fourUp: true }`): `CorpusLanes` (loaded, `pending`, a failed
   count), the list per lane (loaded, empty, `notRecorded` rows, the decided tail), `CorpusTaskView`
   wide and narrow.
-- [ ] **Render beside each mock** — `corpus-names-v5.html`, `corpus-classes-v5.html`,
-  `corpus-dissent-v5.html` — at 1440 × 900, both modes, for the sidebar, the list head and the rows;
-  every difference fixed or named. Named already: the 236 \| 340 columns (fork 19); the sidebar
-  holds only the built lanes and the library's groups, never the boards' Duplicates, Orphan bays,
-  Chord re-fits, Place names or pre-ice group (D299); *pre-ice* words (D300) aren't 6a's; the
-  Overview card's new *Contested as water* row, split out of *Class conflicts*.
+- [ ] **Render beside each mock** — `corpus-names-v5.html`, `corpus-classes-v5.html` — at
+  1440 × 900, both modes, for the sidebar, the list head and the rows; every difference fixed or
+  named. Named already: the 236 \| 340 columns (fork 19); the sidebar holds only the built lanes and
+  the library's groups, never the boards' Duplicates, Contested as water, Orphan bays, Chord re-fits,
+  Place names or pre-ice group (D299, D306); *pre-ice* words (D300) aren't 6a's; the Overview card's
+  new *Contested as water* row, split out of *Class conflicts* on the old read.
 - [ ] Every optional prop added has a live caller or a one-line note naming the PR that gives it one.
 - [ ] Types, lint, the touched suites (both projects) green.
 
 ---
 
-**W2 — the three handlers.** Territory: the W2 row above.
+**W2 — the two handlers.** Territory: the W2 row above.
 
-The inspectors for boards 4.2, 4.3 and 4.4, inside the moved `InspectorFrame` (a 36 px head with
+The inspectors for boards 4.2 and 4.3, inside the moved `InspectorFrame` (a 36 px head with
 *Open in Body →*, the scroll, the floating `ActionBar` whose buttons carry their keys) and its lock,
 the head map square and real geography over `InboxMap`'s pieces (`useBodyMapCanvas`, `BodyMapPane`
 with `rack={false}` and a plate). **Now and Suggested** on every choice (Review 11 rule 3): *Now* on
 the current value, *Suggested* only where the item says so, the default pick the suggestion or else
 *Now*, and the bar's button naming the pick (*Display “Lake Auburn” instead*, *Keep “The Basin”*,
-*Set as Wetland*, *Keep as Lake or pond*). Every verb is drawn only from `item.can` (absent: not
+*Set as Wetland*, *Keep as Wetland*). Every verb is drawn only from `item.can` (absent: not
 drawn; a sentence: never a button); every write through the runner, every refusal a toast (D268),
 the receipt in the present tense, its *Undo* the decision's row. Names: the claims as `ChoiceRows`
-with catalogs, rank words and namesakes, *Once … shows*, *In the app*; no emails (fork 5, pending).
-Classes: the `ConsequenceLadder`, *The catalogs* (each claim's token and acres, or *Not recorded
-until the next campaign*), *The body*. Contested: asserts and refuses, *If it stays* / *If it goes*,
-*Keep* (K), *Another class ▾*, *Remove* (R) for an admin and *Set dormant* for a moderator, each with
-its note (fork 4, pending).
+with catalogs, rank words and namesakes, *Once … shows*, *In the app*; no emails and no *Suggested*
+in 6a — 6c adds both to this handler (D307), so leave the rows room for an emails line and a
+*Suggested* mark the item will one day carry, without drawing either. Classes: the
+`ConsequenceLadder`, *The catalogs* (each claim's token and acres, or *Not recorded until the next
+campaign*), *The body*. No Contested handler: it lands in 6b (D306).
 
 - [ ] Each handler draws from `item` and `item.can` alone; a story per lane four-up, with the facts
   present, not recorded, decided (locked) and refused.
@@ -15466,12 +15581,12 @@ its note (fork 4, pending).
 - [ ] **A wiring test per handler** through W1's harness (after the pull): the item opens its
   handler, each lever calls its write with the task's id and the pick, a refusal reaches a toast,
   and a decided task drops the bar.
-- [ ] **Render beside each mock** at 1440 × 900, both modes; every difference fixed or named.
-  Named already: the emails strip and *Emails* rows (fork 5, pending); the catalogs' edit dates
-  (never stored); *Set dormant* beside *Remove* (fork 4, pending); *Not recorded* where the claims
-  or refusals aren't stored; no *Suggested* on names (question 4); the columns (fork 19).
-- [ ] No word says or implies anything about the ice (D3): the board's *as moving water under the
-  ice* is reworded and listed for the copy pass.
+- [ ] **Render beside each mock** (`corpus-names-v5.html`, `corpus-classes-v5.html`) at 1440 × 900,
+  both modes; every difference fixed or named. Named already: the emails strip, *Emails* rows and
+  *Suggested* on names (6c, D307); the catalogs' edit dates (never stored); *Not recorded* where the
+  claims aren't stored; the columns (fork 19).
+- [ ] No word says or implies anything about the ice (D3); any board word that does is reworded
+  and listed for the copy pass.
 - [ ] Types, lint, the touched suites (both projects) green.
 
 ##### Size, honestly
@@ -15493,16 +15608,20 @@ excluded; #174 is D292's favorites, not the wave's):
 Tests and stories were 53% of it. Even the briefs' re-estimates, written against the code, came in at
 1.1–3.3× under. The two first PRs, the ones that built machinery and a frame, ran 6×.
 
-**6a**: the design's ~6,500 × 4.9 is **~32,000**; × 6 (a first PR) ~39,000. It reuses more than #170
-and #171 had (the item pattern, the harness, the frame, the runner, the lanes column, the read
-chain), and files one kind of task, not six. **I believe ~28,000–32,000 lines over ~180–220 files**,
-about half of it tests: S1 ~8,000 (the property and the real-backend proof the bulk), S2 ~5,000,
-S3 ~4,500, W1 ~6,000, W2 ~6,000, X ~1,500 and its moves. That is six times the guideline; whether 6a
-reviews as one PR or as the Inbox's server-then-web pair is question 5.
+**6a, before the rulings**: the design's ~6,500 × 4.9 is ~32,000; × 6 (a first PR) ~39,000. It reuses
+more than #170 and #171 had (the item pattern, the harness, the frame, the runner, the lanes column,
+the read chain), and files one kind of task, not six: ~28,000–32,000 lines over ~180–220 files.
 
-**The wave**: 21,000 × 4.9 is ~103,000; the later Inbox PRs ran ~4× rather than 6×, so 6a ~30,000,
-6b ~22,000, 6c ~16,000 and 6d ~25,000: **~90,000–100,000, and that is the number I believe.** The
-scoping handoff's 35,000–60,000 is 1.7–2.9× the design; no Inbox PR came in under 3.7×.
+**6a, after them** (Contested as water moved to 6b, D306): **~25,000–28,000 lines over ~160–190
+files**, about half of it tests — S1 ~7,500 (the property and the real-backend proof the bulk; one
+reason fewer), S2 ~4,000 (two mutations, no dormant or remove path; the ETL half unchanged), S3
+~3,800 (two lanes' views), W1 ~5,800, W2 ~4,000 (two handlers), X ~1,500 and its moves. About five
+times the guideline, as one PR: the founder's call (D299, amended).
+
+**The wave**: 21,000 × 4.9 is ~103,000; the later Inbox PRs ran ~4× rather than 6×. Before the
+rulings: 6a ~30,000, 6b ~22,000, 6c ~16,000 and 6d ~25,000, ~90,000–100,000, which the founder took.
+After them: 6a ~25,000–28,000, 6b ~26,000–27,000 (Contested joins it), 6c ~21,000 (the emails: the
+design's "about 1,000 lines" is nearer 5,000 at the measured ratio), 6d ~25,000 — **~97,000–101,000**.
 
 ##### What the founder sees on dev after 6a, before a campaign
 
@@ -15510,36 +15629,40 @@ The last campaign recorded is `n7-3-20260809`; its merge output counted 438 name
 conflicts and 20 class dissents. Dev's own numbers are the backfill's, after merges, removals and
 prunes; these are what to expect, not checked against dev.
 
-- **The sidebar**: *Tasks* — Name conflicts, Class conflicts, Contested as water, each with an exact
-  count; then *Views* and *Standing* as today. No pass group, no Duplicates, Orphan bays, Chord
-  re-fits or Place names (D299).
+- **The sidebar**: *Tasks* — Name conflicts and Class conflicts, each with an exact count; then
+  *Views* and *Standing* as today. No pass group, no Duplicates, Contested as water, Orphan bays,
+  Chord re-fits or Place names (D299, D306).
+- **The Overview's Corpus card**: *Name conflicts* and *Class conflicts* equal the sidebar's; a new
+  *Contested as water* row counts the dissent bodies as today ("50+" past 50) and opens the old
+  review page, where they are still decided.
 - **Name conflicts** works whole: `nameClaims` have been stored since A07a. The tabs *Different · One
   letter · Qualifier*, both names with their catalogs and rank, namesakes, attachments, neighbors,
-  the campaign that queued it. Not drawn: the emails (fork 5, pending) and the catalogs' edit dates
-  (never stored). No name wears *Suggested* (question 4).
+  the campaign that queued it. Not drawn: the emails (6c, D307) and the catalogs' edit dates (never
+  stored). No name wears *Suggested* until 6c; ⏎ keeps the shown name.
 - **Class conflicts**: every row under *All* only — *Wetland or lake* and *Other pairs* read 0 —
   because no body has `classClaims` until a campaign carries them. *The catalogs say* and *The
   catalogs* read *Not recorded until the next campaign*; *Now* is the body's class; nothing is
   *Suggested*; the ladder and *The body* draw.
-- **Contested as water**: the same — every row under *All*, *Seasonal · Built · Not water* at 0, the
-  refusing catalog and its token *not recorded*; the asserting class is the body's own.
-- **After a campaign**, by the last merge's tally, *Seasonal* and *Built* would still be empty and
-  the lane would be 18 bodies OSM tags only `natural=water` and 2 tidal flats (question 3).
-- A class or dissent settled before the campaign is asked again by it, once (question 1).
+- A class conflict settled before the campaign is asked again by it, once (D305).
+- **What needs the founder after 6a merges: a full campaign** (merge and load). Until one runs,
+  Class conflicts' rows sit under *All* with the catalogs *not recorded*, and there are no stored
+  refusals, so no Contested row can be looked at (D306).
 
 ##### After merge, on dev (one executor, from main)
 
 1. **`convex dev --once`** from main at the squash, codegen first (`convex/_generated` as
-   `convex dev` writes it; a difference from the offline stand-in is its own commit). Widen-only.
+   `convex dev` writes it; a difference from the offline stand-in is its own commit). Widen-only for
+   fields and tables; the deploy deletes the three unread `waterBodies` indexes.
 2. **`convex run corpusTaskJobs:backfill '{}'`**, then read its row until done:
    `convex data corpusTaskJobRuns` (the job row, never the logs). Then
    `convex run corpusTaskJobs:repair '{"dryRun":true}'` reads zero fixes.
 3. **The counts**: `convex run corpusTasks:lanes '{"now":<ms>}' --identity '{"subject":"<your Clerk
    user id>"}'` equals the sidebar and the Overview's card.
 4. **In the console, as a moderator**: a name conflict decided by the other name, then its toast's
-   *Undo* (the task back open, the name back, History's two rows); a *Keep* and its undo; a contested
-   body set dormant and undone. **As an admin**: nothing removed on dev's real queue.
-5. **The links**: Inbox Zero's *Corpus →*, the Overview's three rows, each to its lane;
+   *Undo* (the task back open, the name back, History's two rows); a *Keep* and its undo; a class
+   conflict set to another class and undone.
+5. **The links**: Inbox Zero's *Corpus →*, the Overview's two lane rows, each to its lane, and its
+   *Contested as water* row to the old review page;
    `/admin/flags`, `/admin/support`, `/admin/users`, `/admin/users/<id>` draw the not-found page;
    `/admin/water/standing` draws without its lanes.
 6. **A settled body across a re-import** is **not** checked on dev. The loader can re-import one
@@ -15548,27 +15671,37 @@ prunes; these are what to expect, not checked against dev.
    B01-3d's claims, and loading its line would write the old rule's states back over dev's. S1
    proves it on the throwaway backend before the PR opens; on dev, the next campaign's run row reads
    `settledHeld` and `raisedAgain`.
+7. **The next full campaign (the founder's), then his look at Contested as water.** A full merge and
+   load fills `classClaims` (with tokens and acres) and `classRefusals`. Then the dissent bodies'
+   stored refusals are read back (a count by refusing token), the founder looks at the real rows and
+   rules the lane's shape — its tabs, its words, whether it is one lane — and 6b builds it (D306).
 
-##### Questions only the governor can answer
+##### The questions, as ruled (2026-11-24)
 
-1. **A settle made before its evidence is stored** (fork 2, pending): every class conflict and dissent
-   settled before the next campaign is settled on *not recorded* evidence, so that campaign asks
-   each again, once. 6a builds that (the decision wasn't made on the claims the campaign brings).
-   The alternative is to adopt the first recorded evidence silently.
-2. **The claims' token and area**: carry `token` and `areaSqM` on `classClaims` in 6a's ETL change, so
-   board 4.3's *SwampMarsh · FCODE 46600 · 7 ac* and 4.4's per-catalog acres can draw after the next
-   campaign? Built in, two optional fields; the edit date is not offered (the ETL reads none).
-3. **The Contested lane on real data**: its queue is what `settledClassDissent` leaves, and in the
-   last merge that was 18 refusals by OSM's bare `natural=water` and 2 by `wetland=tidalflat` — not
-   the board's vernal pools. *Not water* would hold water. The facet table is one constant in core;
-   the words (and perhaps the lane) want the founder's look before the next campaign.
-4. **Which name is suggested**: with the emails out (fork 5), the board's only evidence for its
-   *Suggested* is gone. 6a suggests nothing and defaults to *Now*, so ⏎ keeps the shown name.
-5. **One PR or two for 6a**: at ~30,000 lines, 6a could review as the Inbox's did, server then web
-   (#170, #171). D299 still holds that way — no sidebar entry appears until the web lands — but it
-   is two Greptile rounds, and fork 17 ruled four PRs.
-6. **When the next campaign runs**: Class conflicts and Contested as water are thin until one does,
-   and it is a full merge and load.
+Asked of the governor; the founder answered those that were his.
+
+1. **A settle made before its evidence is stored** — *ruled: asked again once, as built* (the founder's
+   fork 2 (b), and the governor's ruling on this question; D305). Every class conflict settled before
+   the next campaign is settled on *not recorded* evidence, so that campaign asks each again, once:
+   the decision wasn't made on the claims the campaign brings. Adopting the first recorded evidence
+   silently was not taken.
+2. **The claims' token and area** — *ruled: yes, carry both.* `token` and `areaSqM` on `classClaims`
+   in 6a's ETL change, so board 4.3's *SwampMarsh · FCODE 46600 · 7 ac* draws after the next
+   campaign; two optional fields; the edit date is not offered (the ETL reads none).
+3. **The Contested lane on real data** — *ruled: it leaves 6a* (the founder took the governor's
+   recommendation; D306). Its queue is what `settledClassDissent` leaves — in the last merge, 18
+   refusals by OSM's bare `natural=water` and 2 by `wetland=tidalflat`, none of the board's examples,
+   so *Built* would stay empty and *Not water* would hold water. 6a stores the refusals and the claims'
+   tokens; after the next campaign the founder rules the lane's shape on the real rows; it lands in
+   6b with fork 4's *Set dormant* and *Remove*. The `contested` id is left out of core until then
+   (*The seams*).
+4. **Which name is suggested** — *ruled: none in 6a; the emails' in 6c* (fork 5 revised; D307). 6a
+   suggests nothing and defaults to *Now*, so ⏎ keeps the shown name; 6c's mention counts make the
+   name the emails use most *Suggested*, where they decide it.
+5. **One PR or two for 6a** — *ruled: one PR* (the founder; D299, amended), at its measured size.
+6. **When the next campaign runs** — *ruled: after 6a merges, the founder's to run* (a full merge and
+   load). Class conflicts is thin until it does, and Contested as water's shape waits on it (*After
+   merge, on dev*, step 7).
 
 ## Ruled out
 
