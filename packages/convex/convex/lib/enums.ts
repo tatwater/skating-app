@@ -680,6 +680,39 @@ export const IMPORT_RUN_KINDS = [
   // `bodySummaryRefreshes`. Its `succeeded` row is what tells the hourly sweep the table is complete
   // and it may read only the due rows from then on.
   'body_summary_backfill',
+  // The corpus campaign's passes that left no row before B01-6a, so Machinery can draw a campaign
+  // whole from what it stored (D218). `region_masks` is `scripts/admin-areas build-region` (the
+  // TIGER masks the merge clips against; writes no Convex row but its own). `landmark_match` is
+  // `scripts/etl landmarks`, the offline match `load-landmarks` loads. `floor_prune` is
+  // `scripts/etl prune-floor`, which demotes to dormant.
+  'region_masks',
+  'landmark_match',
+  'floor_prune',
+  // `scripts/etl retire-absorbed` (D136) — it logged as `canonical_water` until B01-6a, so it read
+  // as a campaign's load (the Overview's last campaign). Its own kind because it folds rows away
+  // rather than loading them, the same reason `dedup_resolve` is not the load.
+  'absorbed_retire',
+] as const;
+
+/**
+ * **What a run set out to cover** (D218): the run's `scope.pass`, so a full re-import and a gap-fill
+ * read differently without inferring it from `kind` and `label`. D218's six, plus two the corpus
+ * campaign's own passes need (B01-6a):
+ *
+ * - `derived` — computed from data already held, writing no third-party data into the model: the
+ *   region masks, the offline landmark match, region stats.
+ * - `cleanup` — brings the stored corpus into line with what a campaign decided: the floor prune and
+ *   the absorbed-row retirement, both demoting or folding rather than loading.
+ */
+export const IMPORT_RUN_SCOPES = [
+  'full-canonical',
+  'single-source',
+  'enrichment',
+  'seed',
+  'rollover',
+  'archive',
+  'derived',
+  'cleanup',
 ] as const;
 
 /**
@@ -709,6 +742,11 @@ export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)
   // registry only counts active bodies now (A07b) — so the cells they vacated need a walk to prune.
   'standing_seed',
   'standing_rollover',
+  // Folds absorbed rows into their survivors — bodies leave the corpus. It triggered the reconcile as
+  // `canonical_water` before it had its own kind, and must keep doing so.
+  'absorbed_retire',
+  // Demotes sub-floor bodies to dormant, which the registry no longer counts — `standing_seed`'s case.
+  'floor_prune',
 ];
 
 /**

@@ -105,6 +105,7 @@ import {
   HAZARD_HEALING_STATES,
   HAZARD_STATUSES,
   IMPORT_RUN_KINDS,
+  IMPORT_RUN_SCOPES,
   IMPORT_RUN_STATUSES,
   LAPPING_JOBS,
   MODERATION_ACTIONS,
@@ -1157,6 +1158,23 @@ export default defineSchema({
           source: literals(CLAIM_SOURCES),
           token: v.string(),
           areaSqM: v.optional(v.number()),
+        }),
+      ),
+    ),
+    /**
+     * The catalog features the merge folded into this body as one catalog's duplicates (D136's
+     * same-source lane): each one's catalog, id and area, so a `same-source-duplicate` row can say
+     * what was folded in — the absorbed feature leaves no other trace on the row. Written by the
+     * import from the first campaign that carries it (B01-6a stores the field; 6b's Duplicates lane
+     * reads it). Absent on every body loaded before: *not recorded*, never *none*. Bounded by the
+     * producer, as the class claims are.
+     */
+    absorbedFeatures: v.optional(
+      v.array(
+        v.object({
+          source: literals(CLAIM_SOURCES),
+          externalId: v.string(),
+          areaSqM: v.number(),
         }),
       ),
     ),
@@ -5453,6 +5471,28 @@ export default defineSchema({
     /** The error that ended the run, when `status` is 'failed'. */
     error: v.optional(v.string()),
     notes: v.optional(v.array(v.string())),
+    /**
+     * **What the run set out to cover** (D218, B01-6a), stated by the writer at `start`: the pass
+     * (`IMPORT_RUN_SCOPES` — a full re-import, a single-source gap-fill, an enrichment, a cleanup…),
+     * the states it covered (two-letter codes; absent when the pass is not by state, as the floor
+     * prune walks the whole corpus), and whether that was all of what its pass covers — `false` for
+     * a subset of states, a resumed walk, or a merge missing one of its catalogs. What it *achieved*
+     * is `status` and `coverage`, not this. Absent on every row before B01-6a: *not recorded*.
+     */
+    scope: v.optional(
+      v.object({
+        pass: literals(IMPORT_RUN_SCOPES),
+        states: v.optional(v.array(v.string())),
+        complete: v.boolean(),
+      }),
+    ),
+    /**
+     * **The run's heartbeat** (D218, B01-6a): when the run last reported — stamped by the server at
+     * `start`, each `progress` and `finish` (a backfilled row's by `restamp`), never sent by a loader.
+     * A `running` row silent long past its loader's flush interval reads *stalled*, never *running*.
+     * Absent on rows written before B01-6a.
+     */
+    progressAt: v.optional(v.number()),
   })
     // The admin list: newest first, optionally narrowed to one loader.
     .index('by_started', ['startedAt'])

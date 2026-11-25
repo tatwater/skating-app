@@ -11,6 +11,12 @@
  *   pnpm --filter @skating/etl prune-floor --apply      # actually demote (resumes if interrupted)
  *   pnpm --filter @skating/etl prune-floor --apply --restart   # ignore the checkpoint, start over
  *   pnpm --filter @skating/etl prune-floor --apply --prod
+ *   pnpm --filter @skating/etl prune-floor --apply --campaign=<id>   # the campaign its row joins
+ *
+ * **It leaves a run row** (`floor_prune`, B01-6a), dry or applied, so a campaign read from what it
+ * stored shows whether the prune ran after it. A run resumed from the checkpoint says it is partial
+ * (`floorPruneScope`): it walked only what the killed run had not reached, and its counts are the
+ * running totals carried across both. A row that cannot be written never fails the prune.
  *
  * **Dry by default and dev-only unless `--prod`**, the same two guards the loader has, for a
  * stronger reason: this is the one script in the ETL that destroys rows. An `--apply` run
@@ -29,7 +35,8 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
 import { MIN_SURFACE_AREA_ACRES } from '@skating/core';
-import { convexRun, resolveDeployment } from '@skating/run-log';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { floorPruneScope } from './runScopes';
 
 /**
  * Where the cursor is checkpointed between pages.
@@ -137,6 +144,36 @@ function main(): void {
     );
   }
 
+  const logger = new RunLogger({
+    kind: 'floor_prune',
+    label: `prune below the area floor${apply ? '' : ' (dry run)'}`,
+    campaignId: args.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length),
+    target,
+    scope: floorPruneScope(saved !== undefined),
+    call: convexRun,
+    // A dry run's row says it wrote nothing, and reconciles nothing.
+    dryRun: !apply,
+    stages: [
+      {
+        name: 'prune',
+        detail:
+          `waterBodies:pruneBelowAreaFloor — unnamed bodies under ${MIN_SURFACE_AREA_ACRES} acres ` +
+          'demoted to dormant, never deleted (A07b); curated, user-drawn, merged, delisted and ' +
+          'attached rows kept.',
+        output: target.label,
+      },
+    ],
+  });
+  logger.start();
+  // Running totals, named as the report names them; never `inserted`/`updated`, which a campaign sums
+  // as loaded.
+  const tally = () => {
+    logger.count('scanned', scanned);
+    logger.count(apply ? 'demoted' : 'demotable', deleted);
+    for (const [why, n] of Object.entries(kept)) logger.count(`kept:${why}`, n);
+    for (const [table, n] of Object.entries(attachedBy)) logger.count(`attached:${table}`, n);
+  };
+
   let cursor: string | undefined = saved?.cursor;
   let done = false;
   let pages = saved?.pages ?? 0;
@@ -146,11 +183,19 @@ function main(): void {
   const attachedBy: Record<string, number> = { ...(saved?.attachedBy ?? {}) };
 
   while (!done) {
-    const page = convexRun<PrunedPage>('waterBodies:pruneBelowAreaFloor', {
-      cursor,
-      batchSize: BATCH_SIZE,
-      apply,
-    });
+    let page: PrunedPage;
+    try {
+      page = convexRun<PrunedPage>('waterBodies:pruneBelowAreaFloor', {
+        cursor,
+        batchSize: BATCH_SIZE,
+        apply,
+      });
+    } catch (error) {
+      // The row closes as failed with what was done so far; the checkpoint resumes the rest.
+      tally();
+      logger.failed(error);
+      throw error;
+    }
     cursor = page.cursor;
     done = page.isDone;
     pages++;
@@ -187,6 +232,9 @@ function main(): void {
         `[prune] ${scanned.toLocaleString()} scanned · ` +
           `${deleted.toLocaleString()} ${apply ? 'demoted' : 'demotable'}\n`,
       );
+      // The heartbeat rides the same cadence as the progress line.
+      tally();
+      logger.flush();
     }
   }
 
@@ -206,6 +254,13 @@ function main(): void {
   if (!apply && deleted > 0) {
     process.stderr.write('[prune] nothing was written. Re-run with --apply to demote.\n');
   }
+  tally();
+  logger.succeed([
+    apply
+      ? `${deleted.toLocaleString()} demoted to dormant; nothing deleted`
+      : `dry run — ${deleted.toLocaleString()} would be demoted. Re-run with --apply.`,
+    ...(saved ? ['resumed from a checkpoint: the totals include the run it resumed'] : []),
+  ]);
 }
 
 main();

@@ -41,6 +41,14 @@
 # progress until the pipeline ends; log to a file"* — and the fix for both halves is the same, so the
 # script now does it. Output goes to stdout **and** `.scratch/merge/run-<campaign>.log`, which means
 # there is no reason left to wrap it and no way for a wrapper to eat the status.
+#
+# **Every line is stamped** (B01-6a, D218): `2026-11-25T13:26:04-0500 ══ load bodies`. The log was a
+# record that could say what happened but never when, so a pass that went quiet for forty minutes
+# read the same as one that finished in four. The stamp is added inside the script's own logger,
+# so the status rule above is untouched; `runCorpus.test.ts` runs this file against a failing pass.
+#
+# **Every pass carries the campaign id**, the region masks and the landmark match included, so the
+# campaign's run rows group as one (`importRuns.by_campaign`).
 set -euo pipefail
 
 # Where the caller stood, so a relative --mentions= path means what they typed.
@@ -104,7 +112,27 @@ MANIFEST="${SCRATCH}/merge-manifest.json"
 # would exit with `tee`'s. That difference is the whole point — see the header.
 mkdir -p "$SCRATCH"
 LOG="${SCRATCH}/run-${CAMPAIGN}.log"
-exec > >(tee "$LOG") 2>&1
+
+# One stamp per line: ISO 8601 with the offset, so a campaign across midnight or a clock change
+# still reads in order. Bash's own clock (4.2+) where it has one — a `date` per line forks — and
+# `date` on the macOS system bash (3.2). A last line with no newline is stamped, never dropped.
+if (( BASH_VERSINFO[0] > 4 || (BASH_VERSINFO[0] == 4 && BASH_VERSINFO[1] >= 2) )); then
+  stamp_lines() {
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '%(%Y-%m-%dT%H:%M:%S%z)T %s\n' -1 "$line"
+    done
+  }
+else
+  stamp_lines() {
+    local line
+    while IFS= read -r line || [ -n "$line" ]; do
+      printf '%s %s\n' "$(date '+%Y-%m-%dT%H:%M:%S%z')" "$line"
+    done
+  }
+fi
+
+exec > >(stamp_lines | tee "$LOG") 2>&1
 TEE_PID=$!
 # **And the script waits for its own logger.** Bash does not wait for a process substitution at exit,
 # so `tee` can be torn down with the pipe still holding the last lines — which on a FAILING run are
@@ -124,7 +152,7 @@ echo "══ logging to ${SCRATCH#./}/run-${CAMPAIGN}.log — do NOT pipe this s
 # `downstate-ny.geojson`, and a stale mask moves tens of thousands of bodies across the region line
 # without changing anything else about the run.
 echo "══ region masks (TIGER)"
-pnpm --filter @skating/admin-areas build-region
+pnpm --filter @skating/admin-areas build-region --campaign="$CAMPAIGN"
 
 echo "══ merge — three catalogs, one filter"
 pnpm --filter @skating/etl merge --campaign="$CAMPAIGN" $REFRESH
@@ -174,15 +202,17 @@ fi
 # re-exported), and a name a live bay already carries is skipped (so the bays go first).
 if [ -n "$SKIP_LANDMARKS" ]; then
   echo "══ landmarks: SKIPPED (--skip-landmarks). To run the stage on its own:"
-  echo "   pnpm --filter @skating/etl landmarks --refresh-bodies --mentions=<mentions.csv>"
+  echo "   pnpm --filter @skating/etl landmarks --refresh-bodies --mentions=<mentions.csv> --campaign=${CAMPAIGN}"
   echo "   pnpm --filter @skating/etl load-landmarks --campaign=${CAMPAIGN} --apply"
   echo "   pnpm --filter @skating/etl load-landmark-names --campaign=${CAMPAIGN} --apply"
 else
   echo "══ landmarks — OSM + GNIS matched to the bodies just loaded (D202)"
   if [ -n "$WITHOUT_CORPUS" ]; then
-    pnpm --filter @skating/etl landmarks --refresh-bodies $REFRESH --without-corpus
+    pnpm --filter @skating/etl landmarks --refresh-bodies $REFRESH --without-corpus \
+      --campaign="$CAMPAIGN"
   else
-    pnpm --filter @skating/etl landmarks --refresh-bodies $REFRESH --mentions="$MENTIONS"
+    pnpm --filter @skating/etl landmarks --refresh-bodies $REFRESH --mentions="$MENTIONS" \
+      --campaign="$CAMPAIGN"
   fi
   echo "══ load landmarks"
   pnpm --filter @skating/etl load-landmarks --campaign="$CAMPAIGN" --apply $WITHOUT_CORPUS
@@ -199,10 +229,10 @@ echo "campaign ${CAMPAIGN} complete — the path is at /admin/imports?campaign=$
 echo "Still manual, and deliberately so — all three change what the map shows, so all are dry by"
 echo "default and none runs without you. Order does not matter; skipping any is silent."
 echo
-echo "  pnpm --filter @skating/etl prune-floor            # dry run; --apply to demote"
+echo "  pnpm --filter @skating/etl prune-floor --campaign=${CAMPAIGN}   # dry run; --apply to demote"
 echo "      rows the current admission rules refuse — to dormant, never deleted (A07b)."
 echo
-echo "  pnpm --filter @skating/seed-destinations seed-standing \\"
+echo "  pnpm --filter @skating/seed-destinations seed-standing --campaign=${CAMPAIGN} \\"
 echo "    --gazetteer=training_data/google_group/gazetteer.csv   # dry run; --apply to shelve"
 echo "      bodies this campaign inserted with no evidence of access or use (A07b) — a fresh"
 echo "      import lands ACTIVE, and this is what puts a new region's 5,000 unskated ponds to sleep."

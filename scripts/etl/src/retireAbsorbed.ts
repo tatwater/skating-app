@@ -35,6 +35,7 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { type RetireResult, retireInBatches } from './retireBatches';
+import { RETIRE_ABSORBED_SCOPE } from './runScopes';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch', 'merge');
@@ -84,10 +85,13 @@ function main(): void {
   }
 
   const logger = new RunLogger({
-    kind: 'canonical_water',
+    // Its own kind (B01-6a): as `canonical_water` it read as the campaign's load — the Overview's
+    // last campaign — though it folds rows away rather than loading them.
+    kind: 'absorbed_retire',
     label: `retire absorbed duplicates${apply ? '' : ' (dry run)'}`,
     campaignId,
     target,
+    scope: RETIRE_ABSORBED_SCOPE,
     call: convexRun,
     // A dry run's row says it wrote nothing, and invalidates nothing (no weather-cell reconcile).
     dryRun: !apply,
