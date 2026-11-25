@@ -79,7 +79,8 @@ describe('the built modes', () => {
     const inbox = CONSOLE_MODES.find((m) => m.id === 'inbox');
     expect(inbox).toMatchObject({ to: '/admin/inbox', goKey: 'I', capability: 'inbox.read' });
     expect(CAPABILITIES['inbox.read'].role).toBe('moderator');
-    // The old Flags page retired with B01-5e: its path redirects into the Inbox, never the old shell.
+    // The old Flags page retired with B01-5e, and its redirect with B01-6a: the path is a 404, never
+    // the old shell.
     expect(usesOldShell('/admin/inbox')).toBe(false);
     expect(usesOldShell('/admin/flags')).toBe(false);
   });
@@ -120,6 +121,7 @@ describe('the built modes', () => {
     expect(CAPABILITIES['people.read'].role).toBe('moderator');
   });
 
+  // The old user pages retired with People, and their redirects with B01-6a: a 404, not the old shell.
   it('retired the old user pages: no old shell, no Legacy line', () => {
     expect(usesOldShell('/admin/users')).toBe(false);
     expect(usesOldShell('/admin/users/k17abc')).toBe(false);
