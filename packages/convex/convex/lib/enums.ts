@@ -450,7 +450,7 @@ export const MODERATION_ACTIONS = [
   // B01-5e, photos (D222): a removed photo's bytes deleted 30 days on, by the sweep with no actor.
   // Permanent; a photo's hide and removal reuse `hide` / `remove` / `restore` on the `photo` target.
   'purge_photo',
-  // ── The Corpus tasks (B01-6a) ────────────────────────────────────────────────────────────────────
+  // ── The Corpus tasks (B01-7a) ────────────────────────────────────────────────────────────────────
   // An intake question settled without changing the body (the shown name kept, the class kept) —
   // its target the body, its evidence recorded so the next campaign honors it (D306) — and its undo,
   // which puts the question back. A decision that changes the body writes that change's own verb.
@@ -680,7 +680,7 @@ export const IMPORT_RUN_KINDS = [
   // `bodySummaryRefreshes`. Its `succeeded` row is what tells the hourly sweep the table is complete
   // and it may read only the due rows from then on.
   'body_summary_backfill',
-  // The corpus campaign's passes that left no row before B01-6a, so Machinery can draw a campaign
+  // The corpus campaign's passes that left no row before B01-7a, so Machinery can draw a campaign
   // whole from what it stored (D218). `region_masks` is `scripts/admin-areas build-region` (the
   // TIGER masks the merge clips against; writes no Convex row but its own). `landmark_match` is
   // `scripts/etl landmarks`, the offline match `load-landmarks` loads. `floor_prune` is
@@ -688,7 +688,7 @@ export const IMPORT_RUN_KINDS = [
   'region_masks',
   'landmark_match',
   'floor_prune',
-  // `scripts/etl retire-absorbed` (D136) — it logged as `canonical_water` until B01-6a, so it read
+  // `scripts/etl retire-absorbed` (D136) — it logged as `canonical_water` until B01-7a, so it read
   // as a campaign's load (the Overview's last campaign). Its own kind because it folds rows away
   // rather than loading them, the same reason `dedup_resolve` is not the load.
   'absorbed_retire',
@@ -697,7 +697,7 @@ export const IMPORT_RUN_KINDS = [
 /**
  * **What a run set out to cover** (D218): the run's `scope.pass`, so a full re-import and a gap-fill
  * read differently without inferring it from `kind` and `label`. D218's six, plus two the corpus
- * campaign's own passes need (B01-6a):
+ * campaign's own passes need (B01-7a):
  *
  * - `derived` — computed from data already held, writing no third-party data into the model: the
  *   region masks, the offline landmark match, region stats.
@@ -812,7 +812,7 @@ export const FAILING_JOBS = [
   // attempts the watch carries, keyed by photo id) — so parked work shows on Machinery.
   'photoPurge',
   'photoRotation',
-  // B01-6a: the Corpus tasks — a body the backfill could not file (keyed by body id, retried by the
+  // B01-7a: the Corpus tasks — a body the backfill could not file (keyed by body id, retried by the
   // repair's passes), and a body or a lane's counts the drift repair could not reconcile.
   'corpusTaskBackfill',
   'corpusTaskRepair',

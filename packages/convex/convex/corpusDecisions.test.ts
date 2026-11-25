@@ -1,5 +1,5 @@
 /**
- * **The Corpus tasks' decisions** (B01-6a, `corpusWrites.ts`): `decideName` and `decideClass` through
+ * **The Corpus tasks' decisions** (B01-7a, `corpusWrites.ts`): `decideName` and `decideClass` through
  * their real mutations — each one transaction, the rule first and its words thrown, the domain write
  * through its own impl and that write's row the task's — and their undo through `api.undo.run`: a
  * round trip per inverse, the overtaken cases, the capability refusals. The rule on its own is

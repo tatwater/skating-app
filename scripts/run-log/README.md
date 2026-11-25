@@ -49,7 +49,7 @@ existed, from the manifests the fetchers wrote at the time. Nothing is invented 
 comment for what it refuses to claim.
 
 And every pass of a **corpus campaign** (`scripts/etl/run-corpus.sh`), including the three that wrote
-nothing to Convex and so left no row before B01-6a, so Machinery can draw a campaign whole from what
+nothing to Convex and so left no row before B01-7a, so Machinery can draw a campaign whole from what
 it stored. Under `run-corpus.sh` each carries the campaign id; run by hand, pass `--campaign=<id>`:
 
 | kind | command |
@@ -58,7 +58,7 @@ it stored. Under `run-corpus.sh` each carries the campaign id; run by hand, pass
 | `corpus_merge` | `pnpm --filter @skating/etl merge` |
 | `landmark_match` | `pnpm --filter @skating/etl landmarks` — the offline match, plus this row |
 | `floor_prune` | `pnpm --filter @skating/etl prune-floor` — dry or applied, a row either way |
-| `absorbed_retire` | `pnpm --filter @skating/etl retire-absorbed` (was `canonical_water` before B01-6a) |
+| `absorbed_retire` | `pnpm --filter @skating/etl retire-absorbed` (was `canonical_water` before B01-7a) |
 
 ## Scope and heartbeat (D218)
 

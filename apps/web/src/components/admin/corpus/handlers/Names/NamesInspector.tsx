@@ -242,7 +242,7 @@ export function NamesInspector({
                 suggested: n.suggested,
                 disabled: !decided && !pickable(item, n),
                 aside: <CatalogBoxes choice={n} />,
-                // 6c adds an *Emails* row and the strip by winter under these (D308).
+                // 7c adds an *Emails* row and the strip by winter under these (D308).
                 children: (
                   <FactList
                     rows={[

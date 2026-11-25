@@ -54,7 +54,7 @@ describe('actionLabel', () => {
     }
   });
 
-  it('says a Corpus settle and its undo as a question about the body (B01-6a)', () => {
+  it('says a Corpus settle and its undo as a question about the body (B01-7a)', () => {
     expect(actionLabel('settle_review_reason', 'waterbody')).toBe(
       'Settled a body’s review question',
     );

@@ -1,5 +1,5 @@
 /**
- * **What raised an intake question, as evidence a settle can be held to** (B01-6a, D306).
+ * **What raised an intake question, as evidence a settle can be held to** (B01-7a, D306).
  *
  * A moderator who settles a name or class conflict settles it *on the facts the catalogs gave*. The
  * next campaign re-raises every reason it finds, whatever was decided — so the import asks this rule
@@ -40,8 +40,8 @@ export const UNRECORDED_EVIDENCE = 'unrecorded';
  * the distinct catalog spellings only (never a `user` claim) — their normalized keys, sorted — and
  * never which catalogs publish them, so the campaign that first records `sources`, or a catalog
  * newly agreeing with a spelling already there, re-asks nothing; a new spelling, or one withdrawn,
- * does. A class conflict's: its claims with their tokens. `null` for a reason 6a doesn't settle
- * (`class-dissent` included: 6b adds the refusals, D307). One rule for the settle and the import
+ * does. A class conflict's: its claims with their tokens. `null` for a reason 7a doesn't settle
+ * (`class-dissent` included: 7b adds the refusals, D307). One rule for the settle and the import
  * (D306).
  */
 export function reviewEvidence(reason: ReviewReason, record: EvidenceRecord): string | null {

@@ -8,13 +8,13 @@ import {
   CORPUS_TASK_LANES,
 } from './corpusTasks';
 
-describe('the Corpus tasks vocabulary (B01-6a)', () => {
+describe('the Corpus tasks vocabulary (B01-7a)', () => {
   it('builds two lanes, and leaves Contested as water out rather than reserving it (D307)', () => {
     expect([...CORPUS_TASK_LANES]).toEqual(['nameConflicts', 'classConflicts']);
     expect(CORPUS_TASK_LANES as readonly string[]).not.toContain('contested');
   });
 
-  it('maps each filed reason to a lane, one reason a lane, and files no dissent in 6a', () => {
+  it('maps each filed reason to a lane, one reason a lane, and files no dissent in 7a', () => {
     const lanes = Object.values(CORPUS_REASON_LANE);
     expect(new Set(lanes).size).toBe(lanes.length);
     expect([...lanes].sort()).toEqual([...CORPUS_TASK_LANES].sort());

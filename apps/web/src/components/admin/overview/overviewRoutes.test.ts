@@ -69,7 +69,7 @@ describe('Home’s links, until the new modes land', () => {
   /**
    * Each Corpus row, task by task: a lane built opens in the Corpus mode (`?lane=`), every other
    * still opens the old page that does its work — never the library's default lane (D293). The
-   * table pins the whole list, so a lane that lands (6b–6d) moves its row here, and the last PR
+   * table pins the whole list, so a lane that lands (7b–7d) moves its row here, and the last PR
    * drops the old-page half.
    */
   const CORPUS_PATHS: Record<CorpusTask | 'none', string> = {

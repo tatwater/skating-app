@@ -1,11 +1,11 @@
 /**
- * **The Corpus tasks' vocabulary** (B01-6): the lanes, kinds, statuses, decisions and facets a stored
+ * **The Corpus tasks' vocabulary** (B01-7): the lanes, kinds, statuses, decisions and facets a stored
  * task row (`corpusTasks`) can carry. The schema and both sides import it, so a lane can't be one
  * thing on the server and another on the page.
  *
- * B01-6a builds two lanes, Name conflicts and Class conflicts. **Contested as water is left out on
+ * B01-7a builds two lanes, Name conflicts and Class conflicts. **Contested as water is left out on
  * purpose, not reserved** (D307): every map keyed by `CorpusTaskLane` is exhaustive, so a reserved id
- * would be a dead entry each had to fill with a placeholder. 6b widens these constants with its lanes
+ * would be a dead entry each had to fill with a placeholder. 7b widens these constants with its lanes
  * — `contested` and its facets, `'class-dissent': 'contested'`, the `dormant` and `removed`
  * decisions — and the type checker then names every map that needs its entry (a widening; the
  * schema follows by import).
@@ -13,11 +13,11 @@
 
 import type { ReviewReason } from './confidence';
 
-/** The task lanes 6a builds. 6b–6d widen the union with theirs (a widening; the schema follows). */
+/** The task lanes 7a builds. 7b–7d widen the union with theirs (a widening; the schema follows). */
 export const CORPUS_TASK_LANES = ['nameConflicts', 'classConflicts'] as const;
 export type CorpusTaskLane = (typeof CORPUS_TASK_LANES)[number];
 
-/** What one task is: in 6a, one intake reason on one body. 6b adds `duplicate`. */
+/** What one task is: in 7a, one intake reason on one body. 7b adds `duplicate`. */
 export const CORPUS_TASK_KINDS = ['reason'] as const;
 export type CorpusTaskKind = (typeof CORPUS_TASK_KINDS)[number];
 
@@ -25,7 +25,7 @@ export type CorpusTaskKind = (typeof CORPUS_TASK_KINDS)[number];
 export const CORPUS_TASK_STATUSES = ['open', 'decided', 'left'] as const;
 export type CorpusTaskStatus = (typeof CORPUS_TASK_STATUSES)[number];
 
-/** What a person decided. 6b's Contested lane adds `dormant` and `removed` (D307). */
+/** What a person decided. 7b's Contested lane adds `dormant` and `removed` (D307). */
 export const CORPUS_TASK_DECISIONS = ['kept', 'renamed', 'reclassed'] as const;
 export type CorpusTaskDecision = (typeof CORPUS_TASK_DECISIONS)[number];
 
@@ -36,7 +36,7 @@ export type CorpusTaskDecision = (typeof CORPUS_TASK_DECISIONS)[number];
 export const CORPUS_TASK_LEFT_REASONS = ['notAsserted', 'merged', 'removed', 'deleted'] as const;
 export type CorpusTaskLeftReason = (typeof CORPUS_TASK_LEFT_REASONS)[number];
 
-/** The intake reason each 6a lane holds: one reason, one lane. */
+/** The intake reason each 7a lane holds: one reason, one lane. */
 export const CORPUS_REASON_LANE = {
   'name-conflict': 'nameConflicts',
   'class-conflict': 'classConflicts',

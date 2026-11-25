@@ -13,7 +13,7 @@
  *
  * The undo itself runs the inverse verb's own helper inside {@link asUndoOf}, so its side effects run
  * and every row it writes is tagged as the undo. Then, whatever the verb, the Corpus task the row
- * decided reopens (B01-6a, {@link runUndo}).
+ * decided reopens (B01-7a, {@link runUndo}).
  */
 
 import { isLeaving } from '@skating/core';
@@ -400,8 +400,8 @@ export async function runUndo(
       : fitComposed(composed`Undid ${row.action.replace(/_/g, ' ')}: ${row.reason}`);
   await asUndoOf(ctx, actionId, async () => {
     await handler.run({ ctx, actor, row, reason: why, writers });
-    // **One rule for every verb** (B01-6a): a row that decided a Corpus task — a lane's rename or
-    // reclass, written by the Body console's own verb, and 6b's standing or removal — is undone by
+    // **One rule for every verb** (B01-7a): a row that decided a Corpus task — a lane's rename or
+    // reclass, written by the Body console's own verb, and 7b's standing or removal — is undone by
     // that verb's own inverse above, and then its task reopens, its reason back on the body. A row
     // that decided none answers `'none'`. A task a later campaign already asked again answers
     // `'overtaken'` and writes nothing: the domain undo stands alone, since the question is open

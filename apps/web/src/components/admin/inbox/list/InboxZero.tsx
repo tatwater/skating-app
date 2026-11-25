@@ -53,7 +53,7 @@ import type { InboxTodayView } from './inboxTypes';
 /**
  * The live links of *Not in the inbox*, by the mode they open: the router's link element, worn as
  * the row's link chip. A mode with none here is *Coming soon* (D286). The route provides them (Corpus
- * from B01-6a: the first task lane with an open task), so the view between needs no prop for them.
+ * from B01-7a: the first task lane with an open task), so the view between needs no prop for them.
  */
 export const ZeroLinks = createContext<{ corpus?: ReactElement }>({});
 

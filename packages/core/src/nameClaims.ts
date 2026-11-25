@@ -60,7 +60,7 @@ import type { ClaimSource } from './confidence';
  * in order to be worth opening — and the OSM name survives on the row as `osmId`'s feature, so it is
  * recoverable rather than gone.
  *
- * Moved here from the ETL's `mergeRules.ts` (B01-6a), which imports it: the merge ranks the claims by
+ * Moved here from the ETL's `mergeRules.ts` (B01-7a), which imports it: the merge ranks the claims by
  * it, and the Corpus Name conflicts lane says each catalog's rank in words from the same table.
  */
 export const NAME_SOURCE_RANK: Readonly<Record<ClaimSource, number>> = {
@@ -81,7 +81,7 @@ export interface NameClaim {
   readonly source: ClaimSource;
   readonly value: string;
   /**
-   * Every catalog publishing this spelling, `source` first and the rest in rank order (B01-6a).
+   * Every catalog publishing this spelling, `source` first and the rest in rank order (B01-7a).
    * Absent on a claim stored before the campaign that records it, and on a moderator's own claim:
    * then `source` is the one catalog known, and nothing says the others agree. The merge records it
    * (`nameClaimsOf`), and {@link distinctNameClaims} folds it when it folds a spelling.
@@ -107,7 +107,7 @@ function key(value: string): string {
  * First claim of a given string wins, so a caller that passes claims in authority order gets the
  * most authoritative source attached to each spelling.
  *
- * **Every catalog behind a spelling is kept** (B01-6a): the claims a spelling folds pool their
+ * **Every catalog behind a spelling is kept** (B01-7a): the claims a spelling folds pool their
  * `sources` — the first claim's `source` first, the rest in `NAME_SOURCE_RANK` order, each once — so
  * the Name conflicts lane can draw *GNIS · NHD · 3DHP* where three catalogs agree. Only when **every**
  * claim folded into it recorded its `sources`: a spelling with one claim from before the campaign

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { decidedStateOf } from './inboxLock';
 
-// Moved from `lockModel.test.ts` with `decidedStateOf` (B01-6a); the field is `decisionWord` now, the
+// Moved from `lockModel.test.ts` with `decidedStateOf` (B01-7a); the field is `decisionWord` now, the
 // decision in the Inbox's words.
 describe('the Inbox’s decided state', () => {
   it('names the decider, or a former staff member, and an empty action for a decision before the Inbox', () => {

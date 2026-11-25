@@ -649,7 +649,7 @@ describe('console.corpusCounts — the Corpus card’s tasks', () => {
         }),
       );
     await run('canonical_water', 'A07a unified corpus — the master list', NOW - 5 * DAY);
-    // Since B01-6a: its own kind, which the read never asks for.
+    // Since B01-7a: its own kind, which the read never asks for.
     await run('absorbed_retire', 'retire absorbed duplicates', NOW - 2 * DAY);
     // Before: a `canonical_water` row by its label, applied and dry, newer than the load.
     await run('canonical_water', 'retire absorbed duplicates', NOW - 4 * DAY);

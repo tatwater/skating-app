@@ -1,5 +1,5 @@
 /**
- * **The Corpus tasks' one writer** (B01-6a, `lib/corpusTasks.ts`): filing, refreshing, leaving,
+ * **The Corpus tasks' one writer** (B01-7a, `lib/corpusTasks.ts`): filing, refreshing, leaving,
  * settling and reopening a task, each with the counts equal to their tallies after it.
  */
 
@@ -184,7 +184,7 @@ async function refusal(p: Promise<unknown>): Promise<string> {
 }
 
 describe('filing', () => {
-  test('one open task per 6a reason, none for class-dissent or the rest', async () => {
+  test('one open task per 7a reason, none for class-dissent or the rest', async () => {
     const t = harness();
     const id = await body(t, {
       reviewReasons: ['class-conflict', 'name-conflict', 'class-dissent', 'bay-without-parent'],
@@ -266,7 +266,7 @@ describe('filing', () => {
     await expectCountsTally(t);
   });
 
-  test('every 6a reason has a lane: name conflicts and class conflicts', () => {
+  test('every 7a reason has a lane: name conflicts and class conflicts', () => {
     expect([...CORPUS_TASK_REASONS]).toEqual(['class-conflict', 'name-conflict']);
   });
 });

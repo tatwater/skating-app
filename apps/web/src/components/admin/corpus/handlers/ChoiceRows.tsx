@@ -6,7 +6,7 @@ import { RadioGroup } from '@/components/kit/radio';
 import { cn } from '@/lib/utils';
 
 /**
- * **Choice rows** — a kit candidate (B01-6a; boards 4.2–4.6): a Corpus choice between a few
+ * **Choice rows** — a kit candidate (B01-7a; boards 4.2–4.6): a Corpus choice between a few
  * values, each a card with a radio, every one wearing what it is (Review 11 rule 3).
  *
  * - **Now and Suggested.** The current value wears the lit outlined badge (`nowLabel`, *Now* unless

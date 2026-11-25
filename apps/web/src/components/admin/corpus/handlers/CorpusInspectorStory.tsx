@@ -13,7 +13,7 @@ import {
 } from '../map/corpusMapFixtures';
 
 /**
- * Story support for the 6a handlers (only stories import it): the inspector pane at the page's
+ * Story support for the 7a handlers (only stories import it): the inspector pane at the page's
  * width (720 × 830 px at 1440 × 900) with its context, both modes side by side, and the head map drawn as a
  * still over the boards' real outlines.
  */

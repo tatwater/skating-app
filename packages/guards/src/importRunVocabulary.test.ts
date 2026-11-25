@@ -1,5 +1,5 @@
 /**
- * **The run vocabulary is said twice, and the two must agree** (B01-6a). `importRuns.kind` and
+ * **The run vocabulary is said twice, and the two must agree** (B01-7a). `importRuns.kind` and
  * `importRuns.scope.pass` are validated by `IMPORT_RUN_KINDS` and `IMPORT_RUN_SCOPES` in the Convex
  * package, and re-declared as `ImportRunKind` and `ImportRunScopePass` in `@skating/run-log` — on
  * purpose, so a loader compiles without `_generated` (see `scripts/run-log/src/types.ts`). A member

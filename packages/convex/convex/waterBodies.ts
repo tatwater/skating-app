@@ -353,7 +353,7 @@ const canonicalBody = v.object({
   reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
   /**
    * Every publisher's name for this water, winner included, with every catalog publishing each
-   * spelling from B01-6a — see the schema note on `nameClaims`.
+   * spelling from B01-7a — see the schema note on `nameClaims`.
    */
   nameClaims: v.optional(
     v.array(
@@ -366,7 +366,7 @@ const canonicalBody = v.object({
   ),
   /**
    * Every catalog's class for this water (B01-3d), with each catalog's own token and area from
-   * B01-6a — see the schema note on `classClaims`.
+   * B01-7a — see the schema note on `classClaims`.
    */
   classClaims: v.optional(
     v.array(
@@ -379,7 +379,7 @@ const canonicalBody = v.object({
     ),
   ),
   /**
-   * The catalogs that refused this water outright (B01-6a) — see the schema note on
+   * The catalogs that refused this water outright (B01-7a) — see the schema note on
    * `classRefusals`. The validator is exact, so a loader that sends it before this deploys is
    * refused: the deploy comes first.
    */
@@ -393,7 +393,7 @@ const canonicalBody = v.object({
     ),
   ),
   /**
-   * The features the merge folded into this body as one catalog's duplicates (B01-6a) — see the
+   * The features the merge folded into this body as one catalog's duplicates (B01-7a) — see the
    * schema note on `absorbedFeatures`. Accepted here so the campaign that first carries it is not
    * refused; the import stores it once `importCanonical` spreads it.
    */
@@ -490,7 +490,7 @@ type HonoredReasons = {
 };
 
 /**
- * **A settled question holds until its evidence changes** (B01-6a, D306): the import's half of the
+ * **A settled question holds until its evidence changes** (B01-7a, D306): the import's half of the
  * settle. Each incoming reason a moderator settled on this body is compared, by core's one rule
  * (`reviewEvidence`, through `evidenceOf`), against the evidence the body will carry once this record
  * lands — the record's catalog names, its class claims or, from an older loader that sends none, the
@@ -549,7 +549,7 @@ function honorSettled(
 }
 
 /**
- * The catalogs' refusals as the import stores them (B01-6a, D307): a record's list replaces the
+ * The catalogs' refusals as the import stores them (B01-7a, D307): a record's list replaces the
  * stored one, `[]` clears it, and a record without the field (an older loader's) keeps what's stored.
  * Bounded as the class claims are.
  */
@@ -566,7 +566,7 @@ function classRefusalFields(item: {
 export const MAX_ABSORBED_FEATURES = 32;
 
 /**
- * The features the merge folded into a body, as the import stores them (B01-6a): a record's list
+ * The features the merge folded into a body, as the import stores them (B01-7a): a record's list
  * replaces the stored one (`[]` included: *none*, recorded), and a record without the field (an
  * older loader's) keeps what's stored, since absent means *not recorded*. Capped at
  * {@link MAX_ABSORBED_FEATURES}.
@@ -667,7 +667,7 @@ export const MAX_CLASS_CLAIMS = 8;
 /**
  * Each catalog's class claim as the import carries it (B01-3d): one per source (the first kept),
  * bounded. Omitted when the record carries none — an older loader's record, which leaves the stored
- * claims as they were rather than erasing them. Each claim's `token` and `areaSqM` (B01-6a) ride
+ * claims as they were rather than erasing them. Each claim's `token` and `areaSqM` (B01-7a) ride
  * through as the record sends them.
  */
 function classClaimFields(item: { classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']> }): {

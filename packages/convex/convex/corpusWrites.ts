@@ -1,5 +1,5 @@
 /**
- * **The Corpus tasks' decisions** (B01-6a): each one mutation — the rule first, then the domain write
+ * **The Corpus tasks' decisions** (B01-7a): each one mutation — the rule first, then the domain write
  * through its existing impl, then the settle with that write's audit row — so a decision can't
  * half-land.
  *
@@ -16,7 +16,7 @@
  *   anywhere leaves nothing behind.
  *
  * The undo needs nothing here: one hook in `lib/undo.ts` reopens the task any undone row decided.
- * No `decideContested` in 6a: it lands with the Contested lane in 6b (D307).
+ * No `decideContested` in 7a: it lands with the Contested lane in 7b (D307).
  */
 
 import { WATER_BODY_CLASSES } from '@skating/core';

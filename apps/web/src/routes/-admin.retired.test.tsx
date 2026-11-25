@@ -8,7 +8,7 @@ import { routeTree } from '../routeTree.gen';
 // The `-` prefix keeps this file out of the generated route tree (`routeFileIgnorePrefix`).
 
 /**
- * **The retired redirects are gone, not blank** (B01-6a). `/admin/flags` and `/admin/support` went
+ * **The retired redirects are gone, not blank** (B01-7a). `/admin/flags` and `/admin/support` went
  * into the Inbox, `/admin/users` and `/admin/users/$id` into People, and their redirects were
  * deleted with nothing left linking to them. Against the app's real route tree: each carries the
  * root's 404 mark, so the root's `NotFoundRoute` draws it outside every layout (the router's half,

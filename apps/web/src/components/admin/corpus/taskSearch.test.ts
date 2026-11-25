@@ -49,7 +49,7 @@ describe('the task lanes, as data', () => {
   it('resolve a URL id to its lane, and nothing else', () => {
     expect(taskLaneById('name-conflicts')).toBe(names);
     expect(taskLaneById('class-conflicts')).toBe(classes);
-    // Not built in 6a (D307), a library lane, the server's own name, junk.
+    // Not built in 7a (D307), a library lane, the server's own name, junk.
     for (const id of ['contested', 'duplicates', 'active', 'nameConflicts', '', undefined]) {
       expect(taskLaneById(id)).toBeNull();
     }
@@ -129,7 +129,7 @@ describe('the route’s search, with task lanes', () => {
     expect(validateBodiesSearch({ lane: 'class-conflicts', tab: 'different' })).toEqual({
       lane: 'class-conflicts',
     });
-    // The Overview's old `?task=`, and a lane 6a doesn't build: the library's default.
+    // The Overview's old `?task=`, and a lane 7a doesn't build: the library's default.
     expect(validateBodiesSearch({ task: 'nameConflicts' })).toEqual({});
     expect(validateBodiesSearch({ lane: 'contested', tab: 'decided' })).toEqual({});
   });

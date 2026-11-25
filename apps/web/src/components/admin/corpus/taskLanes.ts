@@ -10,7 +10,7 @@ import { LANE_LABELS, TAB_LABELS, TASKS_GROUP } from './words/corpusWords';
 
 /**
  * **The Corpus task lanes, as data** — the sidebar entry, the page word, the kicker's word and the
- * facet tabs of each lane core builds (`CORPUS_TASK_LANES`), so a lane 6b–6d adds is an entry here
+ * facet tabs of each lane core builds (`CORPUS_TASK_LANES`), so a lane 7b–7d adds is an entry here
  * (the type checker names it: the table is exhaustive over core's union) and the frame draws it.
  *
  * The URL names a lane by its `id` (`?lane=name-conflicts`), the server by its `task`

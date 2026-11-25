@@ -1,5 +1,5 @@
 /**
- * The Corpus tasks' backfill and drift repair (B01-6a): bounded on bytes as well as rows, resumable
+ * The Corpus tasks' backfill and drift repair (B01-7a): bounded on bytes as well as rows, resumable
  * from any cursor, idempotent, never wedged — a body that can't be done is recorded in `jobFailures`
  * and stepped past, and retried by the repair until it goes through; the repair finds and fixes each
  * kind of drift, and its dry run reports them and writes nothing.
@@ -86,7 +86,7 @@ async function rawBody(
   );
 }
 
-/** A spread across every phase: each primary reason, with 6a reasons behind other ones. */
+/** A spread across every phase: each primary reason, with 7a reasons behind other ones. */
 async function seedRaw(t: T) {
   return [
     await rawBody(t, 0, ['name-conflict']),
@@ -144,7 +144,7 @@ async function expectCountsTally(t: T) {
 }
 
 describe('the backfill', () => {
-  test('files every 6a question on every body with a reason, and none on a removed one', async () => {
+  test('files every 7a question on every body with a reason, and none on a removed one', async () => {
     const t = harness();
     const ids = await seedRaw(t);
     expect(await t.run((ctx) => corpusTasksPending(ctx))).toBe(true);

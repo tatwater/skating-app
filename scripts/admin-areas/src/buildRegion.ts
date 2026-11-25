@@ -5,7 +5,7 @@
  *   pnpm --filter @skating/admin-areas build-region --refresh   # re-download the sources
  *   pnpm --filter @skating/admin-areas build-region --campaign=<id>   # the campaign its row joins
  *
- * It leaves a run row (`region_masks`, B01-6a) though it writes nothing else to Convex: the corpus
+ * It leaves a run row (`region_masks`, B01-7a) though it writes nothing else to Convex: the corpus
  * campaign starts here, and a campaign read from what it stored must show when its masks were built
  * and how that ended. `--no-run-log` opts out; a row that cannot be written never fails the build.
  *

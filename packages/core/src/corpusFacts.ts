@@ -1,5 +1,5 @@
 /**
- * **The words a Corpus task's facts are said in** (B01-6a): what each class would do with a body
+ * **The words a Corpus task's facts are said in** (B01-7a): what each class would do with a body
  * (board 4.3's ladder), a catalog's rank as a name authority, and how two names differ (board 4.2's
  * tabs, by the writer's own rule in `corpusFacets.ts`). The reads (`convex/corpusTasks.ts`) say every fact through these, so a word means one
  * thing wherever it is drawn: the ladder's rungs and a list row's consequence line are one rule

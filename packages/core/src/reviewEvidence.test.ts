@@ -143,7 +143,7 @@ describe('reviewEvidence — a class conflict', () => {
   });
 });
 
-describe('reviewEvidence — the reasons 6a does not settle', () => {
+describe('reviewEvidence — the reasons 7a does not settle', () => {
   it('is null for every other reason, class-dissent included', () => {
     const settled: readonly ReviewReason[] = ['name-conflict', 'class-conflict'];
     for (const reason of REVIEW_REASONS) {

@@ -869,7 +869,7 @@ export default defineSchema({
           source: literals(CLAIM_SOURCES),
           value: v.string(),
           /**
-           * Every catalog publishing this spelling, in rank order, `source` first (B01-6a): the merge
+           * Every catalog publishing this spelling, in rank order, `source` first (B01-7a): the merge
            * folds identical spellings, and kept only the winner's source before. Absent on a body
            * loaded before the first campaign that carries it, and on a moderator's own claim: the
            * catalog run then shows `source` alone, and nothing says the catalogs agree.
@@ -890,11 +890,11 @@ export default defineSchema({
           source: literals(CLAIM_SOURCES),
           value: literals(WATER_BODY_CLASSES),
           /**
-           * The catalog's own class token (`nhd:fcode=46600`, `osm:water=pond`), B01-6a; absent
+           * The catalog's own class token (`nhd:fcode=46600`, `osm:water=pond`), B01-7a; absent
            * before the first campaign that carries it.
            */
           token: v.optional(v.string()),
-          /** That catalog's feature's area, B01-6a; absent as `token` is. */
+          /** That catalog's feature's area, B01-7a; absent as `token` is. */
           areaSqM: v.optional(v.number()),
         }),
       ),
@@ -1130,7 +1130,7 @@ export default defineSchema({
      */
     reviewReason: v.optional(literals(REVIEW_REASONS)),
     /**
-     * The intake questions a moderator settled (B01-6a), each with the evidence it was settled on
+     * The intake questions a moderator settled (B01-7a), each with the evidence it was settled on
      * (core's `reviewEvidence`): the import drops an incoming reason whose evidence is unchanged and
      * asks again when it changed (D306). At most one entry per reason.
      */
@@ -1145,11 +1145,11 @@ export default defineSchema({
       ),
     ),
     /**
-     * The catalogs that refused this water outright while another classed it (B01-6a): the
+     * The catalogs that refused this water outright while another classed it (B01-7a): the
      * catalog's own token (`osm:natural=water`, `nhd:fcode=39004`) and that feature's area. Stored
      * by the import from the merge, which kept them only in its run stats before. Absent on every
      * body loaded before the first campaign that carries them: *not recorded*, never *none*.
-     * At most eight, as the class claims. Stored from 6a so the next campaign records them; 6b's
+     * At most eight, as the class claims. Stored from 7a so the next campaign records them; 7b's
      * Contested lane reads them (D307).
      */
     classRefusals: v.optional(
@@ -1165,7 +1165,7 @@ export default defineSchema({
      * The catalog features the merge folded into this body as one catalog's duplicates (D136's
      * same-source lane): each one's catalog, id and area, so a `same-source-duplicate` row can say
      * what was folded in — the absorbed feature leaves no other trace on the row. Written by the
-     * import from the first campaign that carries it (B01-6a stores the field; 6b's Duplicates lane
+     * import from the first campaign that carries it (B01-7a stores the field; 7b's Duplicates lane
      * reads it). `[]` is *none*, recorded — the merge emits the list for every body it keeps, so a
      * body that stops absorbing loses its stale list. Absent on every body loaded before: *not
      * recorded*, never *none*. Bounded by the producer, as the class claims are.
@@ -1670,7 +1670,7 @@ export default defineSchema({
     // Recent activations (A07b's standing lists): a `gt()` read on an optional field — `undefined`
     // sorts first and a strictly-positive range never includes it, so the read never touches the
     // active majority. Its three siblings (`by_dormant_reason`, `by_removed_at`,
-    // `by_public_access_verdict`) were dropped in B01-6a: their only reader, `standing.listLane`,
+    // `by_public_access_verdict`) were dropped in B01-7a: their only reader, `standing.listLane`,
     // went with Standing's lanes half, and the library reads those lanes from `bodyLibraryRows`.
     .index('by_activated_at', ['activatedAt'])
     // **Reason first, then prominence**, so the queue opens on the lakes anybody has heard of. An
@@ -5473,12 +5473,12 @@ export default defineSchema({
     error: v.optional(v.string()),
     notes: v.optional(v.array(v.string())),
     /**
-     * **What the run set out to cover** (D218, B01-6a), stated by the writer at `start`: the pass
+     * **What the run set out to cover** (D218, B01-7a), stated by the writer at `start`: the pass
      * (`IMPORT_RUN_SCOPES` — a full re-import, a single-source gap-fill, an enrichment, a cleanup…),
      * the states it covered (two-letter codes; absent when the pass is not by state, as the floor
      * prune walks the whole corpus), and whether that was all of what its pass covers — `false` for
      * a subset of states, a resumed walk, or a merge missing one of its catalogs. What it *achieved*
-     * is `status` and `coverage`, not this. Absent on every row before B01-6a: *not recorded*.
+     * is `status` and `coverage`, not this. Absent on every row before B01-7a: *not recorded*.
      */
     scope: v.optional(
       v.object({
@@ -5488,10 +5488,10 @@ export default defineSchema({
       }),
     ),
     /**
-     * **The run's heartbeat** (D218, B01-6a): when the run last reported — stamped by the server at
+     * **The run's heartbeat** (D218, B01-7a): when the run last reported — stamped by the server at
      * `start`, each `progress` and `finish` (a backfilled row's by `restamp`), never sent by a loader.
      * A `running` row silent long past its loader's flush interval reads *stalled*, never *running*.
-     * Absent on rows written before B01-6a.
+     * Absent on rows written before B01-7a.
      */
     progressAt: v.optional(v.number()),
   })
@@ -5878,14 +5878,14 @@ export default defineSchema({
   }).index('by_job', ['job']),
 
   /**
-   * One Corpus task per question a machine raised about a body (B01-6). In 6a: one intake reason
+   * One Corpus task per question a machine raised about a body (B01-7). In 7a: one intake reason
    * (`name-conflict`, `class-conflict`) on one body. Written only by
    * `lib/corpusTasks.ts`; `corpusTaskWriters.test.ts` holds every writer of its sources to it.
    */
   corpusTasks: defineTable({
-    /** `reason:<reason>:<bodyId>` in 6a; one open task per key. */
+    /** `reason:<reason>:<bodyId>` in 7a; one open task per key. */
     key: v.string(),
-    // `CORPUS_TASK_KINDS` has one kind in 6a and `literals` needs two; 6b's `duplicate` makes it
+    // `CORPUS_TASK_KINDS` has one kind in 7a and `literals` needs two; 7b's `duplicate` makes it
     // `literals(CORPUS_TASK_KINDS)` (a widening).
     kind: v.literal('reason'),
     lane: literals(CORPUS_TASK_LANES),
@@ -5896,7 +5896,7 @@ export default defineSchema({
     rankKey: v.number(),
     filedAt: v.number(),
     waterBodyId: v.id('waterBodies'),
-    /** What the task is about, as its kind names it; in 6a, the body's id again. */
+    /** What the task is about, as its kind names it; in 7a, the body's id again. */
     subjectId: v.string(),
     /** Set with `status: 'decided'`: a person decided it. */
     decidedAt: v.optional(v.number()),
@@ -5934,7 +5934,7 @@ export default defineSchema({
     // The drift repair's walk over open tasks, oldest refresh first.
     .index('by_refreshed_at', ['status', 'refreshedAt']),
 
-  /** The Corpus tasks' counts, moved with the tasks by their one writer: `open:<lane>`, `open:<lane>:<facet>`. 6b–6d add theirs. */
+  /** The Corpus tasks' counts, moved with the tasks by their one writer: `open:<lane>`, `open:<lane>:<facet>`. 7b–7d add theirs. */
   corpusTaskCounts: defineTable({
     key: v.string(),
     count: v.number(),

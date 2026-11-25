@@ -419,7 +419,7 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   create_landmark: 'Named landmark',
   edit_landmark: 'Edited landmark',
   promote_landmark: 'Promoted landmark',
-  // The Corpus tasks' Keep (B01-6a): a name or class kept as recorded, and its undo. Words for
+  // The Corpus tasks' Keep (B01-7a): a name or class kept as recorded, and its undo. Words for
   // the copy pass.
   settle_review_reason: 'Kept as it is',
   unsettle_review_reason: 'Reopened a kept question',

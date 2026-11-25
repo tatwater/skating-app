@@ -1,5 +1,5 @@
 /**
- * **What each corpus pass set out to cover** — the `scope` its run row carries (D218, B01-6a).
+ * **What each corpus pass set out to cover** — the `scope` its run row carries (D218, B01-7a).
  *
  * Stated by the writer at the run's start, so Machinery reads a full re-import and a gap-fill apart
  * without inferring it from `kind` and `label`. Kept here rather than inline in each CLI because the

@@ -1,6 +1,6 @@
 /**
  * **The decided-only lock, as a state machine** (D283) — pure, so every path is tested without a
- * subscription. Shared by the Inbox and Corpus (moved here from `inbox/inspector/` in B01-6a); each
+ * subscription. Shared by the Inbox and Corpus (moved here from `inbox/inspector/` in B01-7a); each
  * mode maps its own decided view to the frame's `DecidedState` (the Inbox's `decidedStateOf` is in
  * `inbox/inspector/inboxLock.ts`). The lock is the item's own decision, read live (the item read is
  * a subscription); what it means depends on what the item was when it opened:

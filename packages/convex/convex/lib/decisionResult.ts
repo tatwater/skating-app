@@ -1,5 +1,5 @@
 /**
- * **What a decision answers** — the Inbox's (`InboxDecisionResult`) and, from B01-6a, Corpus's
+ * **What a decision answers** — the Inbox's (`InboxDecisionResult`) and, from B01-7a, Corpus's
  * (`CorpusDecisionResult`), side by side; the Inbox's name is kept, since its importers predate the
  * second mode.
  *
@@ -49,7 +49,7 @@ export async function inboxDecisionResult(
 }
 
 /**
- * **What a Corpus task decision answers** (B01-6a): the task it decided, the audit row the decision
+ * **What a Corpus task decision answers** (B01-7a): the task it decided, the audit row the decision
  * wrote (the domain write's own row — `set_water_body_name`, `set_class` — or `settle_review_reason`
  * for a settle-only outcome; the toast's Undo undoes it), and the undo offer, read as
  * `inboxDecisionResult` reads it.

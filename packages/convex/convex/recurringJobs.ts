@@ -321,7 +321,7 @@ async function retryOne(
 }
 
 /**
- * A body the Corpus tasks' backfill parked (B01-6a): the drift repair retries only what is still
+ * A body the Corpus tasks' backfill parked (B01-7a): the drift repair retries only what is still
  * failing, and `corpusTasksPending` reads true while any backfill failure is owed — so a parked one
  * would leave the lanes `pending` for good. Synced as the backfill syncs it; a key that names no body
  * is no question, and a body since deleted syncs to nothing (any task it left open leaves with it):
@@ -554,7 +554,7 @@ const CRON_OF: Record<FailingJob, string> = {
   // photo file owed a deletion (`lib/photoFiles`, key `file:<id>`) is its row too, whoever owed it —
   // a rotation, a delete, the purge — retried by the watch and by the daily 'sweep photo files'.
   photoRotation: 'rotate or release a photo’s files',
-  // B01-6a: the backfill is run by hand; its failures are retried by the repair's cron, parked ones
+  // B01-7a: the backfill is run by hand; its failures are retried by the repair's cron, parked ones
   // daily. The repair's own are retried by its walk, and daily.
   corpusTaskBackfill: 'repair corpus tasks drift',
   corpusTaskRepair: 'repair corpus tasks drift',

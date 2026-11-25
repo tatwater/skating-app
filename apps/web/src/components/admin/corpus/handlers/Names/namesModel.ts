@@ -38,7 +38,7 @@ export function pickable(item: Pick<NamesItem, 'can' | 'decided'>, choice: NameC
 
 /**
  * The pick a task opens on (Review 11 rule 3): the suggestion, else the name shown now — each only
- * if it can be applied. In 6a nothing is suggested (D308), so it is the shown name: ⏎ keeps it.
+ * if it can be applied. In 7a nothing is suggested (D308), so it is the shown name: ⏎ keeps it.
  */
 export function defaultPick(item: Pick<NamesItem, 'names' | 'can' | 'decided'>): string | null {
   const suggested = item.names.find((n) => n.suggested && pickable(item, n));

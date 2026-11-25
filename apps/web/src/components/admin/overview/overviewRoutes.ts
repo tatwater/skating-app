@@ -34,7 +34,7 @@ export function consolePathFor(to: OverviewTarget): string | null {
       // each old page redirects there.
       return inboxPath(to.lane === undefined ? {} : { lane: to.lane });
     case 'corpus': {
-      // A built lane is the Corpus mode's own (B01-6a: Name and Class conflicts).
+      // A built lane is the Corpus mode's own (B01-7a: Name and Class conflicts).
       const lane = to.task === undefined ? null : CORPUS_LANE_OF[to.task];
       if (lane !== null && taskLaneById(lane) !== null) return `/admin/corpus?lane=${lane}`;
       switch (to.task) {

@@ -281,7 +281,7 @@ export const ITEM_FAILED = 'This item didn’t load.';
 export const SUPPORT_REFUSED = 'Support tickets are read only by staff who answer them';
 export const BACK_TO_LIST = 'Back to the list';
 // *Back to the queue* and the lock's *Decided by …* moved with the frame to
-// `admin/inspector/inspectorWords.ts` (B01-6a).
+// `admin/inspector/inspectorWords.ts` (B01-7a).
 /** *History →* (the link chip draws the arrow). */
 export const HISTORY = 'History';
 

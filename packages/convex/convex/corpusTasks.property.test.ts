@@ -1,12 +1,12 @@
 /**
- * **The Corpus tasks' one writer, under random histories** (B01-6a). Random sequences of the source
+ * **The Corpus tasks' one writer, under random histories** (B01-7a). Random sequences of the source
  * events — a campaign asserting and dropping reasons (`class-dissent` among them) with its evidence
  * changed or not, a settle by each decision and its reopen, merges and their unmerges, removes and
  * restores, a hard delete — and after every step:
  *
- * - every live 6a question (a `name-conflict` or `class-conflict` on a body neither merged, removed
+ * - every live 7a question (a `name-conflict` or `class-conflict` on a body neither merged, removed
  *   nor deleted) is the member of exactly one open task, keyed as its fields give;
- * - no task is keyed by a reason 6a doesn't file, and no open task lacks its question;
+ * - no task is keyed by a reason 7a doesn't file, and no open task lacks its question;
  * - every count row equals its tally;
  * - the drift repair finds nothing.
  *
@@ -344,7 +344,7 @@ async function invariants(t: T): Promise<string[]> {
     for (const task of tasks) {
       const reason = task.key.split(':')[1] as ReviewReason;
       if (!(CORPUS_TASK_REASONS as readonly string[]).includes(reason)) {
-        holes.push(`${task.key}: keyed by a reason 6a doesn't file`);
+        holes.push(`${task.key}: keyed by a reason 7a doesn't file`);
       }
       if (task.status !== 'open') continue;
       const body = byId.get(task.waterBodyId) ?? null;

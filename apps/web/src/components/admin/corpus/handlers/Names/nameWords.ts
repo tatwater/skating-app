@@ -1,7 +1,7 @@
 /**
  * Board 4.2's words, and every word the board did not supply (marked *invented*, for the copy pass).
  * Nothing here says anything about the ice (D3): a name conflict is about what a body is called,
- * never about what its ice is like. No email fact and no *Suggested* in 6a (D308): 6c adds both.
+ * never about what its ice is like. No email fact and no *Suggested* in 7a (D308): 7c adds both.
  */
 export const NAME_WORDS = {
   // ── From the board ──────────────────────────────────────────────────────────────────────────────────

@@ -6,7 +6,7 @@ import type { CorpusTaskItemView } from '../corpusTypes';
 
 /**
  * **Which handler draws a Corpus task** — by its lane (`CorpusTaskLane`: `nameConflicts`,
- * `classConflicts`; 6b–6d add theirs).
+ * `classConflicts`; 7b–7d add theirs).
  *
  * **The contract for a handler builder**: in your own folder under
  * `components/admin/corpus/handlers/`, add a `register.ts` (or `.tsx`) that exports

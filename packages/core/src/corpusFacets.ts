@@ -1,5 +1,5 @@
 /**
- * **The facet a Corpus task is filed in**, from the body's stored facts (B01-6a) — the lane's tab.
+ * **The facet a Corpus task is filed in**, from the body's stored facts (B01-7a) — the lane's tab.
  *
  * - **Name conflicts**: how the shown name and the other catalog name differ (the queue's own split,
  *   measured on run 8's 475 conflicts in `sameDisplayName`'s docstring): *Qualifier* when one name's

@@ -7,7 +7,7 @@ import { DecidedLock } from './DecidedLock';
 import { useInspectorContext } from './inspectorContext';
 
 /**
- * **The inspector's frame** — every Inbox handler draws inside it, and from B01-6a every Corpus task
+ * **The inspector's frame** — every Inbox handler draws inside it, and from B01-7a every Corpus task
  * handler too (moved here from `inbox/inspector/` then; the canonical seam: handlers import it by
  * this signature; its props change only with the governor's word). From the boards (2.1–2.8,
  * `.inspector`): the pane head (36 px: the item's kicker, its chips, its age written

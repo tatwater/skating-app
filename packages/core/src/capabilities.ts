@@ -120,7 +120,7 @@ export const CAPABILITIES = {
     'The intake queue, duplicates, standing lanes, place names, the pre-ice pass.',
   ),
   'corpus.duplicates': write('moderator', 'Merge two bodies or say they are distinct (D36).'),
-  // B01-6a: keeping a body as it is changes nothing but the queue; a decision that changes the body
+  // B01-7a: keeping a body as it is changes nothing but the queue; a decision that changes the body
   // needs that change's own capability (D217).
   'corpus.intake': write('moderator', 'Settle an intake question without changing the body.'),
   'corpus.placeNames': write(

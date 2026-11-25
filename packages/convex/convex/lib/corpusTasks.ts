@@ -1,12 +1,12 @@
 /**
- * **The Corpus tasks' one writer** (B01-6a): every task row and every count row is written here, and
+ * **The Corpus tasks' one writer** (B01-7a): every task row and every count row is written here, and
  * every writer of a task's source — a body's `reviewReasons`, `reviewReason`, `reviewSettled`, or
  * the body itself going away — calls in, so a task can't disagree with the fact it asks about.
  * `corpusTaskWriters.test.ts` (in `packages/guards`) holds every such writer to it.
  *
- * **One task per question.** In 6a a question is one intake reason a campaign raised on one body —
+ * **One task per question.** In 7a a question is one intake reason a campaign raised on one body —
  * `name-conflict` or `class-conflict` (`CORPUS_REASON_LANE`); a `class-dissent` stays on the body
- * with no task until 6b's Contested lane (D307). A question is *live* while the body is neither
+ * with no task until 7b's Contested lane (D307). A question is *live* while the body is neither
  * merged away nor removed (nor deleted) and its `reviewReasons` carries the reason; each live question
  * has exactly one open task, keyed `reason:<reason>:<bodyId>`.
  *
@@ -45,10 +45,10 @@ import { bodyLibrarySearchText, queueLibraryRefresh } from './bodyLibrary';
 
 // ── The vocabulary ────────────────────────────────────────────────────────────────────────────────────────
 
-/** An intake reason 6a files a task for. */
+/** An intake reason 7a files a task for. */
 export type CorpusTaskReason = keyof typeof CORPUS_REASON_LANE;
 
-/** The reasons 6a files, in `REVIEW_REASONS` order. */
+/** The reasons 7a files, in `REVIEW_REASONS` order. */
 export const CORPUS_TASK_REASONS: readonly CorpusTaskReason[] = REVIEW_REASONS.filter(
   (r): r is CorpusTaskReason => r in CORPUS_REASON_LANE,
 );
@@ -57,7 +57,7 @@ const REASON_OF_LANE = Object.fromEntries(
   CORPUS_TASK_REASONS.map((reason) => [CORPUS_REASON_LANE[reason], reason]),
 ) as Record<CorpusTaskLane, CorpusTaskReason>;
 
-/** Whether 6a files a task for `reason` (`class-dissent` and the rest: not yet). */
+/** Whether 7a files a task for `reason` (`class-dissent` and the rest: not yet). */
 export function isTaskReason(reason: ReviewReason): reason is CorpusTaskReason {
   return reason in CORPUS_REASON_LANE;
 }
@@ -113,7 +113,7 @@ export function goneBecause(
   return null;
 }
 
-/** The 6a questions live on `body`: its task reasons, unless the body is gone. */
+/** The 7a questions live on `body`: its task reasons, unless the body is gone. */
 export function liveReasons(body: TaskBody | null): Set<CorpusTaskReason> {
   if (body === null || goneBecause(body) !== null) return new Set();
   return new Set((body.reviewReasons ?? []).filter(isTaskReason));
@@ -266,7 +266,7 @@ export async function corpusTasksPending(ctx: QueryCtx): Promise<boolean> {
 // ── Filing, refreshing, leaving ──────────────────────────────────────────────────────────────────────────
 
 /**
- * The most open tasks a body's sync reads. A body has at most one per 6a reason (two); the rest is
+ * The most open tasks a body's sync reads. A body has at most one per 7a reason (two); the rest is
  * room for drift, which the sync then leaves, and the repair finds past it.
  */
 export const BODY_OPEN_SCAN = 16;
@@ -306,7 +306,7 @@ export async function leaveTask(
 }
 
 /**
- * **Files, refreshes or leaves the body's 6a tasks from its stored `reviewReasons`.** Idempotent: a
+ * **Files, refreshes or leaves the body's 7a tasks from its stored `reviewReasons`.** Idempotent: a
  * second call with nothing changed writes nothing. Each live question gets its one open task (filed
  * when missing; its facet, rank and search text refreshed when the body's facts moved them); each
  * open task whose question is gone leaves — `deleted`, `merged` or `removed` when the body went, else

@@ -1,11 +1,11 @@
 /**
- * **The Corpus tasks' views** (B01-6a): the shapes `convex/corpusTasks.ts` answers in, and the
+ * **The Corpus tasks' views** (B01-7a): the shapes `convex/corpusTasks.ts` answers in, and the
  * row and item builders that resolve a stored task (`corpusTasks`, written only by
  * `lib/corpusTasks.ts`) into what its lane's list and inspector draw. Every label is resolved at
  * read from the body as stored; **every fact not stored reads `null`, never a guess** — class claims
  * a campaign hasn't recorded, a body's neighbors before its geometry facts are computed, the run of
  * a campaign with no run row. A `class-dissent` reason and a body's `classRefusals` are read by
- * nothing here: 6a files no task for them (D307).
+ * nothing here: 7a files no task for them (D307).
  *
  * **Bounds.** Every read here is one indexed read with a count cap, or a point read; none ranges
  * over an optional field without `eq`. A list row reads its task's body, its geometry facts and its
@@ -155,7 +155,7 @@ export type NameChoiceView = {
   /** "First: the authority on US names" (core's `nameRankWords`). */
   rankWords: string;
   shown: boolean;
-  /** `false` on every name until 6c's email counts name a suggestion (D308). */
+  /** `false` on every name until 7c's email counts name a suggestion (D308). */
   suggested: boolean;
   /** Other bodies in the library with the name, "50+" past fifty. */
   namesakes: { count: number; capped: boolean };
@@ -165,7 +165,7 @@ export type NameChoiceView = {
 export type ClassRungView = {
   cls: WaterBodyClass;
   now: boolean;
-  /** `false` on every rung in 6a: nothing stored names a suggestion. */
+  /** `false` on every rung in 7a: nothing stored names a suggestion. */
   suggested: boolean;
   /**
    * Each catalog's token for this class, where its claim recorded one. A claim stored before the
@@ -400,7 +400,7 @@ function consequenceBodyOf(body: Doc<'waterBodies'>): ConsequenceBody {
 // ── Items ──────────────────────────────────────────────────────────────────────────────────────
 
 /**
- * The task a ref names: a task id, or `body:<id>` — the body's open task in `lane` (any 6a lane in
+ * The task a ref names: a task id, or `body:<id>` — the body's open task in `lane` (any 7a lane in
  * lane order when absent), else its most recently decided one there, so the audit feed's links and
  * a decided question still open on their lock. `null` for no such task, and for a task that **left**
  * (its question went away with no decision: no list shows it, and nothing on it can be decided).

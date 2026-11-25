@@ -1,5 +1,5 @@
 /**
- * **The Corpus tasks: the backfill and the drift repair** (B01-6a). The tasks themselves are written
+ * **The Corpus tasks: the backfill and the drift repair** (B01-7a). The tasks themselves are written
  * by `lib/corpusTasks.ts` beside every write that changes a body's questions; this module files them
  * for bodies written before the hooks (the backfill) and re-derives them on a slow walk (the repair).
  *
@@ -82,7 +82,7 @@ export const RETRY_PAGE = 3;
 /**
  * The phases of a walk over every body with a question: one per review reason, each through the
  * body's primary reason (`by_review_reason`) — so every body with any reason is met once, and the
- * sync files every 6a reason it carries.
+ * sync files every 7a reason it carries.
  */
 export const BODY_PHASES: readonly string[] = REVIEW_REASONS.map((r) => `reason:${r}`);
 

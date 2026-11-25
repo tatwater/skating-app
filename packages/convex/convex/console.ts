@@ -135,7 +135,7 @@ export const corpusCounts = query({
       .withIndex('by_status_messages', (q) => q.eq('status', 'open'))
       .take(COUNT_CAP + 1);
 
-    // The last campaign: its merge or its load. `retire-absorbed` has its own kind since B01-6a
+    // The last campaign: its merge or its load. `retire-absorbed` has its own kind since B01-7a
     // (`absorbed_retire`), so it is not read here; the rows it wrote before that sit under
     // `canonical_water` with their own label, and are passed over by it (`lib/campaignRuns.ts`).
     const campaignAt = (await lastCampaignRun(ctx))?.startedAt ?? null;

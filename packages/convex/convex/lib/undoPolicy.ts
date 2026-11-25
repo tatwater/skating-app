@@ -474,7 +474,7 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     capability: 'content.moderate',
   },
 
-  // ── The Corpus tasks (B01-6a) ──────────────────────────────────────────────────────────────────
+  // ── The Corpus tasks (B01-7a) ──────────────────────────────────────────────────────────────────
   // A *Keep* settles an intake question and changes nothing on the body; its undo asks the question
   // again (`undoHandlersCorpus.ts`). Settling changes nothing a skater sees, and neither does putting
   // the question back, so neither asks a reason. A lane's rename or reclass is the Body console's

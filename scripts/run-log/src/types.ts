@@ -61,7 +61,7 @@ export type ImportRunKind =
   | 'landmark_seed'
   /** `waterBodies:sweepAllBodySummaries` — the full map-card walk that fills the refresh table. */
   | 'body_summary_backfill'
-  // The corpus campaign's passes that left no row before B01-6a (D218).
+  // The corpus campaign's passes that left no row before B01-7a (D218).
   /** `scripts/admin-areas build-region` — the TIGER region masks the merge clips against. */
   | 'region_masks'
   /** `scripts/etl landmarks` — the offline OSM + GNIS match `load-landmarks` loads (D202). */
@@ -70,7 +70,7 @@ export type ImportRunKind =
   | 'floor_prune'
   /**
    * `scripts/etl retire-absorbed` — the merge's absorbed rows folded into their survivors (D136).
-   * Logged as `canonical_water` before B01-6a, which made it read as a campaign's load.
+   * Logged as `canonical_water` before B01-7a, which made it read as a campaign's load.
    */
   | 'absorbed_retire';
 

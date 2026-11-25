@@ -132,7 +132,7 @@ own membership. **What "private" means since 2026-09-18:** every message went th
 (Sonnet for the field labels, Haiku for the mention inventory) under Anthropic's API terms; only
 the derived labels and counts are kept in the tree, no message text leaves `training_data/`, and
 nothing is republished. D200's replay of the corpus happens only on a private, disposable Convex
-deployment — testing, not publishing (a third *Not gated* case for L5 above). **From B01-6c (D308)**
+deployment — testing, not publishing (a third *Not gated* case for L5 above). **From B01-7c (D308)**
 the mention inventory's counts load into Convex for the admin console's Place names and Name
 conflicts — by body, name and winter, counts only, read by moderators; the line holds there too: no
 message text, no sender, no date finer than the winter.

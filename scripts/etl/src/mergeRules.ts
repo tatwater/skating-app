@@ -562,7 +562,7 @@ export function chooseName(members: readonly Feature[]): string {
  * The gazetteer name is appended as a `gnis` claim rather than merged into a member, because it has
  * no member to belong to: it is what `resolveGnisNames` supplied for a body no catalog named.
  *
- * **Every catalog publishing a spelling is recorded** (B01-6a): each claim carries its own catalog in
+ * **Every catalog publishing a spelling is recorded** (B01-7a): each claim carries its own catalog in
  * `sources`, and the dedupe pools them, so a spelling NHD and 3DHP both publish is stored once, as
  * NHD's, with `sources: ['nhd', '3dhp']` — the board's *GNIS · NHD · 3DHP*. `source` stays the
  * top-ranked catalog, so every reader of `source` and `value` reads what it read before.

@@ -179,7 +179,7 @@ describe('bodyAliasesFor (B01-3h: one rule for every search)', () => {
   });
 });
 
-describe('every catalog behind a spelling (B01-6a)', () => {
+describe('every catalog behind a spelling (B01-7a)', () => {
   const recorded = (source: NameClaim['source'], value: string): NameClaim => ({
     source,
     value,
@@ -321,7 +321,7 @@ describe('every catalog behind a spelling (B01-6a)', () => {
   });
 });
 
-describe('NAME_SOURCE_RANK (moved from the ETL, B01-6a)', () => {
+describe('NAME_SOURCE_RANK (moved from the ETL, B01-7a)', () => {
   it('ranks every claim source, by authority over US names, a moderator above every catalog', () => {
     expect(Object.keys(NAME_SOURCE_RANK).sort()).toEqual([...CLAIM_SOURCES].sort());
     const order = [...CLAIM_SOURCES].sort((a, b) => NAME_SOURCE_RANK[a] - NAME_SOURCE_RANK[b]);

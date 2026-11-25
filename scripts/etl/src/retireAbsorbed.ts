@@ -85,7 +85,7 @@ function main(): void {
   }
 
   const logger = new RunLogger({
-    // Its own kind (B01-6a): as `canonical_water` it read as the campaign's load — the Overview's
+    // Its own kind (B01-7a): as `canonical_water` it read as the campaign's load — the Overview's
     // last campaign — though it folds rows away rather than loading them.
     kind: 'absorbed_retire',
     label: `retire absorbed duplicates${apply ? '' : ' (dry run)'}`,

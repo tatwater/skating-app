@@ -374,7 +374,7 @@ describe('nameClaimsOf', () => {
     expect(nameClaimsOf([...members].reverse())).toEqual(credited);
   });
 
-  // B01-6a: the board's *GNIS · NHD · 3DHP*. The merge folded identical spellings and kept only the
+  // B01-7a: the board's *GNIS · NHD · 3DHP*. The merge folded identical spellings and kept only the
   // winner's source, which no backfill can recover — so the next campaign records every catalog.
   it('records every catalog publishing a spelling, the top-ranked first and as `source`', () => {
     expect(

@@ -7,7 +7,7 @@ import { Route } from './admin.water.standing';
 // The `-` prefix keeps this file out of the generated route tree (`routeFileIgnorePrefix`).
 
 /**
- * `/admin/water/standing` after B01-6a: the five off-map lanes went to the Corpus library, and the
+ * `/admin/water/standing` after B01-7a: the five off-map lanes went to the Corpus library, and the
  * page keeps *Recently activated* with its enrichment column — one read, nothing else.
  */
 const m = vi.hoisted(() => ({

@@ -206,7 +206,7 @@ export interface MergeManifestFile {
   /**
    * What the merge covered (D218) — replayed onto the rows of the passes that load its artifacts,
    * so a campaign's load says *full re-import* without the loader working it out again. Absent in a
-   * manifest written before B01-6a.
+   * manifest written before B01-7a.
    */
   scope?: ImportRunScope;
   stages?: RunStage[];

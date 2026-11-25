@@ -1,5 +1,5 @@
 /**
- * **The Corpus tasks' hooks** (B01-6a): each write that changes a body's questions calls the one
+ * **The Corpus tasks' hooks** (B01-7a): each write that changes a body's questions calls the one
  * writer — the import (with the honoring rule, D306), the merge and its unmerge, the remove and its
  * restore, and both duplicate resolutions' hard deletes — and the counts equal their tallies after
  * each.
@@ -201,7 +201,7 @@ async function settle(
 }
 
 describe('the import', () => {
-  test('files a task per 6a reason and none for a class dissent, its refusals and claim facts stored', async () => {
+  test('files a task per 7a reason and none for a class dissent, its refusals and claim facts stored', async () => {
     const t = harness();
     const result = await load(t, [BOTH]);
     expect(result).toMatchObject({ inserted: 1, settledHeld: 0, raisedAgain: 0 });

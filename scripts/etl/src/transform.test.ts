@@ -72,7 +72,7 @@ function importedBody(feature: OsmWaterFeature): CanonicalBody {
   return body;
 }
 
-describe('toCanonicalBody: the claims and refusals on the wire (B01-6a)', () => {
+describe('toCanonicalBody: the claims and refusals on the wire (B01-7a)', () => {
   const geometry = waterFeature({}).geometry as Polygon;
   const base = {
     source: 'nhd' as const,

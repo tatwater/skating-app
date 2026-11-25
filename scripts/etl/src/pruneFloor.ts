@@ -13,7 +13,7 @@
  *   pnpm --filter @skating/etl prune-floor --apply --prod
  *   pnpm --filter @skating/etl prune-floor --apply --campaign=<id>   # the campaign its row joins
  *
- * **It leaves a run row** (`floor_prune`, B01-6a), dry or applied, so a campaign read from what it
+ * **It leaves a run row** (`floor_prune`, B01-7a), dry or applied, so a campaign read from what it
  * stored shows whether the prune ran after it. A run resumed from the checkpoint says it is partial
  * (`floorPruneScope`): it walked only what the killed run had not reached, and its counts are the
  * running totals carried across both. A row that cannot be written never fails the prune.

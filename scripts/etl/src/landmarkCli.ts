@@ -10,7 +10,7 @@
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
  *   pnpm --filter @skating/etl landmarks --campaign=<id>       # the campaign its run row joins
  *
- * It leaves a run row (`landmark_match`, B01-6a) though it writes nothing else to Convex: a campaign
+ * It leaves a run row (`landmark_match`, B01-7a) though it writes nothing else to Convex: a campaign
  * read from what it stored must show this pass, its states and how it ended. `--no-run-log` opts out
  * for a local experiment; a row that cannot be written never fails the match (`RunLogger`).
  *

@@ -1,5 +1,5 @@
 /**
- * **The Corpus tasks' reads** (B01-6a, `corpusTasks.ts`): the lanes' exact counts, a lane's page
+ * **The Corpus tasks' reads** (B01-7a, `corpusTasks.ts`): the lanes' exact counts, a lane's page
  * (each tab, the decided tab, the `endCursor` chain, the search and its bound) and one task's item
  * (by every ref, each lane's facts present and not recorded), on tasks filed through the real
  * writer (`lib/corpusTasks.ts`).
@@ -1204,7 +1204,7 @@ describe('item', () => {
   });
 });
 
-// ── Contested as water is not 6a's (D307) ──────────────────────────────────────────────────────────────────────────
+// ── Contested as water is not 7a's (D307) ──────────────────────────────────────────────────────────────────────────
 
 test('a class-dissent reason or stored classRefusals changes nothing these reads return', async () => {
   const t = harness();

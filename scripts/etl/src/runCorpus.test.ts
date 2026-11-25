@@ -1,5 +1,5 @@
 /**
- * `run-corpus.sh`'s log (B01-6a): every line stamped, every pass carrying the campaign id, and the
+ * `run-corpus.sh`'s log (B01-7a): every line stamped, every pass carrying the campaign id, and the
  * exit status still the script's own — the `| tee` trap its header records is the one this must not
  * reopen. The script runs for real, from a copy in a temp directory, against a `pnpm` on `PATH`
  * that records its arguments and fails the pass it is told to.

@@ -1,5 +1,5 @@
 /**
- * **The Corpus tasks' reads** (B01-6a, *The reads, one shape* in the B01 phase doc): the lanes'
+ * **The Corpus tasks' reads** (B01-7a, *The reads, one shape* in the B01 phase doc): the lanes'
  * counts, a lane's page, and one task's item behind `?item=`.
  *
  * Every list reads the stored tasks (`corpusTasks`, written only by `lib/corpusTasks.ts`), never a
@@ -11,7 +11,7 @@
  * All gated on `corpus.read`, and bounded (`lib/corpusTaskViews.ts` says each bound). Each takes the
  * console's read clock (`now`), though no answer here turns on the time yet.
  *
- * 6a's two lanes hold `name-conflict` and `class-conflict` tasks only: a `class-dissent` reason, or a
+ * 7a's two lanes hold `name-conflict` and `class-conflict` tasks only: a `class-dissent` reason, or a
  * body's stored `classRefusals`, changes nothing these reads return (D307).
  */
 

@@ -42,7 +42,7 @@
 # script now does it. Output goes to stdout **and** `.scratch/merge/run-<campaign>.log`, which means
 # there is no reason left to wrap it and no way for a wrapper to eat the status.
 #
-# **Every line is stamped** (B01-6a, D218): `2026-11-25T13:26:04-0500 ══ load bodies`. The log was a
+# **Every line is stamped** (B01-7a, D218): `2026-11-25T13:26:04-0500 ══ load bodies`. The log was a
 # record that could say what happened but never when, so a pass that went quiet for forty minutes
 # read the same as one that finished in four. The stamp is added inside the script's own logger,
 # so the status rule above is untouched; `runCorpus.test.ts` runs this file against a failing pass.

@@ -1215,7 +1215,7 @@ const undoRequestReopen: UndoHandler = {
   },
 };
 
-// ── The Corpus tasks: a settled intake question (B01-6a) ───────────────────────────────────────────────────
+// ── The Corpus tasks: a settled intake question (B01-7a) ───────────────────────────────────────────────────
 
 /** A settle whose task no row records (none was filed, or it was written by hand). */
 export const SETTLE_NOT_FOUND = 'Nothing records the question this settled.';

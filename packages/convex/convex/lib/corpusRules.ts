@@ -1,5 +1,5 @@
 /**
- * **Per-row `can` for the Corpus tasks: one rule shared by read and write** (B01-6a), in
+ * **Per-row `can` for the Corpus tasks: one rule shared by read and write** (B01-7a), in
  * `lib/inboxRules.ts`' shape. For a viewer and a task, each verb its lane draws answers `null`
  * (allowed) or the sentence its write refuses with — and every Corpus write asks the same function
  * before it writes ({@link assertCorpusVerb}), so a lever is never drawn that its write refuses
@@ -31,7 +31,7 @@ import type { QueryCtx } from '../_generated/server';
 import { goneBecause, TASK_LEFT, taskLockRefusal } from './corpusTasks';
 import { capabilityRefusal } from './inboxRules';
 
-/** 6a's verbs; 6b's Contested lane adds `remove` and `setDormant` (D307). */
+/** 7a's verbs; 7b's Contested lane adds `remove` and `setDormant` (D307). */
 export type CorpusVerb = 'pickName' | 'keepName' | 'setClass' | 'keepClass';
 
 /** `null`: allowed. A sentence: the write's own refusal. A verb absent: not this lane's. */

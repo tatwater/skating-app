@@ -6,7 +6,7 @@ import { RadioGroup } from '@/components/kit/radio';
 import { cn } from '@/lib/utils';
 
 /**
- * **The consequence ladder** — a kit candidate (B01-6a; board 4.3's *What each class would do*):
+ * **The consequence ladder** — a kit candidate (B01-7a; board 4.3's *What each class would do*):
  * every value a person may choose, one row each, with what each source says of it and what
  * choosing it does.
  *

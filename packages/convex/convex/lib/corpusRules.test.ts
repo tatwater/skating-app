@@ -1,5 +1,5 @@
 /**
- * The Corpus tasks' rule (B01-6a), on its own: each verb's answer in the rule's order — capability,
+ * The Corpus tasks' rule (B01-7a), on its own: each verb's answer in the rule's order — capability,
  * the lock, the body merged or removed, a task that left, the verb's precondition — and the name a
  * pick names. The write's side (the same sentences thrown) is `corpusDecisions.test.ts`.
  */

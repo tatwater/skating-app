@@ -222,7 +222,7 @@ describe('importRuns write path', () => {
   });
 });
 
-describe('importRuns scope and heartbeat (D218, B01-6a)', () => {
+describe('importRuns scope and heartbeat (D218, B01-7a)', () => {
   afterEach(() => {
     vi.useRealTimers();
   });

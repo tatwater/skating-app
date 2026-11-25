@@ -1,5 +1,5 @@
 /**
- * **Every write of a Corpus task's source calls the one writer** (B01-6a). The Corpus lanes read
+ * **Every write of a Corpus task's source calls the one writer** (B01-7a). The Corpus lanes read
  * stored tasks (`corpusTasks`), kept by `lib/corpusTasks.ts` beside every write that changes a body's
  * questions. A write that skips it leaves a task open on a question a campaign dropped, or a raised
  * question in no lane — until the slow drift repair finds it.

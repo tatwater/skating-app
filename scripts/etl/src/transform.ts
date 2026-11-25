@@ -158,17 +158,17 @@ export function toCanonicalBody(input: {
   nameClaims?:
     | readonly { source: string; value: string; sources?: readonly string[] | undefined }[]
     | undefined;
-  /** Every catalog's class (B01-3d), with its token and area (B01-6a) — see `CanonicalBody.classClaims`. */
+  /** Every catalog's class (B01-3d), with its token and area (B01-7a) — see `CanonicalBody.classClaims`. */
   classClaims?:
     | readonly { source: string; value: string; token?: string; areaSqM?: number }[]
     | undefined;
   /**
-   * The catalogs that refused this water (B01-6a) — see `CanonicalBody.classRefusals`. The merge
+   * The catalogs that refused this water (B01-7a) — see `CanonicalBody.classRefusals`. The merge
    * always passes it, `[]` when none refused; a caller that can't know (the OSM-only lane sees one
    * catalog) leaves it out, and the record omits it.
    */
   classRefusals?: readonly { source: string; token: string; areaSqM?: number }[] | undefined;
-  /** The features the merge folded into this body (B01-6a, D310) — see `CanonicalBody.absorbedFeatures`. */
+  /** The features the merge folded into this body (B01-7a, D310) — see `CanonicalBody.absorbedFeatures`. */
   absorbedFeatures?: readonly { source: string; externalId: string; areaSqM: number }[] | undefined;
 }): CanonicalBody {
   const { stats, interiorPoint, polygon, centroid } = prepareBodyGeometry(input.geometry);
@@ -208,7 +208,7 @@ export function toCanonicalBody(input: {
         }
       : {}),
     ...(input.classClaims?.length ? { classClaims: input.classClaims.map((c) => ({ ...c })) } : {}),
-    // **Emitted empty, unlike the claims above** (B01-6a): `[]` is the merge's answer — it looked and
+    // **Emitted empty, unlike the claims above** (B01-7a): `[]` is the merge's answer — it looked and
     // no catalog refused — which the import stores as such, while an absent list is a record that
     // doesn't know (an older loader's, or the OSM-only lane's), and the import keeps what is stored.
     ...(input.classRefusals !== undefined

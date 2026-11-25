@@ -1,5 +1,5 @@
 /**
- * **What the Corpus tasks' drift repair checks, and how it fixes it** (B01-6a). The one writer
+ * **What the Corpus tasks' drift repair checks, and how it fixes it** (B01-7a). The one writer
  * (`lib/corpusTasks.ts`) keeps every task beside the write that changed its body; this is the net
  * for a write that didn't call it. Two checks, each read only (the dry run) or fixing (the repair):
  *
@@ -27,7 +27,7 @@ export type CorpusDriftKind =
   | 'stale_facet'
   | 'counts';
 
-/** The lanes 6a files tasks in, and so the lanes whose counts the repair checks. */
+/** The lanes 7a files tasks in, and so the lanes whose counts the repair checks. */
 export const CORPUS_TASK_LANES_6A: readonly CorpusTaskLane[] = Object.values(CORPUS_REASON_LANE);
 
 /** What a body's sync would fix, by kind; empty when its tasks are what its fields say. */
