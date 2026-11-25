@@ -16,7 +16,6 @@ import {
   GROUNDS,
   type Ground,
   INK_KEEPS_OFF,
-  INVERSE_TEXT_PAIRS,
   isDataKey,
   MARK_KEEPS_OFF,
   NON_TEXT_PAIRS,
@@ -63,12 +62,9 @@ describe('the four maps', () => {
   );
 
   it('give each surface its own palette and share density between modes', () => {
-    // Skater dark is the audit with its own tertiary gray; nothing else differs (the inverse keys
-    // are the other mode's, and skater light is designed apart: see below).
+    // Skater dark is the audit with its own tertiary gray; nothing else differs.
     const differs = COLOR_KEYS.filter(
-      (k) =>
-        colorSpecs[k].role !== 'inverse' &&
-        toHex(themeMaps.skater.dark.colors[k]) !== toHex(themeMaps.admin.dark.colors[k]),
+      (k) => toHex(themeMaps.skater.dark.colors[k]) !== toHex(themeMaps.admin.dark.colors[k]),
     );
     expect(differs).toEqual(['fg3']);
     expect(toHex(themeMaps.skater.dark.colors.fg3)).toBe('#8a8a8a');
@@ -139,7 +135,6 @@ describe('every color key is accounted for by the contrast rule', () => {
       ...Object.keys(TEXT_PAIRS),
       ...GROUNDS,
       ...PLATE_PAIRS.flat(),
-      ...Object.keys(INVERSE_TEXT_PAIRS),
       ...NON_TEXT_PAIRS.map(([mark]) => mark),
       ...Object.keys(CONTRAST_EXEMPT),
     ]);
@@ -187,25 +182,6 @@ describe.each(allThemeMaps.map((m) => [mapName(m), m] as const))('%s contrast', 
     expect(contrastOklch(map.colors[ink], map.colors[plate])).toBeGreaterThanOrEqual(
       WCAG_AA_NORMAL,
     );
-  });
-
-  // The inverted plate: a wash over the plate, then the ink over that — as it renders.
-  const inverseCases = Object.entries(INVERSE_TEXT_PAIRS).flatMap(([ink, grounds]) =>
-    (grounds as readonly ColorKey[]).map((ground) => [ink as ColorKey, ground] as const),
-  );
-  it.each(inverseCases)('%s passes AA on %s, over the inverted plate', (ink, ground) => {
-    const groundRgb = composite(map.colors[ground], map.colors['inv-bg']);
-    expect(
-      contrastOfRgb(composite(map.colors[ink], rgbToOklch(groundRgb)), groundRgb),
-    ).toBeGreaterThanOrEqual(WCAG_AA_NORMAL);
-  });
-
-  it('takes each inverse key from the other mode of its surface, value for value', () => {
-    const other = themeMaps[map.surface][map.mode === 'dark' ? 'light' : 'dark'].colors;
-    for (const [key, spec] of Object.entries(colorSpecs) as [ColorKey, ColorSpec][]) {
-      if (spec.role !== 'inverse') continue;
-      expect(map.colors[key], key).toEqual(other[spec.of as ColorKey]);
-    }
   });
 
   it.each(NON_TEXT_PAIRS)('%s (a non-text mark) holds 3:1 on %s', (mark, ground) => {
@@ -393,39 +369,6 @@ describe('resolveColors refuses a broken spec', () => {
         b: { role: 'alias', of: 'a' },
       }),
     ).toThrow(/Circular/);
-  });
-
-  it('on an inverse of an inverse, or of an unknown key', () => {
-    const bg = { role: 'base', dark: 'void', light: 'w' } as const;
-    expect(() =>
-      resolveColors('dark', {
-        bg,
-        a: { role: 'inverse', of: 'bg' },
-        b: { role: 'inverse', of: 'a' },
-      }),
-    ).toThrow(/Unknown color key: a/);
-    expect(() => resolveColors('dark', { bg, a: { role: 'inverse', of: 'nope' } })).toThrow(
-      /Unknown color key: nope/,
-    );
-    expect(() =>
-      resolveColors('light', {
-        bg,
-        a: { role: 'inverse', of: 'bg' },
-        o: { role: 'overlay', base: { key: 'a' }, alpha: 0.1, light: 'match' },
-      }),
-    ).toThrow(/Unknown color key: a/); // the other mode, resolving `o`, has no `a`
-  });
-
-  it('reads an inverse from the other mode, with its designed values', () => {
-    const bg = { role: 'base', dark: 'void', light: 'w' } as const;
-    const out = resolveColors(
-      'dark',
-      { bg, x: { role: 'ink', dark: 'g5' }, y: { role: 'inverse', of: 'x' } },
-      {},
-      { x: 'black' },
-    );
-    expect(out.y).toEqual(primitives.black);
-    expect(resolveColors('dark', { bg, y: { role: 'inverse', of: 'bg' } }).y).toEqual(primitives.w);
   });
 
   it('without a field', () => {

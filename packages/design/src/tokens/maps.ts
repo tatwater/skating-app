@@ -62,28 +62,16 @@ const prim = (name: PrimitiveName): Oklch => primitives[name];
 
 /**
  * Resolve every semantic color for one mode, taking `designed` values over the roles' where given.
- * An `inverse` key reads the other mode, resolved from the same specs (less the inverse keys) with
- * that mode's designed values (`designedOther`). Throws on an unknown or circular reference, so a
- * broken spec fails the build rather than emitting a hole.
+ * Throws on an unknown or circular reference, so a broken spec fails the build rather than
+ * emitting a hole.
  */
 export function resolveColors(
   mode: Mode,
   specs: Readonly<Record<string, ColorSpec>> = colorSpecs,
   designed: Readonly<Record<string, DesignedColor>> = {},
-  designedOther: Readonly<Record<string, DesignedColor>> = {},
 ): Record<string, Oklch> {
   const resolved: Record<string, Oklch> = {};
   const resolving = new Set<string>();
-  let other: Record<string, Oklch> | undefined;
-  const otherMode = (): Record<string, Oklch> => {
-    // Without its inverse keys, so an inverse of an inverse is an unknown key, never a loop.
-    other ??= resolveColors(
-      MODES.find((m) => m !== mode) as Mode,
-      Object.fromEntries(Object.entries(specs).filter(([, s]) => s.role !== 'inverse')),
-      designedOther,
-    );
-    return other;
-  };
 
   const resolve = (key: string): Oklch => {
     const done = resolved[key];
@@ -107,7 +95,7 @@ export function resolveColors(
     // The dark value of a keyed base, for a light overlay that matches the dark one.
     // Present: the same-mode `resolve(b.key)` above would have thrown first.
     const keyed = specs[b.key] as ColorSpec;
-    if (keyed.role === 'overlay' || keyed.role === 'alias' || keyed.role === 'inverse') {
+    if (keyed.role === 'overlay' || keyed.role === 'alias') {
       throw new Error(`An overlay can't sit on ${b.key}, which is itself an ${keyed.role}`);
     }
     return prim(keyed.dark);
@@ -148,11 +136,6 @@ export function resolveColors(
       }
       case 'alias':
         return resolve(spec.of);
-      case 'inverse': {
-        const value = otherMode()[spec.of];
-        if (value === undefined) throw new Error(`Unknown color key: ${spec.of}`);
-        return value;
-      }
     }
   };
 
@@ -185,7 +168,6 @@ export const themeMaps = Object.fromEntries(
             mode,
             colorSpecs,
             (designedColors[surface][mode] ?? {}) as DesignedMap,
-            (designedColors[surface][mode === 'dark' ? 'light' : 'dark'] ?? {}) as DesignedMap,
           ) as Record<ColorKey, Oklch>,
           fontSize: fontSize[surface],
           size: size[surface],

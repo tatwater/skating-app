@@ -78,11 +78,7 @@ function paperNames(surface: Surface): Map<string, [string, string]> {
       if (spec.audit) out.set(`--color-${spec.audit}`, [token, audit]);
     } else if (spec.role === 'data' || spec.role === 'fixed') {
       out.set(`--color-${key}`, [token, audit]);
-    } else if (
-      spec.role !== 'alias' &&
-      spec.role !== 'inverse' && // the other mode's value: Paper has no name for it
-      !out.has(`--color-${spec.dark}`)
-    ) {
+    } else if (spec.role !== 'alias' && !out.has(`--color-${spec.dark}`)) {
       out.set(`--color-${spec.dark}`, [token, audit]);
     }
   }

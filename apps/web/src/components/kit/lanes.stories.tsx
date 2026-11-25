@@ -4,7 +4,6 @@ import { type ReactElement, type ReactNode, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Badge, Tag } from './badge';
-import { LANE_DRESSES, type LaneDress } from './lane-dress';
 import { type Lane, type LaneGroup, Lanes, type LanesProps } from './lanes';
 import {
   colorsIn,
@@ -14,6 +13,7 @@ import {
   resolvePx,
   sameColor,
   sameShadow,
+  transitionsDone,
 } from './measure';
 import { Meter } from './meter';
 import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
@@ -427,17 +427,34 @@ export const FourUp: Story = {
   },
 };
 
-// ── The Pre-Season Pass: its dress, candidates for the founder ─────────────────────────────────────
+// ── The Pre-Season Pass ─────────────────────────────────────────────────────────────────────────────
 //
-// The seasonal group the Corpus sidebar gains each July and loses once every item in it is decided,
-// dressed apart from the plain groups. Four dresses, one story each (four-up), and each in the whole
-// Corpus sidebar at the console's width. None is picked; the unpicked ones go when the pick ships.
+// The seasonal group the Corpus sidebar gains each July. While it waits on a person it wears the
+// bracketed card (the founder's pick) at the top of the column, its meter at its foot; once every
+// item in it is decided it folds to one plain line, kept so its decisions can be read again — and an
+// undo that reopens one puts the card back.
 
 const PASS = 'Pre-Season Pass';
+/** Known features is the pass's third lane, but a record, not a queue: never in the meter. */
+const KNOWN_FEATURES: Lane = { id: 'features', label: 'Known features', count: 12 };
 const PASS_LANES: Lane[] = [
   { id: 'recurrence', label: 'Recurrence', count: 7 },
   { id: 'promotion', label: 'Promotion candidates', count: 3 },
+  KNOWN_FEATURES,
 ];
+/** While it is computed: no counts yet on the pass's own queues. */
+const COMPUTING_LANES: Lane[] = [
+  { id: 'recurrence', label: 'Recurrence' },
+  { id: 'promotion', label: 'Promotion candidates' },
+  KNOWN_FEATURES,
+];
+/** Done: nothing left open in its queues; every decision still there to read. */
+const DONE_LANES: Lane[] = [
+  { id: 'recurrence', label: 'Recurrence', dim: true },
+  { id: 'promotion', label: 'Promotion candidates', dim: true },
+  KNOWN_FEATURES,
+];
+const DONE = 'Done 14 Sep';
 
 /** The pass's foot: its meter and that meter's line. It counts decisions, never conditions. */
 function PassFoot({ decided, total }: { decided: number | null; total: number }) {
@@ -451,16 +468,22 @@ function PassFoot({ decided, total }: { decided: number | null; total: number })
   );
 }
 
-const passGroup = (
-  dress: LaneDress,
-  { lanes = PASS_LANES, decided = 3 }: { lanes?: Lane[]; decided?: number | null } = {},
-): LaneGroup => ({
+const openPass = (lanes: Lane[] = PASS_LANES): LaneGroup => ({
   label: PASS,
-  dress,
+  dress: 'bracketed',
   lanes,
-  foot: <PassFoot decided={decided} total={10} />,
-  // The taped dress carries its urgency in a badge in the kicker's row.
-  ...(dress === 'taped' && { tail: <Badge tone="warn">Due</Badge> }),
+  foot: <PassFoot decided={3} total={10} />,
+});
+const computingPass: LaneGroup = {
+  label: PASS,
+  dress: 'bracketed',
+  lanes: COMPUTING_LANES,
+  foot: <PassFoot decided={null} total={10} />,
+};
+const donePass = (open: boolean, onOpenChange: (open: boolean) => void): LaneGroup => ({
+  label: PASS,
+  lanes: DONE_LANES,
+  collapsible: { open, onOpenChange, summary: DONE },
 });
 
 const TASKS: LaneGroup = {
@@ -480,7 +503,6 @@ const VIEWS: LaneGroup = {
   lanes: [
     { id: 'opened', label: 'Opened recently' },
     { id: 'changed', label: 'Changed this week' },
-    { id: 'features', label: 'Known features', count: 12 },
   ],
 };
 const STANDING: LaneGroup = {
@@ -495,8 +517,9 @@ const STANDING: LaneGroup = {
     { id: 'removed', label: 'Removed · rejected' },
   ],
 };
+const LIBRARY = [TASKS, VIEWS, STANDING];
 
-/** Every lane state, inside the dress: forced for the eye by the pseudo-states addon. */
+/** Every lane state, inside the card: forced for the eye by the pseudo-states addon. */
 const STATE_LANES: Lane[] = [
   { id: 'rest', label: 'At rest', count: 7 },
   { id: 'hover', label: 'Hovered', count: 3 },
@@ -537,49 +560,32 @@ function Column({
   );
 }
 
-/** The dress, four-up: the pass over the Tasks group, and every lane state inside the dress. */
-function PassDressSheet({ dress }: { dress: LaneDress }) {
+/**
+ * The sidebar as a route holds it: the pass group's open state and the chosen lane are the caller's
+ * (here, state; in the console, the URL).
+ */
+function CorpusSidebar({
+  pass,
+  initialOpen = false,
+  initialSelected = 'active',
+  passLast = false,
+}: {
+  pass: 'open' | 'computing' | 'done';
+  initialOpen?: boolean;
+  initialSelected?: string;
+  passLast?: boolean;
+}) {
+  const [open, setOpen] = useState(initialOpen);
+  const [selected, setSelected] = useState(initialSelected);
+  const group =
+    pass === 'open' ? openPass() : pass === 'computing' ? computingPass : donePass(open, setOpen);
   return (
-    <div className="flex flex-wrap gap-(--space-6)">
-      <Column caption="In the sidebar" height="24rem">
-        <Lanes
-          label={`${PASS} and tasks`}
-          groups={[passGroup(dress), TASKS]}
-          selected="duplicates"
-        />
-      </Column>
-      <Column caption="Every state" height="24rem">
-        <Lanes
-          label={`${PASS} states`}
-          groups={[{ ...passGroup(dress), lanes: STATE_LANES }]}
-          selected="on"
-          link={forced({ hover: 'hover', focus: 'focus' })}
-        />
-      </Column>
-    </div>
-  );
-}
-
-/** The Corpus sidebar whole, at the console's width: Active chosen, then a pass lane chosen. */
-function CorpusSidebar({ dress }: { dress: LaneDress }) {
-  return (
-    <div className="flex flex-wrap gap-(--space-8)">
-      <Column caption="Active chosen" height="49rem">
-        <Lanes
-          label="Corpus"
-          groups={[passGroup(dress), TASKS, VIEWS, STANDING]}
-          selected="active"
-        />
-      </Column>
-      <Column caption="Recurrence chosen, the next focused" height="49rem">
-        <Lanes
-          label="Corpus, a pass lane chosen"
-          groups={[passGroup(dress), TASKS, VIEWS, STANDING]}
-          selected="recurrence"
-          link={forced({ promotion: 'focus' })}
-        />
-      </Column>
-    </div>
+    <Lanes
+      label="Corpus"
+      groups={passLast ? [...LIBRARY, group] : [group, ...LIBRARY]}
+      selected={selected}
+      onSelect={setSelected}
+    />
   );
 }
 
@@ -597,6 +603,18 @@ function innerRect(el: Element): DOMRect {
   return new DOMRect(r.left + l, r.top + t, r.width - l - rt, r.height - t - b);
 }
 
+/** The box of an element's text: a lane-step line's kicker is the text, not its row. */
+const textOf = (el: Element) => must(el.querySelector('[id]') ?? el).getBoundingClientRect();
+
+/** A text is whole when its ink fits its box: a range measures the ink, cut or not. */
+async function expectWhole(el: Element, what: string) {
+  const ink = document.createRange();
+  ink.selectNodeContents(el);
+  await expect(ink.getBoundingClientRect().width, `${what} whole`).toBeLessThanOrEqual(
+    el.getBoundingClientRect().width + JUNCTION_TOLERANCE_PX,
+  );
+}
+
 /** Everything painted under `el` up to `root`, bottom first: the ground its ink sits on. */
 function groundUnder(el: HTMLElement, root: HTMLElement): string[] {
   const layers: string[] = [];
@@ -604,50 +622,48 @@ function groundUnder(el: HTMLElement, root: HTMLElement): string[] {
     const paint = getComputedStyle(n).backgroundColor;
     if (paint !== 'rgba(0, 0, 0, 0)') layers.unshift(paint);
   }
-  // The field as the root has it: inside the inverted plate `--bg` is the plate's.
   return [computedColor(root, 'var(--bg)'), ...layers];
 }
 
-/** Every lane's name and count pass AA on the ground they're painted on, dress and plate included. */
+/** Every lane's name and count, and every folded line, pass AA on the ground they're painted on. */
 async function expectLanesReadable(root: HTMLElement) {
-  for (const lane of root.querySelectorAll<HTMLElement>('[data-slot="lane"]')) {
-    const ground = groundUnder(lane, root);
-    const name = lane.textContent ?? '';
-    await expect(
-      contrastBetween(lane, ground, [...ground, getComputedStyle(lane).color]),
-      name,
-    ).toBeGreaterThanOrEqual(4.5);
-    const count = lane.querySelector<HTMLElement>('[data-slot="lane-count"]');
-    if (count !== null)
+  const inks = (el: HTMLElement) => [
+    el,
+    ...el.querySelectorAll<HTMLElement>(
+      '[data-slot="lane-count"], [data-slot="lanes-line-summary"]',
+    ),
+  ];
+  for (const row of root.querySelectorAll<HTMLElement>(
+    '[data-slot="lane"], [data-slot="lanes-line"]',
+  )) {
+    const ground = groundUnder(row, root);
+    for (const ink of inks(row))
       await expect(
-        contrastBetween(lane, ground, [...ground, getComputedStyle(count).color]),
-        `${name} count`,
+        contrastBetween(row, ground, [...ground, getComputedStyle(ink).color]),
+        ink.textContent ?? '',
       ).toBeGreaterThanOrEqual(4.5);
   }
 }
 
-/**
- * The dress's junctions, in one sidebar: the dressed group's kicker, names and counts keep the
- * column's 18 px line, the plain groups' line; rows stay the lane step; the meter and its line sit
- * inside the dress, under the lanes.
- */
-async function expectDressJunctions(nav: HTMLElement, dress: LaneDress) {
+const near = (a: number, b: number, what: string) =>
+  expect(Math.abs(a - b), `${what}: ${a} vs ${b}`).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
+
+/** Every kicker, folded line, name and count on the column's 18 px line; rows the lane step. */
+async function expectColumnLine(nav: HTMLElement) {
   const px = (len: string) => resolvePx(nav, len);
-  const near = (a: number, b: number, what: string) =>
-    expect(Math.abs(a - b), `${what}: ${a} vs ${b}`).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
   const col = nav.getBoundingClientRect();
-  const group = must(nav.querySelector<HTMLElement>(`[data-dress="${dress}"]`));
-  const box = group.getBoundingClientRect();
-  const kickers = [...nav.querySelectorAll<HTMLElement>('[data-slot="lanes-kicker"] > span[id]')];
-  for (const k of kickers)
-    await near(
-      k.getBoundingClientRect().left - col.left,
-      px('var(--space-4_5)'),
-      `${k.textContent} kicker inset`,
-    );
+  for (const k of nav.querySelectorAll<HTMLElement>(
+    '[data-slot="lanes-kicker"], [data-slot="lanes-line"]',
+  )) {
+    const text = k.dataset.slot === 'lanes-kicker' ? innerRect(k) : textOf(k);
+    await near(text.left - col.left, px('var(--space-4_5)'), `${k.textContent} kicker inset`);
+  }
   for (const lane of nav.querySelectorAll<HTMLElement>('[data-slot="lane"]')) {
-    const r = lane.getBoundingClientRect();
-    await near(r.height, px('var(--size-lane)'), `${lane.textContent} height`);
+    await near(
+      lane.getBoundingClientRect().height,
+      px('var(--size-lane)'),
+      `${lane.textContent} height`,
+    );
     const label = part(lane, 'lane-label').getBoundingClientRect();
     await near(label.left - col.left, px('var(--space-4_5)'), `${lane.textContent} name inset`);
     const count = lane.querySelector('[data-slot="lane-count"]');
@@ -658,218 +674,421 @@ async function expectDressJunctions(nav: HTMLElement, dress: LaneDress) {
         `${lane.textContent} count inset`,
       );
   }
-  // The foot is the group's: inside its dress, under its last lane.
-  const foot = innerRect(part(group, 'lanes-group-foot'));
-  const lanes = [...group.querySelectorAll<HTMLElement>('[data-slot="lane"]')];
-  const last = must(lanes.at(-1)).getBoundingClientRect();
+}
+
+/**
+ * The bracketed card's junctions: inset `space-2` from the column's sides and top; its kicker a
+ * step under its top; its foot (the meter and its line) inside it, under its last lane.
+ */
+async function expectCard(nav: HTMLElement) {
+  const px = (len: string) => resolvePx(nav, len);
+  const col = nav.getBoundingClientRect();
+  const group = must(nav.querySelector<HTMLElement>('[data-dress="bracketed"]'));
+  const box = group.getBoundingClientRect();
+  await near(box.left - col.left, px('var(--space-2)'), 'card left');
+  await near(col.right - box.right, px('var(--space-2)'), 'card right');
+  await near(box.top - col.top, px('var(--space-2)'), 'card top');
   await near(
-    foot.top - last.bottom,
+    innerRect(part(group, 'lanes-kicker')).top - box.top,
+    px('var(--space-3)'),
+    'card top to kicker',
+  );
+  const foot = innerRect(part(group, 'lanes-group-foot'));
+  const last = must([...group.querySelectorAll<HTMLElement>('[data-slot="lane"]')].at(-1));
+  await near(
+    foot.top - last.getBoundingClientRect().bottom,
     px('var(--space-0_5)') + px('var(--space-2_5)'),
     'last lane to foot',
   );
-  await expect(foot.bottom).toBeLessThanOrEqual(box.bottom + JUNCTION_TOLERANCE_PX);
-  await expect(within(group).getByRole('meter', { name: 'Decided' })).toHaveAttribute(
-    'aria-valuenow',
-    '3',
+  await near(box.bottom - foot.bottom, px('var(--space-3)'), 'foot to card bottom');
+  // The corner marks: thin, long and flush on the hairline — never the hover bracket's shape.
+  const marks = getComputedStyle(group, '::after');
+  await expect(marks.backgroundSize.split(', ')[0]).toBe(
+    `${px('calc(2 * var(--stroke-tick))')}px ${px('var(--stroke-note)')}px`,
   );
-  if (dress === 'edge') {
-    // The rule on the column's edge; the rows step in past its gutter, so a chosen lane's own bar
-    // never touches it.
-    await near(box.left, col.left, 'rule on the edge');
-    await near(
-      parseFloat(getComputedStyle(group).borderInlineStartWidth),
-      px('var(--stroke-note)'),
-      'rule width',
-    );
-    // Its kicker sits where a leading plain kicker would: a step under the column's top.
-    await near(
-      innerRect(part(group, 'lanes-kicker')).top - col.top,
-      px('var(--space-3_5)'),
-      'column top to kicker',
-    );
-    await near(
-      must(lanes[0]).getBoundingClientRect().left - col.left,
-      px('var(--stroke-note)') + px('var(--space-2)'),
-      'rows past the gutter',
-    );
-  } else {
-    // A box inset as far from the column's top as from its sides.
-    await near(box.left - col.left, px('var(--space-2)'), 'box left');
-    await near(col.right - box.right, px('var(--space-2)'), 'box right');
-    await near(box.top - col.top, px('var(--space-2)'), 'box top');
-    // The kicker's text sits a step under the box's top, as a plain kicker sits under the group before.
-    const kicker = innerRect(part(group, 'lanes-kicker'));
-    await near(kicker.top - box.top, px('var(--space-3)'), 'box top to kicker');
-  }
+  await expect(marks.top).toBe(`-${px('var(--stroke-hair)')}px`);
 }
 
-const passDressStory = (dress: LaneDress): Story => ({
-  render: () => <PassDressSheet dress={dress} />,
+/**
+ * A folded line's junctions: its text lands where a plain kicker's would — `space-3_5` under the
+ * column's top when it leads, `space-3` and the row gap under the group before otherwise; the
+ * chevron hangs in the gutter; the line is the lane step tall.
+ */
+async function expectLine(nav: HTMLElement) {
+  const px = (len: string) => resolvePx(nav, len);
+  const col = nav.getBoundingClientRect();
+  const line = part(nav, 'lanes-line');
+  const box = line.getBoundingClientRect();
+  const text = textOf(line);
+  await near(box.height, px('var(--size-lane)'), 'line height');
+  const before = line.closest('[data-slot="lanes-group"]')?.previousElementSibling;
+  if (before == null) await near(text.top - col.top, px('var(--space-3_5)'), 'column top to line');
+  else {
+    const lastRow = must([...before.querySelectorAll('[data-slot="lane"]')].at(-1));
+    await near(
+      text.top - lastRow.getBoundingClientRect().bottom,
+      px('var(--space-0_5)') + px('var(--space-3)'),
+      'group before to line',
+    );
+  }
+  const chevron = part(line, 'collapsible-chevron').getBoundingClientRect();
+  await expect(chevron.left).toBeGreaterThanOrEqual(col.left);
+  // In the gutter, clear of the kicker (the chevron is the kick step wide, so wider on skater).
+  await expect(chevron.right).toBeLessThanOrEqual(
+    text.left - px('var(--space-0_5)') + JUNCTION_TOLERANCE_PX,
+  );
+  // The word is never cut, and ends where the counts end; short of room, the kicker gives way.
+  const word = part(line, 'lanes-line-summary');
+  await expectWhole(word, 'the word');
+  await near(col.right - word.getBoundingClientRect().right, px('var(--space-4_5)'), 'word inset');
+  await expect(text.right).toBeLessThanOrEqual(word.getBoundingClientRect().left);
+}
+
+/** The card, four-up: over the Tasks group, every lane state inside it, and while it is computed. */
+function CardSheet() {
+  return (
+    <div className="flex flex-wrap gap-(--space-6)">
+      <Column caption="In the sidebar" height="25rem">
+        <Lanes label={`${PASS} and tasks`} groups={[openPass(), TASKS]} selected="duplicates" />
+      </Column>
+      <Column caption="Every state" height="25rem">
+        <Lanes
+          label={`${PASS} states`}
+          groups={[openPass(STATE_LANES)]}
+          selected="on"
+          link={forced({ hover: 'hover', focus: 'focus' })}
+        />
+      </Column>
+      <Column caption="Being computed" height="25rem">
+        <Lanes label={`${PASS} computing`} groups={[computingPass, TASKS]} />
+      </Column>
+    </div>
+  );
+}
+
+/**
+ * **The bracketed card** (the founder's pick): the pass in the kit's `Plate` card, warn tone, inset
+ * from the column's edges, its meter at its foot. Its corners are thin, long amber marks laid flush
+ * on the hairline — the frame's own corners, never the short, thick hover bracket of a card you can
+ * press. Every lane state carries over inside it; the rows give back the card's inset and hairline,
+ * so the names keep the column's line. While the pass is computed nothing moves when its counts
+ * and meter arrive.
+ */
+export const Bracketed: Story = {
+  render: () => <CardSheet />,
   parameters: { fourUp: true, bare: true, ...PSEUDO_STATES },
   play: async ({ canvasElement }) => {
     const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
     await expect(quads).toHaveLength(4);
     for (const q of quads) {
-      const [sidebar, sheet] = within(q).getAllByRole('navigation');
-      await expectDressJunctions(must(sidebar), dress);
+      const [sidebar, sheet, computing] = within(q).getAllByRole('navigation').map(must);
+      for (const nav of [must(sidebar), must(computing)]) {
+        await expectColumnLine(nav);
+        await expectCard(nav);
+      }
+      await expect(within(must(sidebar)).getByRole('meter', { name: 'Decided' })).toHaveAttribute(
+        'aria-valuenow',
+        '3',
+      );
+      // Loading reserves the final size: the computing card is the open card's height.
+      const card = (nav: HTMLElement) =>
+        must(nav.querySelector('[data-dress]')).getBoundingClientRect();
+      await near(card(must(computing)).height, card(must(sidebar)).height, 'computing card height');
       await expectLanesReadable(q);
-      // A badge in the kicker's row never makes the row taller.
-      const [passKicker, tasksKicker] = [
-        ...must(sidebar).querySelectorAll<HTMLElement>('[data-slot="lanes-kicker"]'),
-      ].map(innerRect);
-      await expect(must(passKicker).height).toBeCloseTo(must(tasksKicker).height, 1);
-      // The list is named by the kicker alone, never the badge beside it.
-      await expect(within(must(sidebar)).getByRole('list', { name: PASS })).toBeVisible();
-      // The chosen lane inside the dress: its plate and its 2 px bar, in the dress's own bright ink.
+      // The chosen lane inside the card: its plate and its 2 px bar.
       const on = within(must(sheet)).getByRole('button', { name: /Chosen/ });
-      const group = must(on.closest<HTMLElement>('[data-dress]'));
       await expect(getComputedStyle(on).boxShadow).toEqual(
         sameShadow({ lengths: [2, 0, 0, 0], inset: true }),
       );
       await expect(colorsIn(getComputedStyle(on).boxShadow)).toContainEqual(
-        sameColor(computedColor(group, 'var(--fg)')),
+        sameColor(computedColor(on, 'var(--fg)')),
       );
-      await expect(getComputedStyle(on).backgroundColor).toEqual(
-        sameColor(computedColor(group, 'var(--lift-08)')),
-      );
-      // Amber and red keep their meaning inside the dress.
+      // Amber and red keep their meaning inside the card.
       const tone = (name: RegExp) =>
         getComputedStyle(part(within(must(sheet)).getByRole('button', { name }), 'lane-count'))
           .color;
-      await expect(tone(/Waits on a person/)).toEqual(
-        sameColor(computedColor(group, 'var(--warn)')),
-      );
-      await expect(tone(/Failed/)).toEqual(sameColor(computedColor(group, 'var(--bad)')));
-      // Hover and focus ride the motion tokens: zero under reduced motion.
+      await expect(tone(/Waits on a person/)).toEqual(sameColor(computedColor(q, 'var(--warn)')));
+      await expect(tone(/Failed/)).toEqual(sameColor(computedColor(q, 'var(--bad)')));
       await expect(getComputedStyle(on).transitionDuration).toBe(motion(tokens.duration.fast));
     }
   },
+};
+
+/** Done, four-up: the folded line, the group opened, and a folded line holding the chosen lane. */
+function DoneSheet() {
+  const [open, setOpen] = useState(true);
+  const [shut, setShut] = useState(false);
+  return (
+    <div className="flex flex-wrap gap-(--space-6)">
+      <Column caption="Collapsed" height="12rem">
+        <Lanes
+          label="Done, collapsed"
+          groups={[donePass(false, () => {}), VIEWS]}
+          selected="opened"
+        />
+      </Column>
+      <Column caption="Expanded" height="12rem">
+        <Lanes label="Done, expanded" groups={[donePass(open, setOpen), VIEWS]} selected="opened" />
+      </Column>
+      <Column caption="Collapsed, holding the chosen lane" height="12rem">
+        <Lanes
+          label="Done, holding the chosen lane"
+          groups={[donePass(shut, setShut), VIEWS]}
+          selected="promotion"
+        />
+      </Column>
+    </div>
+  );
+}
+
+/**
+ * **Done**: the pass folds to one plain line — its kicker and *Done 14 Sep*, a chevron hung in the
+ * gutter — with no card, no amber and no meter, quieter than the groups under it. Pressed, it opens
+ * to its lanes, drawn as any plain group's; they still work. A folded line holding the chosen lane
+ * takes the chosen look and names the lane, so the choice is never hidden — the longest name here,
+ * so the kicker giving way to it is on the page, not discovered later.
+ */
+export const Done: Story = {
+  render: () => <DoneSheet />,
+  parameters: { fourUp: true, bare: true },
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    for (const q of quads) {
+      const [collapsed, expanded, holding] = within(q).getAllByRole('navigation').map(must);
+      for (const nav of [must(collapsed), must(expanded), must(holding)]) {
+        await expectColumnLine(nav);
+        await expectLine(nav);
+        // Finished is ordinary: no card, no foot, no meter, no amber.
+        await expect(nav.querySelector('[data-dress], [data-slot="lanes-group-foot"]')).toBeNull();
+        await expect(within(nav).queryByRole('meter')).toBeNull();
+      }
+      await expectLanesReadable(q);
+      // The line is the button, named by its kicker and its word, and says whether it is open.
+      const line = within(must(collapsed)).getByRole('button', {
+        name: /Pre-Season Pass.*Done 14 Sep/,
+      });
+      await expect(line).toHaveAttribute('aria-expanded', 'false');
+      await expect(getComputedStyle(line).color).toEqual(sameColor(computedColor(q, 'var(--fg3)')));
+      await expect(
+        within(must(collapsed)).queryByRole('button', { name: /Recurrence/ }),
+      ).toBeNull();
+      // Open, its lanes are a plain list named by the kicker, and they work.
+      await expect(
+        within(must(expanded)).getByRole('button', { name: /Pre-Season Pass/ }),
+      ).toHaveAttribute('aria-expanded', 'true');
+      await expect(within(must(expanded)).getByRole('list', { name: PASS })).toBeVisible();
+      // Holding the chosen lane: the chosen look, the lane's name, and the tab stop.
+      const held = within(must(holding)).getByRole('button', {
+        name: /Pre-Season Pass.*Promotion candidates/,
+      });
+      await expect(held).toHaveAttribute('data-holds-selected');
+      await expect(held.tabIndex).toBe(0);
+      await expect(getComputedStyle(held).boxShadow).toEqual(
+        sameShadow({ lengths: [2, 0, 0, 0], inset: true }),
+      );
+      await expect(getComputedStyle(held).backgroundColor).toEqual(
+        sameColor(computedColor(q, 'var(--lift-08)')),
+      );
+    }
+    // Opening the line that holds the chosen lane shows the lane, chosen; the line steps back.
+    const holding = within(must(quads[0])).getAllByRole('navigation')[2] as HTMLElement;
+    const line = within(holding).getByRole('button', { name: /Pre-Season Pass/ });
+    await userEvent.click(line);
+    await waitFor(() =>
+      expect(within(holding).getByRole('button', { name: /Promotion candidates/ })).toHaveAttribute(
+        'aria-current',
+        'true',
+      ),
+    );
+    await expect(line).not.toHaveAttribute('data-holds-selected');
+    await expect(part(holding, 'lanes-line-summary')).toHaveTextContent(DONE);
+    // Folded again, the line holds it again: the sheet ends as it began.
+    await userEvent.click(line);
+    await waitFor(() => expect(line).toHaveAttribute('data-holds-selected'));
+    await transitionsDone(holding, { subtree: true });
+    line.blur();
+  },
+};
+
+/** An in-context story: the whole Corpus sidebar at the console's lanes width, one state. */
+const inContext = (
+  caption: string,
+  props: Parameters<typeof CorpusSidebar>[0],
+  play: Story['play'],
+): Story => ({
+  render: () => (
+    <Column caption={caption} height="49rem">
+      <CorpusSidebar {...props} />
+    </Column>
+  ),
+  parameters: { bare: true },
+  play,
 });
 
-/**
- * **The inverted plate.** The pass on the inverted ground, inset from the column's edges, square:
- * a label stuck onto the sidebar, and its loudest thing. Inside it every lane state is the other
- * mode's own — the plate rebinds the inks, washes and accents to the `inv-*` tokens — so the
- * hover wash, the chosen plate and its bar, the focus ring, dim and the amber and red counts all
- * carry over with their contrast.
- */
-export const PassDressInverted: Story = {
-  ...passDressStory('inverted'),
-  play: async (context) => {
-    await passDressStory('inverted').play?.(context);
-    for (const q of context.canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')) {
-      for (const group of q.querySelectorAll<HTMLElement>('[data-dress="inverted"]')) {
-        await expect(getComputedStyle(group).backgroundColor).toEqual(
-          sameColor(computedColor(q, 'var(--inv-bg)')),
-        );
-        for (const key of ['fg', 'fg1', 'fg2', 'fg3', 'warn', 'bad', 'lift-05', 'lift-08', 'line'])
-          await expect(computedColor(group, `var(--${key})`), key).toEqual(
-            sameColor(computedColor(q, `var(--inv-${key})`)),
-          );
-      }
-    }
-  },
-};
+const groupOrder = (nav: HTMLElement) =>
+  [...nav.querySelectorAll('[data-slot="lanes-kicker"], [data-slot="lanes-line"] [id]')].map(
+    (k) => k.textContent,
+  );
 
-/**
- * **The bracketed card.** The pass in the kit's `Plate` card, warn tone: a hairline box with amber
- * corner ticks, the console's mark for the thing being worked on. The rows give back the box's
- * inset and border, so the names keep the column's line.
- */
-export const PassDressBracketed: Story = passDressStory('bracketed');
+/** Open: the bracketed card at the top, Known features its third lane, outside the meter. */
+export const PassOpen: Story = inContext('Open', { pass: 'open' }, async ({ canvasElement }) => {
+  const nav = within(canvasElement).getByRole('navigation');
+  await expectColumnLine(nav);
+  await expectCard(nav);
+  await expectLanesReadable(canvasElement);
+  await expect(groupOrder(nav)).toEqual([PASS, 'Tasks', 'Views', 'Standing']);
+  const pass = within(nav).getByRole('list', { name: PASS });
+  await expect(
+    within(pass)
+      .getAllByRole('button')
+      .map((b) => part(b, 'lane-label').textContent),
+  ).toEqual(['Recurrence', 'Promotion candidates', 'Known features']);
+  await expect(within(nav).getByRole('meter', { name: 'Decided' })).toHaveAttribute(
+    'aria-valuemax',
+    '10',
+  );
+  // The keys cross the card like any group.
+  await userEvent.click(within(nav).getByRole('button', { name: /Known features/ }));
+  await userEvent.keyboard('{ArrowDown}');
+  await waitFor(() =>
+    expect(within(nav).getByRole('button', { name: /Duplicates/ })).toHaveFocus(),
+  );
+  await userEvent.keyboard('{Home}');
+  await waitFor(() =>
+    expect(within(nav).getByRole('button', { name: /Recurrence/ })).toHaveFocus(),
+  );
+  (document.activeElement as HTMLElement | null)?.blur();
+});
 
-/**
- * **The taped outline.** An amber die line round the pass, a long dash (6 on, 4 off) drawn rather
- * than a CSS dashed border, whose short dash already means “nothing to draw” and “dim” in this
- * console; a solid amber *Due* in the kicker's row; the meter under the lanes.
- */
-export const PassDressTaped: Story = passDressStory('taped');
-
-/**
- * **The amber edge.** No box: a 2 px amber rule down the column's own left edge, the amber tint
- * behind the group, the kicker in amber, the meter its last row. The rows step in past a gutter,
- * so the chosen lane's own 2 px bar stands clear of the rule.
- */
-export const PassDressEdge: Story = passDressStory('edge');
-
-/** While the pass is being computed: no counts, no fill — and nothing moves when they arrive. */
-export const PassBeingComputed: Story = {
-  parameters: { bare: true },
-  render: () => (
-    <div className="flex flex-wrap gap-(--space-6)">
-      {(Object.keys(LANE_DRESSES) as LaneDress[]).flatMap((dress) =>
-        [3, null].map((decided) => (
-          <Column
-            key={`${dress}-${decided}`}
-            caption={`${dress} · ${decided === null ? 'computing' : 'open'}`}
-            height="12rem"
-          >
-            <Lanes
-              label={`${dress} ${decided === null ? 'computing' : 'open'}`}
-              groups={[
-                passGroup(dress, {
-                  decided,
-                  lanes: decided === null ? PASS_LANES.map(({ count: _, ...l }) => l) : PASS_LANES,
-                }),
-              ]}
-            />
-          </Column>
-        )),
-      )}
-    </div>
-  ),
-  play: async ({ canvasElement }) => {
-    for (const dress of Object.keys(LANE_DRESSES)) {
-      const [open, computing] = [
-        ...canvasElement.querySelectorAll<HTMLElement>(`[data-dress="${dress}"]`),
-      ].map((g) => g.getBoundingClientRect());
-      await expect(must(computing).height, dress).toBeCloseTo(must(open).height, 1);
-      await expect(must(computing).width, dress).toBeCloseTo(must(open).width, 1);
-    }
-    await expect(within(canvasElement).getAllByText('Being computed')).toHaveLength(4);
-  },
-};
-
-/**
- * The whole Corpus sidebar in a dress, at the console's lanes width: the pass over Tasks, Views
- * and Standing. Left, the library's Active chosen; right, a lane inside the pass chosen and the next
- * one focused — where the dresses differ most. The keys cross the dress like any group.
- */
-const inContextStory = (dress: LaneDress): Story => ({
-  render: () => <CorpusSidebar dress={dress} />,
-  parameters: { bare: true, ...PSEUDO_STATES },
-  play: async ({ canvasElement }) => {
-    const [library, pass] = within(canvasElement).getAllByRole('navigation');
-    for (const nav of [must(library), must(pass)]) await expectDressJunctions(nav, dress);
+/** Being computed: the card and its lanes in place, no counts and no fill yet. */
+export const PassBeingComputed: Story = inContext(
+  'Being computed',
+  { pass: 'computing' },
+  async ({ canvasElement }) => {
+    const nav = within(canvasElement).getByRole('navigation');
+    await expectColumnLine(nav);
+    await expectCard(nav);
     await expectLanesReadable(canvasElement);
-    // The pass leads the column; the sidebar's groups keep their order and their kickers.
-    await expect(
-      [...must(library).querySelectorAll('[data-slot="lanes-kicker"] > span[id]')].map(
-        (k) => k.textContent,
-      ),
-    ).toEqual([PASS, 'Tasks', 'Views', 'Standing']);
-    // Keys: Tab lands on the chosen pass lane; ↓ moves within the dress, then out of it.
-    const nav = must(pass);
+    await expect(within(nav).getByText('Being computed')).toBeVisible();
+    await expect(within(nav).queryByRole('meter')).toBeNull();
+  },
+);
+
+/**
+ * Done, collapsed: one plain line at the top. The keys take the line into their run and skip the
+ * folded lanes; pressing the line opens the group, and only the group's own height moves the rest.
+ */
+export const PassDoneCollapsed: Story = inContext(
+  'Done, collapsed',
+  { pass: 'done' },
+  async ({ canvasElement }) => {
+    const nav = within(canvasElement).getByRole('navigation');
     const button = (name: RegExp) => within(nav).getByRole('button', { name });
-    await userEvent.click(button(/Recurrence/));
-    await expect(button(/Recurrence/)).toHaveFocus();
-    await userEvent.keyboard('{ArrowDown}');
-    await waitFor(() => expect(button(/Promotion candidates/)).toHaveFocus());
-    const promotion = button(/Promotion candidates/);
-    const group = must(promotion.closest<HTMLElement>('[data-dress]'));
-    // The focus ring: 1 px, inset, in the dress's own bright ink (the box shadow isn't transitioned).
-    await expect(colorsIn(getComputedStyle(promotion).boxShadow)).toContainEqual(
-      sameColor(computedColor(group, 'var(--fg)')),
-    );
+    await expectColumnLine(nav);
+    await expectLine(nav);
+    await expectLanesReadable(canvasElement);
+    const line = button(/Pre-Season Pass/);
+    await expect(line).toHaveAttribute('aria-expanded', 'false');
+    // At the console's width the kicker and its word both fit whole.
+    await expectWhole(must(line.querySelector('[id]')), 'the kicker');
+    // Keyboard: the line is in the run, its folded lanes are not.
+    button(/Duplicates/).focus();
+    await userEvent.keyboard('{ArrowUp}');
+    await waitFor(() => expect(line).toHaveFocus());
     await userEvent.keyboard('{ArrowDown}');
     await waitFor(() => expect(button(/Duplicates/)).toHaveFocus());
-    await userEvent.keyboard('{Home}');
+    await userEvent.keyboard('k'); // only a folded lane starts with K: nothing moves
+    await expect(button(/Duplicates/)).toHaveFocus();
+    await new Promise((r) => setTimeout(r, 600));
+    await userEvent.keyboard('p');
+    await waitFor(() => expect(button(/Place names/)).toHaveFocus());
+    await new Promise((r) => setTimeout(r, 600));
+    await userEvent.keyboard('p'); // past the end, round to the line
+    await waitFor(() => expect(line).toHaveFocus());
+    // Opening it moves what is under it by the group's own height, no more.
+    const tasks = must(nav.querySelectorAll<HTMLElement>('[data-slot="lanes-kicker"]')[0]);
+    const before = tasks.getBoundingClientRect().top;
+    await userEvent.keyboard('{Enter}');
+    await waitFor(() => expect(line).toHaveAttribute('aria-expanded', 'true'));
+    const panel = part(nav, 'collapsible-content');
+    await expect(getComputedStyle(panel).transitionDuration).toBe(motion(tokens.duration.base));
+    await transitionsDone(nav, { subtree: true });
+    await near(
+      tasks.getBoundingClientRect().top - before,
+      panel.getBoundingClientRect().height + resolvePx(nav, 'var(--space-0_5)'),
+      'only the group grows',
+    );
+    // Open, its lanes join the run.
+    await userEvent.keyboard('{ArrowDown}');
     await waitFor(() => expect(button(/Recurrence/)).toHaveFocus());
+    // Folded again, everything under it is back where it was: the story ends as it began.
+    await userEvent.keyboard('{ArrowUp}{Enter}');
+    await waitFor(() => expect(line).toHaveAttribute('aria-expanded', 'false'));
+    await transitionsDone(nav, { subtree: true });
+    await near(tasks.getBoundingClientRect().top, before, 'folded again');
+    line.blur();
+  },
+);
+
+/** Done, opened, a lane in it chosen: an ordinary group under its line. */
+export const PassDoneExpanded: Story = inContext(
+  'Done, expanded, a lane chosen',
+  { pass: 'done', initialOpen: true, initialSelected: 'recurrence' },
+  async ({ canvasElement }) => {
+    const nav = within(canvasElement).getByRole('navigation');
+    await expectColumnLine(nav);
+    await expectLine(nav);
+    await expectLanesReadable(canvasElement);
+    await expect(within(nav).getByRole('button', { name: /Recurrence/ })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    await expect(part(nav, 'lanes-line')).not.toHaveAttribute('data-holds-selected');
+    // Pressing a lane in a done pass works as any lane does.
+    await userEvent.click(within(nav).getByRole('button', { name: /Known features/ }));
+    await expect(within(nav).getByRole('button', { name: /Known features/ })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
     (document.activeElement as HTMLElement | null)?.blur();
   },
-});
+);
 
-export const InContextInverted: Story = inContextStory('inverted');
-export const InContextBracketed: Story = inContextStory('bracketed');
-export const InContextTaped: Story = inContextStory('taped');
-export const InContextEdge: Story = inContextStory('edge');
+/** For the founder's eye: done and collapsed at the bottom, since a finished line may not earn the top. */
+export const PassDoneAtBottom: Story = inContext(
+  'Done, collapsed, at the bottom',
+  { pass: 'done', passLast: true },
+  async ({ canvasElement }) => {
+    const nav = within(canvasElement).getByRole('navigation');
+    await expectColumnLine(nav);
+    await expectLine(nav);
+    await expectLanesReadable(canvasElement);
+    await expect(groupOrder(nav)).toEqual(['Tasks', 'Views', 'Standing', PASS]);
+    await expectWhole(must(part(nav, 'lanes-line').querySelector('[id]')), 'the kicker');
+  },
+);
+
+/** An undo reopens a finished pass: the same group goes from the folded line back to the card, open. */
+export const PassReopened: Story = {
+  render: () => (
+    <div className="flex flex-wrap gap-(--space-8)">
+      <Column caption="Done" height="24rem">
+        <CorpusSidebar pass="done" />
+      </Column>
+      <Column caption="Reopened by an undo" height="24rem">
+        <CorpusSidebar pass="open" />
+      </Column>
+    </div>
+  ),
+  parameters: { bare: true },
+  play: async ({ canvasElement }) => {
+    const [done, reopened] = within(canvasElement).getAllByRole('navigation').map(must);
+    await expect(must(done).querySelector('[data-slot="lanes-group"]')).toHaveAttribute(
+      'data-collapsible',
+    );
+    const card = must(must(reopened).querySelector<HTMLElement>('[data-slot="lanes-group"]'));
+    await expect(card).toHaveAttribute('data-dress', 'bracketed');
+    await expect(within(card).getAllByRole('button')).toHaveLength(3);
+    await expectCard(must(reopened));
+  },
+};

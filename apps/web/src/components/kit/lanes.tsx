@@ -1,3 +1,4 @@
+import { Collapsible as CollapsiblePrimitive } from '@base-ui/react/collapsible';
 import { useRender } from '@base-ui/react/use-render';
 import {
   type ComponentProps,
@@ -12,6 +13,7 @@ import {
 
 import { cn } from '@/lib/utils';
 
+import { Collapsible, CollapsibleChevron, CollapsibleContent } from './collapsible';
 import { LANE_DRESSES, type LaneDress } from './lane-dress';
 
 /**
@@ -38,9 +40,19 @@ import { LANE_DRESSES, type LaneDress } from './lane-dress';
  *   hairline. What belongs to **one group** (the pass's meter and its line) docks to that group's
  *   own `foot`, under its lanes, in small type.
  * - **A dressed group** (`dress`, see `lane-dress.tsx`) is set apart from the others — the seasonal
- *   Pre-Season Pass. Its kicker may carry a `tail` at its row's end (a solid status badge) that
- *   never makes the row taller. Whatever the dress, its kicker, names and counts keep the column's
+ *   Pre-Season Pass while it waits on a person. Its kicker, names and counts keep the column's
  *   18 px line.
+ * - **A collapsible group** (`collapsible`, the caller's open state) folds to **one plain line** —
+ *   the pass once it is done, kept so its decisions can be read again. The line is the group's
+ *   kicker and a quiet word ("Done 14 Sep"), a chevron hung in the gutter so the kicker keeps the
+ *   column's line; the whole line is the button (`aria-expanded`), and it washes and rings as a lane
+ *   does. Open, the group's lanes sit under it as any plain group's. It is never dressed and has no
+ *   foot: finished is ordinary. The line is in the keyboard's run (↑ ↓, Home, End, type-ahead) and
+ *   a closed group's lanes are not.
+ * - **The chosen lane is never hidden without the line saying so.** A closed group holding the
+ *   selected lane doesn't open itself (its open state is the caller's): its line takes the chosen
+ *   look — the lit plate and the 2 px bar — its word becomes the chosen lane's name, and it is the
+ *   tab stop. Opening it shows the lane, chosen.
  */
 
 type LaneCountTone = 'default' | 'lit' | 'warn' | 'bad';
@@ -59,17 +71,37 @@ type Lane = {
   tail?: ReactNode;
 };
 
-type LaneGroup = {
+/** A group that folds to one line, held open or closed by the caller (the URL, storage). */
+type LaneGroupCollapse = {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  /** The quiet word at the line's end ("Done 14 Sep"), written capitalized. */
+  summary: string;
+};
+
+/** A plain group, or one dressed apart while it waits on a person (with its foot). */
+type StandingGroup = {
   /** The group's kicker ("Pipelines"). A group without one is the sidebar's lead lanes. */
   label?: string;
   lanes: readonly Lane[];
-  /** Set apart from the plain groups (the seasonal pass). Plain without one. */
+  /** Set apart from the plain groups (the seasonal pass while open). Plain without one. */
   dress?: LaneDress;
-  /** At the kicker's row's end: one solid status badge. It doesn't name the group's list. */
-  tail?: ReactNode;
   /** Not navigation, but the group's own (its meter and that meter's line): under its lanes. */
   foot?: ReactNode;
+  collapsible?: never;
 };
+
+/** A group that folds to its kicker's line: never dressed, no foot — finished is ordinary. */
+type CollapsibleGroup = {
+  /** The line's name, and its list's. */
+  label: string;
+  lanes: readonly Lane[];
+  collapsible: LaneGroupCollapse;
+  dress?: never;
+  foot?: never;
+};
+
+type LaneGroup = StandingGroup | CollapsibleGroup;
 
 type LanesProps = Omit<ComponentProps<'nav'>, 'children' | 'onSelect'> & {
   /** What the lanes choose between ("Machinery"): the navigation's name. */
@@ -95,6 +127,18 @@ const COUNT_TONE: Record<LaneCountTone, string> = {
 /** How long typed letters keep adding to one search before it starts over. */
 const TYPEAHEAD_MS = 500;
 
+/**
+ * A collapsible group's line is the lane step tall, its text centered, so the line sits that much
+ * higher than its text — `(size-lane − type-kick) / 2` — to land the text where a plain kicker's
+ * would: `space-3_5` under the column's top when it leads, `space-3` under the group before
+ * otherwise. Written out whole: Tailwind only sees classes it can read in the source.
+ */
+const FOLD_LEAD = 'pt-[calc(var(--space-3_5)-(var(--size-lane)-var(--type-kick))/2)]';
+const FOLD_AFTER = 'mt-[calc(var(--space-3)-(var(--size-lane)-var(--type-kick))/2)]';
+
+/** One stop in the keyboard's run: a lane, or a collapsible group's line. */
+type Stop = { key: string; label: string };
+
 function Lanes({
   label,
   groups,
@@ -107,15 +151,30 @@ function Lanes({
   ...props
 }: LanesProps) {
   const baseId = useId();
-  const all = groups.flatMap((g) => g.lanes);
-  const leadDress = groups[0]?.dress;
+  const lineKey = (g: number) => `${baseId}-line-${g}`;
+  const closed = (group: LaneGroup) => group.collapsible !== undefined && !group.collapsible.open;
+  // The keyboard's run, in reading order: each collapsible group's line, then its lanes while open.
+  const all: Stop[] = groups.flatMap((group, g) => [
+    ...(group.collapsible ? [{ key: lineKey(g), label: group.label }] : []),
+    ...(closed(group) ? [] : group.lanes.map((l) => ({ key: l.id, label: l.label }))),
+  ]);
+  // The chosen lane, or the line of the closed group that holds it.
+  const holder = groups.findIndex(
+    (group) => closed(group) && group.lanes.some((l) => l.id === selected),
+  );
+  const selectedStop = holder === -1 ? selected : lineKey(holder);
+  const lead = groups[0];
   const rows = useRef(new Map<string, HTMLElement>());
   const typed = useRef({ text: '', at: 0 });
-  // The tab stop: the lane last focused, else the selected lane, else the first.
+  // The tab stop: the stop last focused, else the selected lane (or its line), else the first.
   const [focused, setFocused] = useState<string | undefined>(undefined);
   const stop =
-    [focused, selected].find((id) => id !== undefined && all.some((l) => l.id === id)) ??
-    all[0]?.id;
+    [focused, selectedStop].find((key) => key !== undefined && all.some((s) => s.key === key)) ??
+    all[0]?.key;
+  const keep = (key: string) => (el: HTMLElement | null) => {
+    if (el === null) rows.current.delete(key);
+    else rows.current.set(key, el);
+  };
 
   const focusLane = (id: string | undefined) => {
     if (id === undefined) return;
@@ -125,11 +184,11 @@ function Lanes({
   const handleKeyDown = (event: KeyboardEvent<HTMLElement>) => {
     onKeyDown?.(event);
     if (event.defaultPrevented || event.ctrlKey || event.metaKey || event.altKey) return;
-    const at = all.findIndex((l) => rows.current.get(l.id) === document.activeElement);
+    const at = all.findIndex((s) => rows.current.get(s.key) === document.activeElement);
     if (at === -1) return;
     const move = (to: number) => {
       event.preventDefault();
-      focusLane(all[Math.max(0, Math.min(all.length - 1, to))]?.id);
+      focusLane(all[Math.max(0, Math.min(all.length - 1, to))]?.key);
     };
     if (event.key === 'ArrowDown') return move(at + 1);
     if (event.key === 'ArrowUp') return move(at - 1);
@@ -154,9 +213,32 @@ function Lanes({
     // longer search keeps the current lane while it still matches.
     const from = query.length === 1 ? at + 1 : at;
     const order = [...all.slice(from), ...all.slice(0, from)];
-    const hit = order.find((l) => l.label.toLocaleLowerCase().startsWith(query));
-    if (hit !== undefined) focusLane(hit.id);
+    const hit = order.find((s) => s.label.toLocaleLowerCase().startsWith(query));
+    if (hit !== undefined) focusLane(hit.key);
   };
+
+  const laneList = (group: LaneGroup, g: number, inset: string | undefined) => (
+    <ul
+      aria-labelledby={group.label !== undefined ? `${baseId}-${g}` : undefined}
+      className="m-0 flex list-none flex-col gap-(--space-0_5) p-0"
+    >
+      {group.lanes.map((lane) => (
+        <li key={lane.id} className="flex">
+          <LaneRow
+            lane={lane}
+            on={lane.id === selected}
+            tabbable={lane.id === stop}
+            linked={link !== undefined}
+            render={link?.(lane)}
+            rowRef={keep(lane.id)}
+            onFocus={() => setFocused(lane.id)}
+            onClick={() => onSelect?.(lane.id)}
+            inset={inset}
+          />
+        </li>
+      ))}
+    </ul>
+  );
 
   return (
     <nav
@@ -164,7 +246,8 @@ function Lanes({
       data-slot="lanes"
       className={cn(
         'flex h-full min-h-0 w-full flex-col pt-(--space-3_5)',
-        leadDress !== undefined && LANE_DRESSES[leadDress].lead,
+        lead?.collapsible !== undefined && FOLD_LEAD,
+        lead?.dress !== undefined && LANE_DRESSES[lead.dress].lead,
         className,
       )}
       onKeyDown={handleKeyDown}
@@ -173,6 +256,55 @@ function Lanes({
       <div data-slot="lanes-groups" className="flex min-h-0 flex-col gap-(--space-0_5)">
         {groups.map((group, g) => {
           const kickerId = `${baseId}-${g}`;
+          if (group.collapsible !== undefined) {
+            const { open, onOpenChange, summary } = group.collapsible;
+            const held = g === holder ? group.lanes.find((l) => l.id === selected) : undefined;
+            return (
+              <Collapsible
+                // biome-ignore lint/suspicious/noArrayIndexKey: a group's place is its identity.
+                key={g}
+                open={open}
+                onOpenChange={(next) => onOpenChange(next)}
+                data-slot="lanes-group"
+                data-collapsible=""
+                className={cn('gap-(--space-0_5)', g > 0 && FOLD_AFTER)}
+              >
+                <CollapsiblePrimitive.Trigger
+                  ref={keep(lineKey(g))}
+                  data-slot="lanes-line"
+                  data-holds-selected={held !== undefined ? '' : undefined}
+                  tabIndex={lineKey(g) === stop ? 0 : -1}
+                  onFocus={() => setFocused(lineKey(g))}
+                  className={cn(
+                    'group/collapsible relative flex h-lane w-full min-w-0 cursor-pointer items-center gap-(--space-2) px-(--space-4_5) text-left outline-none select-none',
+                    'border-0 bg-transparent text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg3 uppercase',
+                    'transition-[background-color,color] duration-(--duration-fast) ease-standard',
+                    // A lane's wash and ring: the line is pressable, as a lane is.
+                    'lit:bg-lift-05 lit:text-fg1 focus-visible:inset-ring-1 focus-visible:inset-ring-fg',
+                    held !== undefined &&
+                      'bg-lift-08 text-fg shadow-select-rule lit:bg-lift-08 lit:text-fg',
+                  )}
+                >
+                  {/* Hung in the gutter, so the kicker keeps the column's line. */}
+                  <CollapsibleChevron className="absolute start-(--space-1)" />
+                  {/* The word is never cut; short of room, the kicker gives way. Its tracking
+                      trails the last letter: given back, so the gap is the gap. */}
+                  <span id={kickerId} className="-me-(--track-kick) min-w-0 truncate">
+                    {group.label}
+                  </span>
+                  <span
+                    data-slot="lanes-line-summary"
+                    className="ms-auto shrink-0 text-assist font-regular tracking-normal normal-case"
+                  >
+                    {held?.label ?? summary}
+                  </span>
+                </CollapsiblePrimitive.Trigger>
+                <CollapsibleContent className="flex flex-col">
+                  {laneList(group, g, undefined)}
+                </CollapsibleContent>
+              </Collapsible>
+            );
+          }
           const dress = group.dress === undefined ? undefined : LANE_DRESSES[group.dress];
           const groupProps = {
             'data-slot': 'lanes-group',
@@ -187,50 +319,18 @@ function Lanes({
               <>
                 {group.label !== undefined && (
                   <div
+                    id={kickerId}
                     data-slot="lanes-kicker"
                     className={cn(
-                      'flex items-center px-(--space-4_5) pb-(--space-1_5) text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg3 uppercase',
+                      'px-(--space-4_5) pb-(--space-1_5) text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg3 uppercase',
                       g > 0 && dress === undefined && 'pt-(--space-3)',
                       dress?.kicker,
                     )}
                   >
-                    <span id={kickerId} className="min-w-0 truncate">
-                      {group.label}
-                    </span>
-                    {group.tail != null && (
-                      // Zero height, centered on the kicker's line: a badge never makes it taller.
-                      <span
-                        data-slot="lanes-kicker-tail"
-                        className="ms-auto flex h-0 shrink-0 items-center ps-(--space-2) normal-case"
-                      >
-                        {group.tail}
-                      </span>
-                    )}
+                    {group.label}
                   </div>
                 )}
-                <ul
-                  aria-labelledby={group.label !== undefined ? kickerId : undefined}
-                  className="m-0 flex list-none flex-col gap-(--space-0_5) p-0"
-                >
-                  {group.lanes.map((lane) => (
-                    <li key={lane.id} className="flex">
-                      <LaneRow
-                        lane={lane}
-                        on={lane.id === selected}
-                        tabbable={lane.id === stop}
-                        linked={link !== undefined}
-                        render={link?.(lane)}
-                        rowRef={(el) => {
-                          if (el === null) rows.current.delete(lane.id);
-                          else rows.current.set(lane.id, el);
-                        }}
-                        onFocus={() => setFocused(lane.id)}
-                        onClick={() => onSelect?.(lane.id)}
-                        inset={dress?.row}
-                      />
-                    </li>
-                  ))}
-                </ul>
+                {laneList(group, g, dress?.row)}
                 {group.foot != null && (
                   <div
                     data-slot="lanes-group-foot"
@@ -350,4 +450,11 @@ function LaneRow({
   });
 }
 
-export { type Lane, type LaneDress, type LaneGroup, Lanes, type LanesProps };
+export {
+  type Lane,
+  type LaneDress,
+  type LaneGroup,
+  type LaneGroupCollapse,
+  Lanes,
+  type LanesProps,
+};
