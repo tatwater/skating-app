@@ -1439,7 +1439,8 @@ around:
 - An undone dormancy restarts its clock; a body restore clears any stored dormancy.
 - A sub-area redraw's undo puts the outline and mouth back but not `mouthStale`, `mouthReview`,
   `systemDelistReason` or the cleared derived depth; landmarks the redraw retired stay retired.
-- Undoing a sub-area create does not reopen the request it answered or restore a promoted landmark.
+- Undoing a sub-area create does not reopen the request it answered. It restores the landmarks the
+  bay retired (B01-6a, founder call 2026-11-25).
 - Undoing a hazard merge also keeps the pair from auto-merging again (the unmerge verb's rule).
 - Rows the engine can't see change — an author's own retraction, an ETL re-route — are checked when
   the undo runs, not when History draws it.
@@ -13042,9 +13043,12 @@ The Hazards tab's own comment says *Add a feature* and *Edit shape* have no writ
   `createFromChord` does (a traced or pasted bay can answer an ask); `openBayRequestsForBody`'s rows
   carry `requestIds`, every ask in the group, so an Inbox item's own ask finds its row. On dev:
   `convex dev --once`, nothing to backfill.
-- **Found, not changed:** undoing a bay drawn from a landmark removes the bay and leaves the landmark
-  retired, so the place leaves the map until the landmark is restored by hand (`create_sub_area`'s
-  undo, older than this build). A founder call.
+- **Found and fixed (founder call 2026-11-25):** undoing a bay drawn from a landmark removed the bay
+  and left the landmark retired, so the place left the map until someone restored it by hand.
+  `create_sub_area`'s undo now restores, through the landmark's own restore, every landmark the bay
+  retired when it was drawn (promoted from Places, or claimed by its name) and still holds retired —
+  one removed since stays removed; one another live bay names, or a lake at its cap, stays retired
+  and the bay's undo still lands. The request it answered still isn't reopened.
 - **Owed:** the look pass on the boards no board draws (the redraw, the mouth, the paste, the lit
   bay's tools); a device-free check against dev of the chord and freehand on a real body.
 
@@ -13053,8 +13057,8 @@ The Hazards tab's own comment says *Add a feature* and *Edit shape* have no writ
 - **The task round trip's reach.** The board's frames 2–4 draw a queue walk: *Task 2 of 4* with
   ‹ › in the top bar, *Save and approve 3* for the similar asks together, and an automatic return to
   the queue after two seconds with *Stay*. The plan above builds the arrival and the return to the
-  one item; the counter, ‹ › and approving similar asks together are Bo23's remainder unless the
-  founder wants them now.
+  one item; the counter, ‹ › and approving similar asks together are Bo23's remainder (founder
+  call 2026-11-25: later).
 
 ### What B01 still owes (the register, 2026-11-17)
 

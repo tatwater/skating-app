@@ -722,6 +722,128 @@ describe('landmarks and bays', () => {
     });
   });
 
+  /** The bay's `create_sub_area` row — what its Undo runs. */
+  async function createRow(t: ReturnType<typeof harness>, bay: Id<'waterBodySubAreas'>) {
+    const rows = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterBodySubArea').eq('targetId', bay as string),
+        )
+        .collect(),
+    );
+    const row = rows.find((r) => r.action === 'create_sub_area');
+    if (!row) throw new Error('no create_sub_area row');
+    return row._id;
+  }
+
+  test('undoing a bay drawn from a landmark brings the landmark back (founder call 2026-11-25)', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Shaker Cove',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Shaker Cove',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+      promoteLandmarkId: id,
+    });
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.undo.run, { actionId: await createRow(t, bay) });
+    expect((await t.run((ctx) => ctx.db.get(bay)))?.removedAt).toBeDefined();
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeUndefined();
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'bodyLandmark').eq('targetId', id as string),
+        )
+        .collect(),
+    );
+    expect(audits.at(-1)?.action).toBe('restore');
+  });
+
+  test('a landmark the bay retired by its name comes back with the undo too; one removed since stays removed', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    // Both on the bay's water and named by it: the insert retires them by name, no promotion asked.
+    const named = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Mud Bay',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    const alias = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Muddy Bay',
+      kind: 'bay',
+      point: { lat: 44.25, lng: -73.25 },
+    });
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Mud Bay',
+      aliases: ['Muddy Bay'],
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+    });
+    expect((await t.run((ctx) => ctx.db.get(named)))?.removedAt).toBeDefined();
+    // A person removes "Muddy Bay" outright since: its newest row is no longer the bay's.
+    vi.advanceTimersByTime(1_000);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'remove',
+        targetType: 'bodyLandmark',
+        targetId: alias,
+        reason: 'Not a place',
+        createdAt: Date.now(),
+      });
+    });
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.undo.run, { actionId: await createRow(t, bay) });
+    expect((await t.run((ctx) => ctx.db.get(named)))?.removedAt).toBeUndefined();
+    expect((await t.run((ctx) => ctx.db.get(alias)))?.removedAt).toBeDefined();
+  });
+
+  test('a landmark another live bay names stays retired, and the undo still lands', async () => {
+    const t = harness();
+    const body = await seedBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const id = await mod.as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Gull Cove',
+      kind: 'bay',
+      point: { lat: 44.2, lng: -73.3 },
+    });
+    const bay = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Gull Cove',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+      promoteLandmarkId: id,
+    });
+    // A second bay over the same water comes to answer to the landmark's name too (patched in: the
+    // create refuses a name a live bay holds).
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Inner cove',
+      polygon: { type: 'Polygon', coordinates: [rect(-73.35, 44.15, -73.25, 44.25)] },
+    });
+    await t.run(async (ctx) => {
+      const other = (await ctx.db.query('waterBodySubAreas').collect()).find((b) => b._id !== bay);
+      if (other) await ctx.db.patch(other._id, { aliases: ['Gull Cove'] });
+    });
+    vi.advanceTimersByTime(1_000);
+    await mod.as.mutation(api.undo.run, { actionId: await createRow(t, bay) });
+    expect((await t.run((ctx) => ctx.db.get(bay)))?.removedAt).toBeDefined();
+    expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
+  });
+
   test('a landmark from another lake cannot be promoted, and the bay is not drawn either', async () => {
     const t = harness();
     const body = await seedBody(t);

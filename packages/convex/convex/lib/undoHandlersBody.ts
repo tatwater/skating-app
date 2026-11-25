@@ -15,6 +15,7 @@ import {
 } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
+import type { MutationCtx } from '../_generated/server';
 import { setOverrideImpl } from '../imageryOverrides';
 import {
   type LandmarkEditPrev,
@@ -68,7 +69,12 @@ import {
 import { type ModerationAction, type ModerationTargetType, readSnapshot } from './audit';
 import { NAMES_NEED_THE_BAY, nameListRefusal } from './bodyNames';
 import { reopenFlagsClosedBy } from './inboxFlags';
-import { landmarkEditRefusal, liveBaysForNaming, liveLandmarksForBody } from './landmarkRows';
+import {
+  landmarkEditRefusal,
+  liveBaysForNaming,
+  liveLandmarksForBody,
+  removedLandmarksForBody,
+} from './landmarkRows';
 import { listChangedRefusal } from './listCas';
 import { ROW_MAX } from './readBudget';
 import { UNDO_POLICY } from './undoPolicy';
@@ -407,13 +413,60 @@ const waterBodyIdOf = (row: Doc<'moderationActions'>) => row.targetId as Id<'wat
 
 const subAreaId = (row: Doc<'moderationActions'>) => row.targetId as Id<'waterBodySubAreas'>;
 
-/** create_sub_area → delisted, through `remove`. */
+/**
+ * create_sub_area → delisted, through `remove`; and the landmarks the bay retired when it was drawn
+ * (D202 — the one it was drawn from in Places, or one its name claimed) come back, through the
+ * landmark's own restore (founder call 2026-11-25): undoing the bay must not take the place off the
+ * map with it. Only a landmark the bay still holds retired comes back — its newest row the bay's
+ * promotion — so one a person removed since stays removed; one a write's rule now refuses (another
+ * bay names it, the lake is at its cap) stays retired, and the bay's undo still lands.
+ */
 const undoCreateSubArea: UndoHandler = {
   undoTakesAway: () => UNDO_POLICY.create_sub_area.takesAway(),
   run: async ({ ctx, actor, row, reason }) => {
     await removeSubAreaImpl(ctx, actor, { subAreaId: subAreaId(row), reason });
+    for (const landmark of await landmarksRetiredBy(ctx, row)) {
+      try {
+        await restoreLandmarkImpl(ctx, actor, {
+          landmarkId: landmark._id,
+          reason: `Back on the map: the bay that replaced "${landmark.name}" was undone`,
+        });
+      } catch (error) {
+        // The restore refuses before it writes, so a refusal leaves nothing half done.
+        if (!(error instanceof ConvexError)) throw error;
+      }
+    }
   },
 };
+
+/**
+ * The landmarks a bay's creation retired and that it still holds retired: removed in the bay's own
+ * write (one transaction, one clock, so at the row's `createdAt` or later), with the bay's
+ * `promote_landmark` as their newest row. The newest removals first, so the read stops at the first
+ * older than the bay.
+ */
+async function landmarksRetiredBy(
+  ctx: MutationCtx,
+  row: Doc<'moderationActions'>,
+): Promise<Doc<'bodyLandmarks'>[]> {
+  const bay = await ctx.db.get(subAreaId(row));
+  if (!bay) return [];
+  const out: Doc<'bodyLandmarks'>[] = [];
+  for (const landmark of await removedLandmarksForBody(ctx, bay.waterBodyId)) {
+    if ((landmark.removedAt ?? 0) < row.createdAt) break;
+    const newest = await ctx.db
+      .query('moderationActions')
+      .withIndex('by_target', (q) =>
+        q.eq('targetType', 'bodyLandmark').eq('targetId', landmark._id),
+      )
+      .order('desc')
+      .first();
+    if (newest?.action === 'promote_landmark' && meta(newest).subAreaId === bay._id) {
+      out.push(landmark);
+    }
+  }
+  return out;
+}
 
 /** redraw_sub_area → the outline (and mouth) it replaced, through the redraw path, re-stamping. */
 const undoRedrawSubArea: UndoHandler = {
