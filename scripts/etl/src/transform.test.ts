@@ -101,17 +101,23 @@ describe('toCanonicalBody: the claims and refusals on the wire (B01-6a)', () => 
     expect(importedBody(waterFeature({ name: 'Test Pond' }))).not.toHaveProperty('classRefusals');
   });
 
-  it('emits the absorbed features when there are any, and omits an empty list (D309)', () => {
+  it('emits the absorbed features, `[]` included, and omits them only for a caller that can’t know (D309)', () => {
     const absorbedFeatures = [
       { source: 'osm', externalId: 'relation/2602300', areaSqM: 10_250_000 },
     ];
     expect(toCanonicalBody({ ...base, absorbedFeatures }).absorbedFeatures).toEqual(
       absorbedFeatures,
     );
-    expect(toCanonicalBody({ ...base, absorbedFeatures: [] })).not.toHaveProperty(
+    // `[]` is the merge's answer — it absorbed nothing — so a body that stops absorbing loses its
+    // stale list on the import; absent stays "not recorded", and the import keeps what is stored.
+    expect(toCanonicalBody({ ...base, absorbedFeatures: [] })).toHaveProperty(
       'absorbedFeatures',
+      [],
     );
     expect(toCanonicalBody(base)).not.toHaveProperty('absorbedFeatures');
+    expect(importedBody(waterFeature({ name: 'Test Pond' }))).not.toHaveProperty(
+      'absorbedFeatures',
+    );
   });
 
   it('carries each class claim’s token and area, and each name claim’s catalogs', () => {

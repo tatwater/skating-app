@@ -1166,8 +1166,9 @@ export default defineSchema({
      * same-source lane): each one's catalog, id and area, so a `same-source-duplicate` row can say
      * what was folded in — the absorbed feature leaves no other trace on the row. Written by the
      * import from the first campaign that carries it (B01-6a stores the field; 6b's Duplicates lane
-     * reads it). Absent on every body loaded before: *not recorded*, never *none*. Bounded by the
-     * producer, as the class claims are.
+     * reads it). `[]` is *none*, recorded — the merge emits the list for every body it keeps, so a
+     * body that stops absorbing loses its stale list. Absent on every body loaded before: *not
+     * recorded*, never *none*. Bounded by the producer, as the class claims are.
      */
     absorbedFeatures: v.optional(
       v.array(

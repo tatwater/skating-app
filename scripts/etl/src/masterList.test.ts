@@ -1431,13 +1431,13 @@ describe('absorbedFeatures: what the merge folded in, emitted on the survivor (D
     ).toEqual((kept?.absorbedIds ?? []).map(refOf));
   });
 
-  it('omits the field on a body that absorbed nothing', () => {
+  it('emits `[]` on a body that absorbed nothing — recorded as none, never omitted', () => {
     const result = buildMasterList(
       inputFor({ osm: [feat('osm', 'way/1', { name: 'Plain Pond' })] }),
     );
     const [record] = emitCanonicalBodies(result.bodies, MAINE_TOWNS).emitted;
     expect(record).toBeDefined();
-    expect(record).not.toHaveProperty('absorbedFeatures');
+    expect(record).toHaveProperty('absorbedFeatures', []);
   });
 
   it('keeps an id with colons whole, as refOf does (an NHD id may carry them)', () => {

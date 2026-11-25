@@ -214,8 +214,11 @@ export function toCanonicalBody(input: {
     ...(input.classRefusals !== undefined
       ? { classRefusals: input.classRefusals.map((r) => ({ ...r })) }
       : {}),
-    // Omitted when none, like the claims: a body that absorbed nothing has nothing to say (D309).
-    ...(input.absorbedFeatures?.length
+    // **Emitted empty, as the refusals are** (D309): the merge passes the list for every body it
+    // keeps, so `[]` is its answer — it absorbed nothing — and the import replaces a stale list with
+    // it. An absent list (the OSM-only lane's) is a record that doesn't know, and the import keeps
+    // what is stored.
+    ...(input.absorbedFeatures !== undefined
       ? { absorbedFeatures: input.absorbedFeatures.map((a) => ({ ...a })) }
       : {}),
     ...(interiorPoint ? { interiorPoint } : {}),
