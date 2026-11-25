@@ -77,12 +77,12 @@ export const GROTON = {
 
 /**
  * The same task on dev today: loaded before the campaign that records the claims — no catalog
- * columns, no catalogs' rows, nothing suggested, no neighbors.
+ * columns, no catalogs’ rows, nothing suggested, its geometry facts not computed yet.
  */
 export const GROTON_NOT_RECORDED = {
   ...GROTON,
   raisedBy: null,
-  neighbors: [],
+  neighbors: null,
   claims: null,
   ladder: LADDER.map((r) => ({ ...r, suggested: false, byCatalog: {} })),
 } as unknown as ClassesItem;
@@ -124,7 +124,7 @@ export const GROTON_REFUSED = {
 /** A depth on file and a claim stored before its code and area were (one catalog of two). */
 export const GROTON_MIXED = {
   ...GROTON,
-  depth: { meters: 2.4, source: 'a state survey' },
+  depth: { meters: 2.4, source: 'a state survey', measure: 'max' },
   claims: [
     { source: 'nhd', cls: 'wetland', token: null, acres: null },
     { source: 'osm', cls: 'lakePond', token: 'water=pond', acres: 5 },

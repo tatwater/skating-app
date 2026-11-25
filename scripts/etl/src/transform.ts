@@ -168,6 +168,8 @@ export function toCanonicalBody(input: {
    * catalog) leaves it out, and the record omits it.
    */
   classRefusals?: readonly { source: string; token: string; areaSqM?: number }[] | undefined;
+  /** The features the merge folded into this body (B01-6a, D309) — see `CanonicalBody.absorbedFeatures`. */
+  absorbedFeatures?: readonly { source: string; externalId: string; areaSqM: number }[] | undefined;
 }): CanonicalBody {
   const { stats, interiorPoint, polygon, centroid } = prepareBodyGeometry(input.geometry);
   return {
@@ -211,6 +213,10 @@ export function toCanonicalBody(input: {
     // doesn't know (an older loader's, or the OSM-only lane's), and the import keeps what is stored.
     ...(input.classRefusals !== undefined
       ? { classRefusals: input.classRefusals.map((r) => ({ ...r })) }
+      : {}),
+    // Omitted when none, like the claims: a body that absorbed nothing has nothing to say (D309).
+    ...(input.absorbedFeatures?.length
+      ? { absorbedFeatures: input.absorbedFeatures.map((a) => ({ ...a })) }
       : {}),
     ...(interiorPoint ? { interiorPoint } : {}),
     ...stats,

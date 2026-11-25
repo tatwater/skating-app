@@ -15,6 +15,8 @@ export const TASK_WORDS = {
   // Invented.
   notRecorded: 'Not recorded until the next campaign',
   noneOnFile: 'None on file',
+  // The console's own words for a geometry fact not computed yet (the Body tab's towns).
+  notComputed: 'Not computed yet',
   nothingAttached: 'No reports, landmarks or asks',
   atLeast: (words: string) => `At least ${words}`,
   reports: (n: number) => (n === 1 ? '1 report' : `${n} reports`),
@@ -47,11 +49,16 @@ export function attachedWords(attached: Attached): string {
   return attached.capped ? W.atLeast(words) : words;
 }
 
-/** The neighbors the geometry facts name, or none on file. */
-export const neighborsWords = (neighbors: readonly { name: string }[]): string =>
-  neighbors.length === 0
-    ? W.noneOnFile
-    : neighbors.map((n) => waterBodyDisplayName(n.name)).join(' · ');
+/**
+ * The neighbors the geometry facts name, none on file when they name none, and *not computed yet*
+ * (`null`) before the facts are computed, which never reads as none.
+ */
+export const neighborsWords = (neighbors: readonly { name: string }[] | null): string =>
+  neighbors === null
+    ? W.notComputed
+    : neighbors.length === 0
+      ? W.noneOnFile
+      : neighbors.map((n) => waterBodyDisplayName(n.name)).join(' · ');
 
 /** *Queued*: the campaign that last asked it, by its day; not recorded when none is. */
 export const queuedWords = (raisedBy: { at: number } | null, timeZone?: string): string =>

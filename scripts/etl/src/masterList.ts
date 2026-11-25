@@ -146,6 +146,24 @@ export type ClassRefusal = { source: ClaimSource; token: string; areaSqM: number
  */
 export const CLASS_REFUSALS_MAX = 8;
 
+/** The absorbed features kept on one body — the import's `MAX_ABSORBED_FEATURES` (D309). */
+export const ABSORBED_FEATURES_MAX = 32;
+
+/**
+ * The members the merge folded into `k` (`absorbedIds`), as the record carries them (D309): each one's
+ * catalog, its id exactly as `absorbed.ndjson` names it (`refOf` splits `${source}:${id}` at the first
+ * colon, so the id is the member's own), and its area — the first {@link ABSORBED_FEATURES_MAX}.
+ */
+export function absorbedFeaturesOf(
+  k: Pick<KeptBody, 'members' | 'absorbedIds'>,
+): { source: ClaimSource; externalId: string; areaSqM: number }[] {
+  const absorbed = new Set(k.absorbedIds);
+  return k.members
+    .filter((m) => absorbed.has(`${m.source}:${m.id}`))
+    .slice(0, ABSORBED_FEATURES_MAX)
+    .map((m) => ({ source: m.source, externalId: m.id, areaSqM: m.areaSqM }));
+}
+
 /**
  * A bay that is an arm of a body we keep — **a sub-area, not a body** (founder, 2026-08-06).
  *
@@ -1191,6 +1209,7 @@ export function emitCanonicalBodies(kept: readonly KeptBody[], towns: TownLayer)
         nameClaims: k.nameClaims,
         classClaims: k.classClaims,
         classRefusals: k.classRefusals,
+        absorbedFeatures: absorbedFeaturesOf(k),
         ...catalogIdsOf(k.members, k.gnisIdFromGazetteer),
       });
       emitted.push({

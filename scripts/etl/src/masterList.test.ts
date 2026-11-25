@@ -13,6 +13,8 @@
 import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
+  ABSORBED_FEATURES_MAX,
+  absorbedFeaturesOf,
   buildMasterList,
   CLASS_REFUSALS_MAX,
   elevationKeyFor,
@@ -1390,5 +1392,77 @@ describe('matchLane, directly — the options the same-source lane needs', () =>
     matchLane([a, twin], [a, twin], (d) => seen.push(d), { excludeSelf: true });
     expect(LANE_PROGRESS_EVERY).toBe(20_000);
     expect(seen).toEqual([]);
+  });
+});
+
+// ── B01-6a (D309): the absorbed features, on the record ──────────────────────────────────────────
+
+describe('absorbedFeatures: what the merge folded in, emitted on the survivor (D309)', () => {
+  /** `merge.ts`' `refOf`, as `absorbed.ndjson` names a pair: split at the first colon. */
+  const refOf = (key: string) => {
+    const at = key.indexOf(':');
+    return { source: key.slice(0, at), externalId: key.slice(at + 1) };
+  };
+
+  it('emits each absorbed member’s catalog, id and area — named as absorbed.ndjson names it', () => {
+    const shape = square(-70.3, 44.3, sideForAcres(2552));
+    const result = buildMasterList(
+      inputFor({
+        osm: [
+          feat('osm', 'way/150404999', { name: 'Long Pond', polygon: shape }),
+          feat('osm', 'relation/2602300', {
+            name: 'Long Pond',
+            polygon: shape,
+            areaSqM: 10_250_000,
+          }),
+        ],
+        nhd: [feat('nhd', 'longpond', { name: 'Long Pond', polygon: shape })],
+      }),
+    );
+    const kept = result.bodies[0];
+    expect(kept?.absorbedIds).toEqual(['osm:relation/2602300']);
+    const [record] = emitCanonicalBodies(result.bodies, MAINE_TOWNS).emitted;
+    expect(record?.absorbedFeatures).toEqual([
+      { source: 'osm', externalId: 'relation/2602300', areaSqM: 10_250_000 },
+    ]);
+    // The same pair `absorbed.ndjson` writes for `retire-absorbed`.
+    expect(
+      record?.absorbedFeatures?.map(({ source, externalId }) => ({ source, externalId })),
+    ).toEqual((kept?.absorbedIds ?? []).map(refOf));
+  });
+
+  it('omits the field on a body that absorbed nothing', () => {
+    const result = buildMasterList(
+      inputFor({ osm: [feat('osm', 'way/1', { name: 'Plain Pond' })] }),
+    );
+    const [record] = emitCanonicalBodies(result.bodies, MAINE_TOWNS).emitted;
+    expect(record).toBeDefined();
+    expect(record).not.toHaveProperty('absorbedFeatures');
+  });
+
+  it('keeps an id with colons whole, as refOf does (an NHD id may carry them)', () => {
+    const members = [feat('nhd', '{a:b:c}', { areaSqM: 5 }), feat('nhd', 'kept', { areaSqM: 9 })];
+    expect(absorbedFeaturesOf({ members, absorbedIds: ['nhd:{a:b:c}'] })).toEqual([
+      { source: 'nhd', externalId: '{a:b:c}', areaSqM: 5 },
+    ]);
+    expect(refOf('nhd:{a:b:c}')).toEqual({ source: 'nhd', externalId: '{a:b:c}' });
+  });
+
+  it('matches catalog and id together: the same id in another catalog is not absorbed', () => {
+    const members = [feat('osm', 'x1'), feat('nhd', 'x1', { areaSqM: 3 })];
+    expect(absorbedFeaturesOf({ members, absorbedIds: ['nhd:x1'] })).toEqual([
+      { source: 'nhd', externalId: 'x1', areaSqM: 3 },
+    ]);
+  });
+
+  it('keeps the first thirty-two, the import’s cap', () => {
+    const members = Array.from({ length: 40 }, (_, i) => feat('osm', `way/${i}`, { areaSqM: i }));
+    const out = absorbedFeaturesOf({
+      members,
+      absorbedIds: members.slice(1).map((m) => `osm:${m.id}`),
+    });
+    expect(ABSORBED_FEATURES_MAX).toBe(32);
+    expect(out).toHaveLength(ABSORBED_FEATURES_MAX);
+    expect(out[0]).toEqual({ source: 'osm', externalId: 'way/1', areaSqM: 1 });
   });
 });
