@@ -1,6 +1,7 @@
 import { useRender } from '@base-ui/react/use-render';
 import {
   type ComponentProps,
+  Fragment,
   type KeyboardEvent,
   type ReactElement,
   type ReactNode,
@@ -10,6 +11,8 @@ import {
 } from 'react';
 
 import { cn } from '@/lib/utils';
+
+import { LANE_DRESSES, type LaneDress } from './lane-dress';
 
 /**
  * The lanes sidebar (admin only): the middle column's list of lanes — it picks **which list** the
@@ -32,7 +35,12 @@ import { cn } from '@/lib/utils';
  * - **Routing is the caller's**: `link(lane)` returns the router's link element for a lane and the
  *   row renders as it; without it, each row is a button. Either way, `onSelect` hears the pick.
  * - Anything that isn't navigation (a progress lockup, a status note) docks to the `foot`, over a
- *   hairline.
+ *   hairline. What belongs to **one group** (the pass's meter and its line) docks to that group's
+ *   own `foot`, under its lanes, in small type.
+ * - **A dressed group** (`dress`, see `lane-dress.tsx`) is set apart from the others — the seasonal
+ *   Pre-Season Pass. Its kicker may carry a `tail` at its row's end (a solid status badge) that
+ *   never makes the row taller. Whatever the dress, its kicker, names and counts keep the column's
+ *   18 px line.
  */
 
 type LaneCountTone = 'default' | 'lit' | 'warn' | 'bad';
@@ -55,6 +63,12 @@ type LaneGroup = {
   /** The group's kicker ("Pipelines"). A group without one is the sidebar's lead lanes. */
   label?: string;
   lanes: readonly Lane[];
+  /** Set apart from the plain groups (the seasonal pass). Plain without one. */
+  dress?: LaneDress;
+  /** At the kicker's row's end: one solid status badge. It doesn't name the group's list. */
+  tail?: ReactNode;
+  /** Not navigation, but the group's own (its meter and that meter's line): under its lanes. */
+  foot?: ReactNode;
 };
 
 type LanesProps = Omit<ComponentProps<'nav'>, 'children' | 'onSelect'> & {
@@ -94,6 +108,7 @@ function Lanes({
 }: LanesProps) {
   const baseId = useId();
   const all = groups.flatMap((g) => g.lanes);
+  const leadDress = groups[0]?.dress;
   const rows = useRef(new Map<string, HTMLElement>());
   const typed = useRef({ text: '', at: 0 });
   // The tab stop: the lane last focused, else the selected lane, else the first.
@@ -147,56 +162,95 @@ function Lanes({
     <nav
       aria-label={label}
       data-slot="lanes"
-      className={cn('flex h-full min-h-0 w-full flex-col pt-(--space-3_5)', className)}
+      className={cn(
+        'flex h-full min-h-0 w-full flex-col pt-(--space-3_5)',
+        leadDress !== undefined && LANE_DRESSES[leadDress].lead,
+        className,
+      )}
       onKeyDown={handleKeyDown}
       {...props}
     >
       <div data-slot="lanes-groups" className="flex min-h-0 flex-col gap-(--space-0_5)">
         {groups.map((group, g) => {
           const kickerId = `${baseId}-${g}`;
-          return (
-            <div
-              // Groups are positional: the sidebar's layout.
-              // biome-ignore lint/suspicious/noArrayIndexKey: a group's place is its identity.
-              key={g}
-              data-slot="lanes-group"
-              className="flex flex-col gap-(--space-0_5)"
-            >
-              {group.label !== undefined && (
-                <div
-                  id={kickerId}
-                  data-slot="lanes-kicker"
-                  className={cn(
-                    'px-(--space-4_5) pb-(--space-1_5) text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg3 uppercase',
-                    g > 0 && 'pt-(--space-3)',
-                  )}
+          const dress = group.dress === undefined ? undefined : LANE_DRESSES[group.dress];
+          const groupProps = {
+            'data-slot': 'lanes-group',
+            'data-dress': group.dress,
+            className: cn(
+              'flex flex-col gap-(--space-0_5)',
+              dress?.group,
+              // A dressed group's box stands where a kicker would: as far under the group before.
+              dress !== undefined && g > 0 && 'mt-(--space-3)',
+            ),
+            children: (
+              <>
+                {group.label !== undefined && (
+                  <div
+                    data-slot="lanes-kicker"
+                    className={cn(
+                      'flex items-center px-(--space-4_5) pb-(--space-1_5) text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg3 uppercase',
+                      g > 0 && dress === undefined && 'pt-(--space-3)',
+                      dress?.kicker,
+                    )}
+                  >
+                    <span id={kickerId} className="min-w-0 truncate">
+                      {group.label}
+                    </span>
+                    {group.tail != null && (
+                      // Zero height, centered on the kicker's line: a badge never makes it taller.
+                      <span
+                        data-slot="lanes-kicker-tail"
+                        className="ms-auto flex h-0 shrink-0 items-center ps-(--space-2) normal-case"
+                      >
+                        {group.tail}
+                      </span>
+                    )}
+                  </div>
+                )}
+                <ul
+                  aria-labelledby={group.label !== undefined ? kickerId : undefined}
+                  className="m-0 flex list-none flex-col gap-(--space-0_5) p-0"
                 >
-                  {group.label}
-                </div>
-              )}
-              <ul
-                aria-labelledby={group.label !== undefined ? kickerId : undefined}
-                className="m-0 flex list-none flex-col gap-(--space-0_5) p-0"
-              >
-                {group.lanes.map((lane) => (
-                  <li key={lane.id} className="flex">
-                    <LaneRow
-                      lane={lane}
-                      on={lane.id === selected}
-                      tabbable={lane.id === stop}
-                      linked={link !== undefined}
-                      render={link?.(lane)}
-                      rowRef={(el) => {
-                        if (el === null) rows.current.delete(lane.id);
-                        else rows.current.set(lane.id, el);
-                      }}
-                      onFocus={() => setFocused(lane.id)}
-                      onClick={() => onSelect?.(lane.id)}
-                    />
-                  </li>
-                ))}
-              </ul>
-            </div>
+                  {group.lanes.map((lane) => (
+                    <li key={lane.id} className="flex">
+                      <LaneRow
+                        lane={lane}
+                        on={lane.id === selected}
+                        tabbable={lane.id === stop}
+                        linked={link !== undefined}
+                        render={link?.(lane)}
+                        rowRef={(el) => {
+                          if (el === null) rows.current.delete(lane.id);
+                          else rows.current.set(lane.id, el);
+                        }}
+                        onFocus={() => setFocused(lane.id)}
+                        onClick={() => onSelect?.(lane.id)}
+                        inset={dress?.row}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {group.foot != null && (
+                  <div
+                    data-slot="lanes-group-foot"
+                    className={cn(
+                      'flex flex-col gap-(--space-1_5) px-(--space-4_5) pt-(--space-2_5) text-assist leading-(--lead-list) text-fg2',
+                      dress?.foot,
+                    )}
+                  >
+                    {group.foot}
+                  </div>
+                )}
+              </>
+            ),
+          };
+          return (
+            // Groups are positional: the sidebar's layout.
+            // biome-ignore lint/suspicious/noArrayIndexKey: a group's place is its identity.
+            <Fragment key={g}>
+              {dress?.render ? dress.render(groupProps) : <div {...groupProps} />}
+            </Fragment>
           );
         })}
       </div>
@@ -221,9 +275,21 @@ type LaneRowProps = {
   rowRef: (el: HTMLElement | null) => void;
   onFocus: () => void;
   onClick: () => void;
+  /** A dressed group's inset, so the row's name and count keep the column's line. */
+  inset: string | undefined;
 };
 
-function LaneRow({ lane, on, tabbable, linked, render, rowRef, onFocus, onClick }: LaneRowProps) {
+function LaneRow({
+  lane,
+  on,
+  tabbable,
+  linked,
+  render,
+  rowRef,
+  onFocus,
+  onClick,
+  inset,
+}: LaneRowProps) {
   // A count whose ink means something (amber waits on a person, red failed) keeps it when its lane
   // is chosen — choosing the lane answers neither (board 8.1); only the quiet count lights.
   const tone =
@@ -253,6 +319,7 @@ function LaneRow({ lane, on, tabbable, linked, render, rowRef, onFocus, onClick 
         lane.dim && !on && 'text-fg3',
         // On: the lit plate and the 2 px bar inset on the left edge.
         on && 'bg-lift-08 text-fg shadow-select-rule lit:bg-lift-08 lit:text-fg',
+        inset,
       ),
       children: (
         <>
@@ -283,4 +350,4 @@ function LaneRow({ lane, on, tabbable, linked, render, rowRef, onFocus, onClick 
   });
 }
 
-export { type Lane, type LaneGroup, Lanes, type LanesProps };
+export { type Lane, type LaneDress, type LaneGroup, Lanes, type LanesProps };

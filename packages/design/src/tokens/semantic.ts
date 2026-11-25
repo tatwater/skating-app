@@ -22,6 +22,10 @@
  *   (temperature): a reading, not chrome, so it isn't inverted.
  * - `fixed` — a mark whose value is designed for each mode rather than derived (the favorite star):
  *   its light value isn't computed from the dark one, so the contrast suite checks it as drawn.
+ * - `inverse` — another key's value in the **other mode** of the same surface: the inks and washes
+ *   of an inverted plate (`inv-bg`), which is a patch of the other mode set into this one. Every
+ *   state drawn on the plate is that mode's own, so its contrast is that mode's, measured on the
+ *   plate by `INVERSE_TEXT_PAIRS`. An inverse of an inverse is refused.
  *
  * The roles are the default. A map can instead take **designed** values key by key
  * (`designedColors`): hand-picked colors that the derivation doesn't touch, checked by the contrast
@@ -56,6 +60,7 @@ export type ColorSpec =
       readonly audit?: OverlayName;
     }
   | { readonly role: 'alias'; readonly of: string }
+  | { readonly role: 'inverse'; readonly of: string }
   | { readonly role: 'data'; readonly dark: PrimitiveName; readonly light: PrimitiveName }
   | { readonly role: 'fixed'; readonly dark: PrimitiveName; readonly light: PrimitiveName };
 
@@ -149,6 +154,17 @@ export const colorSpecs = {
   // Inverse — a solid ink plate (the primary button) and the text on it.
   'inv-bg': { role: 'ink', dark: 'w' },
   'inv-fg': { role: 'alias', of: 'bg' },
+  // What sits on that plate when it holds a whole list (the lanes' inverted group): the other
+  // mode's inks, washes and accents, so every row state there is that mode's own. `inv-fg` above
+  // is the plate's bright ink (its selection bar and focus ring too).
+  'inv-fg1': { role: 'inverse', of: 'fg1' },
+  'inv-fg2': { role: 'inverse', of: 'fg2' },
+  'inv-fg3': { role: 'inverse', of: 'fg3' },
+  'inv-line': { role: 'inverse', of: 'line' },
+  'inv-lift-05': { role: 'inverse', of: 'lift-05' },
+  'inv-lift-08': { role: 'inverse', of: 'lift-08' },
+  'inv-warn': { role: 'inverse', of: 'warn' },
+  'inv-bad': { role: 'inverse', of: 'bad' },
 
   // Accent washes, tints and glows follow their accent.
   'acc-tint': overlay(onKey('acc'), 0.05, 'match', 'ice-tint'),

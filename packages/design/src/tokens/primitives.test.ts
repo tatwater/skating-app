@@ -58,7 +58,7 @@ describe('admin dark is the audit', () => {
 
   it('binds every opaque role to its audited primitive', () => {
     for (const [key, spec] of Object.entries(colorSpecs)) {
-      if (spec.role === 'overlay' || spec.role === 'alias') continue;
+      if (spec.role === 'overlay' || spec.role === 'alias' || spec.role === 'inverse') continue;
       const name = spec.dark;
       expect(colors[key as keyof typeof colors], key).toEqual(primitives[name]);
     }

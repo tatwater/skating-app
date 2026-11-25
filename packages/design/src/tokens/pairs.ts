@@ -106,6 +106,23 @@ export const SHORTFALL_FLOOR = 3.4;
 export const PLATE_PAIRS: ReadonlyArray<readonly [ColorKey, ColorKey]> = [['inv-fg', 'inv-bg']];
 
 /**
+ * The inverted plate holding a whole list (the lanes' inverted group): each of the other mode's
+ * inks and the grounds it sits on there — the plate itself, and the other mode's washes laid over
+ * it (a hovered row, the selected one). Measured as it renders: a wash composited over `inv-bg`,
+ * then the ink over that. The quiet ink stays off the selected row's wash: the plate is `inv-bg`,
+ * a hair off the other mode's own field, and skater dark's quiet ink measures 4.4 there. The lanes
+ * never put it there (a chosen lane's name and quiet count both light).
+ */
+export const INVERSE_TEXT_PAIRS: Readonly<Partial<Record<ColorKey, readonly ColorKey[]>>> = {
+  'inv-fg': ['inv-bg', 'inv-lift-05', 'inv-lift-08'],
+  'inv-fg1': ['inv-bg', 'inv-lift-05', 'inv-lift-08'],
+  'inv-fg2': ['inv-bg', 'inv-lift-05', 'inv-lift-08'],
+  'inv-fg3': ['inv-bg', 'inv-lift-05'],
+  'inv-warn': ['inv-bg', 'inv-lift-05', 'inv-lift-08'],
+  'inv-bad': ['inv-bg', 'inv-lift-05', 'inv-lift-08'],
+};
+
+/**
  * Non-text marks that carry meaning (WCAG 1.4.11, 3:1). The focus ring and the selection rule are
  * drawn in `fg`, on any solid ground. A set favorite's `star` is an icon fill, not text, so it is
  * held to 3:1 rather than AA — on every ground but the ones in `MARK_KEEPS_OFF`.
@@ -129,6 +146,9 @@ export const CONTRAST_EXEMPT: Readonly<Partial<Record<ColorKey, string>>> = {
   'bad-dim': "an armed danger button's label while it waits — an inactive state",
   'inv-bg': 'a plate; its ink is checked in PLATE_PAIRS',
   'inv-fg': 'checked against inv-bg in PLATE_PAIRS',
+  'inv-line': "the inverted plate's hairline and a meter's track there; decorative, as `line`",
+  'inv-lift-05': 'a ground on the inverted plate; checked under INVERSE_TEXT_PAIRS',
+  'inv-lift-08': 'a ground on the inverted plate; checked under INVERSE_TEXT_PAIRS',
   'acc-glow': 'a glow, not a surface',
   'warn-glow': 'a glow, not a surface',
   'bad-glow': 'a glow, not a surface',

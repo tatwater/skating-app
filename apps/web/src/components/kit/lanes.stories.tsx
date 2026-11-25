@@ -1,9 +1,11 @@
+import * as tokens from '@skating/design/tokens';
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useState } from 'react';
-import { expect, fn, userEvent, within } from 'storybook/test';
+import { type ReactElement, type ReactNode, useState } from 'react';
+import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { Badge, Tag } from './badge';
-import { type LaneGroup, Lanes, type LanesProps } from './lanes';
+import { LANE_DRESSES, type LaneDress } from './lane-dress';
+import { type Lane, type LaneGroup, Lanes, type LanesProps } from './lanes';
 import {
   colorsIn,
   computedColor,
@@ -13,7 +15,8 @@ import {
   sameColor,
   sameShadow,
 } from './measure';
-import { must, PSEUDO_STATES, StateMatrix } from './storyKit';
+import { Meter } from './meter';
+import { KICKER, must, PSEUDO_STATES, StateMatrix } from './storyKit';
 
 const MACHINERY: LaneGroup[] = [
   {
@@ -62,9 +65,13 @@ const meta = {
   globals: { surface: 'admin' },
   render: (args) => <Controlled {...args} />,
   decorators: [
-    (Story) => (
-      <div className="flex h-[30rem] w-lanes border-r border-solid border-line">{Story()}</div>
-    ),
+    // The sidebar's column; a story that draws its own columns (`bare`) goes without it.
+    (Story, { parameters }) =>
+      parameters.bare ? (
+        Story()
+      ) : (
+        <div className="flex h-[30rem] w-lanes border-r border-solid border-line">{Story()}</div>
+      ),
   ],
   parameters: {
     docs: {
@@ -419,3 +426,450 @@ export const FourUp: Story = {
     }
   },
 };
+
+// ── The Pre-Season Pass: its dress, candidates for the founder ─────────────────────────────────────
+//
+// The seasonal group the Corpus sidebar gains each July and loses once every item in it is decided,
+// dressed apart from the plain groups. Four dresses, one story each (four-up), and each in the whole
+// Corpus sidebar at the console's width. None is picked; the unpicked ones go when the pick ships.
+
+const PASS = 'Pre-Season Pass';
+const PASS_LANES: Lane[] = [
+  { id: 'recurrence', label: 'Recurrence', count: 7 },
+  { id: 'promotion', label: 'Promotion candidates', count: 3 },
+];
+
+/** The pass's foot: its meter and that meter's line. It counts decisions, never conditions. */
+function PassFoot({ decided, total }: { decided: number | null; total: number }) {
+  return (
+    <>
+      <Meter value={decided} max={total} aria-label="Decided" />
+      <span data-slot="pass-line" className="leading-none">
+        {decided === null ? 'Being computed' : `${decided} of ${total} decided`}
+      </span>
+    </>
+  );
+}
+
+const passGroup = (
+  dress: LaneDress,
+  { lanes = PASS_LANES, decided = 3 }: { lanes?: Lane[]; decided?: number | null } = {},
+): LaneGroup => ({
+  label: PASS,
+  dress,
+  lanes,
+  foot: <PassFoot decided={decided} total={10} />,
+  // The taped dress carries its urgency in a badge in the kicker's row.
+  ...(dress === 'taped' && { tail: <Badge tone="warn">Due</Badge> }),
+});
+
+const TASKS: LaneGroup = {
+  label: 'Tasks',
+  lanes: [
+    { id: 'duplicates', label: 'Duplicates', count: 283 },
+    { id: 'names', label: 'Name conflicts', count: 412 },
+    { id: 'classes', label: 'Class conflicts', count: 140 },
+    { id: 'contested', label: 'Contested as water', count: 42 },
+    { id: 'bays', label: 'Orphan bays', count: 61 },
+    { id: 'refits', label: 'Chord re-fits', count: 7, countTone: 'warn' },
+    { id: 'places', label: 'Place names', count: 237 },
+  ],
+};
+const VIEWS: LaneGroup = {
+  label: 'Views',
+  lanes: [
+    { id: 'opened', label: 'Opened recently' },
+    { id: 'changed', label: 'Changed this week' },
+    { id: 'features', label: 'Known features', count: 12 },
+  ],
+};
+const STANDING: LaneGroup = {
+  label: 'Standing',
+  lanes: [
+    { id: 'all', label: 'All bodies' },
+    { id: 'active', label: 'Active' },
+    { id: 'dormant-inactive', label: 'Dormant · inactive' },
+    { id: 'dormant-campaign', label: 'Dormant · not in campaign' },
+    { id: 'dormant-moderator', label: 'Dormant · moderator' },
+    { id: 'no-access', label: 'No public access' },
+    { id: 'removed', label: 'Removed · rejected' },
+  ],
+};
+
+/** Every lane state, inside the dress: forced for the eye by the pseudo-states addon. */
+const STATE_LANES: Lane[] = [
+  { id: 'rest', label: 'At rest', count: 7 },
+  { id: 'hover', label: 'Hovered', count: 3 },
+  { id: 'focus', label: 'Focused', count: 5 },
+  { id: 'on', label: 'Chosen', count: 4 },
+  { id: 'dim', label: 'Nothing in it', dim: true },
+  { id: 'warn', label: 'Waits on a person', count: 2, countTone: 'warn' },
+  { id: 'bad', label: 'Failed', count: 1, countTone: 'bad' },
+];
+
+/** Rows as buttons that carry a forced state (`data-state`) for the pseudo-states addon. */
+const forced =
+  (states: Record<string, 'hover' | 'focus'>) =>
+  (lane: Lane): ReactElement => <button type="button" data-state={states[lane.id]} />;
+
+/** A sidebar column as the console draws it: the lanes' width, a hairline on its right. */
+function Column({
+  caption,
+  height,
+  children,
+}: {
+  caption: string;
+  height: string;
+  children: ReactNode;
+}) {
+  return (
+    <figure className="m-0 flex w-lanes flex-col gap-(--space-2_5)">
+      {/* Two lines kept for every caption, so columns side by side start level. */}
+      <figcaption className={`${KICKER} min-h-[2lh]`}>{caption}</figcaption>
+      <div
+        data-column=""
+        className="flex w-lanes border-0 border-r border-solid border-line"
+        style={{ height }}
+      >
+        {children}
+      </div>
+    </figure>
+  );
+}
+
+/** The dress, four-up: the pass over the Tasks group, and every lane state inside the dress. */
+function PassDressSheet({ dress }: { dress: LaneDress }) {
+  return (
+    <div className="flex flex-wrap gap-(--space-6)">
+      <Column caption="In the sidebar" height="24rem">
+        <Lanes
+          label={`${PASS} and tasks`}
+          groups={[passGroup(dress), TASKS]}
+          selected="duplicates"
+        />
+      </Column>
+      <Column caption="Every state" height="24rem">
+        <Lanes
+          label={`${PASS} states`}
+          groups={[{ ...passGroup(dress), lanes: STATE_LANES }]}
+          selected="on"
+          link={forced({ hover: 'hover', focus: 'focus' })}
+        />
+      </Column>
+    </div>
+  );
+}
+
+/** The Corpus sidebar whole, at the console's width: Active chosen, then a pass lane chosen. */
+function CorpusSidebar({ dress }: { dress: LaneDress }) {
+  return (
+    <div className="flex flex-wrap gap-(--space-8)">
+      <Column caption="Active chosen" height="49rem">
+        <Lanes
+          label="Corpus"
+          groups={[passGroup(dress), TASKS, VIEWS, STANDING]}
+          selected="active"
+        />
+      </Column>
+      <Column caption="Recurrence chosen, the next focused" height="49rem">
+        <Lanes
+          label="Corpus, a pass lane chosen"
+          groups={[passGroup(dress), TASKS, VIEWS, STANDING]}
+          selected="recurrence"
+          link={forced({ promotion: 'focus' })}
+        />
+      </Column>
+    </div>
+  );
+}
+
+/** What a motion token computes to here: zero under reduced motion. */
+const motion = (ms: number) =>
+  matchMedia('(prefers-reduced-motion: reduce)').matches ? '0s' : `${ms / 1000}s`;
+
+/** An element's box inside its padding: junctions run content to content. */
+function innerRect(el: Element): DOMRect {
+  const r = el.getBoundingClientRect();
+  const st = getComputedStyle(el);
+  const [t, rt, b, l] = [st.paddingTop, st.paddingRight, st.paddingBottom, st.paddingLeft].map(
+    parseFloat,
+  ) as [number, number, number, number];
+  return new DOMRect(r.left + l, r.top + t, r.width - l - rt, r.height - t - b);
+}
+
+/** Everything painted under `el` up to `root`, bottom first: the ground its ink sits on. */
+function groundUnder(el: HTMLElement, root: HTMLElement): string[] {
+  const layers: string[] = [];
+  for (let n: HTMLElement | null = el; n !== null && n !== root; n = n.parentElement) {
+    const paint = getComputedStyle(n).backgroundColor;
+    if (paint !== 'rgba(0, 0, 0, 0)') layers.unshift(paint);
+  }
+  // The field as the root has it: inside the inverted plate `--bg` is the plate's.
+  return [computedColor(root, 'var(--bg)'), ...layers];
+}
+
+/** Every lane's name and count pass AA on the ground they're painted on, dress and plate included. */
+async function expectLanesReadable(root: HTMLElement) {
+  for (const lane of root.querySelectorAll<HTMLElement>('[data-slot="lane"]')) {
+    const ground = groundUnder(lane, root);
+    const name = lane.textContent ?? '';
+    await expect(
+      contrastBetween(lane, ground, [...ground, getComputedStyle(lane).color]),
+      name,
+    ).toBeGreaterThanOrEqual(4.5);
+    const count = lane.querySelector<HTMLElement>('[data-slot="lane-count"]');
+    if (count !== null)
+      await expect(
+        contrastBetween(lane, ground, [...ground, getComputedStyle(count).color]),
+        `${name} count`,
+      ).toBeGreaterThanOrEqual(4.5);
+  }
+}
+
+/**
+ * The dress's junctions, in one sidebar: the dressed group's kicker, names and counts keep the
+ * column's 18 px line, the plain groups' line; rows stay the lane step; the meter and its line sit
+ * inside the dress, under the lanes.
+ */
+async function expectDressJunctions(nav: HTMLElement, dress: LaneDress) {
+  const px = (len: string) => resolvePx(nav, len);
+  const near = (a: number, b: number, what: string) =>
+    expect(Math.abs(a - b), `${what}: ${a} vs ${b}`).toBeLessThanOrEqual(JUNCTION_TOLERANCE_PX);
+  const col = nav.getBoundingClientRect();
+  const group = must(nav.querySelector<HTMLElement>(`[data-dress="${dress}"]`));
+  const box = group.getBoundingClientRect();
+  const kickers = [...nav.querySelectorAll<HTMLElement>('[data-slot="lanes-kicker"] > span[id]')];
+  for (const k of kickers)
+    await near(
+      k.getBoundingClientRect().left - col.left,
+      px('var(--space-4_5)'),
+      `${k.textContent} kicker inset`,
+    );
+  for (const lane of nav.querySelectorAll<HTMLElement>('[data-slot="lane"]')) {
+    const r = lane.getBoundingClientRect();
+    await near(r.height, px('var(--size-lane)'), `${lane.textContent} height`);
+    const label = part(lane, 'lane-label').getBoundingClientRect();
+    await near(label.left - col.left, px('var(--space-4_5)'), `${lane.textContent} name inset`);
+    const count = lane.querySelector('[data-slot="lane-count"]');
+    if (count !== null)
+      await near(
+        col.right - count.getBoundingClientRect().right,
+        px('var(--space-4_5)'),
+        `${lane.textContent} count inset`,
+      );
+  }
+  // The foot is the group's: inside its dress, under its last lane.
+  const foot = innerRect(part(group, 'lanes-group-foot'));
+  const lanes = [...group.querySelectorAll<HTMLElement>('[data-slot="lane"]')];
+  const last = must(lanes.at(-1)).getBoundingClientRect();
+  await near(
+    foot.top - last.bottom,
+    px('var(--space-0_5)') + px('var(--space-2_5)'),
+    'last lane to foot',
+  );
+  await expect(foot.bottom).toBeLessThanOrEqual(box.bottom + JUNCTION_TOLERANCE_PX);
+  await expect(within(group).getByRole('meter', { name: 'Decided' })).toHaveAttribute(
+    'aria-valuenow',
+    '3',
+  );
+  if (dress === 'edge') {
+    // The rule on the column's edge; the rows step in past its gutter, so a chosen lane's own bar
+    // never touches it.
+    await near(box.left, col.left, 'rule on the edge');
+    await near(
+      parseFloat(getComputedStyle(group).borderInlineStartWidth),
+      px('var(--stroke-note)'),
+      'rule width',
+    );
+    // Its kicker sits where a leading plain kicker would: a step under the column's top.
+    await near(
+      innerRect(part(group, 'lanes-kicker')).top - col.top,
+      px('var(--space-3_5)'),
+      'column top to kicker',
+    );
+    await near(
+      must(lanes[0]).getBoundingClientRect().left - col.left,
+      px('var(--stroke-note)') + px('var(--space-2)'),
+      'rows past the gutter',
+    );
+  } else {
+    // A box inset as far from the column's top as from its sides.
+    await near(box.left - col.left, px('var(--space-2)'), 'box left');
+    await near(col.right - box.right, px('var(--space-2)'), 'box right');
+    await near(box.top - col.top, px('var(--space-2)'), 'box top');
+    // The kicker's text sits a step under the box's top, as a plain kicker sits under the group before.
+    const kicker = innerRect(part(group, 'lanes-kicker'));
+    await near(kicker.top - box.top, px('var(--space-3)'), 'box top to kicker');
+  }
+}
+
+const passDressStory = (dress: LaneDress): Story => ({
+  render: () => <PassDressSheet dress={dress} />,
+  parameters: { fourUp: true, bare: true, ...PSEUDO_STATES },
+  play: async ({ canvasElement }) => {
+    const quads = [...canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')];
+    await expect(quads).toHaveLength(4);
+    for (const q of quads) {
+      const [sidebar, sheet] = within(q).getAllByRole('navigation');
+      await expectDressJunctions(must(sidebar), dress);
+      await expectLanesReadable(q);
+      // A badge in the kicker's row never makes the row taller.
+      const [passKicker, tasksKicker] = [
+        ...must(sidebar).querySelectorAll<HTMLElement>('[data-slot="lanes-kicker"]'),
+      ].map(innerRect);
+      await expect(must(passKicker).height).toBeCloseTo(must(tasksKicker).height, 1);
+      // The list is named by the kicker alone, never the badge beside it.
+      await expect(within(must(sidebar)).getByRole('list', { name: PASS })).toBeVisible();
+      // The chosen lane inside the dress: its plate and its 2 px bar, in the dress's own bright ink.
+      const on = within(must(sheet)).getByRole('button', { name: /Chosen/ });
+      const group = must(on.closest<HTMLElement>('[data-dress]'));
+      await expect(getComputedStyle(on).boxShadow).toEqual(
+        sameShadow({ lengths: [2, 0, 0, 0], inset: true }),
+      );
+      await expect(colorsIn(getComputedStyle(on).boxShadow)).toContainEqual(
+        sameColor(computedColor(group, 'var(--fg)')),
+      );
+      await expect(getComputedStyle(on).backgroundColor).toEqual(
+        sameColor(computedColor(group, 'var(--lift-08)')),
+      );
+      // Amber and red keep their meaning inside the dress.
+      const tone = (name: RegExp) =>
+        getComputedStyle(part(within(must(sheet)).getByRole('button', { name }), 'lane-count'))
+          .color;
+      await expect(tone(/Waits on a person/)).toEqual(
+        sameColor(computedColor(group, 'var(--warn)')),
+      );
+      await expect(tone(/Failed/)).toEqual(sameColor(computedColor(group, 'var(--bad)')));
+      // Hover and focus ride the motion tokens: zero under reduced motion.
+      await expect(getComputedStyle(on).transitionDuration).toBe(motion(tokens.duration.fast));
+    }
+  },
+});
+
+/**
+ * **The inverted plate.** The pass on the inverted ground, inset from the column's edges, square:
+ * a label stuck onto the sidebar, and its loudest thing. Inside it every lane state is the other
+ * mode's own — the plate rebinds the inks, washes and accents to the `inv-*` tokens — so the
+ * hover wash, the chosen plate and its bar, the focus ring, dim and the amber and red counts all
+ * carry over with their contrast.
+ */
+export const PassDressInverted: Story = {
+  ...passDressStory('inverted'),
+  play: async (context) => {
+    await passDressStory('inverted').play?.(context);
+    for (const q of context.canvasElement.querySelectorAll<HTMLElement>('[data-theme-scope]')) {
+      for (const group of q.querySelectorAll<HTMLElement>('[data-dress="inverted"]')) {
+        await expect(getComputedStyle(group).backgroundColor).toEqual(
+          sameColor(computedColor(q, 'var(--inv-bg)')),
+        );
+        for (const key of ['fg', 'fg1', 'fg2', 'fg3', 'warn', 'bad', 'lift-05', 'lift-08', 'line'])
+          await expect(computedColor(group, `var(--${key})`), key).toEqual(
+            sameColor(computedColor(q, `var(--inv-${key})`)),
+          );
+      }
+    }
+  },
+};
+
+/**
+ * **The bracketed card.** The pass in the kit's `Plate` card, warn tone: a hairline box with amber
+ * corner ticks, the console's mark for the thing being worked on. The rows give back the box's
+ * inset and border, so the names keep the column's line.
+ */
+export const PassDressBracketed: Story = passDressStory('bracketed');
+
+/**
+ * **The taped outline.** An amber die line round the pass, a long dash (6 on, 4 off) drawn rather
+ * than a CSS dashed border, whose short dash already means “nothing to draw” and “dim” in this
+ * console; a solid amber *Due* in the kicker's row; the meter under the lanes.
+ */
+export const PassDressTaped: Story = passDressStory('taped');
+
+/**
+ * **The amber edge.** No box: a 2 px amber rule down the column's own left edge, the amber tint
+ * behind the group, the kicker in amber, the meter its last row. The rows step in past a gutter,
+ * so the chosen lane's own 2 px bar stands clear of the rule.
+ */
+export const PassDressEdge: Story = passDressStory('edge');
+
+/** While the pass is being computed: no counts, no fill — and nothing moves when they arrive. */
+export const PassBeingComputed: Story = {
+  parameters: { bare: true },
+  render: () => (
+    <div className="flex flex-wrap gap-(--space-6)">
+      {(Object.keys(LANE_DRESSES) as LaneDress[]).flatMap((dress) =>
+        [3, null].map((decided) => (
+          <Column
+            key={`${dress}-${decided}`}
+            caption={`${dress} · ${decided === null ? 'computing' : 'open'}`}
+            height="12rem"
+          >
+            <Lanes
+              label={`${dress} ${decided === null ? 'computing' : 'open'}`}
+              groups={[
+                passGroup(dress, {
+                  decided,
+                  lanes: decided === null ? PASS_LANES.map(({ count: _, ...l }) => l) : PASS_LANES,
+                }),
+              ]}
+            />
+          </Column>
+        )),
+      )}
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    for (const dress of Object.keys(LANE_DRESSES)) {
+      const [open, computing] = [
+        ...canvasElement.querySelectorAll<HTMLElement>(`[data-dress="${dress}"]`),
+      ].map((g) => g.getBoundingClientRect());
+      await expect(must(computing).height, dress).toBeCloseTo(must(open).height, 1);
+      await expect(must(computing).width, dress).toBeCloseTo(must(open).width, 1);
+    }
+    await expect(within(canvasElement).getAllByText('Being computed')).toHaveLength(4);
+  },
+};
+
+/**
+ * The whole Corpus sidebar in a dress, at the console's lanes width: the pass over Tasks, Views
+ * and Standing. Left, the library's Active chosen; right, a lane inside the pass chosen and the next
+ * one focused — where the dresses differ most. The keys cross the dress like any group.
+ */
+const inContextStory = (dress: LaneDress): Story => ({
+  render: () => <CorpusSidebar dress={dress} />,
+  parameters: { bare: true, ...PSEUDO_STATES },
+  play: async ({ canvasElement }) => {
+    const [library, pass] = within(canvasElement).getAllByRole('navigation');
+    for (const nav of [must(library), must(pass)]) await expectDressJunctions(nav, dress);
+    await expectLanesReadable(canvasElement);
+    // The pass leads the column; the sidebar's groups keep their order and their kickers.
+    await expect(
+      [...must(library).querySelectorAll('[data-slot="lanes-kicker"] > span[id]')].map(
+        (k) => k.textContent,
+      ),
+    ).toEqual([PASS, 'Tasks', 'Views', 'Standing']);
+    // Keys: Tab lands on the chosen pass lane; ↓ moves within the dress, then out of it.
+    const nav = must(pass);
+    const button = (name: RegExp) => within(nav).getByRole('button', { name });
+    await userEvent.click(button(/Recurrence/));
+    await expect(button(/Recurrence/)).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    await waitFor(() => expect(button(/Promotion candidates/)).toHaveFocus());
+    const promotion = button(/Promotion candidates/);
+    const group = must(promotion.closest<HTMLElement>('[data-dress]'));
+    // The focus ring: 1 px, inset, in the dress's own bright ink (the box shadow isn't transitioned).
+    await expect(colorsIn(getComputedStyle(promotion).boxShadow)).toContainEqual(
+      sameColor(computedColor(group, 'var(--fg)')),
+    );
+    await userEvent.keyboard('{ArrowDown}');
+    await waitFor(() => expect(button(/Duplicates/)).toHaveFocus());
+    await userEvent.keyboard('{Home}');
+    await waitFor(() => expect(button(/Recurrence/)).toHaveFocus());
+    (document.activeElement as HTMLElement | null)?.blur();
+  },
+});
+
+export const InContextInverted: Story = inContextStory('inverted');
+export const InContextBracketed: Story = inContextStory('bracketed');
+export const InContextTaped: Story = inContextStory('taped');
+export const InContextEdge: Story = inContextStory('edge');
