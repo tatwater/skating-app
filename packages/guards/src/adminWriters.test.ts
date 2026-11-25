@@ -44,6 +44,10 @@ const INVENTORY: Record<string, string> = {
   'components/admin/body/tabs/shape/ShapeTabRoute.tsx': 'the merge: attempt (sendFor)',
   'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
+  'components/admin/corpus/handlers/Classes/useClassWrites.ts':
+    'useDecisionRunner (admin/actions): said, naming the body',
+  'components/admin/corpus/handlers/Names/useNameWrites.ts':
+    'useDecisionRunner (admin/actions): said, naming the body',
   'components/admin/inbox/handlers/Access/useAccessWrites.ts': 'said, naming the body',
   'components/admin/inbox/handlers/Drawn/useDrawnWrites.ts':
     'useDecisionRunner (admin/actions): said, naming the body',
