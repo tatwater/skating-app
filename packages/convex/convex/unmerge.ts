@@ -488,6 +488,10 @@ async function restoreBodies(
   }
   await ctx.db.patch(survivor._id, survivorPatch);
   if (pins.length !== pinsNow.length) await refreshPinnedFacts(ctx, survivor._id, pins);
+  // The aliases its tasks' search text carries may have gone back to the loser.
+  await syncBodyTasks(ctx, survivor._id, {
+    body: { ...survivor, ...survivorPatch } as Doc<'waterBodies'>,
+  });
 
   // The loser: as it stood, with its own lists, its review status and its duplicate flags.
   const dedup = cs.dedupBefore[0] as MergeChangeSet['dedupBefore'][number];

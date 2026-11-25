@@ -528,7 +528,14 @@ describe('listPage', () => {
     const t = harness();
     const mod = await person(t, 'Casey Example');
     const basin = await lake(t, { osmId: 'way/150404999', externalId: 'way/150404999' });
-    const other = await lake(t, { name: 'Sabattus Pond', displayScore: 0.2 });
+    const other = await lake(t, {
+      name: 'Sabattus Pond',
+      displayScore: 0.2,
+      nameClaims: [
+        { source: 'nhd', value: 'Sabattus Pond' },
+        { source: 'osm', value: 'Lake Sabattus' },
+      ],
+    });
     // A body that matches but holds no task.
     await lake(t, {
       name: 'Basin Brook Reservoir',
@@ -552,6 +559,11 @@ describe('listPage', () => {
       expect(page.scanBudgetSpent).toBe(false);
     }
     expect((await find('Sabattus')).rows.map((r) => r.body.id)).toEqual([other]);
+    // By the other name too: OSM's "Lake Auburn" finds the body shown as NHD's "The Basin".
+    expect((await find('Auburn')).rows.map((r) => r.body.id)).toEqual([basin]);
+    // Within its tab: two different names, never one letter apart.
+    expect((await find('Basin', 'different')).rows.map((r) => r.body.id)).toEqual([basin]);
+    expect((await find('Basin', 'oneLetter')).rows).toEqual([]);
     // Within the tab: the decided tab holds no open task.
     expect((await find('Basin', 'decided')).rows).toEqual([]);
     await decide(t, basin, mod.id, NOW + 1);
@@ -620,12 +632,34 @@ describe('listPage', () => {
     expect(page.rows).toHaveLength(2);
     expect(page.scanBudgetSpent).toBe(true);
 
-    // More library matches than the scan reads: the one task past them isn't reached.
+    // More of the lane's tasks match than the scan reads: the search is cut, and says so.
+    for (let i = 0; i <= SEARCH_SCAN; i++) {
+      await lake(t, { name: `Zulu Lake ${i}`, nameClaims: [{ source: 'nhd', value: 'Zulu' }] });
+    }
+    const spent = await mod.as.query(api.corpusTasks.listPage, {
+      lane: 'nameConflicts',
+      q: 'Zulu',
+      pageSize: 200,
+      now: NOW,
+    });
+    expect(spent.rows).toHaveLength(SEARCH_SCAN);
+    expect(spent.scanBudgetSpent).toBe(true);
+  });
+
+  test('q reads within the lane: a tasked body is found among 150 untasked bodies of its name', async () => {
+    const t = harness();
+    const mod = await person(t, 'Casey Example');
+    const mud = (i: number) => [
+      { source: 'nhd' as const, value: 'Mud Pond' },
+      { source: 'osm' as const, value: `Mud Pond (${i})` },
+    ];
+    // 150 bodies named Mud Pond with no question, each its library row: more than the library
+    // search reads, and every one ranks with the two that are asked about.
     await t.run(async (ctx) => {
-      for (let i = 0; i <= SEARCH_SCAN; i++) {
+      for (let i = 0; i < 150; i++) {
         const id = await ctx.db.insert('waterBodies', {
-          name: `Zulu Lake ${i}`,
-          searchText: `Zulu Lake ${i}`,
+          name: 'Mud Pond',
+          searchText: 'Mud Pond',
           type: 'lakePond',
           source: 'osm',
           polygon: SQUARE,
@@ -633,17 +667,50 @@ describe('listPage', () => {
           centroid: { lat: 44.005, lng: -71.995 },
           dedupStatus: 'clean',
           createdAt: NOW,
+          nameClaims: mud(i),
         });
-        await libraryRow(ctx, id, `Zulu Lake ${i}`);
+        await libraryRow(ctx, id, 'Mud Pond');
       }
     });
-    const spent = await mod.as.query(api.corpusTasks.listPage, {
+    const asked = [
+      await lake(t, { name: 'Mud Pond', nameClaims: mud(900) }),
+      await lake(t, { name: 'Mud Pond', nameClaims: mud(901), displayScore: 0.3 }),
+    ];
+    const page = await mod.as.query(api.corpusTasks.listPage, {
       lane: 'nameConflicts',
-      q: 'Zulu',
+      q: 'Mud Pond',
       now: NOW,
     });
-    expect(spent.rows).toEqual([]);
-    expect(spent.scanBudgetSpent).toBe(true);
+    expect(page.rows.map((r) => r.body.id).sort()).toEqual([...asked].sort());
+    expect(page.scanBudgetSpent).toBe(false);
+    // The Classes lane asks nothing of them.
+    const classes = await mod.as.query(api.corpusTasks.listPage, {
+      lane: 'classConflicts',
+      q: 'Mud Pond',
+      now: NOW,
+    });
+    expect(classes.rows).toEqual([]);
+  });
+
+  test('a task filed before its search text is found by id, and by name once its sync writes it', async () => {
+    const t = harness();
+    const mod = await person(t, 'Casey Example');
+    const id = await lake(t, { osmId: 'way/7' });
+    // As written before the field: no search text on the open task.
+    await t.run(async (ctx) => {
+      const task = await ctx.db
+        .query('corpusTasks')
+        .withIndex('by_body_status', (q) => q.eq('waterBodyId', id).eq('status', 'open'))
+        .first();
+      if (task) await ctx.db.patch(task._id, { searchText: undefined });
+    });
+    const find = async (q: string) =>
+      (await mod.as.query(api.corpusTasks.listPage, { lane: 'nameConflicts', q, now: NOW })).rows;
+    expect((await find('Basin')).map((r) => r.body.id)).toEqual([]);
+    expect((await find('way/7')).map((r) => r.body.id)).toEqual([id]);
+    // The sync (the backfill's, the drift repair's) refreshes it.
+    await t.run((ctx) => syncBodyTasks(ctx, id, { now: NOW + 1 }));
+    expect((await find('Basin')).map((r) => r.body.id)).toEqual([id]);
   });
 });
 

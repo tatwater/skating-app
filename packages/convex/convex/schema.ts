@@ -5906,8 +5906,21 @@ export default defineSchema({
     /** Set with `status: 'left'`: the question went away with no decision. */
     leftAt: v.optional(v.number()),
     leftBecause: v.optional(literals(CORPUS_TASK_LEFT_REASONS)),
+    /**
+     * What a lane's search finds the task by: its body's library search text (both names, every
+     * other, its ids), kept by the one writer with the tab — refreshed by every sync while open, and
+     * as the body stands when decided. Absent on a task filed before it, until the drift repair's
+     * sync refreshes it; the search index doesn't see such a row.
+     */
+    searchText: v.optional(v.string()),
     refreshedAt: v.number(),
   })
+    // A lane's search, within the lane and its tab: `eq` on lane and status, and on the facet for a
+    // tab.
+    .searchIndex('search_text', {
+      searchField: 'searchText',
+      filterFields: ['lane', 'status', 'facet'],
+    })
     .index('by_key', ['key', 'status'])
     .index('by_status_lane_rank', ['status', 'lane', 'rankKey'])
     .index('by_status_lane_facet_rank', ['status', 'lane', 'facet', 'rankKey'])

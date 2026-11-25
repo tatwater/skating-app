@@ -21,12 +21,11 @@ import {
   CORPUS_TASK_FACETS,
   CORPUS_TASK_LANES,
   type CorpusTaskLane,
-  SCOPE_ALL,
   SEARCH_MIN_CHARS,
 } from '@skating/core';
 import type { NamedTableInfo, OrderedQuery } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
-import type { DataModel, Id } from './_generated/dataModel';
+import type { DataModel, Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { corpusTasksPending, countKeysOf, readTaskCount } from './lib/corpusTasks';
@@ -64,7 +63,7 @@ const nowArg = { now: v.optional(v.number()) };
 
 /** The longest search read; the rest is dropped. */
 const SEARCH_MAX_CHARS = 100;
-/** Library matches a search reads at most (`scanBudgetSpent` past it). */
+/** A lane's task matches a search reads at most (`scanBudgetSpent` past it). */
 export const SEARCH_SCAN = 100;
 
 /** A refusal for a tab the lane doesn't have (the page's search drops one before it gets here). */
@@ -115,15 +114,11 @@ function tabOf(lane: CorpusTaskLane, tab: string | undefined): string | null {
 }
 
 /**
- * The bodies a search names, best first, each once: an id of ours or a catalog's (`by_osm_id`,
- * `by_nhd_id`, `by_three_dhp_id`, `by_water_body_key`, each an `eq` on the real value), then the
- * library's own search over every name and id a body is found by (`bodyLibraryRows.search_text`,
- * the *All* scope), at most {@link SEARCH_SCAN} matches. `capped`: the search had more.
+ * The bodies a search names exactly, each once: an id of ours or a catalog's (`by_osm_id`,
+ * `by_nhd_id`, `by_three_dhp_id`, `by_water_body_key`, each an `eq` on the real value) — five point
+ * reads at most, so a pasted id finds its body whether or not its tasks' search text is yet written.
  */
-async function searchBodies(
-  ctx: QueryCtx,
-  q: string,
-): Promise<{ ids: Id<'waterBodies'>[]; capped: boolean }> {
+async function bodiesById(ctx: QueryCtx, q: string): Promise<Id<'waterBodies'>[]> {
   const ids: Id<'waterBodies'>[] = [];
   const add = (id: Id<'waterBodies'> | null | undefined) => {
     if (id && !ids.includes(id)) ids.push(id);
@@ -134,44 +129,66 @@ async function searchBodies(
   add((await bodies.withIndex('by_nhd_id', (r) => r.eq('nhdId', q)).first())?._id);
   add((await bodies.withIndex('by_three_dhp_id', (r) => r.eq('threeDhpId', q)).first())?._id);
   add((await bodies.withIndex('by_water_body_key', (r) => r.eq('waterBodyKey', q)).first())?._id);
-  const found = await ctx.db
-    .query('bodyLibraryRows')
-    .withSearchIndex('search_text', (s) => s.search('searchText', q).eq('scope', SCOPE_ALL))
-    .take(SEARCH_SCAN + 1);
-  for (const row of found.slice(0, SEARCH_SCAN)) add(row.waterBodyId);
-  return { ids, capped: found.length > SEARCH_SCAN };
+  return ids;
 }
 
 /**
- * A search's page: the lane's tasks on the bodies the search names, in the search's order — one
- * bounded read, not a chain (`isDone`), `scanBudgetSpent` when it stopped at a bound with more that
- * might match. A body's tasks are read by `by_body_status` (`eq` on the body), the lane and tab
- * checked in memory; the decided tab lists a body's decisions newest first.
+ * **A search's page, within the lane** — never the whole library first: a task on a common name
+ * ("Mud Pond", 150 bodies of it, two asked about) is found because the search reads only the lane's
+ * own tasks. First the tasks of a body an exact id names (`by_body_status`, the lane and tab checked
+ * in memory, a body's decisions newest first); then the lane's search index over each task's search
+ * text (`corpusTasks.search_text`: both names, every other, the ids — the library's rule), filtered by
+ * the lane, the status and the tab, at most {@link SEARCH_SCAN} matches, best first, a body's
+ * decisions kept together and newest first. One bounded read, not a chain (`isDone`);
+ * `scanBudgetSpent` when it stopped at a bound with more that might match.
  */
 async function searchPage(
   ctx: QueryCtx,
   r: CorpusReader,
   args: { lane: CorpusTaskLane; tab: string | null; q: string; pageSize: number },
 ): Promise<{ rows: CorpusRowView[]; spent: boolean }> {
-  const { ids, capped } = await searchBodies(ctx, args.q);
   const status = args.tab === 'decided' ? ('decided' as const) : ('open' as const);
   const facet = args.tab === 'decided' ? null : args.tab;
-  const rows: CorpusRowView[] = [];
-  for (const waterBodyId of ids) {
-    const tasks = (
-      await ctx.db
-        .query('corpusTasks')
-        .withIndex('by_body_status', (q) => q.eq('waterBodyId', waterBodyId).eq('status', status))
-        .order('desc')
-        .take(TASKS_PER_BODY)
-    )
-      .filter((t) => t.lane === args.lane && (facet === null || t.facet === facet))
-      .sort((a, b) => (b.decidedAt ?? 0) - (a.decidedAt ?? 0));
-    for (const task of tasks) {
-      if (rows.length === args.pageSize) return { rows, spent: true };
-      const row = await rowOf(r, task);
-      if (row !== null) rows.push(row);
+  const inTab = (t: Doc<'corpusTasks'>) =>
+    t.lane === args.lane && t.status === status && (facet === null || t.facet === facet);
+  const newestFirst = (a: Doc<'corpusTasks'>, b: Doc<'corpusTasks'>) =>
+    (b.decidedAt ?? 0) - (a.decidedAt ?? 0);
+
+  const tasks: Doc<'corpusTasks'>[] = [];
+  for (const waterBodyId of await bodiesById(ctx, args.q)) {
+    const own = await ctx.db
+      .query('corpusTasks')
+      .withIndex('by_body_status', (q) => q.eq('waterBodyId', waterBodyId).eq('status', status))
+      .order('desc')
+      .take(TASKS_PER_BODY);
+    tasks.push(...own.filter(inTab).sort(newestFirst));
+  }
+  const found = await ctx.db
+    .query('corpusTasks')
+    .withSearchIndex('search_text', (x) => {
+      const inLane = x.search('searchText', args.q).eq('lane', args.lane).eq('status', status);
+      return facet === null ? inLane : inLane.eq('facet', facet);
+    })
+    .take(SEARCH_SCAN + 1);
+  const capped = found.length > SEARCH_SCAN;
+  // Best first by body, a body's own tasks together (newest decision first), each task once.
+  const byBody = new Map<Id<'waterBodies'>, Doc<'corpusTasks'>[]>();
+  for (const task of found.slice(0, SEARCH_SCAN)) {
+    byBody.set(task.waterBodyId, [...(byBody.get(task.waterBodyId) ?? []), task]);
+  }
+  const seen = new Set(tasks.map((t) => t._id));
+  for (const group of byBody.values()) {
+    for (const task of group.filter(inTab).sort(newestFirst)) {
+      if (!seen.has(task._id)) tasks.push(task);
+      seen.add(task._id);
     }
+  }
+
+  const rows: CorpusRowView[] = [];
+  for (const task of tasks) {
+    if (rows.length === args.pageSize) return { rows, spent: true };
+    const row = await rowOf(r, task);
+    if (row !== null) rows.push(row);
   }
   return { rows, spent: capped };
 }
@@ -181,8 +198,8 @@ async function searchPage(
  * (a facet, never `notRecorded`), or `decided` — the tasks a person decided, newest first, never one
  * that left. Ranked by the task's `rankKey` (the body's prominence), one `.paginate()` on the lane's
  * own index, People's `endCursor` chain: a page read past is pinned to `(cursor, endCursor]`, so a
- * decision on page one moves nothing on page two. `q` searches the lane's bodies instead (by name,
- * id or external id; {@link searchPage}). A task whose body is gone is not drawn.
+ * decision on page one moves nothing on page two. `q` searches the lane's own tasks instead (by
+ * either name, id or external id; {@link searchPage}). A task whose body is gone is not drawn.
  */
 export const listPage = query({
   args: {

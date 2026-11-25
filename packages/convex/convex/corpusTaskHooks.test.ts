@@ -11,7 +11,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { countKeysOf, settleReason, syncBodyTasks } from './lib/corpusTasks';
+import { countKeysOf, planBodyTasks, settleReason, syncBodyTasks } from './lib/corpusTasks';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -82,6 +82,8 @@ type Rec = {
   classRefusals?: { source: 'osm' | 'nhd'; token: string; areaSqM?: number }[];
   absorbedFeatures?: { source: 'osm' | 'nhd'; externalId: string; areaSqM: number }[];
   osmId?: string;
+  nhdId?: string;
+  threeDhpId?: string;
   campaignId?: string;
 };
 
@@ -101,6 +103,8 @@ function record(r: Rec) {
     states: ['VT'],
     externalId: r.externalId,
     osmId: r.osmId ?? r.externalId,
+    ...(r.nhdId !== undefined ? { nhdId: r.nhdId } : {}),
+    ...(r.threeDhpId !== undefined ? { threeDhpId: r.threeDhpId } : {}),
     name: 'The Basin',
     type: 'lakePond' as const,
     polygon: square(x),
@@ -437,6 +441,15 @@ describe('the body’s other writers', () => {
 
   test('the merge leaves the loser’s tasks merged; its unmerge files them again', async () => {
     const { t, mod, survivor, loser } = await two();
+    // The loser's alias goes to the survivor with the merge, and back with the unmerge: the
+    // survivor's tasks' search text follows it both ways.
+    await mod.as.mutation(api.waterBodies.setAliases, {
+      waterBodyId: loser,
+      aliases: ['Old Mill'],
+    });
+    const survivorTexts = async () =>
+      (await openOf(t, survivor)).map((x) => (x.searchText ?? '').includes('Old Mill'));
+    expect(await survivorTexts()).toEqual([false, false]);
     const merged = await mod.as.mutation(api.waterBodies.merge, {
       survivorId: survivor,
       loserId: loser,
@@ -445,10 +458,12 @@ describe('the body’s other writers', () => {
       expect(task).toMatchObject({ status: 'left', leftBecause: 'merged' });
     }
     expect(await openOf(t, survivor)).toHaveLength(2);
+    expect(await survivorTexts()).toEqual([true, true]);
     await expectCountsTally(t);
     vi.useFakeTimers();
     await mod.as.mutation(api.undo.run, { actionId: merged.actionId, reason: 'Not the same lake' });
     await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await survivorTexts()).toEqual([false, false]);
     expect((await openOf(t, loser)).map((x) => x.lane).sort()).toEqual([
       'classConflicts',
       'nameConflicts',
@@ -513,6 +528,44 @@ describe('the body’s other writers', () => {
     // The clear puts the catalogs' first name back, and the tab with it.
     await mod.as.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: id, name: null });
     expect(await facet()).toBe('qualifier');
+    await expectCountsTally(t);
+  });
+
+  test('a rename, an alias or an id written refreshes the tasks’ search text; the lane finds it', async () => {
+    const { t, mod, survivor: id } = await two();
+    const texts = async () => (await openOf(t, id)).map((x) => x.searchText ?? '');
+    const find = async (q: string) =>
+      (await mod.as.query(api.corpusTasks.listPage, { lane: 'nameConflicts', q })).rows.map(
+        (r) => r.body.id,
+      );
+    // The import wrote every field the text is built from: nothing for a sync to refresh.
+    const drift = () => t.run((ctx) => planBodyTasks(ctx, id));
+    expect((await drift()).refresh).toEqual([]);
+    expect(await find('Hidden Cove')).toEqual([]);
+
+    await mod.as.mutation(api.waterBodies.setAliases, {
+      waterBodyId: id,
+      aliases: ['Hidden Cove'],
+    });
+    for (const text of await texts()) expect(text).toContain('Hidden Cove');
+    expect(await find('Hidden Cove')).toEqual([id]);
+
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, {
+      waterBodyId: id,
+      name: 'Lake Auburn',
+    });
+    for (const text of await texts()) expect(text.split('\n')[0]).toBe('Lake Auburn');
+
+    await t.mutation(internal.waterBodies.importReconciliation, {
+      matches: [{ key: id, nhdId: 'nhd-reconciled-77' }],
+    });
+    for (const text of await texts()) expect(text).toContain('nhd-reconciled-77');
+    expect((await drift()).refresh).toEqual([]);
+
+    // A campaign asserting a new id on the patch path: the sync it hands the fields to has it.
+    await load(t, [{ ...BOTH, threeDhpId: '3dhp-asserted-5' }]);
+    for (const text of await texts()) expect(text).toContain('3dhp-asserted-5');
+    expect((await drift()).refresh).toEqual([]);
     await expectCountsTally(t);
   });
 

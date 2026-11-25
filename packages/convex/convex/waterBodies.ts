@@ -1008,6 +1008,8 @@ export const importCanonical = internalMutation({
             ...classClaimFields(item),
             ...scores,
             ...mergeFields(item, honored),
+            // The ids the patch asserted: a task's search text carries them.
+            ...assertedCatalogIds(item),
           },
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
@@ -1063,6 +1065,7 @@ export const importCanonical = internalMutation({
         // campaign (A07b). Inserting dormant would have made every fixture-seeded test body invisible
         // and every new-region import a season of dead map; the rollover is the honest clock.
         const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM, active: true });
+        const waterBodyKey = `wb_${crypto.randomUUID()}`;
         const id = await ctx.db.insert('waterBodies', {
           ...nameFields(undefined, item),
           type: item.type,
@@ -1076,7 +1079,7 @@ export const importCanonical = internalMutation({
           // backfill the rows that predate the field; a body created after it should not need that
           // pass to have run, or the corpus acquires a second class of row whose tile stamp is
           // pending. Same `wb_` prefix and opaque UUID (D93).
-          waterBodyKey: `wb_${crypto.randomUUID()}`,
+          waterBodyKey,
           // Identity alongside the key. Set here so a fresh import needs no backfill to be
           // reconcilable, and so the day `externalId` stops being an OSM id, this still is one.
           ...catalogIds(item),
@@ -1105,6 +1108,10 @@ export const importCanonical = internalMutation({
             ...classClaimFields(item),
             ...scores,
             ...mergeFields(item),
+            // Its ids, as inserted: a task's search text carries them.
+            externalId: item.externalId,
+            waterBodyKey,
+            ...catalogIds(item),
           },
         });
         await syncWaterBodyCells(ctx, id, {
@@ -1485,6 +1492,8 @@ export const importReconciliation = internalMutation({
         continue;
       }
       await ctx.db.patch(key, { nhdId });
+      // A task's search text carries the body's ids.
+      await syncBodyTasks(ctx, key, { body: { ...body, nhdId } });
       idWritten++;
     }
 
@@ -1723,7 +1732,10 @@ export const backfillWaterBodyKeys = internalMutation({
         alreadySet++;
         continue;
       }
-      await ctx.db.patch(body._id, { waterBodyKey: `wb_${crypto.randomUUID()}` });
+      const waterBodyKey = `wb_${crypto.randomUUID()}`;
+      await ctx.db.patch(body._id, { waterBodyKey });
+      // A task's search text carries the body's ids.
+      await syncBodyTasks(ctx, body._id, { body: { ...body, waterBodyKey } });
       minted++;
     }
     return {
@@ -5284,6 +5296,10 @@ export async function setAliasesImpl(
   await ctx.db.patch(waterBodyId, {
     moderatorAliases: next.length > 0 ? next : undefined,
     searchText: bodySearchTextFor({ ...body, moderatorAliases: next }),
+  });
+  // A task's search text carries every name the body is found by.
+  await syncBodyTasks(ctx, waterBodyId, {
+    body: { ...body, moderatorAliases: next.length > 0 ? next : undefined },
   });
   await writeAudit(ctx, {
     actorId: actor._id,

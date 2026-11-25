@@ -5,8 +5,8 @@
  *
  * - **A body's tasks against its fields** — the writer's own rule, `planBodyTasks`: an open task
  *   whose question is gone (or a second one on its key), a live question with no open task, a task
- *   whose tab or rank its body's facts have moved. Fixed by the writer's sync, which is what any hook
- *   would have written.
+ *   whose tab, rank or search text its body's facts have moved. Fixed by the writer's sync, which is
+ *   what any hook would have written.
  * - **A lane's counts against its tasks**: every `open:<lane>` and `open:<lane>:<facet>` row equal to
  *   the tally of the lane's open tasks, and none left standing for a tab with none. Fixed by writing
  *   the tally.
@@ -23,6 +23,7 @@ import { countKeysOf, planBodyTasks, syncBodyTasks } from './corpusTasks';
 export type CorpusDriftKind =
   | 'task_without_question'
   | 'question_without_task'
+  /** A task's tab, rank or search text behind its body's facts. */
   | 'stale_facet'
   | 'counts';
 

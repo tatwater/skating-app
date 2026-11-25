@@ -235,8 +235,24 @@ export function aliasesOf(
   return bodyAliasesFor(body as BodyNames);
 }
 
+/** The fields a body's search text is built from: its names and every id it is found by. */
+export type BodySearchFields = Pick<Doc<'waterBodies'>, '_id' | 'name'> &
+  Partial<
+    Pick<
+      Doc<'waterBodies'>,
+      | 'nameClaims'
+      | 'moderatorAliases'
+      | 'waterBodyKey'
+      | 'externalId'
+      | 'osmId'
+      | 'nhdId'
+      | 'threeDhpId'
+      | 'gnisId'
+    >
+  >;
+
 /** Every id a body is found by: ours, its key, and each catalog's. */
-export function idsOf(body: Doc<'waterBodies'>): string[] {
+export function idsOf(body: BodySearchFields): string[] {
   return [
     body._id,
     body.waterBodyKey,
@@ -246,6 +262,16 @@ export function idsOf(body: Doc<'waterBodies'>): string[] {
     body.threeDhpId,
     body.gnisId,
   ].filter((id): id is string => id !== undefined && id !== '');
+}
+
+/**
+ * **What a body is found by, as one search string** — its shown name, every other name it goes by
+ * ({@link aliasesOf}) and every id ({@link idsOf}). One rule for the library's rows and the Corpus
+ * tasks' (`lib/corpusTasks.ts`), so a lane's search finds a task by exactly what the library finds
+ * its body by.
+ */
+export function bodyLibrarySearchText(body: BodySearchFields): string {
+  return librarySearchText(body.name, aliasesOf(body), idsOf(body));
 }
 
 /** Awaiting enrichment: activated, and an enrichment pass hasn't given it elevation, wind or depth. */
@@ -301,7 +327,7 @@ export async function libraryFieldsFor(
     name: body.name,
     nameKey: nameSortKey(body.name),
     aliases,
-    searchText: librarySearchText(body.name, aliases, idsOf(body)),
+    searchText: bodyLibrarySearchText(body),
     bodyClass: body.type,
     classKey: waterBodyClassLabel(body.type).toLocaleLowerCase('en-US'),
     states,

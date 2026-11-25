@@ -41,7 +41,7 @@ import {
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
-import { queueLibraryRefresh } from './bodyLibrary';
+import { bodyLibrarySearchText, queueLibraryRefresh } from './bodyLibrary';
 
 // ── The vocabulary ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -74,7 +74,9 @@ export function taskKeyOf(reason: CorpusTaskReason, waterBodyId: Id<'waterBodies
 
 /**
  * The fields of a body its tasks are read from — all a sync needs, so a writer can hand over what it
- * just wrote without the outline (a body is up to 1 MiB).
+ * just wrote without the outline (a body is up to 1 MiB). A writer that hands one over hands **every**
+ * field it has, its ids and aliases included: a task's search text is built from them, and one
+ * missing here would be written missing, then put back by the drift repair.
  */
 export type TaskBody = Pick<Doc<'waterBodies'>, 'name' | 'type'> &
   Partial<
@@ -87,6 +89,13 @@ export type TaskBody = Pick<Doc<'waterBodies'>, 'name' | 'type'> &
       | 'mergedIntoId'
       | 'dedupStatus'
       | 'removedAt'
+      | 'moderatorAliases'
+      | 'waterBodyKey'
+      | 'externalId'
+      | 'osmId'
+      | 'nhdId'
+      | 'threeDhpId'
+      | 'gnisId'
     >
   >;
 
@@ -110,12 +119,21 @@ export function liveReasons(body: TaskBody | null): Set<CorpusTaskReason> {
   return new Set((body.reviewReasons ?? []).filter(isTaskReason));
 }
 
-/** The fields a task takes from its body: its tab (core's `facetOf`) and its rank (prominence first). */
+/** What a task takes from its body, and a sync keeps fresh. */
+export type TaskFields = { facet: string; rankKey: number; searchText: string };
+
+/**
+ * The fields a task takes from its body: its tab (core's `facetOf`), its rank (prominence first),
+ * and its search text — what the library finds the body by (`bodyLibrarySearchText`: both names,
+ * every other, its ids), so a lane's search reads the lane's own tasks.
+ */
 export function taskFieldsOf(
   lane: CorpusTaskLane,
-  body: Pick<Doc<'waterBodies'>, 'name' | 'type' | 'nameClaims' | 'classClaims' | 'displayScore'>,
-): { facet: string; rankKey: number } {
+  waterBodyId: Id<'waterBodies'>,
+  body: TaskBody,
+): TaskFields {
   return {
+    searchText: bodyLibrarySearchText({ ...body, _id: waterBodyId }),
     facet: facetOf(lane, {
       name: body.name,
       type: body.type,
@@ -290,8 +308,8 @@ export async function leaveTask(
 /**
  * **Files, refreshes or leaves the body's 6a tasks from its stored `reviewReasons`.** Idempotent: a
  * second call with nothing changed writes nothing. Each live question gets its one open task (filed
- * when missing; its facet and rank refreshed when the body's facts moved them); each open task
- * whose question is gone leaves — `deleted`, `merged` or `removed` when the body went, else
+ * when missing; its facet, rank and search text refreshed when the body's facts moved them); each
+ * open task whose question is gone leaves — `deleted`, `merged` or `removed` when the body went, else
  * `notAsserted` (the campaign stopped raising it). A second open task on one key (drift) leaves too.
  *
  * Call it after the write that changed the body. `opts.body` is the body as the caller just wrote
@@ -331,8 +349,8 @@ export async function syncBodyTasks(
 /** What a sync would write: the tasks to leave, to refresh, and the questions to file. */
 export type BodyTaskPlan = {
   leave: { task: Doc<'corpusTasks'>; because: CorpusTaskLeftReason }[];
-  refresh: { task: Doc<'corpusTasks'>; fields: { facet: string; rankKey: number } }[];
-  file: { reason: CorpusTaskReason; fields: { facet: string; rankKey: number } }[];
+  refresh: { task: Doc<'corpusTasks'>; fields: TaskFields }[];
+  file: { reason: CorpusTaskReason; fields: TaskFields }[];
 };
 
 /**
@@ -357,14 +375,22 @@ export async function planBodyTasks(
       continue;
     }
     held.add(reason);
-    const fields = taskFieldsOf(task.lane, body);
-    if (fields.facet === task.facet && fields.rankKey === task.rankKey) continue;
+    const fields = taskFieldsOf(task.lane, waterBodyId, body);
+    // A task filed before it carried a search text has none: refreshed, so the search finds it.
+    const same =
+      fields.facet === task.facet &&
+      fields.rankKey === task.rankKey &&
+      fields.searchText === task.searchText;
+    if (same) continue;
     plan.refresh.push({ task, fields });
   }
   if (body === null) return plan;
   for (const reason of CORPUS_TASK_REASONS) {
     if (!live.has(reason) || held.has(reason)) continue;
-    plan.file.push({ reason, fields: taskFieldsOf(CORPUS_REASON_LANE[reason], body) });
+    plan.file.push({
+      reason,
+      fields: taskFieldsOf(CORPUS_REASON_LANE[reason], waterBodyId, body),
+    });
   }
   return plan;
 }
@@ -529,7 +555,7 @@ export async function reopenTask(
   await queueLibraryRefresh(ctx, [body._id], now);
   const reopened = {
     status: 'open' as const,
-    ...taskFieldsOf(task.lane, body),
+    ...taskFieldsOf(task.lane, body._id, body),
     decidedAt: undefined,
     decidedByUserId: undefined,
     decision: undefined,

@@ -658,7 +658,13 @@ describe('undo: overtaken', () => {
 
     expect((await bodyOf(t, bodyId))?.name).toBe('The Basin');
     expect((await t.run((ctx) => ctx.db.get(task._id)))?.status).toBe('decided');
-    expect(await taskOf(t, bodyId, 'name-conflict')).toEqual(asked);
+    // The asked task is the same open question; only its search text follows the name back.
+    const after = await taskOf(t, bodyId, 'name-conflict');
+    const { searchText, refreshedAt, ...rest } = after;
+    const { searchText: _was, refreshedAt: _at, ...askedRest } = asked;
+    expect(rest).toEqual(askedRest);
+    expect(searchText?.split('\n')[0]).toBe('The Basin');
+    expect(refreshedAt).toBeGreaterThanOrEqual(asked.refreshedAt);
   });
 
   test('a later write on the body overtakes a decision, as any row is overtaken', async () => {

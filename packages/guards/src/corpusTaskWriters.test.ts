@@ -9,8 +9,10 @@
  *
  * - an `insert(…)`, `patch(…)` or `replace(…)` whose text names `reviewReasons`, `reviewReason` or
  *   `reviewSettled`, and every `...mergeFields(` spread (the import's: it carries all three);
- * - a `patch(…)` or `replace(…)` whose text names `nameClaims`: a body's names, which a name
- *   conflict's tab is read from (an insert is a new body, whose reasons the first clause sees);
+ * - a `patch(…)` or `replace(…)` whose text names `nameClaims`, `moderatorAliases` or one of a body's
+ *   ids (`waterBodyKey`, `osmId`, `nhdId`, `threeDhpId`, `gnisId`): what a name conflict's tab and
+ *   every task's search text are read from (an insert is a new body, whose reasons the first clause
+ *   sees);
  * - a delete of a `waterBodies` row: a `db.delete(` or a `.delete('waterBodies'` in a function that
  *   names the `'waterBodies'` table by its literal (a type argument, `Doc<'waterBodies'>`, doesn't
  *   count) —
@@ -26,7 +28,8 @@
  * which end or revive its questions through `mergedIntoId`, `removedAt` and `dedupStatus` rather
  * than the reason fields; a function nested inside another's body, judged by its top-level function's
  * text. Those found by reading are hooked, each with its test (`corpusTaskHooks.test.ts`):
- * `mergeBodyInto`, `unmerge.ts`' `restoreBodies`, `removeBodyImpl`, `restoreBodyImpl`. The drift
+ * `mergeBodyInto`, `unmerge.ts`' `restoreBodies` (the loser's reasons, and the survivor's aliases,
+ * which it patches through a variable), `removeBodyImpl`, `restoreBodyImpl`. The drift
  * repair (`corpusTaskJobs:repair`, the open tasks and a lap over every body with a reason) is the net
  * for anything else.
  */
@@ -43,6 +46,11 @@ const SOURCE_WRITERS: Record<string, string> = {
     'the import: reasons asserted, dropped, held or asked again (D305), insert and patch',
   'waterBodies.ts#setWaterBodyNameImpl':
     'a moderator’s name pick or clear: the shown name and its claims, a name conflict’s tab',
+  'waterBodies.ts#setAliasesImpl': 'a moderator’s aliases: names a task’s search text carries',
+  'waterBodies.ts#mergeBodyInto':
+    'the merge: the loser’s tasks leave, the survivor’s carry the aliases it took',
+  'waterBodies.ts#importReconciliation': 'an NHD id written: an id a task’s search text carries',
+  'waterBodies.ts#backfillWaterBodyKeys': 'a key minted: an id a task’s search text carries',
 };
 
 /** Functions that delete a `waterBodies` row: each calls the writer… */
@@ -64,8 +72,8 @@ const DELETE_NOT_BODIES: Record<string, string> = {
 
 const ENTRY = /\b(syncBodyTasks|leaveBodyTasks|leaveTask|settleReason|reopenTask)\(/;
 const SOURCE_FIELD = /\b(reviewReasons|reviewReason|reviewSettled)\b/;
-/** A body's names, which a task's tab is read from: watched on a patch or replace. */
-const NAME_FIELD = /\bnameClaims\b/;
+/** A body's names and ids, which a task's tab and search text are read from: on a patch or replace. */
+const NAME_FIELD = /\b(nameClaims|moderatorAliases|waterBodyKey|osmId|nhdId|threeDhpId|gnisId)\b/;
 const BODY_TABLE = /(?<!(?:Doc|Id|TableNames)<)'waterBodies'/;
 const BODY_DELETE = /\bdb\.delete\(|\.delete\('waterBodies'/;
 
