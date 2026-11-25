@@ -452,3 +452,153 @@ describe('the drift repair', () => {
     });
   });
 });
+
+describe('the daily retry', () => {
+  /** A failure row written raw: parked at `parkedAt` unless that is omitted. */
+  async function failure(
+    t: T,
+    job: 'corpusTaskBackfill' | 'corpusTaskRepair',
+    key: string,
+    parkedAt?: number,
+  ) {
+    await t.run((ctx) =>
+      ctx.db.insert('jobFailures', {
+        job,
+        key,
+        errorClass: 'Error',
+        attempts: 3,
+        firstFailedAt: 1,
+        lastFailedAt: 1,
+        ...(parkedAt !== undefined ? { parkedAt } : {}),
+      }),
+    );
+  }
+  const failures = (t: T) => t.run((ctx) => ctx.db.query('jobFailures').collect());
+  const pending = (t: T) => t.run((ctx) => corpusTasksPending(ctx));
+  /**
+   * One daily run. Its cutoff is past every row written so far, or — for a row that fails again, and
+   * is re-stamped by the run's own clock — the raw rows' clock (`RAW`), so it is tried once a run.
+   */
+  const RAW = 1000;
+  const retryDaily = (t: T, cutoff = Date.now() + 1) =>
+    t.mutation(internal.recurringJobs.retryParkedDaily, { cutoff });
+
+  test('a body the backfill parked is synced and cleared, and the lanes stop saying pending', async () => {
+    const t = harness();
+    const ids = await seedRaw(t);
+    const poisoned = ids[1] as string;
+    const real = recurringWork.asItem;
+    const spy = vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      if (key === poisoned) throw new Error('too heavy');
+      return real(key, work);
+    });
+    await runToDone(t);
+    // Two more failed retries park it; the repair's retry then steps past it.
+    await t.mutation(internal.corpusTaskJobs.repair, {});
+    await t.mutation(internal.corpusTaskJobs.repair, {});
+    const parked = (await failures(t)).filter((f) => f.job === 'corpusTaskBackfill');
+    expect(parked.map((f) => [f.key, f.parkedAt !== undefined])).toEqual([[poisoned, true]]);
+    expect((await t.mutation(internal.corpusTaskJobs.repair, {})).retried).toBe(0);
+    expect(await pending(t)).toBe(true);
+    // A fix deployed: the daily retry files its questions, and nothing is owed.
+    spy.mockRestore();
+    expect((await retryDaily(t)).freed).toBeGreaterThanOrEqual(1);
+    expect((await failures(t)).filter((f) => f.job === 'corpusTaskBackfill')).toEqual([]);
+    expect((await snapshot(t)).tasks).toHaveLength(5);
+    expect(await pending(t)).toBe(false);
+    await expectCountsTally(t);
+  });
+
+  test('a parked body since deleted, or a key that names no body, is cleared', async () => {
+    const t = harness();
+    const ids = await seedRaw(t);
+    await runToDone(t);
+    const gone = ids[0] as Id<'waterBodies'>;
+    await t.run((ctx) => ctx.db.delete(gone));
+    await failure(t, 'corpusTaskBackfill', gone, 1);
+    await failure(t, 'corpusTaskBackfill', 'not-an-id', 2);
+    expect(await pending(t)).toBe(true);
+    expect(await retryDaily(t)).toMatchObject({ freed: 2, failed: 0, more: false });
+    expect(await failures(t)).toEqual([]);
+    expect(await pending(t)).toBe(false);
+    // The deleted body's open task left with it.
+    const tasks = await t.run((ctx) => ctx.db.query('corpusTasks').collect());
+    expect(tasks.filter((x) => x.waterBodyId === gone).map((x) => x.status)).toEqual(['left']);
+    await expectCountsTally(t);
+  });
+
+  test('a body that still fails stays parked — re-stamped as just tried — and the lanes stay pending', async () => {
+    const t = harness();
+    const ids = await seedRaw(t);
+    await runToDone(t);
+    const poisoned = ids[2] as string;
+    await failure(t, 'corpusTaskBackfill', poisoned, 1);
+    const real = recurringWork.asItem;
+    vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      if (key === poisoned) throw new Error('too heavy');
+      return real(key, work);
+    });
+    expect(await retryDaily(t, RAW)).toMatchObject({ freed: 0, failed: 1, more: false });
+    const [row] = await failures(t);
+    expect(row).toMatchObject({ job: 'corpusTaskBackfill', key: poisoned, attempts: 4 });
+    expect(row?.parkedAt).toBeGreaterThan(1);
+    expect(row?.retriedAt).toBe(row?.parkedAt);
+    expect(await pending(t)).toBe(true);
+  });
+
+  test("the repair's failures are retried too: a body that lost its question, a lane's counts, and an unknown key are cleared", async () => {
+    const t = harness();
+    const ids = await seedRaw(t);
+    await runToDone(t);
+    // A body whose repair failed, then whose question went: the walk never meets it again.
+    const answered = ids[4] as Id<'waterBodies'>;
+    await t.run((ctx) =>
+      ctx.db.patch(answered, { reviewReasons: undefined, reviewReason: undefined }),
+    );
+    await failure(t, 'corpusTaskRepair', answered);
+    await failure(t, 'corpusTaskRepair', 'counts:nameConflicts', 1);
+    await failure(t, 'corpusTaskRepair', 'counts:noSuchLane', 2);
+    await t.run(async (ctx) => {
+      const row = await ctx.db
+        .query('corpusTaskCounts')
+        .withIndex('by_key', (q) => q.eq('key', 'open:nameConflicts'))
+        .first();
+      if (row) await ctx.db.patch(row._id, { count: row.count + 7 });
+    });
+    expect(await retryDaily(t)).toMatchObject({ freed: 3, failed: 0, more: false });
+    expect(await failures(t)).toEqual([]);
+    await expectCountsTally(t);
+  });
+
+  test("a repair failure that fails again parks by the rule; a lane's counts wait for a fresh transaction", async () => {
+    const t = harness();
+    const ids = await seedRaw(t);
+    await runToDone(t);
+    const poisoned = ids[3] as string;
+    await failure(t, 'corpusTaskRepair', poisoned);
+    const real = recurringWork.asItem;
+    vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      if (key === poisoned) throw new Error('too heavy');
+      return real(key, work);
+    });
+    expect(await retryDaily(t, RAW)).toMatchObject({ freed: 0, failed: 1 });
+    const [row] = await failures(t);
+    expect(row).toMatchObject({ key: poisoned, attempts: 4 });
+    expect(row?.parkedAt).toBeGreaterThan(1);
+    vi.restoreAllMocks();
+    // A lane's counts the transaction can't afford: the run hands itself on, at the same place.
+    await t.run(async (ctx) => {
+      for (const f of await ctx.db.query('jobFailures').collect()) await ctx.db.delete(f._id);
+    });
+    await failure(t, 'corpusTaskRepair', 'counts:classConflicts', 1);
+    const realAffords = recurringWork.affords;
+    vi.spyOn(recurringWork, 'affords').mockImplementation(async (ctx, budget) =>
+      budget.limits.documentsRead > 5000 ? false : realAffords(ctx, budget),
+    );
+    expect(await retryDaily(t, RAW)).toEqual({ freed: 0, failed: 0, more: true });
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    expect(scheduled.at(-1)?.name).toContain('retryParkedDaily');
+    expect(scheduled.at(-1)?.args[0]).toMatchObject({ at: 5, tried: 0 });
+    expect(await failures(t)).toHaveLength(1);
+  });
+});

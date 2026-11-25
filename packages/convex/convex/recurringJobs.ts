@@ -25,8 +25,11 @@
  * | reset lapsed suspensions | a person | on the profile, mirrored | out of the due range; retried daily (`peopleJobs.retryLapsedDaily`) |
  * | reconcile clerk ban locks | a lock it repaired, or the run | `jobFailures` | never parked: a repair is counted for a week; an unfinished run until one finishes |
  * | the Inbox's backfill (by hand) | a source row | `jobFailures` | the drift repair retries it while failing; once parked, retried daily — the Inbox says `pending` until none is owed |
+ * | the Corpus tasks' backfill (by hand) | a body | `jobFailures` | the same: the drift repair retries it while failing; once parked, retried daily — the lanes say `pending` until none is owed |
+ * | repair corpus tasks drift | a body, or a lane's counts | `jobFailures` | its walk retries it while the body has a question; failing or parked, retried daily too — a body that left the walk has no other |
  */
 
+import { CORPUS_TASK_LANES } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc } from './_generated/dataModel';
@@ -37,12 +40,14 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { COUNT_LIMITS } from './corpusTaskJobs';
 import { recordPromptFailure } from './gpsActivities';
 import { requireCapability } from './lib/auth';
 import { FAILING_JOBS, type FailingJob } from './lib/enums';
 import { traced } from './lib/readBudget';
 import {
   affords,
+  clearFailure,
   failedSinceAt,
   forgetFailuresBefore,
   forgetGoneMirrors,
@@ -132,8 +137,21 @@ const RETRY_ITEM: ItemBudget = {
   reserve: { bytesRead: 1 * MiB, documentsRead: 200, databaseQueries: 100, documentsWritten: 100 },
 };
 
-/** The jobs the daily retry walks, in order. */
-const DAILY_JOBS = ['prompt', 'card', 'standing', 'inbox'] as const;
+/** What retrying one lane's Corpus task counts may spend: its own walk's limits (`COUNT_LIMITS`). */
+const RETRY_COUNTS: ItemBudget = { limits: COUNT_LIMITS, reserve: RETRY_ITEM.reserve };
+
+/**
+ * The jobs the daily retry walks, in order. Appended to, never reordered: a run's continuation
+ * carries its place as an index (`at`).
+ */
+const DAILY_JOBS = [
+  'prompt',
+  'card',
+  'standing',
+  'inbox',
+  'corpusBackfill',
+  'corpusRepair',
+] as const;
 
 /**
  * **Parking heals itself** (D258): once a day, a few parked pieces of each job — a skater's prompt, a
@@ -145,7 +163,9 @@ const DAILY_JOBS = ['prompt', 'card', 'standing', 'inbox'] as const;
  * day with nobody remembering to.
  *
  * The rollover's bodies are retried whether parked or not: its walk runs once a season, so a body it
- * could not decide has no next walk — the daily retry is its only second attempt.
+ * could not decide has no next walk — the daily retry is its only second attempt. The Corpus tasks'
+ * repair is retried the same way, for the same reason: its walk meets only bodies with a question,
+ * so a body that failed and then lost its question (or its row) is never met again.
  */
 export const retryParkedDaily = internalMutation({
   args: {
@@ -179,6 +199,15 @@ export const retryParkedDaily = internalMutation({
             now,
           );
           if (outcome === 'none') break;
+          if (outcome === 'defer') {
+            // A lane's counts need more than this transaction has left: the next one starts fresh.
+            await ctx.scheduler.runAfter(0, internal.recurringJobs.retryParkedDaily, {
+              cutoff,
+              at,
+              tried,
+            });
+            return { freed, failed, more: true };
+          }
           tried++;
           if (outcome === 'freed') freed++;
           else failed++;
@@ -205,13 +234,16 @@ export const retryParkedDaily = internalMutation({
     }),
 });
 
-/** Try the least recently tried parked piece of one job; `none` when it has none left this run. */
+/**
+ * Try the least recently tried parked piece of one job; `none` when it has none left this run, `defer`
+ * when the piece needs a fresh transaction.
+ */
 async function retryOne(
   ctx: MutationCtx,
   job: (typeof DAILY_JOBS)[number],
   cutoff: number,
   now: number,
-): Promise<'freed' | 'failed' | 'none'> {
+): Promise<'freed' | 'failed' | 'none' | 'defer'> {
   if (job === 'prompt') {
     const row = await ctx.db
       .query('gpsActivities')
@@ -268,9 +300,11 @@ async function retryOne(
     });
     return 'failed';
   }
+  if (job === 'corpusBackfill') return retryCorpusBackfill(ctx, cutoff, now);
+  if (job === 'corpusRepair') return retryCorpusRepair(ctx, cutoff, now);
   // The rollover's bodies: any failing one, least recently failed first (parked ones by when they
   // were last tried). Only what failed before the run began.
-  const row = await nextStandingRetry(ctx, cutoff);
+  const row = await nextFailingRetry(ctx, 'standingRollover', cutoff);
   if (!row) return 'none';
   const one = await runIsolated<unknown>(
     ctx,
@@ -286,22 +320,103 @@ async function retryOne(
   return 'failed';
 }
 
-/** The next rollover body to retry: failing and not parked first, then parked — each before `cutoff`. */
-async function nextStandingRetry(
+/**
+ * A body the Corpus tasks' backfill parked (B01-6a): the drift repair retries only what is still
+ * failing, and `corpusTasksPending` reads true while any backfill failure is owed — so a parked one
+ * would leave the lanes `pending` for good. Synced as the backfill syncs it; a key that names no body
+ * is no question, and a body since deleted syncs to nothing (any task it left open leaves with it):
+ * either way the row is cleared.
+ */
+async function retryCorpusBackfill(
+  ctx: MutationCtx,
+  cutoff: number,
+  now: number,
+): Promise<'freed' | 'failed' | 'none'> {
+  const row = await ctx.db
+    .query('jobFailures')
+    .withIndex('by_job_parked', (q) =>
+      q.eq('job', 'corpusTaskBackfill').gt('parkedAt', 0).lt('parkedAt', cutoff),
+    )
+    .first();
+  if (!row) return 'none';
+  const id = ctx.db.normalizeId('waterBodies', row.key);
+  const one =
+    id === null
+      ? ({ ok: true } as const)
+      : await runIsolated<unknown>(
+          ctx,
+          internal.corpusTaskJobs.syncOne,
+          { waterBodyId: id },
+          RETRY_ITEM.limits,
+        );
+  if (one.ok) {
+    await clearFailure(ctx, 'corpusTaskBackfill', row.key);
+    return 'freed';
+  }
+  await recordFailure(ctx, 'corpusTaskBackfill', row.key, one.errorClass, now, {
+    byDailyRetry: true,
+  });
+  return 'failed';
+}
+
+/**
+ * A piece the Corpus tasks' drift repair failed: failing first, then parked, each from before the
+ * run. Its walk retries a body only while it carries a question (or an open task), so one that failed
+ * and then lost both — answered, or deleted — would sit on Machinery for good. A body is repaired as
+ * the walk repairs it, a lane's counts recounted under their own limits; a key that names neither is
+ * cleared.
+ */
+async function retryCorpusRepair(
+  ctx: MutationCtx,
+  cutoff: number,
+  now: number,
+): Promise<'freed' | 'failed' | 'none' | 'defer'> {
+  const row = await nextFailingRetry(ctx, 'corpusTaskRepair', cutoff);
+  if (!row) return 'none';
+  let one: { ok: true } | { ok: false; errorClass: string } = { ok: true };
+  const lane = row.key.startsWith('counts:') ? row.key.slice('counts:'.length) : null;
+  const id = lane === null ? ctx.db.normalizeId('waterBodies', row.key) : null;
+  if (lane !== null && (CORPUS_TASK_LANES as readonly string[]).includes(lane)) {
+    if (!(await affords(ctx, RETRY_COUNTS))) return 'defer';
+    one = await runIsolated<number>(
+      ctx,
+      internal.corpusTaskJobs.repairCountsOne,
+      { lane },
+      COUNT_LIMITS,
+    );
+  } else if (id !== null) {
+    one = await runIsolated<unknown>(
+      ctx,
+      internal.corpusTaskJobs.repairOne,
+      { waterBodyId: id },
+      RETRY_ITEM.limits,
+    );
+  }
+  if (one.ok) {
+    await clearFailure(ctx, 'corpusTaskRepair', row.key);
+    return 'freed';
+  }
+  await recordFailure(ctx, 'corpusTaskRepair', row.key, one.errorClass, now, {
+    byDailyRetry: true,
+  });
+  return 'failed';
+}
+
+/** The next piece of `job` to retry: failing and not parked first, then parked — each before `cutoff`. */
+async function nextFailingRetry(
   ctx: QueryCtx,
+  job: 'standingRollover' | 'corpusTaskRepair',
   cutoff: number,
 ): Promise<Doc<'jobFailures'> | null> {
   const failing = await ctx.db
     .query('jobFailures')
-    .withIndex('by_job_parked', (q) => q.eq('job', 'standingRollover').eq('parkedAt', undefined))
+    .withIndex('by_job_parked', (q) => q.eq('job', job).eq('parkedAt', undefined))
     .filter((q) => q.lt(q.field('lastFailedAt'), cutoff))
     .first();
   if (failing) return failing;
   return ctx.db
     .query('jobFailures')
-    .withIndex('by_job_parked', (q) =>
-      q.eq('job', 'standingRollover').gt('parkedAt', 0).lt('parkedAt', cutoff),
-    )
+    .withIndex('by_job_parked', (q) => q.eq('job', job).gt('parkedAt', 0).lt('parkedAt', cutoff))
     .first();
 }
 
@@ -439,7 +554,8 @@ const CRON_OF: Record<FailingJob, string> = {
   // photo file owed a deletion (`lib/photoFiles`, key `file:<id>`) is its row too, whoever owed it —
   // a rotation, a delete, the purge — retried by the watch and by the daily 'sweep photo files'.
   photoRotation: 'rotate or release a photo’s files',
-  // B01-6a: the backfill is run by hand; its failures are retried by the repair's cron.
+  // B01-6a: the backfill is run by hand; its failures are retried by the repair's cron, parked ones
+  // daily. The repair's own are retried by its walk, and daily.
   corpusTaskBackfill: 'repair corpus tasks drift',
   corpusTaskRepair: 'repair corpus tasks drift',
 };
