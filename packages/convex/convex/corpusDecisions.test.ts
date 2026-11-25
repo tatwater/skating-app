@@ -15,8 +15,13 @@ import type { Doc, Id } from './_generated/dataModel';
 import { SHOWN_PICK } from './corpusWrites';
 import { capturingAudit, writeAudit } from './lib/audit';
 import { ALREADY_SHOWN, type CorpusVerb, corpusCan, NOT_A_CATALOG_NAME } from './lib/corpusRules';
-import { syncBodyTasks, TASK_LEFT, taskKeyOf } from './lib/corpusTasks';
-import { SETTLE_ASKED_AGAIN } from './lib/undoHandlersCorpus';
+import { NO_SUCH_TASK, syncBodyTasks, TASK_LEFT, taskKeyOf } from './lib/corpusTasks';
+import {
+  CORPUS_UNDO_HANDLERS,
+  SETTLE_ASKED_AGAIN,
+  SETTLE_NOT_FOUND,
+} from './lib/undoHandlersCorpus';
+import type { UndoWriters } from './lib/undoTypes';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -407,6 +412,29 @@ describe('the rule and the write say the same thing', () => {
     ).rejects.toThrow('This task isn’t a name conflict.');
   });
 
+  test('a task that no longer exists is refused in its words, before the capability, writing nothing', async () => {
+    const t = harness();
+    const member = await seedUser(t, 'member', 'member');
+    const bodyId = await seedBody(t, ['name-conflict', 'class-conflict']);
+    const names = await taskOf(t, bodyId, 'name-conflict');
+    const classes = await taskOf(t, bodyId, 'class-conflict');
+    await t.run(async (ctx) => {
+      await ctx.db.delete(names._id);
+      await ctx.db.delete(classes._id);
+    });
+    // A member, so a capability check that came first would say so instead.
+    await expect(
+      member.as.mutation(api.corpusWrites.decideName, { taskId: names._id, pick: SHOWN_PICK }),
+    ).rejects.toThrow(NO_SUCH_TASK);
+    await expect(
+      member.as.mutation(api.corpusWrites.decideClass, {
+        taskId: classes._id,
+        bodyClass: 'wetland',
+      }),
+    ).rejects.toThrow(NO_SUCH_TASK);
+    expect(await rowsOn(t, bodyId)).toEqual([]);
+  });
+
   test('an open task on a body deleted since says so', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod');
@@ -615,6 +643,48 @@ describe('undo: overtaken', () => {
     );
     expect((await rowsOn(t, bodyId)).map((r) => r.action)).toEqual(['settle_review_reason']);
   });
+
+  test('the run refuses on its own, past a refusal check that let it through, and reopens nothing', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod');
+    const bodyId = await seedBody(t, ['name-conflict']);
+    const task = await taskOf(t, bodyId, 'name-conflict');
+    const { actionId } = await mod.as.mutation(api.corpusWrites.decideName, {
+      taskId: task._id,
+      pick: SHOWN_PICK,
+    });
+    await askAgain(t, bodyId, 'name-conflict');
+    const hand = await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'settle_review_reason',
+        targetType: 'waterbody',
+        targetId: bodyId,
+        reason: 'Settled by a script.',
+        createdAt: Date.now(),
+      }),
+    );
+    const runOn = (id: Id<'moderationActions'>) =>
+      t.run(async (ctx) => {
+        const row = await ctx.db.get(id);
+        const actor = await ctx.db.get(mod.id);
+        await CORPUS_UNDO_HANDLERS.settle_review_reason?.run({
+          ctx,
+          actor: actor as Doc<'profiles'>,
+          row: row as Doc<'moderationActions'>,
+          reason: 'Undone.',
+          writers: {} as UndoWriters,
+        });
+      });
+    // Asked again since: the reopen is overtaken. Written by hand: nothing records it.
+    await expect(runOn(actionId)).rejects.toThrow(SETTLE_ASKED_AGAIN);
+    await expect(runOn(hand)).rejects.toThrow(SETTLE_NOT_FOUND);
+    expect((await t.run((ctx) => ctx.db.get(task._id)))?.status).toBe('decided');
+    expect((await rowsOn(t, bodyId)).map((r) => r.action)).toEqual([
+      'settle_review_reason',
+      'settle_review_reason',
+    ]);
+  });
 });
 
 describe('undo: the offer matches the run', () => {
@@ -633,6 +703,28 @@ describe('undo: the offer matches the run', () => {
       await t.query(internal.moderation.undoOfferForRow, { actorId: mod.id, actionId }),
     ).toEqual({ undoable: false });
     await expect(mod.as.mutation(api.undo.run, { actionId })).rejects.toThrow(SETTLE_ASKED_AGAIN);
+  });
+
+  test('a settle no task records (a row written by hand) is never offered, nor run', async () => {
+    const t = harness();
+    const mod = await seedUser(t, 'mod');
+    const bodyId = await seedBody(t, ['name-conflict']);
+    const actionId = await t.run((ctx) =>
+      ctx.db.insert('moderationActions', {
+        actorId: mod.id,
+        action: 'settle_review_reason',
+        targetType: 'waterbody',
+        targetId: bodyId,
+        reason: 'Settled by a script.',
+        createdAt: Date.now(),
+      }),
+    );
+    expect(
+      await t.query(internal.moderation.undoOfferForRow, { actorId: mod.id, actionId }),
+    ).toEqual({ undoable: false });
+    await expect(mod.as.mutation(api.undo.run, { actionId })).rejects.toThrow(SETTLE_NOT_FOUND);
+    expect((await rowsOn(t, bodyId)).map((r) => r.action)).toEqual(['settle_review_reason']);
+    expect((await taskOf(t, bodyId, 'name-conflict')).status).toBe('open');
   });
 });
 

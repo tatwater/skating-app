@@ -582,6 +582,31 @@ describe('listPage', () => {
     ).toEqual([]);
   });
 
+  test("q on the decided tab lists a body's decisions newest first, a question decided twice in both", async () => {
+    const t = harness();
+    const mod = await person(t, 'Casey Example');
+    const id = await lake(t, { name: 'Echo Pond' });
+    const first = await decide(t, id, mod.id, NOW + 10);
+    // Asked again on new evidence, and decided again.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(id, {
+        reviewReasons: ['name-conflict'],
+        reviewReason: 'name-conflict',
+        nameClaims: [...NAME_CLAIMS, { source: 'gnis', value: 'Basin Pond' }],
+      });
+      await syncBodyTasks(ctx, id, { now: NOW + 20 });
+    });
+    const second = await decide(t, id, mod.id, NOW + 30);
+    const page = await mod.as.query(api.corpusTasks.listPage, {
+      lane: 'nameConflicts',
+      tab: 'decided',
+      q: 'Echo',
+      now: NOW + 40,
+    });
+    expect(page.rows.map((r) => r.taskId)).toEqual([second.taskId, first.taskId]);
+    expect(page.scanBudgetSpent).toBe(false);
+  });
+
   test('q is bounded: past the page or the scan it says scanBudgetSpent', async () => {
     const t = harness();
     const mod = await person(t, 'Casey Example');
