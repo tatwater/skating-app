@@ -961,6 +961,34 @@ longer need.*
 - The founder's answers to the plan's §9 questions, and the boards in its §5 before B04-3
 - The founder's sequencing (2026-11-13): B01 is the focus; the boards and B04's design and build passes wait, designed and built in tandem later. Until then the plan is the running list of skater-side changes the console build finds (its *The running list*)
 
+## Phase B05 — The summer aerial: our own NAIP archive of the region
+⚪ **Scoped** 2026-11-26 · [plan](./phases/B05-summer-aerial.md) · D314 D315
+
+The console's summer aerial asks a USGS service to render every view on demand, so a first look
+takes up to 45 seconds and its flight date often never arrives. The founder chose to own the imagery:
+one raster archive of all seven states, NY to RI, cut from NAIP's own files on Fly and stored in R2,
+seamless across state lines. Each quarter-quad gets the frame his rule picks — leaf-on, newest, a
+0.3 m frame over a newer 0.6 m one within two years, clouds struck by a reviewed list — and a
+sidecar dates it. One entry point builds it whole, by stage or for the cells that changed; a July
+check finds newer summer flights and offers a rebuild, never spending on its own. The maximum zoom
+waits on his call. *An operator opens the aerial on any lake and it is there in a second, with the
+month it was flown.*
+
+#### Deferred
+- ❓ **The maximum zoom** — z18 everywhere or only where the source is 0.3 m → the plan's §8, F-1
+- ⚪ **Color matching across flights** — the low-zoom quilt is accepted in v1 → the plan's §1.3
+- ⚪ **A body-clipped summer photograph for skaters from this archive** — the skater web lost its NAIP reveal in B03-4 → the plan's §8, F-5
+- ⚪ **A console *Rebuild* that launches the build** — Convex can start Fly Machines, but the build's orchestration stays on the laptop until B01's hosted-runner decision → the plan's §3.2
+
+#### Ruled out
+- **A skater panning the region in aerial** — D146: imagery for skaters is clipped to one body
+- **z19** — finer than every source; the head maps overzoom instead
+- **Canada** — NAIP stops 0–7 km past the border
+
+#### Owed
+- The founder's forks (the plan's §8), then the pilot and his go for the full region run (~9 h on Fly)
+- `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, and `NAIP_MANIFEST_URL` on Convex dev, once the archive exists
+
 ## Deferred register
 
 Everything deliberately not done, in one place, with what it waits on — grouped by the blocker, since

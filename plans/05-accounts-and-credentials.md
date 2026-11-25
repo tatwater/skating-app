@@ -42,7 +42,7 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 | Account | For | Dev | Prod | Credential → where it lives | Notes |
 | --- | --- | --- | --- | --- | --- |
 | **Cloudflare** — R2 | every static artifact and raw archive | ✅ | ⬜ no `prod/` key — `upload-r2.sh <file> prod/<dated-key>` per archive, or point prod at the dated `dev/` objects; the custom domain + cache rule are still on `r2.dev` | one R2 API token per script, in gitignored config: `scripts/basemap/RCLONE_SETUP.md`, each `mirror-r2.sh`'s rclone remote, Fly's staged `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET` | buckets: `skating-basemap` (basemap ×2, bathymetry, imagery archive; public `r2.dev` subdomain) · `skating-raw-lake-osm` · `skating-raw-lake-depth` · `skating-raw-wind-climate` |
-| **Fly.io** 💰 ~$5/mo when cutting | the imagery granule box, per-job Machines | ✅ app `skating-imagery`, region `sjc` | — | `FLY_API_TOKEN` local; `R2_*` + `AWS_*` (anonymous Earth Search reads) staged on the app | read the imagery README's *six ways to get this wrong* before any `fly` command; secrets are `--stage`d and stay "Staged" forever, correctly |
+| **Fly.io** 💰 ~$5/mo when cutting | the imagery granule box, per-job Machines | ✅ app `skating-imagery`, region `sjc` | — | `FLY_API_TOKEN` local; `R2_*` + `AWS_*` (anonymous Earth Search reads) staged on the app | read the imagery README's *six ways to get this wrong* before any `fly` command; secrets are `--stage`d and stay "Staged" forever, correctly · Phase B05 (scoped) runs the summer aerial's Machines on the same app in `ams`, beside Planetary Computer's blobs; if its archive's bucket is one the staged R2 token can't write, a token scoped to that bucket is a founder task (B05 §8, G-6) |
 
 ### Data and API keys
 
@@ -58,7 +58,8 @@ Legend: ✅ set up · ⬜ not yet · ❔ unknown · 🚫 deliberately not · �
 
 Sources the pipelines and the app read with no registration, listed so nobody goes looking for one:
 **Open-Meteo** (no key; non-commercial free tier, D158) · **NWS `api.weather.gov`** (a `User-Agent`
-header only) · **AWS Earth Search** (anonymous STAC; Sentinel-2/-1) · **USGS** — 3DEP EPQS, 3DHP
+header only) · **AWS Earth Search** (anonymous STAC; Sentinel-2/-1) · **Microsoft Planetary
+Computer** (anonymous STAC and SAS tokens; NAIP for Phase B05's summer aerial, scoped) · **USGS** — 3DEP EPQS, 3DHP
 live, NAIP, The National Map downloads · **Geofabrik** · **US Census TIGER** · **Natural Earth** ·
 **Protomaps builds** · the state bathymetry portals (MassGIS, Maine GeoLibrary, NH GRANIT, VCGI,
 VT ANR) · **HydroLAKES**, **GLOBathy**, **LAGOS-US** (EDI), **ALSC**, **NYSDEC CSLAP**.
@@ -105,6 +106,7 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `IMAGERY_ARCHIVE_URL` | ⬜ owed — A06i live imagery; the same base as web's `VITE_IMAGERY_ARCHIVE_URL` | ⬜ | no |
 | `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_ENDPOINT` · `R2_BUCKET` | ⬜ owed — A06i lists `frames/` and writes `index/` in `skating-imagery` (`R2_BUCKET` defaults to it) | ⬜ | key id no · secret **yes** |
 | `FLY_API_TOKEN` · `FLY_IMAGE` · `FLY_APP` · `FLY_REGION` | ⬜ owed — A06i spawns cut Machines; `FLY_IMAGE` is the pinned cutter image, `FLY_APP`/`FLY_REGION` default to `skating-imagery`/`sjc` | ⬜ | token **yes** |
+| `NAIP_MANIFEST_URL` | ⬜ planned — Phase B05 (scoped): the public URL of the published summer aerial's manifest, which the July check diffs against; set at publish beside the web's `VITE_NAIP_PMTILES_URL` | ⬜ | no |
 | `CONVEX_CLOUD_URL` · `CONVEX_SITE_URL` | provided by Convex | provided | no |
 
 ### 2b. Mobile — EAS environments (`development`, `preview`, `production`) and local `apps/mobile/.env.local`
@@ -129,6 +131,7 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `CLERK_PUBLISHABLE_KEY` · `CLERK_SECRET_KEY` | server-side (no `VITE_` prefix); secret key **secret** |
 | `VITE_CONVEX_URL` | |
 | `VITE_PMTILES_URL` · `VITE_WORLD_PMTILES_URL` · `VITE_BATHYMETRY_PMTILES_URL` · `VITE_IMAGERY_ARCHIVE_URL` | same values as mobile's |
+| `VITE_NAIP_PMTILES_URL` | ⬜ planned — Phase B05 (scoped): the summer aerial archive's public URL (its `-cells.json` sidecar is derived from it); local `apps/web/.env` in both checkouts and Vercel Preview and Production; web only (mobile has no console); blank ⇒ the layer never mounts |
 | `VITE_SENTRY_DSN` | public |
 | `VITE_POSTHOG_KEY` | public project token (write-only). Unset ⇒ analytics inert — no init, no network (D235) |
 | `VITE_POSTHOG_HOST` | optional override; blank ⇒ `https://us.i.posthog.com`. Only point it at a reverse proxy that strips `Cookie` — same-origin ingestion sends Clerk's session to PostHog (D235) |

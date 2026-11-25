@@ -9401,6 +9401,11 @@ Corpus domain and the aerial was already joining 7a for board 4.3.
 [`phase-B01`](./phases/B01-admin-console.md) *What the build found (B01-7a)*, the register's In30
 and Co15–Co18.
 
+> **Source amended by D314 (2026-11-26, Phase B05, scoped).** The layer's behavior above stands —
+> the rack row, the head map, the dimming, the band. Its source changes, once B05's app PR merges,
+> from `USGSNAIPPlus`'s `exportImage` to our own region-wide NAIP archive, and its date from the
+> identify call to the archive's sidecar.
+
 ## D313 — A lot linked in the console is walked fresh, in the background; B01-6b's placing calls (amends D87, B01)
 
 **Decided (2026-11-25, founder; the governor's rulings on what he didn't spell out are marked).**
@@ -9432,3 +9437,66 @@ and Co15–Co18.
 **Why.** The founder's answers to B01-6b's forks (the phase doc's *B01-6b, the calls*).
 
 **Related:** D87, D202, D226, D299.
+
+## D314 — We own the summer aerial: one region-wide NAIP archive, rebuilt on demand and offered each July (B05)
+
+**Decided (2026-11-26, founder).** In his words: *"I'm convinced – I want to own the imagery. Let's
+build it"*; on its shape, *"What if we got the whole 5-state region (go ahead and get CT/RI while
+you're at it, just to complete the region) in one go, and then render from our own tiles whatever
+each lake needs? Rather than storing separate satellite layers for each of the 25,000 lakes?"* and
+*"I want the user to be able to render the layer seamlessly across state lines as they pan, or if
+they zoom in on a lake that straddles a line"*; on upkeep, *"could we run an every-July cron to
+reassess the available imagery and offer to re-build this layer if it notices a newer suitable pass
+for any of our region?"* and *"This should also become part of a standard machinery pipeline that
+can be called on demand or via a cron!"*
+
+- **One archive of the region** — NY, VT, NH, ME and MA, plus CT and RI (*"better to grab all the
+  data now and we can crop it later"*): one raster PMTiles cut from NAIP's own COGs (Microsoft
+  Planetary Computer, anonymous), frames picked per quarter-quad by D315, with a manifest and a
+  per-cell sidecar that dates every cell. Built on Fly, stored in R2 under a dated immutable key,
+  every stage a run row with scope and heartbeat (D218, D310).
+- **The console reads it** as one `pmtiles://` raster source in place of `USGSNAIPPlus`'s
+  `exportImage` (D312's behavior kept); the credit comes from the sidecar for the cell under the
+  view's center; the USGS code path is deleted in the same PR.
+- **A July reassessment** in Convex applies the same rule to the live catalog, diffs it against the
+  published manifest and **offers** a rebuild to admins. It never starts a Machine; a rebuild is run
+  on demand by one entry point, whole, by stage, or for the cells that changed.
+- **The maximum zoom is not yet ruled** (the founder's *"I think 18"* reads as z18 everywhere or z18
+  only where the source is 0.3 m): B05's Founder fork F-1.
+
+**Why:** the founder's. A cold view of the USGS service takes 3–45 s and its flight date often never
+arrives (the register's Co15, Co18); which frame we see is the service's choice. Owning the tiles
+costs roughly $50–70 a year and buys about a second for a first view, the choice of frame, and
+independence. **What does not change:** D146 (a skater sees imagery only clipped to one body; the
+archive is not a region-wide skater layer), D147 (free sources only — NAIP is public domain, and
+still a summer photograph that can never show ice, D3).
+
+**Related:** D3, D146, D147, D148, D218, D310, D312, D315, [`phase-B05`](./phases/B05-summer-aerial.md).
+
+## D315 — The summer aerial's frames are picked per quarter-quad: leaf-on, newest, 0.3 m within two years, clouds struck by review (B05)
+
+**Decided (2026-11-26, founder: *"These are great rules, thanks!"*; the cloud step's mechanics are
+the governor's design, from the founder's *"Also prioritize minimal cloud cover, if that's even an
+issue."*).** Per NAIP quarter-quad, over every state's frames of it:
+
+1. **Leaf-on only** — acquired 1 June–30 September, plus from 20 May south of 43.5°N. The founder:
+   *"I value recency, but not if it shows dead trees and snow/ice."*
+2. **The newest** of those.
+3. **A 0.3 m frame beats a newer 0.6 m frame when it is at most two years older** (*"I value high
+   resolution/quality, but only in combination with recency"*). So NH, MA, CT and RI take 2023 at
+   0.3 m over 2025 at 0.6 m (*"Agreed"*).
+4. **Minimal cloud** — NAIP publishes no cloud measure, so frames are scored from their thumbnails
+   and the ones a person confirms as cloud or glare go on a committed exclusion list, struck before
+   step 1 so the cell falls back to its next leaf-on frame. A threshold alone never strikes a frame.
+
+Cells whose newer flights are all October or later take older summer frames (ME 2018, NY 2019), not
+foliage frames: *"Sure, let's see how it looks and re-address in the future."* Frames coarser than
+0.6 m are not candidates; an item whose quarter-quad lies outside its labeled state is dropped by
+geometry (the catalog's "Maine 2025" items are Massachusetts quarter-quads). Each cell keeps a
+fallback stack — its other leaf-on frames in the rule's order — which shows through wherever the pick
+has no pixels. The rule lives in `packages/core`, so the build and the July check run the same code.
+Open: six cells in Maine's western mountains with no summer frame at 0.6 m or better (B05's Founder fork F-7).
+
+**Why:** the founder's, in his words above.
+
+**Related:** D3, D147, D314, [`phase-B05`](./phases/B05-summer-aerial.md).
