@@ -107,11 +107,8 @@ describe('HazardsTab', () => {
       .filter((c) => c.name === 'hazards:listForBody')
       .map((c) => (c.args as { season: number }).season);
     expect(new Set(seasons).size).toBe(1);
-    // No writer for these yet: drawn, and not available yet.
-    expect(screen.getByRole('button', { name: /Mark a hazard/ })).toHaveAttribute(
-      'aria-disabled',
-      'true',
-    );
+    // Hazards are marked from the skater apps alone (D299); the feature tools wait on B01-6b.
+    expect(screen.queryByRole('button', { name: /Mark a hazard/ })).toBeNull();
     expect(screen.getByRole('button', { name: /Add a feature/ })).toHaveAttribute(
       'data-unavailable',
     );

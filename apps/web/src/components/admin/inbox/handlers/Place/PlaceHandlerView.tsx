@@ -78,8 +78,13 @@ export type PlaceHandlerProps = {
   map: ReactNode;
   /** The body's Places tab: an anchor element (the router's `Link`), unstyled. */
   bodyLink: ReactElement;
-  /** The old editor, where a place is drawn until the console's map tools land. */
+  /** The old editor, where a landmark is placed until the console's landmark tools land (B01-6b). */
   editorHref: string;
+  /**
+   * Draw the place in the Body console instead (B01-6a: a bay ask, `?task=`), in this tab — the
+   * console's own page; the save comes back to this item. Absent: the old editor, in a new tab.
+   */
+  onDraw?: () => void;
   onSamePlace: (l: NonNullable<ReturnType<typeof landmarkLookalike>>) => Promise<boolean>;
   onApprove: () => Promise<boolean>;
   /** Sends the decline with its note; resolves whether it landed (the dialog closes on `true`). */
@@ -301,6 +306,7 @@ export function PlaceBody({
 export function PlaceActions({
   item,
   editorHref,
+  onDraw,
   onSamePlace,
   onApprove,
   onDecline,
@@ -308,7 +314,7 @@ export function PlaceActions({
   pane,
 }: Pick<
   PlaceHandlerProps,
-  'item' | 'editorHref' | 'onSamePlace' | 'onApprove' | 'onDecline' | 'pending' | 'pane'
+  'item' | 'editorHref' | 'onDraw' | 'onSamePlace' | 'onApprove' | 'onDecline' | 'pending' | 'pane'
 >) {
   const bar = placeBar(item);
   const [asking, setAsking] = useState(false);
@@ -346,9 +352,11 @@ export function PlaceActions({
             id: 'draw',
             label: `${W.drawInBody} →`,
             hotkey: 'B' as const,
-            what: W.whatDraw,
-            // A page outside the console: a new tab (the console's link rule).
-            onPress: () => void window.open(editorHref, '_blank', 'noopener'),
+            what: onDraw !== undefined ? W.whatDrawInBody : W.whatDraw,
+            // The Body console is the console's own page: this tab. The old editor is outside it:
+            // a new tab (the console's link rule).
+            onPress: () =>
+              onDraw !== undefined ? onDraw() : void window.open(editorHref, '_blank', 'noopener'),
           },
         ]
       : []),
@@ -403,6 +411,7 @@ export function placeSlots(props: PlaceHandlerProps): {
       <PlaceActions
         item={props.item}
         editorHref={props.editorHref}
+        {...(props.onDraw !== undefined ? { onDraw: props.onDraw } : {})}
         onSamePlace={props.onSamePlace}
         onApprove={props.onApprove}
         onDecline={props.onDecline}

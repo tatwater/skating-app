@@ -88,6 +88,7 @@ export const PLACE_WORDS = {
   /** Each button's tooltip (the bar has no explaining line). */
   whatSamePlace: 'Answers the ask with the landmark already there; the asker is told.',
   whatDraw: 'Opens the old editor in a new tab, to draw the place; approve it once drawn.',
+  whatDrawInBody: 'Opens the bay in the Body console, ready to draw; saving it approves the ask.',
   whatApprove: 'Answers the ask with the place already drawn; the asker is told.',
   whatDecline: 'Closes the ask; the asker reads your note.',
   bar: 'Place ask',

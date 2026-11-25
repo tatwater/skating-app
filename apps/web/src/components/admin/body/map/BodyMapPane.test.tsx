@@ -9,7 +9,8 @@ import { hazardsMapScene } from '../tabs/hazards/hazardsMap';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyMapStillView } from './BodyMap';
 import { BodyMapKey } from './BodyMapMarks';
-import { mergeScenes } from './bodyScene';
+import { BodyMapPane } from './BodyMapPane';
+import { drawScene, layerSwitches, mergeScenes } from './bodyScene';
 import type { MapPointMark } from './mapDescriptors';
 
 /**
@@ -222,5 +223,32 @@ describe('BodyMapKey', () => {
     // Every face but the known feature (listed as a hazard) has its own entry.
     expect(words()).toHaveLength(faces.length - 1);
     for (const word of words()) expect(word).not.toMatch(/safe|skateable|good|ok\b/i);
+  });
+});
+
+describe('the tool’s mode bar (B01-6a)', () => {
+  const drawn = drawScene(MASCOMA_SCENE, layerSwitches(MASCOMA_SCENE.layers, {}));
+  it('says the mode, what to do next and the step, and its Esc cap leaves the tool', async () => {
+    const onExit = vi.fn();
+    render(
+      <BodyMapPane
+        surface={null}
+        ground={null}
+        drawn={drawn}
+        rack={false}
+        tool={{ mode: 'Bay mode', line: 'Click the shore', step: 'Step 1 of 4', onExit }}
+      />,
+    );
+    const bar = screen.getByRole('status');
+    expect(bar.textContent).toContain('Bay mode');
+    expect(bar.textContent).toContain('Click the shore');
+    expect(bar.textContent).toContain('Step 1 of 4');
+    await userEvent.click(screen.getByRole('button', { name: 'Leave bay mode' }));
+    expect(onExit).toHaveBeenCalledTimes(1);
+  });
+
+  it('draws no bar while no tool is held', () => {
+    render(<BodyMapPane surface={null} ground={null} drawn={drawn} rack={false} />);
+    expect(document.querySelector('[data-slot="map-mode-bar"]')).toBeNull();
   });
 });

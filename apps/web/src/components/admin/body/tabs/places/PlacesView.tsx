@@ -89,6 +89,8 @@ export type PlacesViewProps = {
    * settles once the server has answered.
    */
   onEditLandmark?: (id: string, edit: LandmarkEdit) => unknown;
+  /** Draw a landmark as a bay (the Shape tab's task); absent for a viewer who can't draw bays. */
+  onDrawAsBay?: (id: string) => void;
 };
 
 const MAP_TOOLS = {
@@ -129,6 +131,7 @@ export function PlacesView({
   onSamePlace,
   onDecline,
   onEditLandmark,
+  onDrawAsBay,
 }: PlacesViewProps) {
   const root = useRef<HTMLDivElement>(null);
   const selected = selectedLandmark(data, lit);
@@ -247,6 +250,7 @@ export function PlacesView({
             onLitChange?.(null);
           }}
           onEdit={onEditLandmark ? (edit) => onEditLandmark(selected.id, edit) : undefined}
+          onDrawAsBay={onDrawAsBay ? () => onDrawAsBay(selected.id) : undefined}
         />
       )}
     </div>

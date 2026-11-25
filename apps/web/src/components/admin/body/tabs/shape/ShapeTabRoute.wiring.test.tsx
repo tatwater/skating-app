@@ -93,6 +93,7 @@ vi.mock('../../map/useBodyMapCanvas', () => ({
     zoomOut: () => {},
     atMinZoom: false,
     atMaxZoom: false,
+    liveMap: () => null,
   }),
 }));
 

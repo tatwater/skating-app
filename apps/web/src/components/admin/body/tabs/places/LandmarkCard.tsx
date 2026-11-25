@@ -44,8 +44,8 @@ import {
  * Board 5.4.3 | Landmark: the selected landmark on the inset card over the list. Its fields save as
  * they change — the server's `update` writes one edit at a time and records what it replaced, so
  * each undoes from its toast and from History — so the card has no Save; its foot holds what can be
- * done to the landmark itself (moving it, drawing it as a bay, removing it), each a map tool not
- * built yet, which says so.
+ * done to the landmark itself: drawing it as a bay (the Shape tab's bay task, B01-6a), and moving or
+ * removing it, map tools not built yet, which say so.
  */
 
 /** One edit to a landmark: its name, its other spellings, or its kind. */
@@ -78,10 +78,16 @@ export function LandmarkCard({
   canPlace,
   onBack,
   onEdit,
+  onDrawAsBay,
 }: {
   landmark: LandmarkRow;
   canPlace: boolean;
   onBack: () => void;
+  /**
+   * Draw this landmark as a bay (B01-6a): the Shape tab's bay task, its name filled in; the landmark
+   * goes away when the bay saves (D299). Absent: *Not available yet* (a viewer who can't draw bays).
+   */
+  onDrawAsBay?: (() => void) | undefined;
   /** Save one edit; a promise, when given, settles once the server has answered. */
   onEdit?: ((edit: LandmarkEdit) => unknown) | undefined;
 }) {
@@ -126,7 +132,11 @@ export function LandmarkCard({
   const promotable = PROMOTABLE.has(l.kind);
   useTabKeys(card, [
     { key: 'M', run: () => sayUnavailable(TOOLS.move), enabled: canPlace },
-    { key: 'B', run: () => sayUnavailable(TOOLS.bay), enabled: canPlace && promotable },
+    {
+      key: 'B',
+      run: () => (onDrawAsBay ? onDrawAsBay() : sayUnavailable(TOOLS.bay)),
+      enabled: canPlace && promotable,
+    },
   ]);
   const saveName = () => {
     const trimmed = name.trim();
@@ -158,7 +168,14 @@ export function LandmarkCard({
                 M
               </Kbd>
             </UnavailableButton>
-            {promotable ? (
+            {promotable && onDrawAsBay ? (
+              <Button data-slot="landmark-draw-as-bay" onClick={onDrawAsBay}>
+                Draw as a bay
+                <Kbd variant="dim" aria-hidden="true">
+                  B
+                </Kbd>
+              </Button>
+            ) : promotable ? (
               <UnavailableButton what={TOOLS.bay}>
                 Draw as a bay
                 <Kbd variant="dim" aria-hidden="true">

@@ -937,8 +937,12 @@ describe('name_bay — the sub-area queue', () => {
       notes: ['North of the point.', 'We skate it as its own trip.'],
       askers: 2,
     });
+    // Every ask in the group, the oldest first, so an Inbox item's own ask finds its row (B01-6a).
+    expect(rows[0]?.requestIds).toHaveLength(2);
+    expect(rows[0]?.requestIds[0]).toBe(first);
     expect(rows[0]?.drawnSubAreaId).toBeUndefined();
     expect(rows[1]).toMatchObject({ name: 'Maquam Bay', askers: 1 });
+    expect(rows[1]?.requestIds).toHaveLength(1);
     expect(rows[1]?.drawnSubAreaId).toBeDefined();
   });
 

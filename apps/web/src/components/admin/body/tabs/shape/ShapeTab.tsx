@@ -2,9 +2,10 @@ import { cloneElement, type ReactElement, type ReactNode, useRef } from 'react';
 import { isFailed, type Loadable, type ReadFailure } from '@/components/admin/reads/consoleReads';
 import { ReadNote } from '@/components/admin/reads/ReadNote';
 import { Tag } from '@/components/kit/badge';
-import { buttonVariants } from '@/components/kit/button';
+import { Button, buttonVariants } from '@/components/kit/button';
 import { EntryTile } from '@/components/kit/entry-tile';
 import { KeyValueList, KeyValueRow } from '@/components/kit/grid-list';
+import { Kbd } from '@/components/kit/kbd';
 import { ListEnd } from '@/components/kit/list-end';
 import { Note } from '@/components/kit/note';
 import { Section } from '@/components/kit/section-slug';
@@ -28,10 +29,11 @@ import type { ShapeBay, ShapeMerge, ShapeOutline } from './shapeModel';
  * rings, its vertices, the last import), the **Bays** (each lights its water on the map), and
  * **Add a bay** — three ways to start one, each a button with its gesture drawn on it and its key.
  *
- * Props only. The ways to draw are the bay mode's to build (task and map modes wait, the founder's
- * Review 12 call); until then the caller passes `onAddBay` to hand each way to the tool that has it,
- * or leaves it out and the ways rest disabled. Their keys act wherever focus is in the inspector
- * (`useTabKeys`); outside the console, while this pane has focus.
+ * Props only. Each way starts the bay task (`onAddBay`, B01-6a): the caller draws it in `task`, over
+ * the blocks, and *Add a bay* rests until the task is saved or discarded. A lit bay offers its own
+ * tools under the list — *Redraw* (R) and its mouth (M). Left out, the ways rest disabled. The keys
+ * act wherever focus is in the inspector (`useTabKeys`); outside the console, while this pane has
+ * focus.
  *
  * **Merge into another body** shows only when another body touches this one (Review 13 #8), or when
  * the touching test couldn't say: each touching body is listed (a press lights it on the map). For a
@@ -64,6 +66,14 @@ export interface ShapeTabViewProps {
   lit: string | null;
   onLitChange: (lit: string | null) => void;
   onAddBay?: (way: BayWay) => void;
+  /**
+   * The bay being drawn (`BayTask`), over the tab's blocks while the map holds the tool; *Add a
+   * bay* rests until it is saved or discarded.
+   */
+  task?: ReactNode;
+  /** The lit bay's own tools: its outline redrawn, its mouth drawn or moved. */
+  onRedrawBay?: (bayId: string) => void;
+  onBayMouth?: (bayId: string) => void;
   className?: string;
 }
 
@@ -83,25 +93,42 @@ export function ShapeTabView({
   lit,
   onLitChange,
   onAddBay,
+  task,
+  onRedrawBay,
+  onBayMouth,
   className,
 }: ShapeTabViewProps) {
   const readyBays = bays === undefined || isFailed(bays) ? undefined : bays;
   const root = useRef<HTMLDivElement | null>(null);
-  useTabKeys(
-    root,
-    WAYS.map((w) => ({
+  const tasked = task != null;
+  const litBay = tasked ? undefined : readyBays?.find((b) => b.id === lit);
+  useTabKeys(root, [
+    ...WAYS.map((w) => ({
       key: w.key,
       label: w.name,
-      enabled: onAddBay !== undefined,
+      enabled: onAddBay !== undefined && !tasked,
       run: () => onAddBay?.(w.way),
     })),
-  );
+    {
+      key: 'R',
+      label: 'Redraw the bay',
+      enabled: litBay !== undefined && onRedrawBay !== undefined,
+      run: () => litBay !== undefined && onRedrawBay?.(litBay.id),
+    },
+    {
+      key: 'M',
+      label: litBay?.hasMouth ? 'Move the mouth' : 'Draw the mouth',
+      enabled: litBay !== undefined && onBayMouth !== undefined,
+      run: () => litBay !== undefined && onBayMouth?.(litBay.id),
+    },
+  ]);
   return (
     <div
       ref={root}
       data-slot="shape-tab"
       className={cn('flex flex-col gap-(--space-8)', className)}
     >
+      {task}
       <Section title="Outline">
         <ReadNote data-for="shape-outline" reads={[outline]}>
           The outline couldn’t be read
@@ -184,32 +211,54 @@ export function ShapeTabView({
         >
           How each bay was made couldn’t be read
         </ReadNote>
+        {litBay !== undefined && (onRedrawBay !== undefined || onBayMouth !== undefined) && (
+          <div data-slot="bay-tools" className="mt-(--space-3) flex flex-wrap gap-(--space-2)">
+            {onRedrawBay !== undefined && (
+              <Button size="sm" onClick={() => onRedrawBay(litBay.id)}>
+                Redraw
+                <Kbd variant="dim" aria-hidden="true">
+                  R
+                </Kbd>
+              </Button>
+            )}
+            {onBayMouth !== undefined && (
+              <Button size="sm" onClick={() => onBayMouth(litBay.id)}>
+                {litBay.hasMouth ? 'Move the mouth' : 'Draw the mouth'}
+                <Kbd variant="dim" aria-hidden="true">
+                  M
+                </Kbd>
+              </Button>
+            )}
+          </div>
+        )}
       </Section>
 
-      <Section title="Add a bay">
-        <div className="flex flex-col gap-(--space-2)">
-          {WAYS.map((w) => (
-            <EntryTile
-              key={w.way}
-              data-slot="bay-way"
-              title={w.name}
-              description={w.sub}
-              kbd={w.key}
-              aria-keyshortcuts={w.key}
-              glyphSlot="wide"
-              glyph={
-                <svg aria-hidden="true" viewBox="0 0 88 40">
-                  {GESTURES[w.way]}
-                </svg>
-              }
-              // The Shape board's tile is a step taller than Access's (54 px).
-              className="min-h-(--space-14)"
-              disabled={onAddBay === undefined}
-              onClick={() => onAddBay?.(w.way)}
-            />
-          ))}
-        </div>
-      </Section>
+      {!tasked && (
+        <Section title="Add a bay">
+          <div className="flex flex-col gap-(--space-2)">
+            {WAYS.map((w) => (
+              <EntryTile
+                key={w.way}
+                data-slot="bay-way"
+                title={w.name}
+                description={w.sub}
+                kbd={w.key}
+                aria-keyshortcuts={w.key}
+                glyphSlot="wide"
+                glyph={
+                  <svg aria-hidden="true" viewBox="0 0 88 40">
+                    {GESTURES[w.way]}
+                  </svg>
+                }
+                // The Shape board's tile is a step taller than Access's (54 px).
+                className="min-h-(--space-14)"
+                disabled={onAddBay === undefined}
+                onClick={() => onAddBay?.(w.way)}
+              />
+            ))}
+          </div>
+        </Section>
+      )}
 
       {merge !== undefined && merge !== null && (
         <MergeSection

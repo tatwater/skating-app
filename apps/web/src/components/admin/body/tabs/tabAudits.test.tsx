@@ -151,7 +151,6 @@ const LEVERS: Record<string, ReactNode> = {
       onOpenRecurrence={() => {}}
       onDemote={async () => true}
       onRetry={() => {}}
-      onMarkHazard={() => {}}
       onAddFeature={() => {}}
       onEditShape={() => {}}
       lit={null}
@@ -382,12 +381,12 @@ const KEYED: [string, () => ReactNode, string, () => boolean][] = [
         features={MASCOMA_FEATURE_ROWS}
         winters={MASCOMA_WINTERS}
         patternsWaiting={{ count: 2, capped: false }}
-        onMarkHazard={marked}
+        onAddFeature={marked}
         lit={null}
         onLitChange={() => {}}
       />
     ),
-    'm',
+    'f',
     () => marked.mock.calls.length === 1,
   ],
   [

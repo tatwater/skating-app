@@ -34,6 +34,7 @@ const BAYS = [
     acres: '612',
     sub: 'Seeded · 2 Sep · Teagan',
     attention: null,
+    hasMouth: false,
   },
 ];
 
@@ -53,9 +54,23 @@ describe('ShapeTabView', () => {
       view({
         outline: { ...OUTLINE, lastImport: null },
         bays: [
-          { id: 'bay:x', name: 'Shaker cove', acres: '0.4', sub: NOT_RECORDED, attention: null },
+          {
+            id: 'bay:x',
+            name: 'Shaker cove',
+            acres: '0.4',
+            sub: NOT_RECORDED,
+            attention: null,
+            hasMouth: false,
+          },
           // How it was made not yet read (or withheld): no sub-line, and no claim about the record.
-          { id: 'bay:y', name: 'Fish bay', acres: '3', sub: null, attention: null },
+          {
+            id: 'bay:y',
+            name: 'Fish bay',
+            acres: '3',
+            sub: null,
+            attention: null,
+            hasMouth: false,
+          },
         ],
         merge: { touching: [{ id: 'k2', name: 'Unnamed body', lit: 'neighbor:k2' }], note: null },
         bodyLink: (id) => <a href={`/admin/body/${id}`}>Open</a>,
@@ -74,7 +89,16 @@ describe('ShapeTabView', () => {
   it('never says *Not recorded yet* beside a note that how each bay was made couldn’t be read', () => {
     render(
       view({
-        bays: [{ id: 'bay:x', name: 'Shaker cove', acres: '0.4', sub: null, attention: null }],
+        bays: [
+          {
+            id: 'bay:x',
+            name: 'Shaker cove',
+            acres: '0.4',
+            sub: null,
+            attention: null,
+            hasMouth: false,
+          },
+        ],
         baysMadeFailed: failure(),
       }),
     );

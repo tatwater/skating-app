@@ -12947,7 +12947,7 @@ These are in the register, *The Inbox wave's rows* (In1–In31), each with who c
 
 ### The map's tools (B01-6, the design)
 
-*Designed 2026-11-25 against `origin/main` at `28a6934c`; nothing built.* The wave after the Inbox
+*Designed 2026-11-25 against `origin/main` at `28a6934c`; B01-6a built the same day (below).* The wave after the Inbox
 (founder call 3, the register's Bo23–Bo25), scoped by the founder's test pass: the Shape tab's
 *Draw by chord* sent him to the old editor, and every action should be done in the Body console.
 D299 records the calls.
@@ -13015,6 +13015,38 @@ The Hazards tab's own comment says *Add a feature* and *Edit shape* have no writ
 - **B01-6b** — Places: drop and move, an emailed name or proposal placed; Access: a put-in, a lot,
   a link, and the two undos on the server; Hazards: a known feature drawn and its shape redrawn;
   Water: the sample points.
+
+#### B01-6a, as built (2026-11-25)
+
+- **The contract.** A tab claims the map through `frame/mapTool.tsx` (`useClaimMapTool`): the engine
+  (`chord`, `ring`, or `none` for a paste), the mode bar's words, the draft and a focus; the frame's
+  `MapToolProvider` holds one claim and binds Esc. `map/useMapToolEngine.ts` attaches the old
+  editor's engines (`lib/chordDraw`, `lib/polygonDraw`) to the console's MapLibre instance once per
+  session and per map, draws the draft under them, and frames the focus once. The mode bar is the
+  kit's `MapModeBar`, drawn by `BodyMapPane`'s new `tool` prop. The tab contract's "a tab never
+  touches the map" holds.
+- **Shape.** *Add a bay*'s three ways open the bay task (`tabs/shape/BayTask.tsx`, the board's task
+  block), over the tab's blocks; a lit bay offers *Redraw* (R) and *Draw the mouth* / *Move the
+  mouth* (M). The draft is `tabs/shape/bayDraft.ts` (pure but for its session counter); the wiring
+  is `tabs/shape/useBayTask.tsx`. Saves: `createFromChord` or `create` (with the ask and the
+  landmark), `redraw`, `updateChord`, each announced to Undo; the saved bay is lit.
+- **Arrivals.** `?task=<request id>` (an Inbox bay ask: name, spellings and point from
+  `openBayRequestsForBody`; the save approves it and goes back to the Inbox item) and
+  `?promote=<landmark id>` (Places' *Draw as a bay*, for a viewer with `body.shape` and
+  `body.places`). Each is taken once and dropped from the address; an ask no longer open says so in
+  a toast.
+- **The Inbox.** A bay ask's *Draw in Body →* opens the console in the same tab; a landmark ask's
+  still opens the old editor in a new tab, until B01-6b.
+- **Hazards.** *Mark a hazard* is gone (call 2).
+- **Two server changes, widen-only:** `subAreas.create` takes `requestId` and approves the ask as
+  `createFromChord` does (a traced or pasted bay can answer an ask); `openBayRequestsForBody`'s rows
+  carry `requestIds`, every ask in the group, so an Inbox item's own ask finds its row. On dev:
+  `convex dev --once`, nothing to backfill.
+- **Found, not changed:** undoing a bay drawn from a landmark removes the bay and leaves the landmark
+  retired, so the place leaves the map until the landmark is restored by hand (`create_sub_area`'s
+  undo, older than this build). A founder call.
+- **Owed:** the look pass on the boards no board draws (the redraw, the mouth, the paste, the lit
+  bay's tools); a device-free check against dev of the chord and freehand on a real body.
 
 #### Open
 

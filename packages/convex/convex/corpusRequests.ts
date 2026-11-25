@@ -851,6 +851,8 @@ export const openBayRequestsForBody = query({
       string,
       {
         requestId: Id<'waterBodyRequests'>;
+        /** Every open ask in the group, so an Inbox item's own ask finds its row (B01-6a). */
+        requestIds: Id<'waterBodyRequests'>[];
         name: string;
         aliases: string[];
         /** Where the bay is, when someone said — absent for an ask filed from the lake's drawer. */
@@ -869,6 +871,7 @@ export const openBayRequestsForBody = query({
       const entry = byKey.get(key);
       if (entry) {
         entry.askers += 1;
+        entry.requestIds.push(r._id);
         if (r.note) entry.notes.push(r.note);
         for (const alias of r.aliases ?? [])
           if (!entry.aliases.includes(alias)) entry.aliases.push(alias);
@@ -877,6 +880,7 @@ export const openBayRequestsForBody = query({
       }
       byKey.set(key, {
         requestId: r._id,
+        requestIds: [r._id],
         name: r.name ?? '',
         aliases: [...(r.aliases ?? [])],
         ...(pointed ? { coord: r.coord } : {}),

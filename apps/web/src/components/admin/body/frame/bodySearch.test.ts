@@ -2,6 +2,7 @@ import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 
 import {
+  arrivalSearch,
   BODY_TABS,
   bodyConsoleHref,
   bodyTabOf,
@@ -146,5 +147,33 @@ describe('isLit', () => {
   it('reads a kind and an id', () => {
     expect(isLit('ask:abc')).toBe(true);
     expect(isLit('ask')).toBe(false);
+  });
+});
+
+describe('the map tool arrivals (task, promote)', () => {
+  it('keeps an id of word characters, and drops anything else', () => {
+    expect(validateBodySearch({ task: 'jd7abc_123', promote: 'k9x' })).toEqual({
+      task: 'jd7abc_123',
+      promote: 'k9x',
+    });
+    for (const bad of ['', 'a b', '../x', 'a:b', 'x'.repeat(65), 7, null]) {
+      expect(validateBodySearch({ task: bad, promote: bad })).toEqual({});
+    }
+  });
+
+  it('is dropped by any other navigation, so Back never arms it again', () => {
+    const s = { task: 'r1', promote: 'l1', from: '/admin/inbox?item=x' };
+    expect(searchFor(s, { lit: 'bay:b' })).toEqual({ lit: 'bay:b', from: '/admin/inbox?item=x' });
+    expect(searchFor(s, { tab: 'places' })).toEqual({ tab: 'places', from: '/admin/inbox?item=x' });
+  });
+
+  it('opens Shape with only the arrival and the way back', () => {
+    const s = { tab: 'places' as const, lit: 'landmark:l1', from: '/admin/corpus' };
+    expect(arrivalSearch(s, { promote: 'l1' })).toEqual({ promote: 'l1', from: '/admin/corpus' });
+    expect(arrivalSearch({}, { task: 'r1' })).toEqual({ task: 'r1' });
+    expect(validateBodySearch(arrivalSearch(s, { task: 'r1' }))).toEqual({
+      task: 'r1',
+      from: '/admin/corpus',
+    });
   });
 });
