@@ -1,4 +1,4 @@
-import { zonedInstant } from '@skating/core';
+import { classConsequence, SQM_PER_ACRE, type WaterBodyClass, zonedInstant } from '@skating/core';
 
 import type { DecidedState } from '../../../inspector/InspectorFrame';
 import type { ClassesItem } from './classesModel';
@@ -7,8 +7,9 @@ import type { ClassesItem } from './classesModel';
  * **Board 4.3's class conflict, as `corpusTasks.item` returns it** — for stories and tests only
  * (`fixturesStayInStories.test.ts`). The unnamed 5 ac water in Groton, VT: OpenStreetMap draws a
  * pond, NHD a swamp, so the ladder suggests Wetland; and the states the task can be in: before the
- * campaign that records the catalogs' claims, decided, and refused. The consequences are the
- * board's words for what core's `classConsequence` will say.
+ * campaign that records the catalogs' claims, decided, and refused. The consequences are core's
+ * `classConsequence` for the body, as the read serves them — one rule, so a story can't draw words
+ * the server never says (the board's own *Stays, as moving water under the ice* is not one, D3).
  */
 
 /**
@@ -19,45 +20,27 @@ export const CLASSES_NOW = zonedInstant(2026, 10, 14, 12 * 60, 'America/New_York
 const D = 24 * 3_600_000;
 const id = (s: string) => s.padEnd(32, '0') as never;
 
+/** Groton's unnamed 5 ac water, as the size rules read it. */
+export const GROTON_SIZE = { name: '', surfaceAreaSqM: 5 * SQM_PER_ACRE };
+
+const rung = (
+  cls: WaterBodyClass,
+  byCatalog: Record<string, string>,
+  flags: { now?: boolean; suggested?: boolean } = {},
+) => ({
+  cls,
+  now: flags.now ?? false,
+  suggested: flags.suggested ?? false,
+  byCatalog,
+  consequence: classConsequence(GROTON_SIZE, cls),
+});
+
 const LADDER = [
-  {
-    cls: 'lakePond',
-    now: true,
-    suggested: false,
-    byCatalog: { osm: 'osm:water=pond' },
-    consequence: { kind: 'stays', words: 'Stays, as skaters read it today' },
-  },
-  {
-    cls: 'wetland',
-    now: false,
-    suggested: true,
-    byCatalog: { nhd: 'nhd:SwampMarsh' },
-    consequence: {
-      kind: 'leaves',
-      words: 'Leaves the corpus next campaign, as unnamed wetland under 50 ac',
-    },
-  },
-  {
-    cls: 'reservoir',
-    now: false,
-    suggested: false,
-    byCatalog: {},
-    consequence: { kind: 'stays', words: 'Stays, as a reservoir' },
-  },
-  {
-    cls: 'river',
-    now: false,
-    suggested: false,
-    byCatalog: {},
-    consequence: { kind: 'stays', words: 'Stays, as moving water' },
-  },
-  {
-    cls: 'bay',
-    now: false,
-    suggested: false,
-    byCatalog: {},
-    consequence: { kind: 'waitsForParent', words: 'Waits for a parent: no lake holds it' },
-  },
+  rung('lakePond', { osm: 'osm:water=pond' }, { now: true }),
+  rung('wetland', { nhd: 'nhd:SwampMarsh' }, { suggested: true }),
+  rung('reservoir', {}),
+  rung('river', {}),
+  rung('bay', {}),
 ];
 
 /** The board's record, every fact recorded. */
@@ -72,7 +55,8 @@ export const GROTON = {
   raisedBy: { campaignId: 'c-2026-10-12', at: CLASSES_NOW - 2 * D },
   raisedAgain: null,
   attached: { reports: 0, landmarks: 0, asks: 0, capped: false },
-  neighbors: [{ id: id('wbosmore'), name: 'Osmore Pond' }],
+  // Its middle a mile and a tenth north of Groton's (the board's *Osmore Pond · 1.1 mi north*).
+  neighbors: [{ id: id('wbosmore'), name: 'Osmore Pond', offset: { meters: 1770, bearingDeg: 2 } }],
   ladder: LADDER,
   claims: [
     { source: 'nhd', cls: 'wetland', token: 'fcode=46600', acres: 7 },

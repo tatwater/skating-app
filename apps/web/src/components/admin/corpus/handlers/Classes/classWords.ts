@@ -41,4 +41,23 @@ export const CLASS_WORDS = {
   receiptKept: (cls: string) => `Kept as ${cls}`,
   receiptSettled: 'Settled until a catalog’s class changes',
   theDecision: 'The decision',
+
+  // ── The nearest body's offset (the board's *Osmore Pond · 1.1 mi north*) ─────────────────────────────
+  /** Middle to middle: from inside the body's water to inside the neighbor's. */
+  nearestAt: (name: string, offset: string) => `${name} · ${offset}`,
+  /** The board's shape; one decimal under ten miles, whole miles past. */
+  milesWay: (miles: string, way: string) => `${miles} mi ${way}`,
+  /** Invented: middles so close a direction would be noise. */
+  underATenth: 'under 0.1 mi',
+  /** The eight directions, as the board writes *north*. */
+  compass: {
+    N: 'north',
+    NE: 'northeast',
+    E: 'east',
+    SE: 'southeast',
+    S: 'south',
+    SW: 'southwest',
+    W: 'west',
+    NW: 'northwest',
+  },
 } as const;

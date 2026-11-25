@@ -18,16 +18,20 @@
 
 import {
   type ClaimSource,
+  type ConsequenceBody,
   type CorpusTaskDecision,
   type CorpusTaskLane,
   classConsequence,
+  classConsequenceLine,
   NAME_SOURCE_RANK,
   type NameClaim,
   type NameSplit,
   nameRankWords,
   nameSortKey,
   nameSplit,
+  neighborOffset,
   otherNameOf,
+  ringInsidePoint,
   SCOPE_ALL,
   SQM_PER_ACRE,
   type WaterBodyClass,
@@ -117,9 +121,26 @@ export type CorpusRowView = RowBase &
          */
         other: string;
       }
-    // `claims: null`: not recorded (a body imported before its campaign carried them).
-    | { lane: 'classConflicts'; claims: ClassClaimView[] | null }
+    | {
+        lane: 'classConflicts';
+        // `claims: null`: not recorded (a body imported before its campaign carried them).
+        claims: ClassClaimView[] | null;
+        /**
+         * Board 4.3's third line: what choosing one of the catalogs' other classes would do, by core's
+         * `classConsequenceLine` — the ladder's own rule (`classConsequence`) over the claimed
+         * classes. `null` when every claimed class keeps the body, and when no claims are recorded.
+         * (Optional only so a row written before it still types; the read always sends it.)
+         */
+        consequence?: ClassConsequenceLineView | null;
+      }
   );
+
+/** A class conflict row's consequence line (core's `ClassConsequenceLine`). */
+export type ClassConsequenceLineView = {
+  kind: 'leaves' | 'waitsForParent';
+  cls: WaterBodyClass;
+  words: string;
+};
 
 /** One name the body could display, with its catalogs, rank and namesakes. */
 export type NameChoiceView = {
@@ -151,8 +172,12 @@ export type ClassRungView = {
    * campaign that records tokens has no entry here: `claims` holds it, with `token: null`.
    */
   byCatalog: Partial<Record<ClaimSource, string>>;
-  /** Core's `classConsequence`. */
-  consequence: { kind: 'stays' | 'leaves' | 'waitsForParent'; words: string };
+  /**
+   * Core's `classConsequence`. `lead` is the start of `words` that says the kind ("Refused by the
+   * size rules"), its own field so the inspector can brighten it alone (optional only so a fixture
+   * written before it still types; the read always sends it).
+   */
+  consequence: { kind: 'stays' | 'leaves' | 'waitsForParent'; words: string; lead?: string };
 };
 
 type ItemBase = RowBase & {
@@ -167,7 +192,22 @@ type ItemBase = RowBase & {
    * yet — never "none". (The snippet's `[]`, made nullable so not computed can't read as no
    * neighbors.)
    */
-  neighbors: { id: Id<'waterBodies'>; name: string }[] | null;
+  neighbors: NeighborView[] | null;
+};
+
+/** A touching body the geometry facts name. */
+export type NeighborView = {
+  id: Id<'waterBodies'>;
+  name: string;
+  /**
+   * How far it lies and which way, **point to point** (core's `neighborOffset`): from the body's
+   * stored `interiorPoint` to a point inside the neighbor's stored ring (core's `ringInsidePoint`,
+   * the rule that computes `interiorPoint`), meters and degrees clockwise from north. Never from
+   * `centroid`, which may sit on the shore. `null` when either point isn't on file: a body imported
+   * before its `interiorPoint`, a ring with no inside. (Optional only so a fixture written before
+   * it still types; the read always sends it.)
+   */
+  offset?: { meters: number; bearingDeg: number } | null;
 };
 
 export type CorpusTaskItemView = ItemBase &
@@ -325,8 +365,36 @@ export async function rowOf(
         other: otherNameOf(body) ?? '',
       };
     case 'classConflicts':
-      return { ...base, lane: 'classConflicts', claims: classClaimsOf(body) };
+      return {
+        ...base,
+        lane: 'classConflicts',
+        claims: classClaimsOf(body),
+        consequence: consequenceLineOf(body),
+      };
   }
+}
+
+/**
+ * A class conflict row's consequence line: core's `classConsequenceLine` over the claimed classes,
+ * with the body as the ladder reads it (`consequenceBodyOf`); `null` with no claims recorded.
+ */
+export function consequenceLineOf(body: Doc<'waterBodies'>): ClassConsequenceLineView | null {
+  if (body.classClaims === undefined) return null;
+  return classConsequenceLine(
+    consequenceBodyOf(body),
+    body.type,
+    body.classClaims.map((c) => c.value),
+  );
+}
+
+/** The body facts a class's consequence is read from — one place, for the ladder and the row. */
+function consequenceBodyOf(body: Doc<'waterBodies'>): ConsequenceBody {
+  return {
+    name: body.name,
+    // The area the admission rules read, as the floor's prune reads it.
+    surfaceAreaSqM: body.sourceAreaSqM ?? body.surfaceAreaSqM ?? null,
+    includedByRequest: body.includedByRequest,
+  };
 }
 
 // ── Items ──────────────────────────────────────────────────────────────────────────────────────
@@ -430,12 +498,26 @@ async function attachedOf(ctx: QueryCtx, waterBodyId: Id<'waterBodies'>) {
   };
 }
 
-/** The touching bodies the geometry facts stored, at most {@link NEIGHBORS_SHOWN}; `null` before they're computed. */
-function neighborsOf(
+/**
+ * The touching bodies the geometry facts stored, at most {@link NEIGHBORS_SHOWN}, in their stored
+ * order; `null` before they're computed. Each with its offset from the body (`NeighborView`), from
+ * facts already in hand — the body's `interiorPoint` and the neighbor's stored ring — so no read is
+ * added.
+ */
+export function neighborsOf(
   geo: Doc<'bodyGeoFacts'> | null,
-): { id: Id<'waterBodies'>; name: string }[] | null {
+  body: Pick<Doc<'waterBodies'>, 'interiorPoint'>,
+): NeighborView[] | null {
   if (geo === null || geo.neighbors === undefined) return null;
-  return geo.neighbors.slice(0, NEIGHBORS_SHOWN).map((n) => ({ id: n.waterBodyId, name: n.name }));
+  const from = body.interiorPoint ?? null;
+  return geo.neighbors.slice(0, NEIGHBORS_SHOWN).map((n) => {
+    const to = from === null ? null : ringInsidePoint(n.ring);
+    return {
+      id: n.waterBodyId,
+      name: n.name,
+      offset: from === null || to === null ? null : neighborOffset(from, to),
+    };
+  });
 }
 
 /** Other bodies in the library with the name (its `*` rows by name key), counted to the cap. */
@@ -503,12 +585,7 @@ export function ladderOf(body: Doc<'waterBodies'>): ClassRungView[] {
   if (body.type === 'unclassified' || claims.some((c) => c.value === 'unclassified')) {
     classes.push('unclassified');
   }
-  const consequenceBody = {
-    name: body.name,
-    // The area the admission rules read, as the floor's prune reads it.
-    surfaceAreaSqM: body.sourceAreaSqM ?? body.surfaceAreaSqM ?? null,
-    includedByRequest: body.includedByRequest,
-  };
+  const consequenceBody = consequenceBodyOf(body);
   return classes.map((cls) => {
     const byCatalog: Partial<Record<ClaimSource, string>> = {};
     for (const c of claims) {
@@ -558,7 +635,7 @@ export async function itemOf(
     raisedBy: await raisedByOf(r.ctx, body),
     raisedAgain: await raisedAgainOf(r, task),
     attached: await attachedOf(r.ctx, body._id),
-    neighbors: neighborsOf(geo),
+    neighbors: neighborsOf(geo, body),
   };
   switch (task.lane) {
     case 'nameConflicts':

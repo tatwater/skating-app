@@ -93,7 +93,14 @@ export const FactsPresent: Story = {
       ).toBeVisible();
       await expect(s.getByText('Wetland · fcode=46600 · 7 ac')).toBeVisible();
       await expect(s.getByText('None in any catalog')).toBeVisible();
-      await expect(s.getByText('Osmore Pond', { selector: 'dd' })).toBeVisible();
+      // The nearest body, how far its middle lies and which way.
+      await expect(s.getByText('Osmore Pond · 1.1 mi north', { selector: 'dd' })).toBeVisible();
+      // Only the refusal's lead words are bright: one lead on the ladder, Wetland's.
+      const leads = [...q.querySelectorAll<HTMLElement>('[data-slot="rung-lead"]')];
+      await expect(leads.map((b) => b.textContent)).toEqual(['Refused by the size rules']);
+      await expect(must(leads[0]).closest('[data-slot="rung-consequence"]')).toHaveTextContent(
+        'Refused by the size rules next campaign, as unnamed wetland under 50 ac',
+      );
       const pane = must(q.querySelector<HTMLElement>('[data-pane="inspector"]'));
       await waitFor(() => expect(pane.scrollWidth).toBeLessThanOrEqual(pane.clientWidth));
     }

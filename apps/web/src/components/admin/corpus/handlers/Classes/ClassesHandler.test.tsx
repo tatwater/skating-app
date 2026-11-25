@@ -169,7 +169,9 @@ describe('the write', () => {
       }),
     );
     expect((await screen.findAllByText(/Set as Wetland/)).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/Leaves the corpus next campaign/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Refused by the size rules next campaign/).length).toBeGreaterThan(
+      0,
+    );
     expect((await screen.findAllByRole('button', { name: /Undo/ })).length).toBeGreaterThan(0);
     expect(u.latestOwn).not.toHaveBeenCalled();
   });

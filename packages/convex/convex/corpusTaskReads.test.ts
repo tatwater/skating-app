@@ -433,6 +433,74 @@ describe('listPage', () => {
     expect(old?.lane === 'classConflicts' && old.claims).toBeNull();
   });
 
+  test("a class row's consequence line is the ladder's own rule over its claims, null where none", async () => {
+    const t = harness();
+    const mod = await person(t, 'Casey Example');
+    const cls = {
+      reviewReasons: ['class-conflict' as const],
+      reviewReason: 'class-conflict' as const,
+    };
+    const wet = (extra: Partial<Doc<'waterBodies'>>) =>
+      lake(t, {
+        ...cls,
+        classClaims: [
+          { source: 'nhd', value: 'wetland' },
+          { source: 'osm', value: 'lakePond' },
+        ],
+        ...extra,
+      });
+    // Groton's: unnamed, 5 ac — refused as a wetland.
+    const groton = await wet({ name: '', surfaceAreaSqM: ac(5), displayScore: 0.9 });
+    // The area the size rules read is the catalog's, as the prune's: 70 ac drawn, 7 ac at source.
+    const drawn = await wet({
+      name: '',
+      surfaceAreaSqM: ac(70),
+      sourceAreaSqM: ac(7),
+      displayScore: 0.85,
+    });
+    // Rand Cove: a bay to OSM — it waits for a parent.
+    const rand = await lake(t, {
+      ...cls,
+      name: 'Rand Cove',
+      surfaceAreaSqM: ac(22),
+      displayScore: 0.8,
+      classClaims: [
+        { source: 'nhd', value: 'lakePond' },
+        { source: 'osm', value: 'bay' },
+      ],
+    });
+    // Named and large: every claimed class keeps it — no line. Not recorded: no line.
+    const bog = await wet({ name: 'Bog Pond', displayScore: 0.7 });
+    const old = await lake(t, { ...cls, name: '', surfaceAreaSqM: ac(5), displayScore: 0.6 });
+
+    const page = await mod.as.query(api.corpusTasks.listPage, { lane: 'classConflicts', now: NOW });
+    const line = (id: Id<'waterBodies'>) => {
+      const row = page.rows.find((r) => r.body.id === id);
+      if (row?.lane !== 'classConflicts') throw new Error('expected a Classes row');
+      return row.consequence;
+    };
+    expect(line(groton)).toEqual({ kind: 'leaves', cls: 'wetland', words: 'Refused if a wetland' });
+    expect(line(drawn)?.kind).toBe('leaves');
+    expect(line(rand)).toEqual({
+      kind: 'waitsForParent',
+      cls: 'bay',
+      words: 'Waits for a parent if a bay',
+    });
+    expect(line(bog)).toBeNull();
+    expect(line(old)).toBeNull();
+
+    // One rule: the row's kind is the item's rung for the class it names.
+    for (const id of [groton, drawn, rand]) {
+      const { item } = await mod.as.query(api.corpusTasks.item, {
+        ref: `body:${id}`,
+        lane: 'classConflicts',
+      });
+      if (item?.lane !== 'classConflicts') throw new Error('expected the Classes item');
+      const said = line(id);
+      expect(item.ladder.find((r) => r.cls === said?.cls)?.consequence.kind).toBe(said?.kind);
+    }
+  });
+
   test("a row's labels: the body as stored, its place, acres, the other name, can and decided", async () => {
     const t = harness();
     const mod = await person(t, 'Casey Example');
@@ -914,6 +982,14 @@ describe('item', () => {
     expect(a.ladder[1]?.consequence.words).toBe(
       'Refused by the size rules next campaign, as unnamed wetland under 50 ac',
     );
+    // The lead words, their own field: the inspector brightens a refusal's alone.
+    expect(a.ladder.map((r) => r.consequence.lead)).toEqual([
+      'Stays',
+      'Refused by the size rules',
+      'Stays',
+      'Stays',
+      'Waits for a parent',
+    ]);
     expect(a.claims).toEqual([
       { source: 'nhd', cls: 'wetland', token: 'nhd:fcode=46600', acres: 7 },
       { source: 'osm', cls: 'lakePond', token: 'osm:water=pond', acres: null },
@@ -1060,6 +1136,70 @@ describe('item', () => {
       'Taylor Pond',
       'Gulf Island Pond',
       'Lake Auburn',
+    ]);
+    // No interior point on file for the body: no offset, never one guessed from its centroid.
+    expect(again?.neighbors?.map((n) => n.offset)).toEqual([null, null, null]);
+  });
+
+  test("a neighbor's offset: point to point from the body's interior point, null for what isn't on file", async () => {
+    const t = harness();
+    const mod = await person(t, 'Casey Example');
+    // The body's interior point, and a centroid on its shore the offset must not use.
+    const middle = { lat: 44.005, lng: -71.995 };
+    const id = await lake(t, { interiorPoint: middle, centroid: { lat: 44, lng: -72 } });
+    const other = await lake(t, { name: 'Osmore Pond', displayScore: 0.1 });
+    const bare = await lake(t, { name: 'Bare Pond', displayScore: 0.05 });
+    // A narrow ring (a strip 16 m wide) whose inside point is due north of the body's, about a mile
+    // and a tenth off.
+    const north = 44.005 + 0.0159;
+    const strip = (lat: number) => [
+      [-71.9951, lat - 0.001],
+      [-71.9949, lat - 0.001],
+      [-71.9949, lat + 0.001],
+      [-71.9951, lat + 0.001],
+      [-71.9951, lat - 0.001],
+    ];
+    await t.run(async (ctx) => {
+      for (const [waterBodyId, neighbors] of [
+        [
+          id,
+          [
+            { waterBodyId: other, name: 'Osmore Pond', ring: strip(north) },
+            // A ring with no inside: no offset for it alone.
+            {
+              waterBodyId: bare,
+              name: 'Bare Pond',
+              ring: [
+                [-72, 44],
+                [-72, 44.01],
+                [-72, 44],
+              ],
+            },
+          ],
+        ],
+        // The bare body has no interior point: none of its neighbors gets an offset.
+        [bare, [{ waterBodyId: id, name: 'The Basin', ring: strip(44.005) }]],
+      ] as const) {
+        await ctx.db.insert('bodyGeoFacts', {
+          waterBodyId,
+          computedAt: NOW,
+          neighbors: neighbors.map((n) => ({ ...n, ring: n.ring.map((p) => [...p]) })),
+        });
+      }
+    });
+    const read = async (ref: string) => (await mod.as.query(api.corpusTasks.item, { ref })).item;
+
+    const [osmore, noInside] = (await read(`body:${id}`))?.neighbors ?? [];
+    expect(osmore?.name).toBe('Osmore Pond');
+    expect(osmore?.offset?.meters).toBeCloseTo(0.0159 * 111_195, -1);
+    expect(osmore?.offset?.meters).toBeGreaterThan(1.05 * 1609.344);
+    expect(osmore?.offset?.meters).toBeLessThan(1.15 * 1609.344);
+    // Due north: within a hair of 0, either side of it.
+    const deg = osmore?.offset?.bearingDeg as number;
+    expect(Math.min(deg, 360 - deg)).toBeLessThan(1);
+    expect(noInside).toEqual({ id: bare, name: 'Bare Pond', offset: null });
+    expect((await read(`body:${bare}`))?.neighbors).toEqual([
+      { id, name: 'The Basin', offset: null },
     ]);
   });
 });

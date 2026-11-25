@@ -1,5 +1,6 @@
 import {
   type ClaimSource,
+  compassSectorFor,
   type WaterBodyClass,
   waterBodyClassLabel,
   waterBodyDisplayName,
@@ -138,13 +139,65 @@ export function depthWords(depth: ClassesItem['depth']): string {
 export const nameWords = (body: ClassesItem['body']): string =>
   body.name.trim() === '' ? W.noName : body.name;
 
-/** *Nearest*: the first neighbor the geometry facts name; *not computed yet* before they are. */
-export const nearestWords = (neighbors: ClassesItem['neighbors']): string =>
-  neighbors === null
-    ? TASK_WORDS.notComputed
-    : neighbors[0] === undefined
-      ? W.noneOnFile
-      : waterBodyDisplayName(neighbors[0].name);
+type Neighbor = NonNullable<ClassesItem['neighbors']>[number];
+type Offset = NonNullable<Neighbor['offset']>;
+
+const METERS_PER_MILE = 1609.344;
+
+/**
+ * The nearest of the neighbors the geometry facts name: the one whose middle is closest, among
+ * those with an offset on file; else the first, in the stored order.
+ */
+export function nearestOf(neighbors: readonly Neighbor[]): Neighbor | undefined {
+  let best: Neighbor | undefined;
+  for (const n of neighbors) {
+    if (n.offset == null) continue;
+    if (best?.offset == null || n.offset.meters < best.offset.meters) best = n;
+  }
+  return best ?? neighbors[0];
+}
+
+/**
+ * An offset as the board says it — "1.1 mi north": miles to a tenth under ten, whole past, and the
+ * nearest of the eight directions; under a tenth of a mile, no direction.
+ */
+export function offsetWords(offset: Offset): string {
+  const miles = offset.meters / METERS_PER_MILE;
+  if (miles < 0.1) return W.underATenth;
+  const figure =
+    miles < 10
+      ? miles.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+      : Math.round(miles).toLocaleString('en-US');
+  return W.milesWay(figure, W.compass[compassSectorFor(offset.bearingDeg)]);
+}
+
+/**
+ * *Nearest*: the nearest neighbor the geometry facts name, with how far its middle lies and which
+ * way where the offset is on file; *not computed yet* before the facts are.
+ */
+export function nearestWords(neighbors: ClassesItem['neighbors']): string {
+  if (neighbors === null) return TASK_WORDS.notComputed;
+  const nearest = nearestOf(neighbors);
+  if (nearest === undefined) return W.noneOnFile;
+  const name = waterBodyDisplayName(nearest.name);
+  return nearest.offset == null ? name : W.nearestAt(name, offsetWords(nearest.offset));
+}
+
+/**
+ * A rung's consequence in two parts: its lead words, said bright where the choice is a refusal
+ * (board 4.3's *Leaves the corpus*), and the rest. The lead is the server's (`lead`, the start of
+ * `words`); a rung without one, or a consequence that is no refusal, is said whole and plain.
+ */
+export function consequenceParts(consequence: ClassRung['consequence']): {
+  lead: string | null;
+  rest: string;
+} {
+  const { kind, words, lead } = consequence;
+  if (kind !== 'leaves' || lead === undefined || lead === '' || !words.startsWith(lead)) {
+    return { lead: null, rest: words };
+  }
+  return { lead, rest: words.slice(lead.length) };
+}
 
 /** The *asked again* note (D305): a catalog's class changed since it was settled. */
 export const raisedAgainNote = (item: Pick<ClassesItem, 'raisedAgain'>, timeZone?: string) =>

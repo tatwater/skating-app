@@ -1,6 +1,6 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
+import { CLASS_BOARD_ROWS } from '../corpusBoardFixtures';
 import {
   CLASS_ROWS,
   DECIDED_BY_COLLEAGUE,
@@ -10,6 +10,12 @@ import {
   page,
 } from '../corpusFixtures';
 import type { CorpusListPage } from '../corpusTypes';
+
+const must = <T>(x: T | undefined): T => {
+  if (x === undefined) throw new Error('expected the row');
+  return x;
+};
+
 import { decidedStateOf } from '../inspector/corpusLock';
 import { acresText } from '../words/corpusWords';
 import { joinPages } from './taskReads';
@@ -28,6 +34,7 @@ describe('a task row, as the list draws it', () => {
         { text: 'Lake Auburn', mark: null },
       ],
       place: 'Auburn, ME',
+      consequence: null,
       middle: [{ tag: null, text: 'Different' }],
       acres: '2,263',
       decision: null,
@@ -67,6 +74,32 @@ describe('a task row, as the list draws it', () => {
     const hatchRow = hatch as (typeof CLASS_ROWS)[number];
     const unnamed = { ...hatchRow, body: { ...hatchRow.body, name: '' } };
     expect(taskRowView(unnamed, NOW).title).toBe('Unnamed water');
+  });
+
+  it('a class conflict says what a choice would do where one has a consequence, never invented', () => {
+    const lines = Object.fromEntries(
+      CLASS_BOARD_ROWS.map((r) => [r.body.name || r.body.place, taskRowView(r, NOW).consequence]),
+    );
+    // The board's rows: Groton's and Errol's unnamed water refused as a wetland, Rand Cove waiting.
+    expect(lines['Groton, VT']).toBe('Refused if a wetland');
+    expect(lines['Errol, NH']).toBe('Refused if a wetland');
+    expect(lines['Rand Cove']).toBe('Waits for a parent if a bay');
+    // A named 38 ac pond stays a wetland; a reach keeps the body: no line for either.
+    expect(lines['Bog Pond']).toBeNull();
+    expect(lines['Little Black Deadwater']).toBeNull();
+    // The server's line, drawn as sent; none sent (a row from before it, or not recorded): none.
+    const groton = must(CLASS_BOARD_ROWS.find((r) => r.body.place === 'Groton, VT'));
+    expect(
+      taskRowView(
+        { ...groton, consequence: { kind: 'leaves', cls: 'wetland', words: 'Said by the server' } },
+        NOW,
+      ).consequence,
+    ).toBe('Said by the server');
+    const { consequence: _, ...before } = groton;
+    expect(taskRowView(before, NOW).consequence).toBeNull();
+    expect(taskRowView(ossipee as (typeof CLASS_ROWS)[number], NOW).consequence).toBeNull();
+    // A name conflict has no such line.
+    expect(taskRowView(basin as (typeof NAME_ROWS)[number], NOW).consequence).toBeNull();
   });
 
   it('a decided row says what was decided, by whom and when', () => {

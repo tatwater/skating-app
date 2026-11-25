@@ -18,8 +18,10 @@ import {
  *
  * - **Name conflicts** (4.2): the shown name over the other, then where; the kind (the tab's words);
  *   the acres. On a *One letter* conflict the letter where the two names part is marked in each.
- * - **Class conflicts** (4.3): the body and where; each catalog's class on its own line (*NHD
- *   Wetland*), or *Not recorded* for a body loaded before its campaign carried the claims; the acres.
+ * - **Class conflicts** (4.3): the body and where, then — where a choice has one — what choosing a
+ *   catalog's other class would do (*Refused if a wetland*, the server's words from the ladder's own
+ *   rule); each catalog's class on its own line (*NHD Wetland*), or *Not recorded* for a body loaded
+ *   before its campaign carried the claims; the acres.
  * - **A decided row** (the tail) adds what was decided, by whom and when, under the body.
  */
 
@@ -36,6 +38,11 @@ export type TaskRowView = {
   /** The first cell's names: the shown and the other (names), the body alone (classes). */
   names: readonly MarkedName[];
   place: string;
+  /**
+   * The first cell's third line (4.3): what choosing one of the catalogs' other classes would do;
+   * `null` where no choice has a consequence, or on a lane with no such line.
+   */
+  consequence: string | null;
   /** The middle column's lines: the kind, or each catalog's class after its tag. */
   middle: readonly MiddleLine[];
   /** The acres as the column writes them, or `null` where the body has none recorded. */
@@ -97,6 +104,7 @@ export function taskRowView(row: CorpusRowView, now: number): TaskRowView {
     title: names[0]?.text ?? '',
     names,
     place: row.body.place,
+    consequence: row.lane === 'classConflicts' ? (row.consequence?.words ?? null) : null,
     middle: middleOf(row),
     acres: row.body.acres === null ? null : acresFigure(row.body.acres),
     decision:
