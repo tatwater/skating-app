@@ -1283,39 +1283,14 @@ describe('the season rollover', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
-// 7. The moderator lists
+// 7. The moderator list
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 
-describe('the standing lists', () => {
-  test('each lane shows its own standing, once, and a member cannot read them', async () => {
-    const t = harness();
-    const mod = await seedUser(t, 'mod', 'moderator');
-    const member = await seedUser(t, 'member');
-    const inactive = await seedBody(t, 'osm/inactive', {
-      dormant: { since: Date.now(), reason: 'inactive' },
-    });
-    // Removed AND carrying a stale dormancy: it belongs to the removed lane only.
-    const removed = await seedBody(t, 'osm/removed', {
-      removedAt: Date.now(),
-      dormant: { since: Date.now(), reason: 'inactive' },
-    });
-    const none = await seedBody(t, 'osm/none', {
-      publicAccess: { verdict: 'none', decidedAt: Date.now(), decidedByUserId: mod.id },
-    });
-
-    const lane = async (name: 'inactive' | 'removed' | 'no_public_access') =>
-      (await mod.as.query(api.standing.listLane, { lane: name })).rows.map((r) => r._id);
-    expect(await lane('inactive')).toEqual([inactive]);
-    expect(await lane('removed')).toEqual([removed]);
-    expect(await lane('no_public_access')).toEqual([none]);
-    await expect(member.as.query(api.standing.listLane, { lane: 'inactive' })).rejects.toThrow(
-      /moderator/i,
-    );
-  });
-
+describe('the standing list', () => {
   test('recent activations carry what brought the body back and what it still lacks', async () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
+    const member = await seedUser(t, 'member');
     const skater = await seedUser(t, 'skater');
     const id = await seedBody(t, 'osm/1', { dormant: { since: Date.now(), reason: 'inactive' } });
     await skater.as.mutation(api.reports.create, {
@@ -1327,5 +1302,8 @@ describe('the standing lists', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ _id: id, via: 'report' });
     expect(rows[0]?.missing).toEqual(expect.arrayContaining(['elevation', 'wind', 'depth']));
+    await expect(member.as.query(api.standing.listRecentActivations, {})).rejects.toThrow(
+      /moderator/i,
+    );
   });
 });
