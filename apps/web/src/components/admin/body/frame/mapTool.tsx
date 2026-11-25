@@ -73,6 +73,11 @@ export type MapToolEngine =
        * places it where the click is.
        */
       snapTo?: GeoJSON.Polygon | GeoJSON.MultiPolygon;
+      /**
+       * How far from the outline the snap reaches; past it the mark stays where the pointer is, so
+       * the server's own "too far from the water" refusal is the one that answers (a put-in).
+       */
+      snapWithinM?: number;
       /** A click, or a drag's release: the mark is here now. */
       onPick: (point: LatLng) => void;
     }

@@ -1,4 +1,4 @@
-import { snapToEdge } from '@skating/core';
+import { distanceToPolygonMeters, snapToEdge } from '@skating/core';
 import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { type ChordDrawControl, type ChordMap, createChordDraw } from '@/lib/chordDraw';
@@ -197,7 +197,15 @@ export function useMapToolEngine(
       const parent = engine.snapTo;
       const control = createPointDraw(map as unknown as ChordMap, {
         ...(engine.point ? { point: engine.point } : {}),
-        ...(parent ? { snap: (p) => snapToEdge(p, parent as never) } : {}),
+        ...(parent
+          ? {
+              snap: (p) =>
+                engine.snapWithinM !== undefined &&
+                distanceToPolygonMeters(p, parent as never) > engine.snapWithinM
+                  ? p
+                  : snapToEdge(p, parent as never),
+            }
+          : {}),
         color: palette.lit.line,
         onPick: (p) => {
           const live = claimRef.current?.engine;

@@ -597,6 +597,21 @@ describe('the engine on the map', () => {
       </MapToolProvider>,
     );
     expect(e?.destroyed).toBe(true);
+    // A reach: a pointer past it stays where it is, so the server's refusal answers.
+    render(
+      <MapToolProvider>
+        <Tab
+          claim={base({
+            session: 'p3',
+            engine: { kind: 'point', snapTo: PARENT, snapWithinM: 500, onPick: () => {} },
+          })}
+        />
+        <MapHalf map={fakeMap()} />
+      </MapToolProvider>,
+    );
+    const reach = engines.point.at(-1)?.options.snap ?? ((p: unknown) => p);
+    expect(reach({ lat: 0.5, lng: 1.5 })).toEqual({ lat: 0.5, lng: 1.5 }); // ~55 km out
+    expect((reach({ lat: 0.5, lng: 1.001 }) as { lng: number }).lng).toBeCloseTo(1, 6);
     // No outline named: no snap, the click is the spot.
     render(
       <MapToolProvider>

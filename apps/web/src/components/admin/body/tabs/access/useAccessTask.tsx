@@ -1,5 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { OPERATOR_PUT_IN_SNAP_MAX_M } from '@skating/core';
 import { useMutation } from 'convex/react';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -86,7 +87,11 @@ export function useAccessTask({
       engine: {
         kind: 'point',
         ...(point !== undefined ? { point } : {}),
-        ...(draft.kind === 'putIn' && parent !== null ? { snapTo: parent } : {}),
+        // Snapped while hovering, as the server snaps — within the server's reach only, so a click
+        // far from the water stays put and the save's refusal says why.
+        ...(draft.kind === 'putIn' && parent !== null
+          ? { snapTo: parent, snapWithinM: OPERATOR_PUT_IN_SNAP_MAX_M }
+          : {}),
         onPick,
       },
       mode: bar.mode,

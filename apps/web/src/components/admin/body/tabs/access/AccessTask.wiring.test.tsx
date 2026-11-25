@@ -82,7 +82,7 @@ vi.mock('../../map/useMapToolEngine', () => ({
 }));
 
 import { api } from '@skating/convex/api';
-import { HIKE_IN_ASSERT_M } from '@skating/core';
+import { HIKE_IN_ASSERT_M, OPERATOR_PUT_IN_SNAP_MAX_M } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
@@ -189,7 +189,11 @@ describe('Access: a put-in placed on the map', () => {
     await user.click(await screen.findByRole('button', { name: /Add a put-in/ }));
     expect(within(task()).getByText('New put-in')).toBeVisible();
     const engine = claim().engine;
-    expect(engine).toMatchObject({ kind: 'point', snapTo: MASCOMA_RECORD.polygon });
+    expect(engine).toMatchObject({
+      kind: 'point',
+      snapTo: MASCOMA_RECORD.polygon,
+      snapWithinM: OPERATOR_PUT_IN_SNAP_MAX_M,
+    });
     expect(claim()).toMatchObject({ mode: 'Put-in mode', step: 'Step 1 of 2' });
     // The entry points rest while the task is up.
     expect(screen.queryByRole('button', { name: /Add a lot/ })).toBeNull();

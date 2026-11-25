@@ -376,8 +376,6 @@ describe('no tab draws an absent fact as a blank', () => {
 
 const marked = vi.fn();
 const overridden = vi.fn(async () => true);
-/** A toast from the tool named by its words: the right tool spoke, and only it. */
-const toldBy = (words: RegExp) => () => toasts.said.length === 1 && words.test(said()[0] ?? '');
 
 /** Each tab with keys, one of its keys, and how to tell the right tool acted. */
 const KEYED: [string, () => ReactNode, string, () => boolean][] = [
@@ -422,9 +420,6 @@ const KEYED: [string, () => ReactNode, string, () => boolean][] = [
     () => overridden.mock.calls.length === 1,
   ],
 ];
-
-/** What each toast said, as its description. */
-const said = () => toasts.said.map((t) => String((t as { description?: unknown }).description));
 
 describe('a tab’s keys work however the tab is reached', () => {
   beforeEach(() => {
