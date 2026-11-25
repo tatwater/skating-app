@@ -14,6 +14,7 @@ import type { MultiPolygon, Polygon } from 'geojson';
 import { describe, expect, it } from 'vitest';
 import {
   buildMasterList,
+  CLASS_REFUSALS_MAX,
   elevationKeyFor,
   emitCanonicalBodies,
   LANE_PROGRESS_EVERY,
@@ -1052,6 +1053,130 @@ describe('class dissent, triaged rather than counted (founder, 2026-08-08)', () 
     );
     expect(result.stats.classDissent).toBe(0);
     expect(result.stats.classDissentUnsettled).toBe(0);
+  });
+});
+
+// ── B01-6a: the refusals and the claims' tokens, kept on the body ─────────────────────────────────────────
+
+describe('the refusals and the claims’ tokens, kept rather than tallied (B01-6a)', () => {
+  const shape = square(-70.4, 44.4, sideForAcres(300));
+
+  it('keeps a dissent’s refusing catalog with its own token and area, queued or settled alike', () => {
+    // The Contested lane (D306) reads which catalog refused, with what token — which the merge kept
+    // only in its run stats. A settled refusal (`osm:water=river`) is stored too: the founder looks at
+    // every refusal before 6b rules which ones the lane holds.
+    for (const sourceToken of ['osm:natural=water', 'osm:water=river']) {
+      const result = buildMasterList(
+        inputFor({
+          osm: [
+            feat('osm', 'way/x', {
+              name: 'Contested Pond',
+              cls: null,
+              sourceToken,
+              polygon: shape,
+              areaSqM: 1_210_000,
+            }),
+          ],
+          nhd: [feat('nhd', 'n-x', { name: 'Contested Pond', polygon: shape })],
+        }),
+      );
+      expect(result.bodies[0]?.classRefusals).toEqual([
+        { source: 'osm', token: sourceToken, areaSqM: 1_210_000 },
+      ]);
+    }
+  });
+
+  it('keeps each class claim’s catalog token (the `sourceToken`, not the ladder’s) and its area', () => {
+    const result = buildMasterList(
+      inputFor({
+        osm: [
+          feat('osm', 'way/m', {
+            name: 'Marsh Pond',
+            cls: 'swampMarsh',
+            token: 'name:pond',
+            sourceToken: 'osm:wetland=marsh',
+            polygon: shape,
+            areaSqM: 1_200_000,
+          }),
+        ],
+        nhd: [
+          feat('nhd', 'n-m', {
+            name: 'Marsh Pond',
+            cls: 'lakePond',
+            sourceToken: 'nhd:fcode=39004',
+            polygon: shape,
+            areaSqM: 1_250_000,
+          }),
+        ],
+      }),
+    );
+    const claims = [...(result.bodies[0]?.classClaims ?? [])].sort((a, b) =>
+      a.source.localeCompare(b.source),
+    );
+    expect(claims).toEqual([
+      { source: 'nhd', value: 'lakePond', token: 'nhd:fcode=39004', areaSqM: 1_250_000 },
+      { source: 'osm', value: 'swampMarsh', token: 'osm:wetland=marsh', areaSqM: 1_200_000 },
+    ]);
+    expect(result.bodies[0]?.classRefusals).toEqual([]);
+  });
+
+  it('keeps at most eight refusals on one body', () => {
+    const refusers = Array.from({ length: 10 }, (_, i) =>
+      feat('osm', `way/r${i}`, {
+        name: 'Crowded Pond',
+        cls: null,
+        sourceToken: 'osm:natural=water',
+        polygon: shape,
+      }),
+    );
+    const result = buildMasterList(
+      inputFor({
+        osm: refusers,
+        nhd: [feat('nhd', 'n-c', { name: 'Crowded Pond', polygon: shape })],
+      }),
+    );
+    expect(result.bodies).toHaveLength(1);
+    expect(result.bodies[0]?.classRefusals).toHaveLength(CLASS_REFUSALS_MAX);
+  });
+
+  it('emits `classRefusals` on every merged record — `[]` when none refused', () => {
+    const result = buildMasterList(
+      inputFor({
+        osm: [
+          feat('osm', 'way/x', {
+            name: 'Contested Pond',
+            cls: null,
+            sourceToken: 'osm:natural=water',
+            polygon: shape,
+            areaSqM: 1_210_000,
+          }),
+          feat('osm', 'way/plain', {
+            name: 'Plain Pond',
+            polygon: square(-70.1, 44.1, sideForAcres(40)),
+          }),
+        ],
+        nhd: [
+          feat('nhd', 'n-x', {
+            name: 'Contested Pond',
+            sourceToken: 'nhd:fcode=39004',
+            polygon: shape,
+          }),
+        ],
+      }),
+    );
+    const emitted = emitCanonicalBodies(result.bodies, MAINE_TOWNS).emitted;
+    const byName = new Map(emitted.map((r) => [r.name, r]));
+    expect(byName.get('Contested Pond')?.classRefusals).toEqual([
+      { source: 'osm', token: 'osm:natural=water', areaSqM: 1_210_000 },
+    ]);
+    expect(byName.get('Contested Pond')?.classClaims).toEqual([
+      expect.objectContaining({ source: 'nhd', token: 'nhd:fcode=39004' }),
+    ]);
+    expect(byName.get('Plain Pond')).toHaveProperty('classRefusals', []);
+    // Each name claim names its catalogs on the wire — the refusing one's name is a claim too.
+    expect(byName.get('Contested Pond')?.nameClaims).toEqual([
+      { source: 'nhd', value: 'Contested Pond', sources: ['nhd', 'osm'] },
+    ]);
   });
 });
 
