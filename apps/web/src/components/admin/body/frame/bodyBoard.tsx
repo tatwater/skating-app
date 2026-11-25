@@ -12,6 +12,7 @@ import { CONSOLE_MODES } from '../../shell/consoleNav';
 import { seasonTape } from '../../shell/consoleTime';
 import { BodyMapStillView } from '../map/BodyMap';
 import { mergeScenes } from '../map/bodyScene';
+import type { AerialLoad } from '../map/consoleAerial';
 import type { BodyMapScene } from '../map/mapDescriptors';
 import { ShapeTabView, type ShapeTabViewProps } from '../tabs/shape/ShapeTab';
 import { shapeBays, shapeMapScene, shapeOutline } from '../tabs/shape/shapeModel';
@@ -93,6 +94,8 @@ export type BodyBoardProps = Partial<
   map?: ReactNode;
   /** The summer aerial's switch as the board opens (its stand-in on the still). */
   aerial?: boolean;
+  /** Where the summer aerial stands, for its credit: in, unless said. */
+  aerialLoad?: AerialLoad;
   className?: string;
 };
 
@@ -152,6 +155,7 @@ export function BodyBoard({
   bare = false,
   map: mapOverride,
   aerial = false,
+  aerialLoad,
   className = 'h-[56.25rem] w-[90rem]',
 }: BodyBoardProps) {
   const identity = loading ? undefined : givenIdentity;
@@ -205,6 +209,7 @@ export function BodyBoard({
                   foot={foot}
                   aerial={aerial}
                   aerialCapturedAt={MASCOMA_AERIAL_AT}
+                  {...(aerialLoad !== undefined && { aerialLoad })}
                 />
               )}
             </Measured>

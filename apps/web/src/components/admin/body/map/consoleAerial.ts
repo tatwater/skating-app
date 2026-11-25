@@ -1,13 +1,15 @@
 import { aerialIdentifyUrl, type LatLng, parseAerialScene } from '@skating/core';
 import type * as maplibregl from 'maplibre-gl';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import type { BBoxLike } from '@/lib/mapSurface';
 import {
   FREEZE_UP_LAYER_PREFIX,
   type KeyedMask,
+  type RevealStatus,
   useImageryReveal,
 } from '../../../useImageryReveal';
+import { AERIAL_LOAD_WORDS } from '../consoleWords';
 import type { BodyMapMode } from './bodyMapPalette';
 import { rasterAnchor } from './glLayers';
 
@@ -88,7 +90,48 @@ export function aerialMasks(bbox: BBoxLike): KeyedMask[] {
   ];
 }
 
-/** The summer aerial on a live console map, while `on`. */
+// ── Where the photograph stands ───────────────────────────────────────────────────────────────
+
+/**
+ * The summer aerial's state, as its credit says it:
+ *
+ * - **`loading`** from the switch on until **every** cell of the view is in — cells paint as they
+ *   land on a first view (the reveal's `progressive`), so the photograph fills in while the credit
+ *   still says it is loading. Also while the map itself is coming up (no answer yet): nothing is
+ *   on screen, so it is not loaded.
+ * - **`loaded`**: every cell in. The credit as it always was.
+ * - **`failed`**: no cell of the view came (a network error, a refusal, a body that isn't a
+ *   photograph); whatever was on screen before stays. **`partial`**: some came, some didn't.
+ *   Both offer *Try again*, which asks for the missing cells only.
+ *
+ * A cell still waiting is loading, however long the service takes: there is no timeout, because
+ * an abandoned cold render is not kept by the service's cache — giving up at 30 s on a render that
+ * lands at 40 s would make every retry start from zero.
+ */
+export type AerialLoad = 'loading' | 'loaded' | 'failed' | 'partial';
+
+/** The reveal's answer as the credit's state; `null` (nothing answered yet) is loading. */
+export function aerialLoadOf(status: RevealStatus | null): AerialLoad {
+  if (status === null || status.phase === 'loading') return 'loading';
+  if (status.phase === 'loaded') return 'loaded';
+  return status.failed < status.cells ? 'partial' : 'failed';
+}
+
+/** The credit's line in a state: the source, then what is still owed ("… · Loading…"). */
+export function aerialCreditLine(credit: string, load: AerialLoad): string {
+  return load === 'loaded' ? credit : `${credit} · ${AERIAL_LOAD_WORDS[load]}`;
+}
+
+/** What the map's dock draws beside the credit: the state, and *Try again* where it can help. */
+export interface AerialLoadView {
+  load: AerialLoad;
+  /** Asks again for what didn't come; offered only while `failed` or `partial`. */
+  onRetry?: () => void;
+  /** *Try again* was pressed and its answer isn't in yet. */
+  pending?: boolean;
+}
+
+/** The summer aerial on a live console map, while `on`; its state for the credit (`null` off). */
 export function useConsoleAerial({
   liveMap,
   on,
@@ -99,16 +142,23 @@ export function useConsoleAerial({
   on: boolean;
   bbox: BBoxLike;
   mode: BodyMapMode;
-}): void {
+}): AerialLoadView | null {
   const { minLng, minLat, maxLng, maxLat } = bbox;
   const masks = useMemo(
     () => (on ? aerialMasks({ minLng, minLat, maxLng, maxLat }) : null),
     [on, minLng, minLat, maxLng, maxLat],
   );
+  const [status, setStatus] = useState<RevealStatus | null>(null);
+  const [pending, setPending] = useState(false);
+  const onStatusChange = useCallback((next: RevealStatus | null) => {
+    setStatus(next);
+    // Try again is answered once the view settles again (or the layer comes down).
+    if (next === null || next.phase !== 'loading') setPending(false);
+  }, []);
   // The live map or nothing, re-read every render: a theme switch's new map gets the layer anew,
   // with the new mode's paint, and the old one's teardown never writes to a removed map.
   const live = liveMap();
-  useImageryReveal({
+  const { retry } = useImageryReveal({
     map: live,
     loaded: live !== null,
     masks,
@@ -116,7 +166,39 @@ export function useConsoleAerial({
     minZoom: 0,
     anchor: anchorOn,
     paint: AERIAL_PAINT[mode],
+    progressive: true,
+    onStatusChange,
   });
+  const onRetry = useCallback(() => {
+    setPending(true);
+    retry();
+  }, [retry]);
+  if (!on) return null;
+  return aerialLoadView(aerialLoadOf(status), onRetry, pending);
+}
+
+/**
+ * The state with *Try again* where it can help — and, once pressed, held as *Trying again…* while
+ * the credit says it is loading again, so the button the operator pressed doesn't vanish under
+ * them; it goes when the answer is in.
+ */
+export function aerialLoadView(
+  load: AerialLoad,
+  onRetry: () => void,
+  pending: boolean,
+): AerialLoadView {
+  if (load === 'failed' || load === 'partial') return { load, onRetry, pending };
+  if (load === 'loading' && pending) return { load, onRetry, pending };
+  return { load };
+}
+
+/**
+ * A still's state (a story's, a test's): the one it was handed, and *Try again* that holds as
+ * *Trying again…* — there is no service behind a still to answer it.
+ */
+export function useStillAerialLoad(load: AerialLoad = 'loaded'): AerialLoadView {
+  const [pending, setPending] = useState(false);
+  return aerialLoadView(load, () => setPending(true), pending);
 }
 
 // ── The credit ────────────────────────────────────────────────────────────────────────────────

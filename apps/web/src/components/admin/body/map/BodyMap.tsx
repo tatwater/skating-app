@@ -5,7 +5,7 @@ import { BodyMapPane } from './BodyMapPane';
 import { BodyMapStill } from './BodyMapStill';
 import type { BodyMapMode } from './bodyMapPalette';
 import { drawScene, layerSwitches, rackRows } from './bodyScene';
-import { aerialCredit } from './consoleAerial';
+import { type AerialLoad, aerialCredit, useStillAerialLoad } from './consoleAerial';
 import type { BodyMapLayer, BodyMapScene } from './mapDescriptors';
 import { FIT_PADDING, useBodyMapCanvas } from './useBodyMapCanvas';
 
@@ -76,6 +76,7 @@ export function BodyMap({
       onLayerChange={onLayerChange}
       aerial={{ on: aerial, onChange: setAerial }}
       credit={canvas.aerialCredit}
+      aerialLoad={canvas.aerialLoad}
       onZoomIn={canvas.zoomIn}
       onZoomOut={canvas.zoomOut}
       atMinZoom={canvas.atMinZoom}
@@ -96,6 +97,7 @@ export function BodyMapStillView({
   foot,
   aerial: aerialAtFirst = false,
   aerialCapturedAt = null,
+  aerialLoad,
   className,
 }: Common & {
   width: number;
@@ -105,8 +107,11 @@ export function BodyMapStillView({
   aerial?: boolean;
   /** When the story's photograph was flown, for its credit. */
   aerialCapturedAt?: number | null;
+  /** Where the story's photograph stands: in, unless said. */
+  aerialLoad?: AerialLoad;
 }) {
   const { drawn, rack, onLayerChange } = useRack(scene, resetKey);
+  const load = useStillAerialLoad(aerialLoad);
   const [aerial, setAerial] = useState(aerialAtFirst);
   const [zoomStep, setZoomStep] = useState(0);
   const surface = useMemo(() => {
@@ -123,6 +128,7 @@ export function BodyMapStillView({
       onLayerChange={onLayerChange}
       aerial={{ on: aerial, onChange: setAerial }}
       credit={aerial ? aerialCredit(aerialCapturedAt) : null}
+      aerialLoad={load}
       onZoomIn={() => setZoomStep((z) => z + 1)}
       onZoomOut={() => setZoomStep((z) => z - 1)}
       atMinZoom={zoomStep <= -1}

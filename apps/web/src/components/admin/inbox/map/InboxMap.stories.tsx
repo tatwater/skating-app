@@ -241,3 +241,45 @@ export const Narrow: Story = {
     await expect(canvasElement.querySelector('[data-slot="map-scale"]')).toBeVisible();
   },
 };
+
+/**
+ * The summer aerial (the Corpus head map's) partly in on a phone's view-only embed: the credit
+ * wraps rather than running off the map, and *Try again* stays inside it, still pressable.
+ */
+export const NarrowAerialPartial: Story = {
+  args: {
+    view: admitScene(ADMIT),
+    width: 328,
+    height: 240,
+    viewOnly: true,
+    aerial: true,
+    aerialLoad: 'partial',
+  },
+  render: (args) => (
+    <div
+      data-narrow-page=""
+      className="w-[360px] overflow-hidden bg-bg px-(--space-4) py-(--space-4)"
+    >
+      <InboxMapStill {...args} />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const embed = must(canvasElement.querySelector<HTMLElement>('[data-slot="inbox-map"]'));
+    const box = embed.getBoundingClientRect();
+    const credit = must(
+      canvasElement.querySelector<HTMLElement>('[data-slot="body-map-aerial-credit"]'),
+    );
+    await expect(credit).toHaveTextContent('Aerial · NAIP · Part of it didn’t load');
+    const retry = must(
+      canvasElement.querySelector<HTMLElement>('[data-slot="body-map-aerial-retry"]'),
+    );
+    for (const el of [credit, retry]) {
+      const r = el.getBoundingClientRect();
+      // The dock's own inset from the map's edge, the left one included once it wraps.
+      await expect(r.left).toBeGreaterThanOrEqual(box.left + 8);
+      await expect(r.right).toBeLessThanOrEqual(box.right + 0.5);
+    }
+    await userEvent.click(retry);
+    await waitFor(() => expect(retry).toHaveTextContent('Trying again…'));
+  },
+};

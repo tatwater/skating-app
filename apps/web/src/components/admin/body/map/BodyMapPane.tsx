@@ -23,9 +23,11 @@ import { SwitchRow } from '@/components/kit/switch';
 import type { MapSurface } from '@/lib/mapSurface';
 import { cn } from '@/lib/utils';
 import { formatDistance } from '../tabs/places/placesModel';
+import { AerialCredit } from './AerialCredit';
 import { BodyMapKey, PointFace } from './BodyMapMarks';
 import { LINE_STYLES, LIT_STYLE, tokenVar } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
+import type { AerialLoadView } from './consoleAerial';
 import { fieldOpacity } from './hazardField';
 import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescriptors';
 
@@ -51,8 +53,12 @@ import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescri
  * - **The summer aerial** (`consoleAerial`) is the rack's last row (`aerial`): not a scene's layer
  *   but the ground under all of them, so it is never disabled and never reset by a tab — the
  *   viewer's own switch, kept by the frame. While it is on, its credit (`credit`) sits in the dock
- *   before the scale, as board 4.3 draws it.
+ *   before the scale, as board 4.3 draws it, saying while the photograph loads or didn't all come
+ *   (`aerialLoad`, `AerialCredit`).
  */
+
+/** A credit with no state handed: the photograph is in. */
+const LOADED: AerialLoadView = { load: 'loaded' };
 
 /** The summer aerial's rack row: not the winter pass (*Aerial*, Imagery's), the NAIP photograph. */
 export const AERIAL_SWITCH_LABEL = 'Summer aerial';
@@ -103,6 +109,8 @@ export interface BodyMapPaneProps {
   aerial?: { on: boolean; onChange: (on: boolean) => void };
   /** The summer aerial's credit while it is on, in the dock before the scale. */
   credit?: string | null;
+  /** Where the summer aerial stands (loading, in, or not all of it came); in, unless said. */
+  aerialLoad?: AerialLoadView | null;
   className?: string;
 }
 
@@ -121,6 +129,7 @@ export function BodyMapPane({
   plate,
   aerial,
   credit = null,
+  aerialLoad = null,
   className,
 }: BodyMapPaneProps) {
   const paneRef = useRef<HTMLDivElement | null>(null);
@@ -254,14 +263,7 @@ export function BodyMapPane({
         </div>
       )}
       <MapDock>
-        {credit !== null && (
-          <span
-            data-slot="body-map-aerial-credit"
-            className="pb-(--space-1) text-kick leading-none font-medium tracking-kick whitespace-nowrap text-fg2 uppercase"
-          >
-            {credit}
-          </span>
-        )}
+        {credit !== null && <AerialCredit credit={credit} state={aerialLoad ?? LOADED} />}
         {surface !== null && (
           <MapScaleBar
             metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}

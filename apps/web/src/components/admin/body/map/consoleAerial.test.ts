@@ -4,7 +4,10 @@ import { MASCOMA_BOUNDS } from '../frame/bodyFixtures';
 import {
   AERIAL_PAINT,
   aerialCredit,
+  aerialCreditLine,
   aerialDate,
+  aerialLoadOf,
+  aerialLoadView,
   aerialMasks,
   consoleAerialAnchor,
   creditPoint,
@@ -123,5 +126,67 @@ describe('when the service says the photograph was taken', () => {
     await expect(aerialDate(at, fetcher)).resolves.toBeNull();
     await expect(aerialDate(at, fetcher)).resolves.toBe(Date.UTC(2023, 5, 22));
     expect(fetcher).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe('where the photograph stands, as the credit says it', () => {
+  const at = (phase: 'loading' | 'loaded' | 'failed', failed = 0, cells = 4) => ({
+    phase,
+    cells,
+    arrived: phase === 'loaded' ? cells : cells - failed,
+    failed,
+    shown: false,
+  });
+
+  it('loading until the reveal answers, and while any cell is still owed', () => {
+    expect(aerialLoadOf(null)).toBe('loading');
+    expect(aerialLoadOf(at('loading'))).toBe('loading');
+  });
+
+  it('loaded with every cell in; failed with none; partial with some', () => {
+    expect(aerialLoadOf(at('loaded'))).toBe('loaded');
+    expect(aerialLoadOf(at('failed', 4))).toBe('failed');
+    expect(aerialLoadOf(at('failed', 1))).toBe('partial');
+    expect(aerialLoadOf(at('failed', 3))).toBe('partial');
+  });
+
+  it('the credit says what is owed after its source, and nothing once it is all in', () => {
+    const credit = 'Aerial · NAIP Jun 2023';
+    expect(aerialCreditLine(credit, 'loaded')).toBe(credit);
+    expect(aerialCreditLine(credit, 'loading')).toBe('Aerial · NAIP Jun 2023 · Loading…');
+    expect(aerialCreditLine(credit, 'failed')).toBe('Aerial · NAIP Jun 2023 · Didn’t load');
+    expect(aerialCreditLine(credit, 'partial')).toBe(
+      'Aerial · NAIP Jun 2023 · Part of it didn’t load',
+    );
+  });
+
+  it('never says anything about the ice', () => {
+    for (const load of ['loading', 'loaded', 'failed', 'partial'] as const) {
+      expect(aerialCreditLine('Aerial · NAIP', load)).not.toMatch(/ice|safe|skat|frozen/i);
+    }
+  });
+
+  it('offers Try again only where it can help, and holds it while a retry is answered', () => {
+    const retry = () => {};
+    expect(aerialLoadView('loaded', retry, false)).toEqual({ load: 'loaded' });
+    expect(aerialLoadView('loading', retry, false)).toEqual({ load: 'loading' });
+    expect(aerialLoadView('failed', retry, false)).toEqual({
+      load: 'failed',
+      onRetry: retry,
+      pending: false,
+    });
+    expect(aerialLoadView('partial', retry, true)).toEqual({
+      load: 'partial',
+      onRetry: retry,
+      pending: true,
+    });
+    // Pressed: the credit says loading again, the button holds as Trying again…
+    expect(aerialLoadView('loading', retry, true)).toEqual({
+      load: 'loading',
+      onRetry: retry,
+      pending: true,
+    });
+    // Answered: in, and the button goes even if the flag were left up.
+    expect(aerialLoadView('loaded', retry, true)).toEqual({ load: 'loaded' });
   });
 });

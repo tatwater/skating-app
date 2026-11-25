@@ -226,8 +226,13 @@ describe('the summer aerial on the console map', () => {
     const credit = document.querySelector('[data-slot="body-map-aerial-credit"]');
     expect(credit).toHaveTextContent('Aerial · NAIP Jun 2023');
     // In the dock, before the scale and the zoom pair: board 4.3's corner.
-    expect(credit?.parentElement).toHaveAttribute('data-slot', 'map-dock');
-    expect(credit?.parentElement?.firstElementChild).toBe(credit);
+    const group = credit?.parentElement;
+    expect(group?.parentElement).toHaveAttribute('data-slot', 'map-dock');
+    expect(group?.parentElement?.firstElementChild).toBe(group);
+    expect(group?.firstElementChild).toBe(credit);
+    // In: nothing owed, nothing to press.
+    expect(credit).toHaveAttribute('data-state', 'loaded');
+    expect(document.querySelector('[data-slot="body-map-aerial-retry"]')).toBeNull();
   });
 
   it('draws over the fills and under every line: the shore stays on top', () => {

@@ -10,7 +10,7 @@ import { DEMO_PMTILES_URL, MAP_FLAVORS } from '@/lib/waterMap';
 import { frameInRealBox, MAX_ZOOM } from './bodyMapFraming';
 import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
-import { useAerialCredit, useConsoleAerial } from './consoleAerial';
+import { type AerialLoadView, useAerialCredit, useConsoleAerial } from './consoleAerial';
 import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE, rasterAnchor } from './glLayers';
 
 /**
@@ -52,6 +52,8 @@ export interface BodyMapCanvas {
   atMaxZoom: boolean;
   /** The summer aerial's credit while it is on ("Aerial · NAIP Jun 2023"); `null` while off. */
   aerialCredit: string | null;
+  /** Where the summer aerial stands while it is on (loading, in, not all of it came); `null` off. */
+  aerialLoad: AerialLoadView | null;
 }
 
 /** A box `factor` of its own size larger on each side: how far the camera may wander. */
@@ -189,7 +191,7 @@ export function useBodyMapCanvas({
   }, [palette, liveMap]);
 
   useRaster(liveMap, drawn.raster);
-  useConsoleAerial({ liveMap, on: aerial, bbox, mode });
+  const aerialLoad = useConsoleAerial({ liveMap, on: aerial, bbox, mode });
   const aerialCredit = useAerialCredit(aerial, bbox);
 
   const surface = useLiveSurface(liveMap);
@@ -206,6 +208,7 @@ export function useBodyMapCanvas({
     atMinZoom: map !== null && zoom <= map.getMinZoom() + 1e-6,
     atMaxZoom: map !== null && zoom >= map.getMaxZoom() - 1e-6,
     aerialCredit,
+    aerialLoad,
   };
 }
 

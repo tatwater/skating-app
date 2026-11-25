@@ -9,7 +9,7 @@ import { floorZoom, MAX_ZOOM } from '../../body/map/bodyMapFraming';
 import type { BodyMapMode } from '../../body/map/bodyMapPalette';
 import { LINE_STYLES, OUTLINE_STYLES, tokenVar } from '../../body/map/bodyMapPalette';
 import { type DrawnScene, drawScene, layerSwitches } from '../../body/map/bodyScene';
-import { aerialCredit } from '../../body/map/consoleAerial';
+import { type AerialLoad, aerialCredit, useStillAerialLoad } from '../../body/map/consoleAerial';
 import type { BodyMapLayer, BodyMapScene } from '../../body/map/mapDescriptors';
 import { useBodyMapCanvas } from '../../body/map/useBodyMapCanvas';
 import type { InboxLegendRow, InboxMapView } from './inboxMapScene';
@@ -178,6 +178,7 @@ export function InboxMap({
         foot={foot}
         plate={embedPlate(view)}
         credit={canvas.aerialCredit}
+        aerialLoad={canvas.aerialLoad}
         onZoomIn={canvas.zoomIn}
         onZoomOut={canvas.zoomOut}
         atMinZoom={canvas.atMinZoom}
@@ -208,6 +209,7 @@ export function InboxMapStill({
   aerial = false,
   maxZoom = MAX_ZOOM,
   aerialCapturedAt = null,
+  aerialLoad,
   hoverId,
   className,
 }: Common & {
@@ -215,8 +217,11 @@ export function InboxMapStill({
   hoverId?: string | null;
   /** When the story's photograph was flown, for its credit. */
   aerialCapturedAt?: number | null;
+  /** Where the story's photograph stands: in, unless said. */
+  aerialLoad?: AerialLoad;
 }) {
   const { drawn, foot } = useEmbedDrawn(view.scene);
+  const load = useStillAerialLoad(aerialLoad);
   const [zoomStep, setZoomStep] = useState(0);
   const framed = useMemo(
     () => stillCamera(view, width, height, maxZoom),
@@ -237,6 +242,7 @@ export function InboxMapStill({
         foot={foot}
         plate={embedPlate(view)}
         credit={aerial ? aerialCredit(aerialCapturedAt) : null}
+        aerialLoad={load}
         onZoomIn={() => setZoomStep((z) => z + 1)}
         onZoomOut={() => setZoomStep((z) => z - 1)}
         // The live map's floor and ceiling: a step and a half out from the framing (or far enough

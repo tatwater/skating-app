@@ -1,4 +1,4 @@
-import { render, waitFor } from '@testing-library/react';
+import { act, render, waitFor } from '@testing-library/react';
 import fc from 'fast-check';
 import { useMemo } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -229,8 +229,18 @@ function Harness({
   const drawn = useMemo(() => ({ ...drawScene(MASCOMA_SCENE, DEFAULT_LAYERS), raster }), [raster]);
   const canvas = useBodyMapCanvas({ bbox, mode, drawn, padding, reach, aerial, maxZoom });
   return (
-    <div data-testid="zoom" data-credit={canvas.aerialCredit ?? undefined}>
+    <div
+      data-testid="zoom"
+      data-credit={canvas.aerialCredit ?? undefined}
+      data-aerial-load={canvas.aerialLoad?.load}
+      data-aerial-pending={canvas.aerialLoad?.pending ? '' : undefined}
+    >
       {canvas.surface ? 'live' : 'waiting'}
+      {canvas.aerialLoad?.onRetry && (
+        <button type="button" onClick={canvas.aerialLoad.onRetry}>
+          retry
+        </button>
+      )}
     </div>
   );
 }
@@ -610,6 +620,49 @@ describe('the summer aerial', () => {
     expect(aerialLayer(map)).toBeUndefined();
     expect(map.sources.has('imagery')).toBe(false);
     expect(view.getByTestId('zoom').dataset.credit).toBeUndefined();
+  });
+
+  /** The map loaded with the aerial on, as the harness's live view. */
+  function aerialLive() {
+    const map = shell.map as FakeMap;
+    const view = render(<Harness mode="dark" aerial />);
+    map.loaded = true;
+    shell.onLoad?.(map);
+    shell.live = true;
+    view.rerender(<Harness mode="dark" aerial />);
+    return { map, view, zoom: () => view.getByTestId('zoom') };
+  }
+
+  it('its credit is loading until the cells are in, then loaded; off, it says nothing', async () => {
+    const { view, zoom } = aerialLive();
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('loaded'));
+    view.rerender(<Harness mode="dark" aerial={false} />);
+    expect(zoom().dataset.aerialLoad).toBeUndefined();
+  });
+
+  it('says failed when no cell came, and Try again asks again until the photograph is in', async () => {
+    tiles.load.mockResolvedValue(null as unknown as ImageBitmap);
+    const { view, map, zoom } = aerialLive();
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('failed'));
+    expect(map.sources.has('imagery')).toBe(false);
+    tiles.load.mockResolvedValue({} as ImageBitmap);
+    act(() => view.getByRole('button', { name: 'retry' }).click());
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('loaded'));
+    expect(zoom().dataset.aerialPending).toBeUndefined();
+    expect(view.queryByRole('button', { name: 'retry' })).toBeNull();
+    expect(map.sources.has('imagery')).toBe(true);
+  });
+
+  it('a retry that fails again offers Try again again — never stuck on Trying again…', async () => {
+    tiles.load.mockResolvedValue(null as unknown as ImageBitmap);
+    const { view, zoom } = aerialLive();
+    await waitFor(() => expect(zoom().dataset.aerialLoad).toBe('failed'));
+    const asked = tiles.load.mock.calls.length;
+    act(() => view.getByRole('button', { name: 'retry' }).click());
+    await waitFor(() => expect(tiles.load.mock.calls.length).toBeGreaterThan(asked));
+    await waitFor(() => expect(zoom().dataset.aerialPending).toBeUndefined());
+    expect(zoom().dataset.aerialLoad).toBe('failed');
+    tiles.load.mockResolvedValue({} as ImageBitmap);
   });
 });
 
