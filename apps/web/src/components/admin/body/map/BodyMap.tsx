@@ -2,7 +2,7 @@ import { type ReactNode, useMemo, useState } from 'react';
 import { type BBoxLike, fitCamera, stillSurface } from '@/lib/mapSurface';
 import { useMapToolClaim } from '../frame/mapTool';
 import { useAerialSwitch } from './aerialSwitch';
-import { BodyMapPane } from './BodyMapPane';
+import { BodyMapPane, type BodyMapPaneProps } from './BodyMapPane';
 import { BodyMapStill } from './BodyMapStill';
 import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import { drawScene, layerSwitches, rackRows } from './bodyScene';
@@ -114,6 +114,7 @@ export function BodyMapStillView({
   aerial: aerialAtFirst = false,
   aerialCapturedAt = null,
   aerialLoad,
+  tool = null,
   className,
 }: Common & {
   width: number;
@@ -125,6 +126,8 @@ export function BodyMapStillView({
   aerialCapturedAt?: number | null;
   /** Where the story's photograph stands: in, unless said. */
   aerialLoad?: AerialLoad;
+  /** A tool held on the still (the app's comes from the tab's claim): its mode bar over the map. */
+  tool?: BodyMapPaneProps['tool'];
 }) {
   const { drawn, rack, onLayerChange } = useRack(scene, resetKey);
   const load = useStillAerialLoad(aerialLoad);
@@ -136,6 +139,7 @@ export function BodyMapStillView({
   }, [bbox, width, height, zoomStep]);
   return (
     <BodyMapPane
+      tool={tool}
       className={className}
       surface={surface}
       ground={<BodyMapStill surface={surface} drawn={drawn} aerial={aerial} />}

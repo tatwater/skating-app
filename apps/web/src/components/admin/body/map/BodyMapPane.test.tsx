@@ -9,7 +9,7 @@ import { hazardsMapScene } from '../tabs/hazards/hazardsMap';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyMapStillView } from './BodyMap';
 import { BodyMapKey } from './BodyMapMarks';
-import { BodyMapPane } from './BodyMapPane';
+import { BodyMapPane, RACK_UNDER_TOOL } from './BodyMapPane';
 import { drawScene, layerSwitches, mergeScenes } from './bodyScene';
 import type { MapPointMark } from './mapDescriptors';
 
@@ -336,5 +336,66 @@ describe('the tool’s mode bar (B01-6a)', () => {
   it('draws no bar while no tool is held', () => {
     render(<BodyMapPane surface={null} ground={null} drawn={drawn} rack={false} />);
     expect(document.querySelector('[data-slot="map-mode-bar"]')).toBeNull();
+  });
+
+  it('drops the rack under the bar while a tool is held, and puts it back when the tool goes', () => {
+    const tool = { mode: 'Bay mode', onExit: () => {} };
+    const still = (held: typeof tool | null) => (
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        tool={held}
+      />
+    );
+    const { rerender } = render(still(tool));
+    const rack = () => screen.getByRole('group', { name: 'Map layers' });
+    // The kit's own rule looks for the bar inside `[data-slot=map-pane]`; this pane is `body-map`,
+    // so the rule can't match and the pane says the offset itself.
+    expect(rack().closest('[data-slot="map-pane"]')).toBeNull();
+    expect(rack()).toHaveClass(RACK_UNDER_TOOL);
+    // One rule for the rack's top: the corner's is gone, not merely outvoted.
+    expect(rack()).not.toHaveClass('top-(--space-5)');
+    // …and the measure it names is the kit rack's own, set on the rack.
+    expect(rack().style.getPropertyValue('--rack-under-mode')).not.toBe('');
+    rerender(still(null));
+    expect(rack()).not.toHaveClass(RACK_UNDER_TOOL);
+    expect(rack()).toHaveClass('top-(--space-5)');
+  });
+
+  it('measures the chrome again when a tool’s bar goes up: the labels keep clear of it', () => {
+    // The pane at the origin, and the bar laid out down the right edge (taller than it is drawn, so
+    // every parallel's label meets it): only a new measure can know it is there.
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      const slot = this.getAttribute('data-slot');
+      if (slot === 'body-map') return rect(0, 0, W, H);
+      if (slot === 'map-mode-bar') return rect(20, 14, W - 20, H);
+      return rect(0, 0, 0, 0);
+    });
+    const latitudes = () =>
+      [...document.querySelectorAll('[data-slot="map-graticule-label"]')]
+        .map((l) => l.textContent ?? '')
+        .filter((t) => t.endsWith('°N'));
+    const still = (held: boolean) => (
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+        tool={held ? { mode: 'Bay mode', onExit: () => {} } : null}
+      />
+    );
+    const { rerender } = render(still(false));
+    expect(latitudes().length).toBeGreaterThan(0);
+    rerender(still(true));
+    expect(latitudes()).toEqual([]);
+    // …and back when the tool goes.
+    rerender(still(false));
+    expect(latitudes().length).toBeGreaterThan(0);
   });
 });

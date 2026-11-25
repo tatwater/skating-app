@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
@@ -47,6 +47,21 @@ describe('the summer aerial’s credit', () => {
       <AerialCredit credit={CREDIT} state={{ load: 'partial', onRetry }} />,
     );
     act(() => screen.getByRole('button').focus());
+    rerender(<AerialCredit credit={CREDIT} state={{ load: 'loaded' }} />);
+    expect(words()).toHaveFocus();
+  });
+
+  it('keeps focus on the credit where the browser blurs the button as it goes (Chromium)', () => {
+    const { rerender } = render(
+      <AerialCredit credit={CREDIT} state={{ load: 'partial', onRetry: vi.fn() }} />,
+    );
+    const button = screen.getByRole('button');
+    act(() => button.focus());
+    // Chromium's order, which jsdom doesn't make: a blur on the node that still holds focus, as
+    // it is removed. Focus read from a blur would be lost here (`AerialCredit.stories` is the
+    // real browser's proof).
+    fireEvent.blur(button);
+    fireEvent.focusOut(button);
     rerender(<AerialCredit credit={CREDIT} state={{ load: 'loaded' }} />);
     expect(words()).toHaveFocus();
   });

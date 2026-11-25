@@ -422,6 +422,8 @@ describe('BodyConsoleRoute', () => {
         .map(([name]) => name),
     );
     window.localStorage.removeItem(AERIAL_KEY);
+    // The store outlives a test: however this one ends, the next finds the switch off.
+    onTestFinished(() => window.localStorage.removeItem(AERIAL_KEY));
     const user = userEvent.setup();
     const { rerender, unmount } = render(<Mounted />);
     const aerial = () => screen.getByRole('switch', { name: /Summer aerial/ });

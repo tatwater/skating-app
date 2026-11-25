@@ -61,6 +61,9 @@ import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescri
 /** A credit with no state handed: the photograph is in. */
 const LOADED: AerialLoadView = { load: 'loaded' };
 
+/** The rack's top while a tool's mode bar is up: under the bar, by the kit rack's own measure. */
+export const RACK_UNDER_TOOL = 'top-(--rack-under-mode)';
+
 /** The summer aerial's rack row: not the winter pass (*Aerial*, Imagery's), the NAIP photograph. */
 export const AERIAL_SWITCH_LABEL = 'Summer aerial';
 
@@ -156,6 +159,7 @@ export function BodyMapPane({
     surface?.height ?? 0,
     rows.length + (aerial === undefined ? 0 : 1),
     plate != null,
+    tool !== null,
   );
 
   const footInset = drawn.keyKinds.length > 0 ? KEY_HEIGHT : 0;
@@ -247,7 +251,14 @@ export function BodyMapPane({
       {rack !== false && (
         // The summer aerial's row names itself in two words, a step past the kit rack's 8rem: the
         // rack takes 9 when it holds that row, so no name runs off its plate.
-        <MapLayerRack className={cn(aerial !== undefined && 'w-[9rem]')}>
+        //
+        // Under a tool's mode bar the rack drops below it, and that is said here: the kit's own
+        // rule finds the bar inside `[data-slot=map-pane]`, and this pane is named `body-map`
+        // (its tests, its keep-outs and its stories find it by that), so the rule never matches
+        // and the bar covered the rack's top row. `--rack-under-mode` is the kit rack's own.
+        <MapLayerRack
+          className={cn(aerial !== undefined && 'w-[9rem]', tool !== null && RACK_UNDER_TOOL)}
+        >
           {rows.map((row) => (
             <SwitchRow
               key={row.layer}
@@ -461,8 +472,10 @@ const KEEPOUT_SELECTOR =
  * The chrome the graticule's labels keep clear of, in pane px: the rack, the dock, MapLibre's own
  * controls (the folded credits), and anything a tab marks `data-map-ui`. Measured after layout,
  * again whenever the pane changes size, and whenever one of them does — the foot's notice arriving,
- * a tab's dock mounting in it. A box with no area takes no room (the foot holds its live region
- * mounted while it says nothing), so it keeps nothing out.
+ * a tab's dock mounting in it — and when a tool's mode bar goes up or comes down (`moded`): the bar
+ * is a keep-out that arrives with no other box changing size, and the rack moves under it. A box
+ * with no area takes no room (the foot holds its live region mounted while it says nothing), so it
+ * keeps nothing out.
  */
 function useKeepouts(
   pane: React.RefObject<HTMLDivElement | null>,
@@ -470,9 +483,10 @@ function useKeepouts(
   height: number,
   rows: number,
   plated: boolean,
+  moded: boolean,
 ): readonly Rect[] {
   const [rects, setRects] = useState<readonly Rect[]>([]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measured when the pane, the rack or the plate changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measured when the pane, the rack, the plate or the mode bar changes.
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el) return;
@@ -497,6 +511,6 @@ function useKeepouts(
     const observer = new ResizeObserver(measure);
     for (const node of el.querySelectorAll<HTMLElement>(KEEPOUT_SELECTOR)) observer.observe(node);
     return () => observer.disconnect();
-  }, [width, height, rows, plated]);
+  }, [width, height, rows, plated, moded]);
   return rects;
 }

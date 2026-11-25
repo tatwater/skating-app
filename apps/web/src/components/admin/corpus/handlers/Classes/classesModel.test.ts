@@ -147,6 +147,9 @@ describe('the nearest body', () => {
     expect(offsetWords(at(1.1 * mi, 2))).toBe('1.1 mi north');
     expect(offsetWords(at(0.1 * mi, 45))).toBe('0.1 mi northeast');
     expect(offsetWords(at(9.94 * mi, 90))).toBe('9.9 mi east');
+    // A hair under ten rounds to ten, and ten is whole: never "10.0 mi".
+    expect(offsetWords(at(9.97 * mi, 90))).toBe('10 mi east');
+    expect(offsetWords(at(10 * mi, 90))).toBe('10 mi east');
     expect(offsetWords(at(12.4 * mi, 135))).toBe('12 mi southeast');
     expect(offsetWords(at(2 * mi, 225))).toBe('2.0 mi southwest');
     expect(offsetWords(at(2 * mi, 270))).toBe('2.0 mi west');

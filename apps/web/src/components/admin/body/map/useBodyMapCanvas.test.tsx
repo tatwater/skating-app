@@ -1,7 +1,7 @@
 import { act, render, waitFor } from '@testing-library/react';
 import fc from 'fast-check';
 import { useMemo } from 'react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { freezeUpLaneIds } from '@/components/useFreezeUpFrame';
 import { type BBoxLike, fitCamera, type Padding } from '@/lib/mapSurface';
@@ -249,7 +249,9 @@ beforeEach(() => {
   shell.map = new FakeMap();
   shell.live = false;
   shell.onLoad = null;
-  tiles.load.mockClear();
+  // Reset, not cleared: a test that makes the cells fail must not leave the next one failing with
+  // it, however it ends (a reset puts back the implementation the mock was made with).
+  tiles.load.mockReset();
 });
 
 describe('useBodyMapCanvas', () => {
@@ -571,6 +573,8 @@ describe('the summer aerial', () => {
       ctx as unknown as CanvasRenderingContext2D,
     );
   });
+  // …and jsdom's own back after each: the stand-in never reaches the suites below.
+  afterEach(() => vi.restoreAllMocks());
 
   const aerialLayer = (map: FakeMap) => map.layers.get('imagery-raster');
 
@@ -662,7 +666,6 @@ describe('the summer aerial', () => {
     await waitFor(() => expect(tiles.load.mock.calls.length).toBeGreaterThan(asked));
     await waitFor(() => expect(zoom().dataset.aerialPending).toBeUndefined());
     expect(zoom().dataset.aerialLoad).toBe('failed');
-    tiles.load.mockResolvedValue({} as ImageBitmap);
   });
 });
 

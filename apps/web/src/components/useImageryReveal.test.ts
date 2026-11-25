@@ -328,6 +328,24 @@ describe('a host’s own floor, anchor and paint (the console map’s summer aer
     });
   });
 
+  it('a host’s anchor that names nothing falls back to the reveal’s own, never the top of the style', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map } = fakeMap();
+    const addLayer = vi.spyOn(map, 'addLayer');
+    renderHook(() =>
+      useImageryReveal({
+        map,
+        loaded: true,
+        masks: MASKS,
+        unmasked: true,
+        anchor: () => undefined,
+      }),
+    );
+    await waitFor(() => expect(addLayer).toHaveBeenCalled());
+    const [, before] = addLayer.mock.calls[0] as unknown as [unknown, string | undefined];
+    expect(before).toBe('roads_minor');
+  });
+
   it('a host’s floor of 0 draws where the default floor would not', async () => {
     loadTile.mockResolvedValue({} as ImageBitmap);
     const { map } = fakeMap(9);
@@ -335,6 +353,48 @@ describe('a host’s own floor, anchor and paint (the console map’s summer aer
       useImageryReveal({ map, loaded: true, masks: MASKS, unmasked: true, minZoom: 0 }),
     );
     await waitFor(() => expect(loadTile).toHaveBeenCalled());
+  });
+});
+
+describe('a pane that is not on screen (a narrow page’s map behind its list)', () => {
+  it('asks for nothing while its box is zero, and for its view once it is shown', async () => {
+    loadTile.mockResolvedValue({} as ImageBitmap);
+    const { map, handlers } = fakeMap();
+    let box = { clientWidth: 0, clientHeight: 0 };
+    vi.spyOn(map, 'getContainer').mockImplementation(() => box as HTMLElement);
+    const onStatusChange = vi.fn();
+    const onLoadingChange = vi.fn();
+    // No floor, as the console asks: nothing else stops a view measured against no screen (MapLibre
+    // still answers `getBounds()` for a zero container, as this map does).
+    renderHook(() =>
+      useImageryReveal({
+        map,
+        loaded: true,
+        masks: MASKS,
+        unmasked: true,
+        minZoom: 0,
+        onStatusChange,
+        onLoadingChange,
+      }),
+    );
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(loadTile).not.toHaveBeenCalled();
+    expect(onStatusChange).not.toHaveBeenCalled();
+    expect(onLoadingChange).not.toHaveBeenCalled();
+    expect(map.getSource('imagery')).toBeUndefined();
+
+    // A width alone is still no box.
+    box = { clientWidth: 1200, clientHeight: 0 };
+    handlers.get('moveend')?.();
+    await Promise.resolve();
+    expect(loadTile).not.toHaveBeenCalled();
+
+    // Shown: MapLibre resizes, and a resize ends in `moveend`.
+    box = { clientWidth: 1200, clientHeight: 800 };
+    handlers.get('moveend')?.();
+    await waitFor(() => expect(map.getSource('imagery')).toBeDefined());
+    expect(onStatusChange).toHaveBeenLastCalledWith(expect.objectContaining({ phase: 'loaded' }));
   });
 });
 

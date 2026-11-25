@@ -184,7 +184,8 @@ export interface ImageryRevealOptions {
   minZoom?: number;
   /**
    * Where the photograph's layer goes: the layer id it is inserted before. {@link aerialAnchorId}
-   * unless said — the console map has its own layer contract (`MAP_BANDS`) and names its band.
+   * unless said — the console map has its own layer contract (`MAP_BANDS`) and names its band —
+   * and where a host's answers `undefined`, which to MapLibre is the top of the style.
    * Read when the layer is added, never re-run for a change of function.
    */
   anchor?: (map: maplibregl.Map) => string | undefined;
@@ -424,7 +425,10 @@ export function useImageryReveal({
         // *while a winter frame is up*. Zooming in then dropped the summer aerial over the February
         // picture and read as the winter frame vanishing. Mount order is not a z-order, so the order
         // is stated here instead.
-        (anchorRef.current ?? aerialAnchorId)(map),
+        //
+        // A host's anchor that names nothing (its own layers not in yet) falls back to this hook's
+        // own, as `useFreezeUpFrame`'s does — the rule above holds for a host too.
+        anchorRef.current?.(map) ?? aerialAnchorId(map),
       );
     };
 
@@ -454,6 +458,21 @@ export function useImageryReveal({
       // fetched for. Every early exit above the claim, every exit below it settles the signal.
       if (map.getZoom() < minZoom) return;
 
+      // **A pane that isn't on screen asks for nothing** — and, like the floor, before the claim. A
+      // hidden pane (a narrow page's map behind its list) measures zero, but MapLibre gives a zero
+      // container a 400 × 300 view, so `getBounds()` is still a real box — kilometers of it at the
+      // camera a hidden map is left at — while the screen it is sized against is zero pixels wide.
+      // The sharpness asked for is then the whole view per pixel, and the grid answers with a cell
+      // near its coarsest level (at the zoom the console's map loads at, a quarter of the world in
+      // one picture): fetched for ground nobody is looking at, and — if the service answers — on
+      // the map when the pane is shown, where a progressive host no longer paints the real view as
+      // its cells land. The zoom floor used to hide this (the console's map loads below it); a host
+      // with no floor (its `minZoom: 0`) meets it on every body opened with the switch left on.
+      // Showing the pane resizes the map, and a resize ends in `moveend`, so the view is asked for
+      // the moment it has a screen.
+      const container = map.getContainer();
+      if (!(container.clientWidth > 0 && container.clientHeight > 0)) return;
+
       const bounds = map.getBounds();
       const view = toMercatorBox({
         minLat: bounds.getSouth(),
@@ -462,8 +481,7 @@ export function useImageryReveal({
         maxLng: bounds.getEast(),
       });
 
-      const container = map.getContainer();
-      const devicePx = Math.max(1, container.clientWidth) * (window.devicePixelRatio || 1);
+      const devicePx = container.clientWidth * (window.devicePixelRatio || 1);
       // What the screen could actually resolve, in projected meters — the sharpness we ask the grid
       // for. It answers with the coarsest level that meets it, or a coarser one if that would cost
       // more cells than the service tolerates in parallel.

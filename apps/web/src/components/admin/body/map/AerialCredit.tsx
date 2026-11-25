@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef } from 'react';
+import { useCallback, useEffect, useId, useRef } from 'react';
 
 import { Button } from '@/components/kit/button';
 import { AERIAL_LOAD_WORDS } from '../consoleWords';
@@ -17,16 +17,30 @@ import { type AerialLoadView, aerialCreditLine } from './consoleAerial';
  * lands. When the photograph recovers and the button goes, focus that was on it stays on the
  * credit rather than dropping to the page. On one line wherever it fits; on a phone's narrow
  * embed it wraps rather than running off the map.
+ *
+ * ⚠ Whether the button held focus is read **as its ref is detached** — while it is still on the
+ * page — never from its `blur`. Chromium blurs a focused node as it is removed and jsdom doesn't,
+ * so a flag a blur clears reads "not focused" by the time the effect asks: focus fell to the page
+ * in the browser while the jsdom test passed. `AerialCredit.stories` holds it in a real one.
  */
 export function AerialCredit({ credit, state }: { credit: string; state: AerialLoadView }) {
   const { load, onRetry, pending = false } = state;
   const id = useId();
   const words = useRef<HTMLSpanElement>(null);
-  const focused = useRef(false);
+  const button = useRef<HTMLButtonElement | null>(null);
+  /** The button went with focus on it: owed to the credit, paid by the effect below. */
+  const owed = useRef(false);
+  const setButton = useCallback((node: HTMLButtonElement | null) => {
+    // React detaches a ref before it takes the node off the page: focus is still readable here.
+    if (node === null) {
+      owed.current = button.current !== null && document.activeElement === button.current;
+    }
+    button.current = node;
+  }, []);
   const offered = onRetry !== undefined;
   useEffect(() => {
-    if (!offered && focused.current) {
-      focused.current = false;
+    if (!offered && owed.current) {
+      owed.current = false;
       words.current?.focus();
     }
   }, [offered]);
@@ -46,17 +60,12 @@ export function AerialCredit({ credit, state }: { credit: string; state: AerialL
       </span>
       {offered && (
         <Button
+          ref={setButton}
           size="xs"
           data-slot="body-map-aerial-retry"
           className="shrink-0 bg-map-plate"
           aria-describedby={id}
           aria-disabled={pending || undefined}
-          onFocus={() => {
-            focused.current = true;
-          }}
-          onBlur={() => {
-            focused.current = false;
-          }}
           onClick={() => {
             if (!pending) onRetry();
           }}

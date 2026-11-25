@@ -117,6 +117,26 @@ describe('when the service says the photograph was taken', () => {
     ).resolves.toBeNull();
   });
 
+  it('nothing dated there is an answer, remembered; a refusal is not: the next map asks again', async () => {
+    const empty = vi.fn(async (_url: string | URL | Request) => ok({}));
+    const bare = { lat: 45.1, lng: -70.9 };
+    await expect(aerialDate(bare, empty)).resolves.toBeNull();
+    await expect(aerialDate(bare, empty)).resolves.toBeNull();
+    expect(empty).toHaveBeenCalledTimes(1);
+
+    // A status that isn't ok, then the service's own error body (a 200), then the answer.
+    const fetcher = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: false, status: 503 } as Response)
+      .mockResolvedValueOnce(ok({ error: { code: 500, message: 'Error performing identify' } }))
+      .mockResolvedValueOnce(ok(answer));
+    const at = { lat: 43.7, lng: -72.2 };
+    await expect(aerialDate(at, fetcher)).resolves.toBeNull();
+    await expect(aerialDate(at, fetcher)).resolves.toBeNull();
+    await expect(aerialDate(at, fetcher)).resolves.toBe(Date.UTC(2023, 5, 22));
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
   it('a failed ask is not remembered: the next map may ask again', async () => {
     const fetcher = vi
       .fn()

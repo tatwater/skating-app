@@ -164,8 +164,10 @@ export function nearestOf(neighbors: readonly Neighbor[]): Neighbor | undefined 
 export function offsetWords(offset: Offset): string {
   const miles = offset.meters / METERS_PER_MILE;
   if (miles < 0.1) return W.underATenth;
+  // The step is chosen on the figure as it would be written: 9.97 mi rounds to ten, and ten is
+  // said whole ("10 mi"), never "10.0 mi".
   const figure =
-    miles < 10
+    Number(miles.toFixed(1)) < 10
       ? miles.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
       : Math.round(miles).toLocaleString('en-US');
   return W.milesWay(figure, W.compass[compassSectorFor(offset.bearingDeg)]);

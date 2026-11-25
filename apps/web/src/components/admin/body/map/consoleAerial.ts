@@ -224,14 +224,30 @@ export function creditPoint(bbox: BBoxLike): LatLng {
 /** Answers by URL for the session: settled dates (or `null`: nothing dated there) and in-flight asks. */
 const dates = new Map<string, Promise<number | null>>();
 
-/** When the service says the photograph at `point` was taken; `null` for no answer. Never throws. */
+/** The service's own error body: ArcGIS answers a failed ask with a 200 and `{ error: … }`. */
+const refused = (json: unknown): boolean =>
+  typeof json === 'object' && json !== null && 'error' in json;
+
+/**
+ * When the service says the photograph at `point` was taken; `null` for no answer. Never throws.
+ * Only an answer is remembered — a date, or a photograph with no date there. A refusal (a status
+ * that isn't ok, the service's error body) is a failed ask like a dropped connection: remembering
+ * it as "nothing dated there" would leave every later map of the place without its month until
+ * the page was loaded again.
+ */
 export function aerialDate(point: LatLng, fetcher: typeof fetch = fetch): Promise<number | null> {
   const url = aerialIdentifyUrl(point);
   const known = dates.get(url);
   if (known !== undefined) return known;
   const asked = fetcher(url, { mode: 'cors' })
-    .then((r) => (r.ok ? r.json() : null))
-    .then((json) => parseAerialScene(json)?.capturedAt ?? null)
+    .then((r) => {
+      if (!r.ok) throw new Error('The identify ask was refused');
+      return r.json();
+    })
+    .then((json) => {
+      if (refused(json)) throw new Error('The identify ask was refused');
+      return parseAerialScene(json)?.capturedAt ?? null;
+    })
     .catch(() => {
       // A failed ask isn't remembered: the next map may try again.
       dates.delete(url);
