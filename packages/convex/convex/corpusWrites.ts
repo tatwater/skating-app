@@ -88,7 +88,9 @@ function decisionRowOf(
 
 /**
  * A *Keep*: no domain write. The settle is the decision, recorded as `settle_review_reason` on the
- * body, which its undo (`unsettle_review_reason`) reverses.
+ * body, which its undo (`unsettle_review_reason`) reverses. A name Keep writes no `user` claim: its
+ * settle entry records the spelling kept (`keptName`), which the import leaves shown while the
+ * settle holds (`honorSettled`, `nameFields`).
  */
 async function keep(
   ctx: MutationCtx,

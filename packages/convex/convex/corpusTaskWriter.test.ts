@@ -436,6 +436,8 @@ describe('deciding', () => {
           evidence: reviewEvidence(lane, after),
           at: NOW + 60_000,
           actionId,
+          // A name Keep records the spelling it kept; a rename is a `user` claim, a reclass no name.
+          ...(decision === 'kept' ? { keptName: after.name } : {}),
         },
       ]);
       expect(await t.run((ctx) => ctx.db.get(task._id))).toMatchObject({

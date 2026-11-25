@@ -487,6 +487,11 @@ type HonoredReasons = {
   settled?: Doc<'waterBodies'>['reviewSettled'];
   held?: number;
   raised?: number;
+  /**
+   * The spelling a held name *Keep* kept, while the body still shows it: `nameFields` leaves it
+   * shown over the record's `name`. Absent when no such settle holds.
+   */
+  keptName?: string;
 };
 
 /**
@@ -501,6 +506,12 @@ type HonoredReasons = {
  *
  * A settle whose reason the record doesn't raise is kept: the question is quiet, not answered
  * differently, and a later campaign that raises it again is held to it.
+ *
+ * **A held name *Keep* holds its spelling too** (`keptName`). The name evidence is the distinct
+ * spellings alone, so a campaign whose ranking now prefers another of the same spellings is held,
+ * and without this its `name` would replace the one the moderator kept. Only while the body still
+ * shows the kept spelling: the import declines to overwrite a Keep, it never restores one a later
+ * write (a Body console rename, or its clear) has replaced.
  */
 function honorSettled(
   existing: Doc<'waterBodies'>,
@@ -528,12 +539,16 @@ function honorSettled(
   const reasons: ReviewReason[] = [];
   const dropped = new Set<ReviewReason>();
   let held = 0;
+  let keptName: string | undefined;
   for (const reason of incoming) {
     const entry = settledBefore.find((s) => s.reason === reason);
     if (entry === undefined || !isTaskReason(reason)) {
       reasons.push(reason);
     } else if (entry.evidence === evidenceOf(reason, after)) {
       held++;
+      if (entry.keptName !== undefined && entry.keptName === existing.name) {
+        keptName = entry.keptName;
+      }
     } else {
       reasons.push(reason);
       dropped.add(reason);
@@ -545,6 +560,7 @@ function honorSettled(
     settled: settled.length > 0 ? settled : undefined,
     held,
     raised: dropped.size,
+    ...(keptName !== undefined ? { keptName } : {}),
   };
 }
 
@@ -631,6 +647,10 @@ async function flagAsDuplicates(
  * and no flag to keep in step — **the override is the evidence**. `NAME_SOURCE_RANK` already ranks
  * `user` above every catalog.
  *
+ * A Corpus *Keep* (B01-7a) writes no claim — it settles the question on the spelling shown — so
+ * `keptName`, from a held settle (`honorSettled`), keeps that spelling over the record's `name`. A
+ * pick still outranks it; it ends with the settle (an undo, or the question asked again).
+ *
  * `searchText` is rebuilt from whichever name wins plus every other claim, so a moderator's pick
  * changes what is *displayed* and never what is *findable*. Losing a name to a preference would be
  * the same outage this whole field exists to end.
@@ -638,6 +658,7 @@ async function flagAsDuplicates(
 function nameFields(
   existing: Doc<'waterBodies'> | undefined,
   item: { name: string; nameClaims?: { source: string; value: string }[] },
+  keptName?: string,
 ) {
   // **`composeNameClaims`, not a single dedupe.** A moderator's pick has the same *value* as the
   // catalog claim it prefers, so deduping the two together deletes that catalog claim — and then
@@ -647,7 +668,8 @@ function nameFields(
     (existing?.nameClaims ?? []).filter((c) => c.source === 'user') as NameClaim[],
     (item.nameClaims ?? []) as NameClaim[],
   );
-  const chosen = claims.find((c) => c.source === 'user')?.value ?? item.name;
+  // A pick outranks everything; a held *Keep* (`honorSettled`'s `keptName`) outranks the ranking.
+  const chosen = claims.find((c) => c.source === 'user')?.value ?? keptName ?? item.name;
   return {
     name: chosen,
     nameClaims: claims.length > 0 ? claims : undefined,
@@ -951,7 +973,7 @@ export const importCanonical = internalMutation({
         await ctx.db.patch(existing._id, {
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
           // import and the three must never disagree. See `nameFields`.
-          ...nameFields(existing, item),
+          ...nameFields(existing, item, honored.keptName),
           // A moderator's class outranks the catalogs' (B01-3d), as a moderator's name does; the
           // import's own ranking is kept beside it, for a clear to put back.
           type: existing.moderatorClass ?? item.type,
@@ -1003,7 +1025,7 @@ export const importCanonical = internalMutation({
         await syncBodyTasks(ctx, existing._id, {
           body: {
             ...existing,
-            ...nameFields(existing, item),
+            ...nameFields(existing, item, honored.keptName),
             type: existing.moderatorClass ?? item.type,
             ...classClaimFields(item),
             ...scores,

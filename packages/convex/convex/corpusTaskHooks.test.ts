@@ -71,6 +71,8 @@ async function person(t: T, subject: string, role: 'moderator' | 'admin') {
 type Rec = {
   externalId: string;
   x?: number;
+  /** The merge's winning spelling (`chooseName`): "The Basin" unless a case says otherwise. */
+  name?: string;
   reviewReasons?: Doc<'waterBodies'>['reviewReasons'];
   nameClaims?: { source: 'osm' | 'nhd'; value: string; sources?: ('osm' | 'nhd')[] }[];
   classClaims?: {
@@ -105,7 +107,7 @@ function record(r: Rec) {
     osmId: r.osmId ?? r.externalId,
     ...(r.nhdId !== undefined ? { nhdId: r.nhdId } : {}),
     ...(r.threeDhpId !== undefined ? { threeDhpId: r.threeDhpId } : {}),
-    name: 'The Basin',
+    name: r.name ?? 'The Basin',
     type: 'lakePond' as const,
     polygon: square(x),
     bbox: { minLat: 0, minLng: x, maxLat: 1, maxLng: x + 1 },
@@ -425,6 +427,118 @@ describe('the import', () => {
     });
     // One row per key: a batch that wrote per task would still tally, but a row per move would not.
     expect(counts).toHaveLength(4);
+  });
+});
+
+describe('a kept name holds while its settle does', () => {
+  /** *Keep* on the body's open name conflict, through the real decision. */
+  async function keepName(t: T, mod: Awaited<ReturnType<typeof person>>, id: Id<'waterBodies'>) {
+    const task = (await openOf(t, id)).find((x) => x.lane === 'nameConflicts');
+    if (!task) throw new Error('no open name conflict');
+    return mod.as.mutation(api.corpusWrites.decideName, { taskId: task._id, pick: 'shown' });
+  }
+  /** The same two spellings, OSM's now ranked first: the evidence unchanged, the winner not. */
+  const OSM_WINS: Rec = { ...BOTH, name: 'Lake Auburn' };
+  /** The first line of the open class task's search text: the name the task shows. */
+  const shownOnTask = async (t: T, id: Id<'waterBodies'>) =>
+    (await openOf(t, id)).find((x) => x.lane === 'classConflicts')?.searchText?.split('\n')[0];
+
+  test('a campaign that changes the winning catalog, adding no spelling, leaves the kept name', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await keepName(t, mod, id);
+    const settled = (await bodyOf(t, 'osm/A')).reviewSettled;
+    expect(settled?.find((s) => s.reason === 'name-conflict')?.keptName).toBe('The Basin');
+
+    expect(await load(t, [OSM_WINS])).toMatchObject({ settledHeld: 1, raisedAgain: 0 });
+    const body = await bodyOf(t, 'osm/A');
+    expect(body.name).toBe('The Basin');
+    // No claim was written for it, and both spellings stay findable.
+    expect(body.nameClaims?.map((c) => c.source)).not.toContain('user');
+    expect(body.searchText).toContain('Lake Auburn');
+    expect(body.searchText).toContain('The Basin');
+    expect(await shownOnTask(t, id)).toBe('The Basin');
+    expect((await openOf(t, id)).map((x) => x.lane)).toEqual(['classConflicts']);
+    // A second such campaign holds it the same way.
+    await load(t, [OSM_WINS]);
+    expect((await bodyOf(t, 'osm/A')).name).toBe('The Basin');
+    expect((await t.run((ctx) => planBodyTasks(ctx, id))).refresh).toEqual([]);
+    await expectCountsTally(t);
+  });
+
+  test('the Keep undone, the next campaign’s name comes through', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    const { actionId } = await keepName(t, mod, id);
+    await mod.as.mutation(api.undo.run, { actionId });
+    expect((await bodyOf(t, 'osm/A')).reviewSettled).toBeUndefined();
+
+    expect(await load(t, [OSM_WINS])).toMatchObject({ settledHeld: 0 });
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+    expect(await shownOnTask(t, id)).toBe('Lake Auburn');
+    expect((await openOf(t, id)).map((x) => x.lane).sort()).toEqual([
+      'classConflicts',
+      'nameConflicts',
+    ]);
+    await expectCountsTally(t);
+  });
+
+  test('a new spelling asks again, and the campaign’s name is shown', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await keepName(t, mod, id);
+    const spelled: Rec = {
+      ...BOTH,
+      name: 'Auburn Basin',
+      nameClaims: [...NAMES, { source: 'nhd', value: 'Auburn Basin' }],
+    };
+    expect(await load(t, [spelled])).toMatchObject({ raisedAgain: 1 });
+    const body = await bodyOf(t, 'osm/A');
+    expect(body.name).toBe('Auburn Basin');
+    expect(body.reviewSettled).toBeUndefined();
+    expect((await openOf(t, id)).map((x) => x.lane).sort()).toEqual([
+      'classConflicts',
+      'nameConflicts',
+    ]);
+    await expectCountsTally(t);
+  });
+
+  test('a later pick in the Body console outranks the Keep; its clear hands the name back to the catalogs', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    // OSM's spelling stored first, NHD's shown: a clear restores the first, not the kept one.
+    const osmFirst: Rec = { ...BOTH, nameClaims: [...NAMES].reverse() };
+    await load(t, [osmFirst]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await keepName(t, mod, id);
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, {
+      waterBodyId: id,
+      name: 'Lake Auburn',
+    });
+    await load(t, [osmFirst]);
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: id, name: null });
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+    // The settle still holds, but the body no longer shows what was kept: the catalogs rank it.
+    expect(await load(t, [{ ...osmFirst, name: 'Lake Auburn' }])).toMatchObject({ settledHeld: 1 });
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+    await expectCountsTally(t);
+  });
+
+  test('a class Keep records no spelling', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await settle(t, mod.id, id, 'classConflicts');
+    expect((await bodyOf(t, 'osm/A')).reviewSettled?.[0]?.keptName).toBeUndefined();
   });
 });
 

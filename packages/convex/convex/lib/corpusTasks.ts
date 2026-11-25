@@ -473,7 +473,8 @@ function withReason(
  * **The settle** (one path for every intake decision): the reason off `reviewReasons`,
  * `reviewReason` recomputed by `primaryReviewReason` (so the old readers surface the body's next
  * reason, whose own task already stands in its own lane), an entry on `reviewSettled` with today's
- * evidence (D306: the import holds the settle while the evidence stands), the task decided with
+ * evidence (D306: the import holds the settle while the evidence stands) and, for a name *Keep*, the
+ * spelling kept (`keptName`: the import leaves it shown while the settle holds), the task decided with
  * `actionId`, the counts moved. In the caller's transaction, after its domain write — so a decision
  * can't half-land. The caller has already asked the rule; a task no longer open or a body gone is a
  * bug in the caller, and throws.
@@ -493,7 +494,14 @@ export async function settleReason(
   const body = await ctx.db.get(task.waterBodyId);
   if (body === null) throw new ConvexError(TASK_LEFT.deleted);
   const reason = reasonOfLane(task.lane);
-  const entry = { reason, evidence: evidenceOf(reason, body), at: now, actionId: args.actionId };
+  const entry = {
+    reason,
+    evidence: evidenceOf(reason, body),
+    at: now,
+    actionId: args.actionId,
+    // A Keep writes no `user` claim, so the import needs the spelling it kept (see `nameFields`).
+    ...(args.decision === 'kept' && reason === 'name-conflict' ? { keptName: body.name } : {}),
+  };
   await ctx.db.patch(body._id, {
     ...withReason(body.reviewReasons, reason, false),
     reviewSettled: [...(body.reviewSettled ?? []).filter((s) => s.reason !== reason), entry],

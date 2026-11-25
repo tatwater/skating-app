@@ -1133,6 +1133,11 @@ export default defineSchema({
      * The intake questions a moderator settled (B01-7a), each with the evidence it was settled on
      * (core's `reviewEvidence`): the import drops an incoming reason whose evidence is unchanged and
      * asks again when it changed (D306). At most one entry per reason.
+     *
+     * `keptName`: a name conflict settled by *Keep* records the spelling it kept, since a Keep writes
+     * no `user` claim. While the settle holds, the import leaves that spelling shown even when the
+     * catalogs' ranking now prefers another of the same spellings; an undo of the Keep, or the
+     * question asked again, drops the entry and the protection with it. Absent on every other entry.
      */
     reviewSettled: v.optional(
       v.array(
@@ -1141,6 +1146,7 @@ export default defineSchema({
           evidence: v.string(),
           at: v.number(),
           actionId: v.id('moderationActions'),
+          keptName: v.optional(v.string()),
         }),
       ),
     ),

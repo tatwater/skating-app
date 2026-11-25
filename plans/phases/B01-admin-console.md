@@ -16141,6 +16141,10 @@ guideline, as one PR (D300, amended).
   it.
 - **No D218 scope fit the passes that load no corpus of their own**, so D218 gained `derived` and
   `cleanup` (above).
+- **A kept name could change silently** (Greptile, #184). A *Keep* writes no `user` claim, and the
+  name evidence is the distinct spellings alone, so a campaign whose ranking now preferred another
+  of the same spellings was held and still overwrote the kept name. The settle entry now records
+  `keptName`, and while it holds the import leaves that spelling shown, if the body still shows it.
 
 ##### The last round (after Co5 and Co6, `9d7f47666`–`0ab9e0eeb`)
 
