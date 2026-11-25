@@ -189,3 +189,55 @@ describe('the flag handler’s Open in Body', () => {
     expect(to.searchParams.get('from')).toBe(h.here);
   });
 });
+
+describe('Inbox zero’s Not in the inbox', () => {
+  const zero = () => {
+    h.lanes = { ...LANES, allOpen: 0, pending: false } satisfies InboxLanesView;
+    h.search = {};
+  };
+  const corpusRow = () =>
+    must(
+      document.querySelector<HTMLElement>('[data-slot="inbox-zero-elsewhere"]'),
+      'the elsewhere rows',
+    ).firstElementChild as HTMLElement;
+  const lanes = (nameConflicts: number, classConflicts: number, pending = false) => ({
+    lanes: {
+      nameConflicts: { open: nameConflicts, facets: {} },
+      classConflicts: { open: classConflicts, facets: {} },
+    },
+    pending,
+  });
+
+  it('says what waits in Corpus and links to the first task lane with an open task', () => {
+    zero();
+    h.answers['corpusTasks:lanes'] = () => lanes(0, 140);
+    mount();
+    expect(corpusRow()).toHaveTextContent('140 open tasks');
+    const link = must(
+      corpusRow().querySelector<HTMLAnchorElement>('[data-slot="inbox-zero-link"]'),
+      'the Corpus link',
+    );
+    expect(link.getAttribute('href')).toBe('/admin/corpus?lane=class-conflicts');
+    expect(link).toHaveTextContent('Corpus');
+  });
+
+  it('with nothing open, says so and opens the first lane; while filing, draws no count', () => {
+    zero();
+    h.answers['corpusTasks:lanes'] = () => lanes(0, 0);
+    const first = mount();
+    expect(corpusRow()).toHaveTextContent('Nothing open');
+    expect(corpusRow().querySelector('[data-slot="inbox-zero-link"]')?.getAttribute('href')).toBe(
+      '/admin/corpus?lane=name-conflicts',
+    );
+    first.unmount();
+    h.answers['corpusTasks:lanes'] = () => lanes(3, 0, true);
+    mount();
+    expect(corpusRow()).not.toHaveTextContent('3');
+  });
+
+  it('asks the task lanes only at zero', () => {
+    h.lanes = LANES;
+    mount();
+    expect(h.asked.some((a) => a.name === 'corpusTasks:lanes')).toBe(false);
+  });
+});

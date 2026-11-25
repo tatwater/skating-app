@@ -501,6 +501,33 @@ describe('LinksTabView', () => {
     expect(screen.getByRole('link', { name: /Lake sheet/ })).toHaveAttribute('href', '/water/k1');
   });
 
+  it('opens the lake on Google Maps for staff alone: a new tab, at the interior point, outside the count', () => {
+    const bbox = { minLng: -72.2079, minLat: 43.5999, maxLng: -72.1188, maxLat: 43.6671 };
+    render(<LinksTabView {...base} body={{ ...MASCOMA, bbox }} />);
+    const built = screen.getByRole('region', { name: 'Built from the lake' });
+    const row = within(built)
+      .getByText('The lake on Google Maps')
+      .closest('[data-slot="link-row"]') as HTMLElement;
+    // The last of the built rows, at full strength, never counted with what skaters read.
+    expect(row).toHaveAttribute('data-staff-only');
+    expect(row).not.toHaveAttribute('data-offered');
+    expect(row).not.toHaveClass('opacity-(--opacity-muted)');
+    expect(row.parentElement?.lastElementChild).toBe(row);
+    expect(within(built).getByText('3')).toBeVisible();
+    expect(screen.getByText('Skaters read all 5, in this order, under Elsewhere.')).toBeVisible();
+    const open = within(row).getByRole('link', { name: /The lake on Google Maps/ });
+    expect(open).toHaveAttribute('target', '_blank');
+    expect(open).toHaveAttribute('rel', 'noopener noreferrer');
+    const url = new URL(open.getAttribute('href') ?? '');
+    expect(url.hostname).toBe('www.google.com');
+    expect(url.searchParams.get('center')).toBe('43.61740,-72.13600');
+  });
+
+  it('a body with nothing to center on has no Google Maps row', () => {
+    render(<LinksTabView {...base} body={{ name: 'Nameless Pond', states: [] }} />);
+    expect(screen.queryByText('The lake on Google Maps')).toBeNull();
+  });
+
   it('a withheld Copernicus link rests faded, its button off', () => {
     render(<LinksTabView {...base} body={SMALL_POND} />);
     const row = screen

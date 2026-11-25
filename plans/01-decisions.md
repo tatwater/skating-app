@@ -6859,7 +6859,27 @@ vocabulary above is built so it can land without a redesign.
 only signals are a terminal that scrolled past and a row that says `running` after the process
 died.
 
-**Related:** D37, A06c §6.2, A06i, D214.
+**Amended 2026-11-25 (B01-7a; the governor's ruling, not a founder call) — the scope gains
+`derived` and `cleanup`, and the scope and heartbeat are built (D310).** None of the original six
+fit the corpus campaign's passes that load no corpus of their own, so the vocabulary
+(`IMPORT_RUN_SCOPES` in `packages/convex/convex/lib/enums.ts`) is eight:
+
+- **`derived`** — computed from data already held, writing no third-party data into the model: the
+  region masks (`build-region`), the offline landmark match, region stats.
+- **`cleanup`** — brings the stored corpus into line with what a campaign decided, by demoting or
+  folding rather than loading: the floor prune and `retire-absorbed`.
+
+As built, the scope is `importRuns.scope: { pass, states?, complete }`, stated by the writer when
+the run starts. `pass` is one of the eight; `states` the two-letter codes it covered, absent for a
+pass that isn't by state (the floor prune walks the whole corpus); `complete` whether that was all
+of what its pass covers — `false` for a subset of states, a resumed walk, or a merge missing a
+catalog. **`complete` is intent, not outcome:** what a run achieved is still its `status` and
+`coverage`. The heartbeat is `importRuns.progressAt`, **stamped by the server** at start, at each
+progress report and at finish, never sent by a loader — a `running` row silent long past its
+loader's flush interval reads *stalled*. Both fields are absent on every row written before B01-7a,
+which reads as *not recorded*.
+
+**Related:** D37, A06c §6.2, A06i, D214, D310.
 
 ## D219 — A cost ledger: every third party, every day, in its own unit, with dollars where a rate is known (B01)
 
@@ -9015,3 +9035,364 @@ never in the old editor (`/admin/water/$id`):
 editor had, so leaving them out loses nothing.
 
 **Related:** D3, D51, D201, D202, D215, D221, D226, B01's *The map's tools (B01-6, the design)*.
+
+## D300 — Corpus's tasks land lane by lane, each whole, and a sidebar entry appears only for a built lane (B01)
+
+**Decided (2026-11-24, founder).** The whole Corpus task design (§4) is built, one lane at a time:
+- **A lane lands whole** — its read, its writes, what *done* means and what it clears, the undo of
+  every decision, and the retirement of the old page (or part of one) it replaces — in one PR.
+- **No placeholders.** A lane appears in Corpus's sidebar only once it is built; no entry opens an old
+  page, and there is no *Coming soon* lane. The Overview's Corpus links (`consolePathFor`) and Inbox
+  Zero's *Corpus →* move to each lane as it lands, so the first PR carries at least one real lane.
+- **The build model is §12's**: a governor, Opus 5.5 builders at high effort in their own worktrees
+  with disjoint territories, sequential PRs each closed on its own branch, the founder merging — in the
+  fewest coherent PRs, since Greptile is metered per request.
+
+**Why:** a lane half-built (a list with no decision, a decision with no undo) is a queue that can't be
+emptied, which is how the intake queue reached 2,010 rows; and an entry that opens an old page makes
+the console look finished where it isn't (D286's reasoning, applied to navigation).
+
+**Related:** D216, D226, D286, D293, D305, [`phase-B01`](./phases/B01-admin-console.md) §5.3, §8 §4,
+*The Corpus tasks (B01-7, the design)*.
+
+**Amended 2026-11-24 (founder call) — built whole at its measured size.** Told that the wave measures
+about 90,000–100,000 lines by the Inbox wave's ratio (its six designed PRs landed at 4.9× their
+designs), against the 35,000–60,000 he first agreed to, the founder: *"Actually let's go with A, build
+the whole thing."* All four PRs go ahead, and **B01-7a is one PR** at its measured size, not a
+server-then-web pair as the Inbox's first two were. (7a was measured at ~28,000–32,000 lines; with
+Contested as water moved to 7b by D307 it is re-estimated at ~25,000–28,000.) **Why** (the founder
+gave no reason beyond the choice; this is the design's reading): a lane lands whole or not at all,
+and a server PR with no lane to show is a second Greptile round for a review that reads worse apart.
+
+## D301 — "Pre-Season Pass" is the visible name of the pass that was "the pre-ice pass" (B01)
+
+**Decided (2026-11-24, founder).** Every visible label says *Pre-Season Pass*: Corpus's sidebar group,
+the Overview's Corpus card, the status bar's line, the Body console Hazards tab's words, and the
+capability's description. Internal names (`corpus.preIce`, `corpusCounts.preIcePass`, `PreIcePass`)
+stay.
+
+**Why** (the founder's call gave no reason; this is the design's reading): the pass opens at the
+season's turn in July, months before any ice, and is a review of what was reported, not of conditions —
+a name about the season rather than the ice keeps it clear of D3.
+
+**Related:** D3, D302, [`phase-B01`](./phases/B01-admin-console.md) §5.3.
+
+## D302 — The Pre-Season Pass group is seasonal, and dressed apart from the sidebar's other groups (B01)
+
+**Decided (2026-11-24, founder; the design's forks on its edges are open).** In the founder's words:
+*"this nav group should only appear after the July season start, and should stick around until all
+issues within are resolved, then it should disappear for the remainder of the season, until the next
+July."*
+- **Shown from the season's start (1 July, D63) until every task in this season's pass is decided**;
+  then gone until next July. What the pass holds is Recurrence and Promotion candidates; the meter
+  counts those (Known features is a record, not a queue). The pass is a stored record per season, so
+  "decided" and "done" are facts, not inferences.
+- **Dressed to look applied — stuck on, temporary — while urgent.** The design describes four
+  candidate treatments built from the kit and tokens (an inverted plate, a bracketed card, a taped
+  outline, an amber edge), rendered as Storybook variants; **the founder picks one**.
+- The edges (whether a mid-season pattern brings the group back, where Known features lives once the
+  group is gone, how a done pass is read, the July days before it is computed, an undo after it is
+  done) are the design's forks 8–13, ruled separately.
+
+**Why** (the design's reading of the call): the pass is a once-a-year task with a deadline (first ice); a group that stays when there is
+nothing in it teaches the eye to skip it, and one that looks like the rest of the sidebar doesn't say
+it is due.
+
+**Related:** D3, D63, D78, D301, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks (B01-7,
+the design)*.
+
+**Amended 2026-11-24 (the founder's answers to the design's forks 8, 9, 11, 12, 13 and 18) — a done
+pass collapses; it does not disappear.** What changed:
+- **A done pass stays, collapsed and undressed** (fork 11). In the founder's words: *"It's probably
+  wise to allow any pre-season pass decision to be viewed in retrospect, maybe even changed, but at
+  least no disappeared forever. But it should look dismissed/complete/normal, not highlighted like
+  when they're urgent. And collapsed feels even better."* When the pass's last task is decided, the
+  group loses its dress and collapses to one plain line that can be expanded; its lanes then open
+  their decided tabs, and a decision can still be undone or changed from there. This replaces *"then
+  it should disappear for the remainder of the season"*: the call's point — nothing looks urgent once
+  nothing is — holds; what changed is that a season's decisions are never out of reach. The group
+  still first appears in July.
+- **The dress is the bracketed card** (fork 18: *"I prefer the bracketed card, #2!"*): the group in
+  the kit's `Plate` card with the warn tone — a hairline box with amber corner ticks, the console's
+  mark for the thing being worked on — and the meter inside at its foot. The other three candidates
+  (the inverted plate, the taped outline, the amber edge) were offered as Storybook variants and are
+  deleted with the pick.
+- **The group is first in the sidebar** (fork 18, *"At the top!"*): Pre-Season Pass, Tasks, Views,
+  Standing.
+- **The edges**, each the design's recommendation, agreed: the pass is what the July rollover found,
+  and a pattern found mid-season waits on its body's Hazards tab and next July's pass (fork 8); the
+  meter counts patterns seen in two or more winters, and *1 winter* is read-only (fork 9, D78); the
+  group appears on 1 July saying the pass is being computed, red past 7 July if the run hasn't
+  finished (fork 12); an undo after the pass is done reopens it — the group takes its dress back and
+  expands until that task is decided (fork 13).
+- Where Known features lives is D309.
+
+**Why:** the collapse is the founder's reason above. The edges are the design's reading (he agreed
+without giving one): the meter must never say *done* with work open, a failed run must not read as
+nothing to do, and a pattern seen in one winter isn't advisable (D78), so it can't be owed a decision.
+
+**Amended 2026-11-25 (founder call, the governor's recommendation) — a done pass's line sits at the
+foot of the sidebar.** What changed: the group is first in the sidebar only while the pass is open
+(or before it is computed). Once its last task is decided, the collapsed plain line moves to the
+bottom of the sidebar, below *Standing*. It goes back to the top, as the bracketed card, when a pass
+opens (next July) or reopens (an undo, fork 13). **Why** (the governor's recommendation, which the
+founder answered *"Agreed"*): *a finished line doesn't need the top slot for nine months, and the
+card's reappearance at the top in July is then a visible change.*
+
+## D303 — Enrichment gaps and script-filed bay asks are deferred out of Corpus's first wave (B01)
+
+**Decided (2026-11-24, founder).** Two things the plan put in Corpus are not built in this wave, and are
+recorded in the roadmap's deferred register so they aren't lost — the founder: *"let's not forget that
+we will want this functionality eventually so we should record this deferral."*
+- **Enrichment gaps** ("awaiting elevation, wind, depth"): the plan's own *done* is an enrichment run,
+  which is Machinery's (§5). The Overview's *Awaiting enrichment* stays unrecorded until then.
+- **Script-filed bay asks** (`waterBodyRequests.origin: 'seed'`, D289's amendment): they stay decidable
+  where they are today (the old editor's bay queue, the Bodies preview's asks) until a later Corpus
+  lane takes them.
+
+**Why** (the design's reading of the call): neither is a machine-found question this wave's lanes answer: one completes in another mode,
+and the other is a staff-filed queue of sixteen destination bays with a working home.
+
+**Related:** D201, D218, D289, D300, [`phase-B01`](./phases/B01-admin-console.md) §5.3.
+
+## D304 — Task modes stay their own wave; Corpus draws their hand-offs unavailable (B01)
+
+**Decided (2026-11-24, founder).** Place names' *Place it in Body →* and Chord re-fits' *Redraw in Body
+→* hand off to Body console tools that don't exist yet; they are drawn with the kit's
+`UnavailableButton` (*Not available yet*). Everything else those two lanes do is built. Task modes and
+the map's editing tools remain owed as their own wave (the register's Bo23–Bo25).
+
+**Why:** the hand-offs need the map's edit mode, which is a wave of its own; drawing them as the boards
+do, unavailable, keeps the board and the page in agreement (D286's reasoning for tools) without holding
+the rest of the lanes back.
+
+**Related:** D216, D286, D300, [`phase-B01`](./phases/B01-admin-console.md) *Task modes and the map's
+editing tools*.
+
+## D305 — An old admin page retires, and its code is deleted, in the PR that replaces it (B01; amends §12.7)
+
+**Decided (2026-11-24, founder; the governor's wording).** §12.7 said each mode's integration narrows
+the old-shell predicate and redirects an old route when its replacement lands, but deletes the old
+components only at B01's close. Now: **the PR that lands the last lane an old page serves retires the
+page and deletes its code** — the route (or a redirect, where links in the wild may hold it), its
+components, its `OLD_SHELL_TREES` and `LEGACY_PAGES` entries, the init script's copy, `AdminLayout`'s
+nav entry, and the tests and stories that pinned them, together. A page that still serves something no
+lane has replaced stays until something does.
+
+**Why:** the founder asked (2026-11-24) for the Legacy pages already replaced to be stripped out, and
+the Inbox's close-out (#177) already deleted its retired pages' code at the wave's end; dead pages kept
+to the phase's close are a second surface to maintain and a second place for a moderator to act.
+
+**Related:** D300, [`phase-B01`](./phases/B01-admin-console.md) §12.7, *The Inbox (B01-5, the design)*'s
+*Legacy retirement*, *The Corpus tasks (B01-7, the design)*'s *Legacy retirement*.
+
+## D306 — A settled Corpus question holds until the evidence behind it changes, then is asked again (B01)
+
+**Decided (2026-11-24, founder: the Corpus design's fork 2, option (b)).** A moderator's decision on an
+intake question — keeping the shown name or choosing another, keeping a class or changing it — holds
+through every later campaign **until the evidence it was made on changes**. Then the next campaign
+asks it again, and its task reopens saying the catalogs changed.
+- **The evidence is one rule in core** (`reviewEvidence`), used by the settle and by the import, so
+  the two can't drift: a name conflict's catalog name claims (never a moderator's own `user` claim);
+  a class conflict's class claims, with each catalog's own token. It is stored with the decision on
+  the body (`reviewSettled`).
+- **A question settled before its evidence is stored** — every class conflict on a body imported
+  before B01-3d's claims — is settled on *not recorded* evidence, so the first campaign that records
+  the claims asks it again, once (the governor's ruling, building what the briefs proposed): the
+  decision wasn't made on the facts that campaign brings. The alternative, adopting the first
+  recorded evidence silently, was not taken.
+- Every such decision has an undo that puts the question back (D226).
+
+**Why** (the founder's call gave no reason; this is the design's reading): a decision holds against
+the facts it was made on, and new facts deserve a look. Today every campaign re-raises every reason
+whatever a moderator decided, which is how the intake queue reached 2,010 rows; settling for good
+would hide a catalog's real change.
+
+**Related:** D110, D226, D300, D307, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks
+(B01-7, the design)*.
+
+## D307 — Contested as water leaves the first Corpus PR: its refusals are stored first, and the founder rules its shape on real rows (B01)
+
+**Decided (2026-11-24, founder; the governor's recommendation).**
+- **B01-7a ships Name conflicts and Class conflicts only.** Bodies a catalog refuses as water while
+  another classes it (`class-dissent`) stay on the old review page, and the Overview keeps today's
+  count for them.
+- **B01-7a still stores what the lane will need**: each refusing catalog's own token and that
+  feature's area (`classRefusals`), and each class claim's token and area, written from the next
+  campaign on.
+- **After that campaign the founder looks at the real rows and rules the lane's shape** — its tabs,
+  its words, whether it is one lane — and it lands in B01-7b.
+- **When it lands, every moderator can finish it** (fork 4, option (b)): moderators get *Set dormant*
+  (off the map, kept, reversible), admins *Remove*.
+
+**Why:** the last merge queued 20 dissents — 18 refusals by OpenStreetMap's bare `natural=water` and 2
+tidal flats — and none of the board's examples, so its *Built* tab would stay empty and *Not water*
+would hold water. A lane designed before anyone has seen what it holds risks answering a different
+question from the one the queue asks; storing the refusals now costs two optional fields and lets
+the next campaign show them. *Set dormant* is the design's reading of fork 4 (the founder agreed
+without giving one): every moderator can finish every task, and removal stays with admins, where D37
+and the capability map (D217) put it.
+
+**Related:** D37, D217, D300, D306, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks
+(B01-7, the design)*.
+
+## D308 — The community's email mentions are loaded as counts, never text, for Place names and Name conflicts (B01-7c)
+
+**Decided (2026-11-24, founder: the Corpus design's fork 5, revised).** The founder first agreed to
+leave the email facts out of the wave. Told that leaving them out also takes *Suggested* off Name
+conflicts — the board's suggested name is the one the community's emails use — he revised it: they
+are loaded.
+- **What loads:** the mention counts from the private corpus extraction's mention inventory (L5a),
+  **by body, by name and by winter — counts only**, never message text, a sender or a date finer than
+  the winter.
+- **Where they show:** Place names' counts by winter; Name conflicts' emails strip and its
+  *Suggested* — the name the emails use most, where they decide it, and otherwise no suggestion.
+- **When:** B01-7c. B01-7a's Name conflicts ships with no email facts and no suggestion; its default
+  pick is the shown name (*Now*).
+
+**Why:** the founder's revision follows the board: the emails are the evidence for which name the
+community actually uses, and without them nothing names a suggestion. Counts only, because L5a's
+line — derived labels and counts in the tree, no message text out of `training_data/` — holds for
+the deployment as for the repo.
+
+**Related:** D202, D300, [`08`](./08-legal-feasibility-checklist.md) L5a,
+[`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks (B01-7, the design)*.
+
+## D309 — Known features are reviewed in the Pre-Season Pass, not browsed across lakes year-round (B01)
+
+**Decided (2026-11-24, founder: the Corpus design's fork 10, option (c)); its reading confirmed
+2026-11-25.** In his words: *"known features don't need to be found/browsed in aggregate unless the
+point is to authorize/clean them up between seasons."*
+- **Where it lives** (the governor's reading, which the founder confirmed on 2026-11-25: *"Yes"*):
+  Known features is never a lane in *Views*. It is a lane inside the Pre-Season Pass group, as board
+  4.10 draws it, outside the pass's meter (a record, not a queue); otherwise a body's known features
+  are reached on that body, in the Body console's Hazards tab. When the pass is done the lane
+  collapses with its group, still reachable there, at the sidebar's foot (D302, amended).
+- **The other reading** — no cross-lake lane at all, with board 4.10 not built — was not taken.
+
+**Why:** the founder's, above: a known feature is looked over between seasons, and browsing them in
+aggregate has no purpose outside that review.
+
+**Related:** D53, D302, [`phase-B01`](./phases/B01-admin-console.md) *The Corpus tasks (B01-7, the
+design)*.
+
+## D310 — The campaign after B01-7a is the first with a complete record: its record-only changes join B01-7a, and it runs right after the merge (B01)
+
+**Decided (2026-11-25, founder; the governor's recommendations).**
+- **Record-only changes join B01-7a** (the founder: *"Yes"*). None changes what a moderator decides
+  or sees in a lane; each makes a corpus campaign's record complete:
+  - the run's **scope** stored on its `importRuns` row (D218's vocabulary), so a full campaign is
+    read, not inferred from `kind` and `label`;
+  - a **heartbeat**, `importRuns.progressAt`, stamped server-side as a run reports progress, so a
+    live run can be told from a dead one (D218);
+  - **timestamps** on every line of `run-corpus.sh`'s log (`.scratch/merge/run-<campaign>.log`);
+  - **run rows for the three passes that write none today**: `build-region`
+    (`scripts/admin-areas`), the landmark match (`scripts/etl`'s `landmarks`) and `prune-floor`;
+  - **`retire-absorbed` no longer logged as a campaign load** — today its row is
+    `kind: 'canonical_water'` under the campaign's id, the same as the bodies load;
+  - the **`absorbedFeatures`** record on `waterBodies` — what a `same-source-duplicate` fold
+    absorbed — designed for B01-7b, now stored from 7a so the campaign writes it.
+
+  A sixth builder, **R**, builds them (the phase doc's *Briefs (B01-7a)*). Unmeasured: the scout's
+  guess is ~3,000–6,000 lines more in 7a.
+- **The campaign runs right after B01-7a merges** (the founder: *"Okay"*), accepting that the
+  yearly 3DHP refresh (the founder expects it in January; the ETL's runbook says early in the
+  federal fiscal year) will be a second full load.
+
+**Why** (the governor's reading; the founder agreed without giving his own): the founder wants as few
+full campaigns as possible. Machinery › Corpus (§5) needs each campaign's scope, liveness, timeline
+and every pass's row; if the campaign after 7a records them, that page can be built later from this
+campaign's record, with no campaign run just to produce one. Running it straight after 7a gives
+Class conflicts its claims and Contested as water its real rows (D307) without waiting on the 3DHP
+release.
+
+**Related:** D218, D300, D306, D307, D311, [`phase-B01`](./phases/B01-admin-console.md) *Briefs
+(B01-7a)*.
+
+## D311 — Corpus decisions made on dev carry to prod at the cutover, re-attributed to their makers' prod accounts (B01)
+
+**Decided (2026-11-25, founder).** In his words: *"Yes, but only for corpus changes. No sense in
+making me or other admins re-do our work, even if we were only doing it for testing purposes. We will
+all make new accounts though (Clerk in prod doesn't carry over users from dev) so we will need to
+re-attribute the changes somehow"*.
+- **What carries: staff's corpus decisions on dev.** As the code stores them (2026-11-25): on
+  `waterBodies`, a chosen name (a `user` claim in `nameClaims`), `moderatorAliases`,
+  `moderatorClass`, `moderatorTownKeys`, settled intake questions (`reviewSettled`, from B01-7a),
+  merges (`mergedIntoId`, `unmergeActionId`), dismissed duplicates (`dedupStatus`,
+  `duplicateCandidateIds`), removals (`removedAt`, `removedByUserId`, `removalReason`), standing
+  (`dormant`, `activatedAt`), `curatedBoost`, `includedByRequest`, the depth choice (`depthChoice`),
+  `weatherSamplePoints`, `referenceLinks` and `satelliteImagery`; bays (`waterBodySubAreas`: drawn,
+  redrawn, renamed); landmarks (`bodyLandmarks`: created, edited, promoted, removed); place names
+  (`corpusPlaceNames`: placed, dismissed, filed as a spelling); imagery pass overrides
+  (`imageryPassOverrides`); bodies admitted or declined from a request (`waterBodyRequests`); and the
+  audit rows (`moderationActions`) that record each, which History and every undo read.
+- **Not yet drawn: where the line falls for a body's other parts** — put-ins and lots (`putIns`,
+  `parkingAreas`), access alerts, `postedAccess` and `publicAccess`, known features (`bodyFeatures`)
+  and recurrence decisions (`hazardRecurrence`) — which mix staff decisions with skaters' content.
+  The carry's design draws it and asks the founder.
+- **What doesn't carry:** everything else on dev — profiles, reports, posts, comments, photos,
+  hazards, flags, support tickets, the Inbox's items, notifications, analytics.
+- **Who did it.** Prod's staff are new Clerk accounts, so every carried decision's actor
+  (`moderationActions`' actor, `removedByUserId`, `createdByUserId`, `decidedByUserId`, the corpus
+  tasks' `decidedByUserId` — all dev `profiles` ids) is re-attributed to the same person's prod
+  profile by a dev→prod mapping. **How is an open founder question** (by matching email, by a list
+  written by hand, or otherwise); the mapping is undesigned. Carried rows also point at one another by
+  dev ids (`reviewSettled`'s `actionId`, `mergedIntoId`, a bay's `waterBodyId`), which prod mints
+  afresh.
+- **Consequences.** (a) Dev's corpus state is no longer disposable: the snapshot export of dev before
+  the campaign after B01-7a (D310) is a must, not a nicety, and so is one before anything that would
+  reset dev. (b) The carry and the actor mapping are **owed and undesigned**: a row in the roadmap's
+  deferred register, beside the prod cutover, whose runbook (`docs/deployment-and-release.md` § Prod
+  cutover) today rebuilds prod's corpus from the catalogs and carries nothing from dev.
+
+**Why:** the founder's, above: corpus work already done shouldn't be done again, even if it was done
+for testing. *Only for corpus changes* is his line; the governor's reading of it is that the corpus is
+the shared reference prod rebuilds from the same catalogs, so a decision about it still holds there,
+while the rest of dev is test traffic prod starts without.
+
+**Related:** D37, D226, D306, D310, [`07-roadmap`](./07-roadmap.md) deferred register (*The prod
+cutover*; *Dev's corpus decisions carried to prod*), [`phase-B01`](./phases/B01-admin-console.md)
+*The Corpus tasks (B01-7, the design)*.
+
+## D312 — The console map has an unmasked summer aerial, switched by any console staffer on every Body console tab (B01)
+
+**Decided (2026-11-25, founder; the governor's rulings on what he didn't spell out are marked).** In
+his words: *"Yes we need an unmasked summer aerial satellite layer in our map component. Side note:
+we should have that layer toggleable for admins in the Body Console at any time, that will help with
+marking & verifying the placement of marks so much!"*; and, on who gets the switch: *"I meant all
+admin dashboard staff – admins and moderators! Sorry for the confusion. If I say "for admins"
+there's a good chance I just don't want the average skater to see it"*.
+- **The layer.** One raster for every console map: USGS NAIP (0.3 m, flown leaf-on), from
+  `USGSNAIPPlus`'s `exportImage` on `imagery.nationalmap.gov`, no key, every request a grid cell so
+  the service's CDN answers a repeat (A06e's `useImageryReveal`, in its unmasked mode, the old lake
+  editor's). **Unmasked**: the whole view, not clipped to the body, so the shore and the ground
+  round it (a put-in, a lot, whether a mark sits on the water) can be read. It goes in the console's
+  raster band, over the body's fill and under the hazard fields, every line and any winter pass, and
+  is dimmed toward the mode's ground so the console's inks stay legible. Its credit names the program
+  and, when the service's identify call answers, the month it was flown.
+- **The Body console's switch.** A *Summer aerial* row at the foot of the map's rack, on every tab,
+  for anyone who can open the Body console — moderators and admins, no capability gate. It is never
+  disabled and never reset by a tab change; it is remembered per viewer in this browser's local
+  storage (a blocked store reads as off).
+- **Where it is drawn without a switch** (the governor's): on, under the outlines, on Class
+  conflicts' head map (board 4.3's *Aerial · NAIP*). Corpus's head maps frame closer so a small body
+  fills the photograph (a 100 m least frame in place of the Inbox's 400 m, and a zoom ceiling of 19
+  in place of the console's 17). Not on Name conflicts' head map, which board 4.2 draws without one;
+  not yet on the Inbox's embeds (the register's In30).
+- **The lake on Google Maps** (the founder's second aside: *"I'd like a quick link to open the lake
+  in Google Maps in a new tab (probably from the Links panel of the Body Console)"*). A last row in
+  the Links tab's *Built from the lake*, for staff only (never in the skater's lake sheet): Google
+  Maps' documented map URL, no key, nothing about the viewer, centered on the body's stored interior
+  point (the box's middle without one), zoomed to frame the whole body, opened in a new tab.
+
+**Why.** Placing and checking marks (put-ins, lots, landmarks, bays) against the shore is the
+console's daily work, and the vector basemap can't show where a path meets the water; the old lake
+editor already drew NAIP unmasked for that. D146 is untouched: the skater apps still reveal imagery
+one body at a time, clipped to it, and nothing a skater sees changes. NAIP is a summer photograph on a
+two-to-three-year cycle and can never show ice (D147); the layer and its credit say only what was
+flown and when (D3). Both asides were built in B01-7a, the governor's call, since they sit in the
+Corpus domain and the aerial was already joining 7a for board 4.3.
+
+**Related:** D3, D146, D147, D217, [`04-integrations`](./04-integrations.md) (NAIP),
+[`phase-B01`](./phases/B01-admin-console.md) *What the build found (B01-7a)*, the register's In30
+and Co15–Co18.

@@ -48,6 +48,32 @@ have moved, changed schema or quietly returned less than last time:
 existed, from the manifests the fetchers wrote at the time. Nothing is invented — see that script's
 comment for what it refuses to claim.
 
+And every pass of a **corpus campaign** (`scripts/etl/run-corpus.sh`), including the three that wrote
+nothing to Convex and so left no row before B01-7a, so Machinery can draw a campaign whole from what
+it stored. Under `run-corpus.sh` each carries the campaign id; run by hand, pass `--campaign=<id>`:
+
+| kind | command |
+| --- | --- |
+| `region_masks` | `pnpm --filter @skating/admin-areas build-region` — files only, plus this row |
+| `corpus_merge` | `pnpm --filter @skating/etl merge` |
+| `landmark_match` | `pnpm --filter @skating/etl landmarks` — the offline match, plus this row |
+| `floor_prune` | `pnpm --filter @skating/etl prune-floor` — dry or applied, a row either way |
+| `absorbed_retire` | `pnpm --filter @skating/etl retire-absorbed` (was `canonical_water` before B01-7a) |
+
+## Scope and heartbeat (D218)
+
+**`scope` is what a run set out to cover**, stated once at `start` through `RunLogger`'s `scope`
+option: the pass (`full-canonical`, `single-source`, `enrichment`, `seed`, `rollover`, `archive`,
+`derived`, `cleanup`), the two-letter states it covered when it is by state, and `complete` — `false`
+for a subset of states, a resumed walk, or a merge missing a catalog. It is intent, never outcome:
+`status` and `coverage` say how it went. The merge writes its scope into `merge-manifest.json`, so a
+pass that replays the manifest (the bays) inherits it. The vocabulary lives twice, `IMPORT_RUN_SCOPES`
+in Convex and `ImportRunScopePass` here, and `packages/guards` holds the two (and the kinds) in step.
+
+**`progressAt` is the heartbeat**, stamped by the server at `start`, every `progress` and `finish` —
+a loader never sends it, so every loader that flushes already has one. A `running` row silent long
+past its loader's flush interval is *stalled*, not running.
+
 **Still not covered:** `scripts/basemap` is `upload.sh` / `upload-r2.sh`, bash + rclone pushing
 tiles to R2. It never touches Convex and populates no part of the data model. The `record` CLI now
 makes it *possible* (the mirrors use exactly that route), so this is a scope decision rather than a

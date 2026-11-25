@@ -1,0 +1,711 @@
+/**
+ * **The Corpus tasks' hooks** (B01-7a): each write that changes a body's questions calls the one
+ * writer — the import (with the honoring rule, D306), the merge and its unmerge, the remove and its
+ * restore, and both duplicate resolutions' hard deletes — and the counts equal their tallies after
+ * each.
+ */
+
+import { UNRECORDED_EVIDENCE } from '@skating/core';
+import { convexTest } from 'convex-test';
+import type { Polygon } from 'geojson';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { api, internal } from './_generated/api';
+import type { Doc, Id } from './_generated/dataModel';
+import { countKeysOf, planBodyTasks, settleReason, syncBodyTasks } from './lib/corpusTasks';
+import schema from './schema';
+
+const modules = import.meta.glob('./**/*.*s');
+const harness = () => convexTest(schema, modules);
+type T = ReturnType<typeof harness>;
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+const PREFS = {
+  activityDetected: true,
+  bountyRequest: true,
+  hazardConfirmation: true,
+  bountyAnswered: true,
+  reportRated: true,
+  reportCommented: true,
+  contentFlagResolved: true,
+  favoriteReport: true,
+  nearbyReportDigest: false,
+  greatReportNearby: false,
+  moderatorDecision: false,
+};
+
+const square = (x: number): Polygon => ({
+  type: 'Polygon',
+  coordinates: [
+    [
+      [x, 0],
+      [x + 1, 0],
+      [x + 1, 1],
+      [x, 1],
+      [x, 0],
+    ],
+  ],
+});
+
+async function person(t: T, subject: string, role: 'moderator' | 'admin') {
+  const id = await t.run((ctx) =>
+    ctx.db.insert('profiles', {
+      clerkUserId: subject,
+      displayName: `${subject} Test-Person`,
+      username: subject,
+      driveTimePrefMinutes: 60,
+      profileVisibility: 'public' as const,
+      notificationPrefs: PREFS,
+      dateOfBirth: Date.UTC(1990, 0, 1),
+      reputationPoints: 0,
+      role,
+      status: 'active' as const,
+      createdAt: Date.now(),
+    }),
+  );
+  return { id, as: t.withIdentity({ subject }) };
+}
+
+type Rec = {
+  externalId: string;
+  x?: number;
+  /** The merge's winning spelling (`chooseName`): "The Basin" unless a case says otherwise. */
+  name?: string;
+  reviewReasons?: Doc<'waterBodies'>['reviewReasons'];
+  nameClaims?: { source: 'osm' | 'nhd'; value: string; sources?: ('osm' | 'nhd')[] }[];
+  classClaims?: {
+    source: 'osm' | 'nhd';
+    value: Doc<'waterBodies'>['type'];
+    token?: string;
+    areaSqM?: number;
+  }[];
+  classRefusals?: { source: 'osm' | 'nhd'; token: string; areaSqM?: number }[];
+  absorbedFeatures?: { source: 'osm' | 'nhd'; externalId: string; areaSqM: number }[];
+  osmId?: string;
+  nhdId?: string;
+  threeDhpId?: string;
+  campaignId?: string;
+};
+
+const NAMES = [
+  { source: 'nhd' as const, value: 'The Basin' },
+  { source: 'osm' as const, value: 'Lake Auburn' },
+];
+const CLASSES = [
+  { source: 'nhd' as const, value: 'wetland' as const, token: 'nhd:fcode=46600', areaSqM: 9e5 },
+  { source: 'osm' as const, value: 'lakePond' as const, token: 'osm:water=pond', areaSqM: 8e5 },
+];
+
+function record(r: Rec) {
+  const x = r.x ?? 0;
+  return {
+    source: 'osm' as const,
+    states: ['VT'],
+    externalId: r.externalId,
+    osmId: r.osmId ?? r.externalId,
+    ...(r.nhdId !== undefined ? { nhdId: r.nhdId } : {}),
+    ...(r.threeDhpId !== undefined ? { threeDhpId: r.threeDhpId } : {}),
+    name: r.name ?? 'The Basin',
+    type: 'lakePond' as const,
+    polygon: square(x),
+    bbox: { minLat: 0, minLng: x, maxLat: 1, maxLng: x + 1 },
+    centroid: { lat: 0.5, lng: x + 0.5 },
+    surfaceAreaSqM: 1_000_000,
+    ...(r.reviewReasons !== undefined ? { reviewReasons: r.reviewReasons } : {}),
+    ...(r.nameClaims !== undefined ? { nameClaims: r.nameClaims } : {}),
+    ...(r.classClaims !== undefined ? { classClaims: r.classClaims } : {}),
+    ...(r.classRefusals !== undefined ? { classRefusals: r.classRefusals } : {}),
+    ...(r.absorbedFeatures !== undefined ? { absorbedFeatures: r.absorbedFeatures } : {}),
+  };
+}
+
+const BOTH: Rec = {
+  externalId: 'osm/A',
+  reviewReasons: ['class-conflict', 'name-conflict', 'class-dissent'],
+  nameClaims: NAMES,
+  classClaims: CLASSES,
+  classRefusals: [{ source: 'osm', token: 'osm:natural=water', areaSqM: 7e5 }],
+};
+
+async function load(t: T, recs: Rec[], campaignId?: string) {
+  return t.mutation(internal.waterBodies.importCanonical, {
+    bodies: recs.map(record),
+    ...(campaignId !== undefined ? { campaignId } : {}),
+  });
+}
+
+async function bodyOf(t: T, externalId: string): Promise<Doc<'waterBodies'>> {
+  const body = await t.run((ctx) =>
+    ctx.db
+      .query('waterBodies')
+      .withIndex('by_external_id', (q) => q.eq('source', 'osm').eq('externalId', externalId))
+      .first(),
+  );
+  if (!body) throw new Error(`no body ${externalId}`);
+  return body;
+}
+
+const tasksOf = (t: T, id: Id<'waterBodies'>) =>
+  t.run((ctx) =>
+    ctx.db
+      .query('corpusTasks')
+      .withIndex('by_body_status', (q) => q.eq('waterBodyId', id))
+      .collect(),
+  );
+
+const openOf = async (t: T, id: Id<'waterBodies'>) =>
+  (await tasksOf(t, id)).filter((task) => task.status === 'open');
+
+/** Every count row equals its tally over the stored tasks. */
+async function expectCountsTally(t: T) {
+  const { tasks, counts } = await t.run(async (ctx) => ({
+    tasks: await ctx.db.query('corpusTasks').collect(),
+    counts: await ctx.db.query('corpusTaskCounts').collect(),
+  }));
+  const tally = new Map<string, number>();
+  for (const task of tasks) {
+    for (const key of countKeysOf(task)) tally.set(key, (tally.get(key) ?? 0) + 1);
+  }
+  const stored = new Map(counts.map((c) => [c.key, c.count]));
+  for (const key of new Set([...tally.keys(), ...stored.keys()])) {
+    expect(stored.get(key) ?? 0, key).toBe(tally.get(key) ?? 0);
+  }
+}
+
+/** A moderator settles the body's open task of `lane`, as S2's mutations will. */
+async function settle(
+  t: T,
+  modId: Id<'profiles'>,
+  id: Id<'waterBodies'>,
+  lane: 'nameConflicts' | 'classConflicts',
+  decision: 'kept' | 'renamed' | 'reclassed' = 'kept',
+) {
+  return t.run(async (ctx) => {
+    const task = (
+      await ctx.db
+        .query('corpusTasks')
+        .withIndex('by_body_status', (q) => q.eq('waterBodyId', id).eq('status', 'open'))
+        .collect()
+    ).find((x) => x.lane === lane) as Doc<'corpusTasks'>;
+    const actionId = await ctx.db.insert('moderationActions', {
+      actorId: modId,
+      action: 'settle_review_reason',
+      targetType: 'waterbody',
+      targetId: id,
+      reason: 'Settled',
+      createdAt: Date.now(),
+    });
+    await settleReason(ctx, { task, decision, actionId, actorId: modId });
+    return { task, actionId };
+  });
+}
+
+describe('the import', () => {
+  test('files a task per 7a reason and none for a class dissent, its refusals and claim facts stored', async () => {
+    const t = harness();
+    const result = await load(t, [BOTH]);
+    expect(result).toMatchObject({ inserted: 1, settledHeld: 0, raisedAgain: 0 });
+    const body = await bodyOf(t, 'osm/A');
+    expect((await openOf(t, body._id)).map((x) => x.lane).sort()).toEqual([
+      'classConflicts',
+      'nameConflicts',
+    ]);
+    expect(body.reviewReasons).toEqual(['class-conflict', 'name-conflict', 'class-dissent']);
+    expect(body.classRefusals).toEqual([
+      { source: 'osm', token: 'osm:natural=water', areaSqM: 7e5 },
+    ]);
+    expect(body.classClaims).toEqual(CLASSES);
+    await expectCountsTally(t);
+  });
+
+  test('a patch files too, and a reason the campaign drops leaves its task notAsserted', async () => {
+    const t = harness();
+    await load(t, [{ ...BOTH, reviewReasons: undefined }]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    expect(await openOf(t, id)).toEqual([]);
+    expect(await load(t, [BOTH])).toMatchObject({ updated: 1 });
+    expect(await openOf(t, id)).toHaveLength(2);
+    await load(t, [{ ...BOTH, reviewReasons: ['class-conflict'] }]);
+    const tasks = await tasksOf(t, id);
+    expect(tasks.find((x) => x.lane === 'nameConflicts')).toMatchObject({
+      status: 'left',
+      leftBecause: 'notAsserted',
+    });
+    expect(tasks.find((x) => x.lane === 'classConflicts')?.status).toBe('open');
+    await expectCountsTally(t);
+  });
+
+  test('the refusals: a list replaces, [] clears, absent keeps', async () => {
+    const t = harness();
+    await load(t, [BOTH]);
+    await load(t, [{ ...BOTH, classRefusals: undefined }]);
+    expect((await bodyOf(t, 'osm/A')).classRefusals).toHaveLength(1);
+    await load(t, [{ ...BOTH, classRefusals: [{ source: 'nhd', token: 'nhd:fcode=39004' }] }]);
+    expect((await bodyOf(t, 'osm/A')).classRefusals).toEqual([
+      { source: 'nhd', token: 'nhd:fcode=39004' },
+    ]);
+    await load(t, [{ ...BOTH, classRefusals: [] }]);
+    expect((await bodyOf(t, 'osm/A')).classRefusals).toBeUndefined();
+  });
+
+  test('the absorbed features: stored capped on insert and patch, absent keeps, [] is recorded', async () => {
+    const t = harness();
+    const folded = (n: number, tag: string) =>
+      Array.from({ length: n }, (_, i) => ({
+        source: 'osm' as const,
+        externalId: `osm/${tag}${i}`,
+        areaSqM: 1_000 + i,
+      }));
+    // The insert: none sent, none stored; a second body's 40 stored as the first 32.
+    await load(t, [BOTH, { externalId: 'osm/B', x: 5, absorbedFeatures: folded(40, 'b') }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toBeUndefined();
+    expect((await bodyOf(t, 'osm/B')).absorbedFeatures).toEqual(folded(32, 'b'));
+    // The patch: a list replaces (capped), an absent field keeps, [] is stored as *none*.
+    await load(t, [{ ...BOTH, absorbedFeatures: folded(33, 'a') }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual(folded(32, 'a'));
+    await load(t, [BOTH]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual(folded(32, 'a'));
+    await load(t, [{ ...BOTH, absorbedFeatures: folded(1, 'c') }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual(folded(1, 'c'));
+    await load(t, [{ ...BOTH, absorbedFeatures: [] }]);
+    expect((await bodyOf(t, 'osm/A')).absorbedFeatures).toEqual([]);
+  });
+
+  test('holds a settled reason whose evidence is unchanged: no task, settledHeld', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    const { actionId } = await settle(t, mod.id, id, 'classConflicts');
+    expect(await load(t, [BOTH])).toMatchObject({ settledHeld: 1, raisedAgain: 0 });
+    const body = await bodyOf(t, 'osm/A');
+    expect(body.reviewReasons).toEqual(['name-conflict', 'class-dissent']);
+    expect(body.reviewReason).toBe('class-dissent');
+    expect(body.reviewSettled?.map((s) => [s.reason, s.actionId])).toEqual([
+      ['class-conflict', actionId],
+    ]);
+    expect((await openOf(t, id)).map((x) => x.lane)).toEqual(['nameConflicts']);
+    await expectCountsTally(t);
+  });
+
+  test('asks again on changed evidence: a new open task, raisedAgain, the decided one kept', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    const { task } = await settle(t, mod.id, id, 'classConflicts', 'reclassed');
+    const changed = [
+      CLASSES[0],
+      { ...CLASSES[1], token: 'osm:natural=wetland' },
+    ] as Rec['classClaims'];
+    expect(await load(t, [{ ...BOTH, classClaims: changed }])).toMatchObject({
+      settledHeld: 0,
+      raisedAgain: 1,
+    });
+    const body = await bodyOf(t, 'osm/A');
+    expect(body.reviewReasons).toContain('class-conflict');
+    expect(body.reviewSettled).toBeUndefined();
+    const tasks = await tasksOf(t, id);
+    expect(tasks.find((x) => x._id === task._id)).toMatchObject({
+      status: 'decided',
+      decision: 'reclassed',
+    });
+    expect(tasks.filter((x) => x.lane === 'classConflicts' && x.status === 'open')).toHaveLength(1);
+    await expectCountsTally(t);
+  });
+
+  test('a settled name conflict: other sources stay settled, a new spelling is raised again', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await settle(t, mod.id, id, 'nameConflicts', 'renamed');
+    const withSources = NAMES.map((n, i) => ({
+      ...n,
+      sources: i === 0 ? (['nhd', 'osm'] as ('osm' | 'nhd')[]) : (['osm'] as ('osm' | 'nhd')[]),
+    }));
+    expect(await load(t, [{ ...BOTH, nameClaims: withSources }])).toMatchObject({
+      settledHeld: 1,
+      raisedAgain: 0,
+    });
+    expect((await openOf(t, id)).map((x) => x.lane)).toEqual(['classConflicts']);
+    const spelled = [...NAMES, { source: 'nhd' as const, value: 'Auburn Basin' }];
+    expect(await load(t, [{ ...BOTH, nameClaims: spelled }])).toMatchObject({ raisedAgain: 1 });
+    expect((await openOf(t, id)).map((x) => x.lane).sort()).toEqual([
+      'classConflicts',
+      'nameConflicts',
+    ]);
+    await expectCountsTally(t);
+  });
+
+  test('a settle on unrecorded evidence is asked again once, by the first campaign that records it', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [{ ...BOTH, classClaims: undefined }]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await settle(t, mod.id, id, 'classConflicts');
+    expect((await bodyOf(t, 'osm/A')).reviewSettled?.[0]?.evidence).toBe(UNRECORDED_EVIDENCE);
+    // An older loader's record (no claims again): still unrecorded, held.
+    expect(await load(t, [{ ...BOTH, classClaims: undefined }])).toMatchObject({ settledHeld: 1 });
+    // The first campaign carrying the claims asks it again…
+    expect(await load(t, [BOTH])).toMatchObject({ raisedAgain: 1 });
+    await settle(t, mod.id, id, 'classConflicts');
+    // …and once settled on them, the same claims hold.
+    expect(await load(t, [BOTH])).toMatchObject({ settledHeld: 1, raisedAgain: 0 });
+    await expectCountsTally(t);
+  });
+
+  test('an older loader that sends no class claims is held to the stored ones', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await settle(t, mod.id, id, 'classConflicts');
+    expect(await load(t, [{ ...BOTH, classClaims: undefined }])).toMatchObject({
+      settledHeld: 1,
+      raisedAgain: 0,
+    });
+    expect((await bodyOf(t, 'osm/A')).classClaims).toEqual(CLASSES);
+  });
+
+  test('a record with two claims from one catalog is held to the claims stored, one a catalog', async () => {
+    // The merge emits a claim per member, so a group with two NHD features sends two NHD claims;
+    // the import stores the first. The settle is made on what is stored, and so is the comparison.
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    const twice = [
+      CLASSES[0],
+      { ...CLASSES[0], token: 'nhd:fcode=46601', areaSqM: 1e5 },
+      CLASSES[1],
+    ] as Rec['classClaims'];
+    await load(t, [{ ...BOTH, classClaims: twice }]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    expect((await bodyOf(t, 'osm/A')).classClaims).toEqual(CLASSES);
+    await settle(t, mod.id, id, 'classConflicts');
+    expect(await load(t, [{ ...BOTH, classClaims: twice }])).toMatchObject({
+      settledHeld: 1,
+      raisedAgain: 0,
+    });
+    expect((await openOf(t, id)).map((x) => x.lane)).toEqual(['nameConflicts']);
+    // A change to the claim that is stored still asks again.
+    const moved = [{ ...CLASSES[0], token: 'nhd:fcode=46602' }, CLASSES[1]] as Rec['classClaims'];
+    expect(await load(t, [{ ...BOTH, classClaims: moved }])).toMatchObject({ raisedAgain: 1 });
+    await expectCountsTally(t);
+  });
+
+  test('a settle whose reason the record no longer raises is kept for a later campaign', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await settle(t, mod.id, id, 'classConflicts');
+    await load(t, [{ ...BOTH, reviewReasons: ['name-conflict'] }]);
+    expect((await bodyOf(t, 'osm/A')).reviewSettled).toHaveLength(1);
+    expect(await load(t, [{ ...BOTH, reviewReasons: undefined }])).toMatchObject({
+      settledHeld: 0,
+    });
+    expect((await bodyOf(t, 'osm/A')).reviewSettled).toHaveLength(1);
+    expect(await load(t, [BOTH])).toMatchObject({ settledHeld: 1 });
+  });
+
+  test('one batch moves each count row once, however many bodies it files', async () => {
+    const t = harness();
+    const recs = Array.from({ length: 5 }, (_, i) => ({
+      ...BOTH,
+      externalId: `osm/B${i}`,
+      x: i * 2,
+    }));
+    await load(t, recs);
+    const counts = await t.run((ctx) => ctx.db.query('corpusTaskCounts').collect());
+    expect(Object.fromEntries(counts.map((c) => [c.key, c.count]))).toEqual({
+      'open:nameConflicts': 5,
+      'open:nameConflicts:different': 5,
+      'open:classConflicts': 5,
+      'open:classConflicts:wetlandOrLake': 5,
+    });
+    // One row per key: a batch that wrote per task would still tally, but a row per move would not.
+    expect(counts).toHaveLength(4);
+  });
+});
+
+describe('a kept name holds while its settle does', () => {
+  /** *Keep* on the body's open name conflict, through the real decision. */
+  async function keepName(t: T, mod: Awaited<ReturnType<typeof person>>, id: Id<'waterBodies'>) {
+    const task = (await openOf(t, id)).find((x) => x.lane === 'nameConflicts');
+    if (!task) throw new Error('no open name conflict');
+    return mod.as.mutation(api.corpusWrites.decideName, { taskId: task._id, pick: 'shown' });
+  }
+  /** The same two spellings, OSM's now ranked first: the evidence unchanged, the winner not. */
+  const OSM_WINS: Rec = { ...BOTH, name: 'Lake Auburn' };
+  /** The first line of the open class task's search text: the name the task shows. */
+  const shownOnTask = async (t: T, id: Id<'waterBodies'>) =>
+    (await openOf(t, id)).find((x) => x.lane === 'classConflicts')?.searchText?.split('\n')[0];
+
+  test('a campaign that changes the winning catalog, adding no spelling, leaves the kept name', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await keepName(t, mod, id);
+    const settled = (await bodyOf(t, 'osm/A')).reviewSettled;
+    expect(settled?.find((s) => s.reason === 'name-conflict')?.keptName).toBe('The Basin');
+
+    expect(await load(t, [OSM_WINS])).toMatchObject({ settledHeld: 1, raisedAgain: 0 });
+    const body = await bodyOf(t, 'osm/A');
+    expect(body.name).toBe('The Basin');
+    // No claim was written for it, and both spellings stay findable.
+    expect(body.nameClaims?.map((c) => c.source)).not.toContain('user');
+    expect(body.searchText).toContain('Lake Auburn');
+    expect(body.searchText).toContain('The Basin');
+    expect(await shownOnTask(t, id)).toBe('The Basin');
+    expect((await openOf(t, id)).map((x) => x.lane)).toEqual(['classConflicts']);
+    // A second such campaign holds it the same way.
+    await load(t, [OSM_WINS]);
+    expect((await bodyOf(t, 'osm/A')).name).toBe('The Basin');
+    expect((await t.run((ctx) => planBodyTasks(ctx, id))).refresh).toEqual([]);
+    await expectCountsTally(t);
+  });
+
+  test('the Keep undone, the next campaign’s name comes through', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    const { actionId } = await keepName(t, mod, id);
+    await mod.as.mutation(api.undo.run, { actionId });
+    expect((await bodyOf(t, 'osm/A')).reviewSettled).toBeUndefined();
+
+    expect(await load(t, [OSM_WINS])).toMatchObject({ settledHeld: 0 });
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+    expect(await shownOnTask(t, id)).toBe('Lake Auburn');
+    expect((await openOf(t, id)).map((x) => x.lane).sort()).toEqual([
+      'classConflicts',
+      'nameConflicts',
+    ]);
+    await expectCountsTally(t);
+  });
+
+  test('a new spelling asks again, and the campaign’s name is shown', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await keepName(t, mod, id);
+    const spelled: Rec = {
+      ...BOTH,
+      name: 'Auburn Basin',
+      nameClaims: [...NAMES, { source: 'nhd', value: 'Auburn Basin' }],
+    };
+    expect(await load(t, [spelled])).toMatchObject({ raisedAgain: 1 });
+    const body = await bodyOf(t, 'osm/A');
+    expect(body.name).toBe('Auburn Basin');
+    expect(body.reviewSettled).toBeUndefined();
+    expect((await openOf(t, id)).map((x) => x.lane).sort()).toEqual([
+      'classConflicts',
+      'nameConflicts',
+    ]);
+    await expectCountsTally(t);
+  });
+
+  test('a later pick in the Body console outranks the Keep; its clear hands the name back to the catalogs', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    // OSM's spelling stored first, NHD's shown: a clear restores the first, not the kept one.
+    const osmFirst: Rec = { ...BOTH, nameClaims: [...NAMES].reverse() };
+    await load(t, [osmFirst]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await keepName(t, mod, id);
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, {
+      waterBodyId: id,
+      name: 'Lake Auburn',
+    });
+    await load(t, [osmFirst]);
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: id, name: null });
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+    // The settle still holds, but the body no longer shows what was kept: the catalogs rank it.
+    expect(await load(t, [{ ...osmFirst, name: 'Lake Auburn' }])).toMatchObject({ settledHeld: 1 });
+    expect((await bodyOf(t, 'osm/A')).name).toBe('Lake Auburn');
+    await expectCountsTally(t);
+  });
+
+  test('a class Keep records no spelling', async () => {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    await load(t, [BOTH]);
+    const id = (await bodyOf(t, 'osm/A'))._id;
+    await settle(t, mod.id, id, 'classConflicts');
+    expect((await bodyOf(t, 'osm/A')).reviewSettled?.[0]?.keptName).toBeUndefined();
+  });
+});
+
+describe('the body’s other writers', () => {
+  async function two() {
+    const t = harness();
+    const mod = await person(t, 'user_m', 'moderator');
+    const admin = await person(t, 'user_a', 'admin');
+    await load(t, [BOTH, { ...BOTH, externalId: 'osm/L', x: 3 }]);
+    const survivor = (await bodyOf(t, 'osm/A'))._id;
+    const loser = (await bodyOf(t, 'osm/L'))._id;
+    return { t, mod, admin, survivor, loser };
+  }
+
+  test('the merge leaves the loser’s tasks merged; its unmerge files them again', async () => {
+    const { t, mod, survivor, loser } = await two();
+    // The loser's alias goes to the survivor with the merge, and back with the unmerge: the
+    // survivor's tasks' search text follows it both ways.
+    await mod.as.mutation(api.waterBodies.setAliases, {
+      waterBodyId: loser,
+      aliases: ['Old Mill'],
+    });
+    const survivorTexts = async () =>
+      (await openOf(t, survivor)).map((x) => (x.searchText ?? '').includes('Old Mill'));
+    expect(await survivorTexts()).toEqual([false, false]);
+    const merged = await mod.as.mutation(api.waterBodies.merge, {
+      survivorId: survivor,
+      loserId: loser,
+    });
+    for (const task of await tasksOf(t, loser)) {
+      expect(task).toMatchObject({ status: 'left', leftBecause: 'merged' });
+    }
+    expect(await openOf(t, survivor)).toHaveLength(2);
+    expect(await survivorTexts()).toEqual([true, true]);
+    await expectCountsTally(t);
+    vi.useFakeTimers();
+    await mod.as.mutation(api.undo.run, { actionId: merged.actionId, reason: 'Not the same lake' });
+    await t.finishAllScheduledFunctions(vi.runAllTimers);
+    expect(await survivorTexts()).toEqual([false, false]);
+    expect((await openOf(t, loser)).map((x) => x.lane).sort()).toEqual([
+      'classConflicts',
+      'nameConflicts',
+    ]);
+    await expectCountsTally(t);
+  });
+
+  test('the remove leaves its tasks removed; the restore files them again', async () => {
+    const { t, admin, loser } = await two();
+    await admin.as.mutation(api.waterBodies.remove, { waterBodyId: loser, reason: 'junk' });
+    for (const task of await tasksOf(t, loser)) {
+      expect(task).toMatchObject({ status: 'left', leftBecause: 'removed' });
+    }
+    await expectCountsTally(t);
+    await admin.as.mutation(api.waterBodies.restore, { waterBodyId: loser });
+    expect(await openOf(t, loser)).toHaveLength(2);
+    await expectCountsTally(t);
+  });
+
+  test('the incoming-merge resolution’s delete leaves the loser’s tasks deleted', async () => {
+    const t = harness();
+    await load(t, [BOTH]);
+    // A second row on the same OSM id, as a reconciliation miss leaves one.
+    await load(t, [{ ...BOTH, externalId: 'osm/L', osmId: 'osm/L', x: 3 }]);
+    const loser = (await bodyOf(t, 'osm/L'))._id;
+    await t.run((ctx) => ctx.db.patch(loser, { osmId: 'osm/A' }));
+    const out = await t.mutation(internal.waterBodies.resolveIncomingMergeDuplicates, {
+      records: [{ externalId: 'osm/A', osmId: 'osm/A' }],
+      apply: true,
+    });
+    expect(out.deleted).toHaveLength(1);
+    expect(await t.run((ctx) => ctx.db.get(loser))).toBeNull();
+    for (const task of await tasksOf(t, loser)) {
+      expect(task).toMatchObject({ status: 'left', leftBecause: 'deleted' });
+    }
+    await expectCountsTally(t);
+  });
+
+  test('a rename in the Body console moves its name conflict’s tab and counts at once', async () => {
+    const { t, mod, survivor: id } = await two();
+    // Shown "Mud Pond" (NHD) against 3DHP's "Big Mud Pond": a qualifier. Shown "Mad Pond" (OSM),
+    // the other is NHD's "Mud Pond": one letter.
+    await t.run(async (ctx) => {
+      await ctx.db.patch(id, {
+        name: 'Mud Pond',
+        nameClaims: [
+          { source: 'nhd', value: 'Mud Pond' },
+          { source: '3dhp', value: 'Big Mud Pond' },
+          { source: 'osm', value: 'Mad Pond' },
+        ],
+      });
+      await syncBodyTasks(ctx, id);
+    });
+    const facet = async () => (await openOf(t, id)).find((x) => x.lane === 'nameConflicts')?.facet;
+    expect(await facet()).toBe('qualifier');
+    await expectCountsTally(t);
+
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: id, name: 'Mad Pond' });
+    expect(await facet()).toBe('oneLetter');
+    await expectCountsTally(t);
+
+    // The clear puts the catalogs' first name back, and the tab with it.
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, { waterBodyId: id, name: null });
+    expect(await facet()).toBe('qualifier');
+    await expectCountsTally(t);
+  });
+
+  test('a rename, an alias or an id written refreshes the tasks’ search text; the lane finds it', async () => {
+    const { t, mod, survivor: id } = await two();
+    const texts = async () => (await openOf(t, id)).map((x) => x.searchText ?? '');
+    const find = async (q: string) =>
+      (await mod.as.query(api.corpusTasks.listPage, { lane: 'nameConflicts', q })).rows.map(
+        (r) => r.body.id,
+      );
+    // The import wrote every field the text is built from: nothing for a sync to refresh.
+    const drift = () => t.run((ctx) => planBodyTasks(ctx, id));
+    expect((await drift()).refresh).toEqual([]);
+    expect(await find('Hidden Cove')).toEqual([]);
+
+    await mod.as.mutation(api.waterBodies.setAliases, {
+      waterBodyId: id,
+      aliases: ['Hidden Cove'],
+    });
+    for (const text of await texts()) expect(text).toContain('Hidden Cove');
+    expect(await find('Hidden Cove')).toEqual([id]);
+
+    await mod.as.mutation(api.waterBodies.setWaterBodyName, {
+      waterBodyId: id,
+      name: 'Lake Auburn',
+    });
+    for (const text of await texts()) expect(text.split('\n')[0]).toBe('Lake Auburn');
+
+    await t.mutation(internal.waterBodies.importReconciliation, {
+      matches: [{ key: id, nhdId: 'nhd-reconciled-77' }],
+    });
+    for (const text of await texts()) expect(text).toContain('nhd-reconciled-77');
+    expect((await drift()).refresh).toEqual([]);
+
+    // A campaign asserting a new id on the patch path: the sync it hands the fields to has it.
+    await load(t, [{ ...BOTH, threeDhpId: '3dhp-asserted-5' }]);
+    for (const text of await texts()) expect(text).toContain('3dhp-asserted-5');
+    expect((await drift()).refresh).toEqual([]);
+    await expectCountsTally(t);
+  });
+
+  test('the campaign duplicate resolution’s delete leaves the body’s tasks deleted', async () => {
+    const { t, survivor, loser } = await two();
+    await t.run(async (ctx) => {
+      await ctx.db.patch(survivor, {
+        dedupStatus: 'near_certain',
+        duplicateCandidateIds: [loser],
+        lastCampaignId: 'c2',
+      });
+      await ctx.db.patch(loser, {
+        dedupStatus: 'near_certain',
+        duplicateCandidateIds: [survivor],
+        lastCampaignId: 'c1',
+      });
+    });
+    const out = await t.mutation(internal.waterBodies.resolveCampaignDuplicates, {
+      campaignId: 'c2',
+      apply: true,
+    });
+    expect(out.deleted).toBe(1);
+    for (const task of await tasksOf(t, loser)) {
+      expect(task).toMatchObject({ status: 'left', leftBecause: 'deleted' });
+    }
+    expect(await openOf(t, survivor)).toHaveLength(2);
+    await expectCountsTally(t);
+  });
+});

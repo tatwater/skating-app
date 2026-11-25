@@ -68,6 +68,10 @@ interface ImportResult {
   outOfRegionKept: number;
   /** Stored bodies the rule places in no town, held in region by a moderator's pin. */
   keptByPin: number;
+  /** Settled Corpus questions the records raised on unchanged evidence: held, no task (D306). */
+  settledHeld: number;
+  /** Settled Corpus questions raised on changed evidence: asked again (D306). */
+  raisedAgain: number;
   outsideRegion: { externalId: string; waterBodyId: string | null }[];
   unresolved: { externalId: string; action: string; reason: string }[];
 }
@@ -101,6 +105,8 @@ function runImport(bodies: unknown[], campaignId: string | undefined): ImportRes
     outOfRegion: r.outOfRegion ?? 0,
     outOfRegionKept: r.outOfRegionKept ?? 0,
     keptByPin: r.keptByPin ?? 0,
+    settledHeld: r.settledHeld ?? 0,
+    raisedAgain: r.raisedAgain ?? 0,
     outsideRegion: r.outsideRegion ?? [],
     unresolved: r.unresolved ?? [],
   };
@@ -302,6 +308,8 @@ function main(): void {
     kind: 'canonical_water',
     label: label ?? mergedLabel ?? 'unscoped canonical water',
     campaignId,
+    // The merge's scope (D310): the load runs over exactly what the merge produced.
+    ...(merge?.scope !== undefined && { scope: merge.scope }),
     target,
     stages,
     call: convexRun,
@@ -335,6 +343,8 @@ function main(): void {
   let outOfRegion = 0;
   let outOfRegionKept = 0;
   let keptByPin = 0;
+  let settledHeld = 0;
+  let raisedAgain = 0;
   let applied = 0;
   let failedBatches = 0;
   let bodiesInFailedBatches = 0;
@@ -354,6 +364,8 @@ function main(): void {
       outOfRegion += result.outOfRegion;
       outOfRegionKept += result.outOfRegionKept;
       keptByPin += result.keptByPin;
+      settledHeld += result.settledHeld;
+      raisedAgain += result.raisedAgain;
       // **Out of region, named** (D266): a new body not inserted, or a stored one the rule now places
       // in no loaded town — kept with its states, for a person to decide.
       for (const o of result.outsideRegion) {
@@ -433,6 +445,9 @@ function main(): void {
   logger.count('outOfRegion', outOfRegion);
   logger.count('outOfRegionKept', outOfRegionKept);
   logger.count('keptByPin', keptByPin);
+  // The Corpus's settles (D306): held while their evidence stands, asked again when it changed.
+  logger.count('settledHeld', settledHeld);
+  logger.count('raisedAgain', raisedAgain);
   // The denominator is the *polygon features the filter emitted*, not the bodies the transform
   // kept — otherwise "dropped as a river" disappears from the ledger and the pass looks perfect.
   const featuresIn = transform?.total ?? lines.length;
@@ -506,6 +521,8 @@ function main(): void {
       `${conflicts > 0 ? ` · ${conflicts} identity conflict(s)` : ''}` +
       `${outOfRegion > 0 ? ` · ${outOfRegion} out of region, not inserted` : ''}` +
       `${outOfRegionKept > 0 ? ` · ${outOfRegionKept} stored body(ies) now out of region, kept` : ''}` +
+      `${settledHeld > 0 ? ` · ${settledHeld} settled question(s) held` : ''}` +
+      `${raisedAgain > 0 ? ` · ${raisedAgain} settled question(s) asked again` : ''}` +
       `${failedBatches > 0 ? ` · ${failedBatches} batch(es) failed and were skipped` : ''}` +
       `${declined > 0 ? ` · ${declined} itemized failure(s) recorded` : ''}\n`,
   );

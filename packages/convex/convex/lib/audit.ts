@@ -240,7 +240,39 @@ export async function writeAudit(
     targetId: row.targetId,
     createdAt: at,
   });
+  for (const open of CAPTURES.get(ctx) ?? []) open.push({ actionId: id, action: row.action });
   return id;
+}
+
+/** A row {@link capturingAudit} saw written: its id and its verb. */
+export type CapturedAuditRow = { actionId: Id<'moderationActions'>; action: ModerationAction };
+
+/** The captures open in each in-flight mutation, keyed by its context (innermost last). */
+const CAPTURES = new WeakMap<object, CapturedAuditRow[][]>();
+
+/**
+ * **Run `fn` and hand back every audit row it wrote** (B01-7a), in the order written — so a caller
+ * that performs a domain write through its existing impl learns that write's own row without the impl
+ * returning it. A Corpus decision runs `setWaterBodyNameImpl` or `setClassImpl` (which return the
+ * body's id, as their mutations and undos expect) and records the row they wrote as the task's
+ * `decisionActionId`; 7b's verbs, whose rows are written deeper still, need nothing more. Scoped to
+ * the mutation's context, as {@link asUndoOf} is; a capture inside another sees only its own rows,
+ * and the outer one sees them too.
+ */
+export async function capturingAudit<T>(
+  ctx: MutationCtx,
+  fn: () => Promise<T>,
+): Promise<{ value: T; rows: CapturedAuditRow[] }> {
+  const rows: CapturedAuditRow[] = [];
+  const open = CAPTURES.get(ctx) ?? [];
+  open.push(rows);
+  CAPTURES.set(ctx, open);
+  try {
+    return { value: await fn(), rows };
+  } finally {
+    open.pop();
+    if (open.length === 0) CAPTURES.delete(ctx);
+  }
 }
 
 /** How many unplaced undos (from before chains were kept) one write places above the row it undoes. */

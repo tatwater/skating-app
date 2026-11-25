@@ -18,15 +18,15 @@ import { Section } from '@/components/kit/section-slug';
 import { cn } from '@/lib/utils';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
 import { formatDistance } from '../../../body/tabs/places/placesModel';
-import { LinkChip } from '../../blocks/LinkChip';
-import { ListCutLine, listTotalOf } from '../../blocks/listCut';
-import { shownName } from '../../blocks/shownName';
-import { ComingSoonLink } from '../../inspector/ComingSoonLink';
 import {
   InspectorHeadAge,
   InspectorHeadEnd,
   InspectorHeadTitle,
-} from '../../inspector/InspectorFrame';
+} from '../../../inspector/InspectorFrame';
+import { LinkChip } from '../../blocks/LinkChip';
+import { ListCutLine, listTotalOf } from '../../blocks/listCut';
+import { shownName } from '../../blocks/shownName';
+import { ComingSoonLink } from '../../inspector/ComingSoonLink';
 import { AskList, AskWords } from '../asks/AskList';
 import { trustLine } from '../Drawn/drawnModel';
 import { dayTime } from '../Flag/flagFormat';

@@ -5,7 +5,7 @@ import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import { expectNoSidewaysScroll, must } from '@/components/kit/storyKit';
 import { modKey } from '@/lib/keys';
 import { ThemePair } from '../../../../../../.storybook/theme';
-import type { DecidedState } from '../../inspector/InspectorFrame';
+import type { DecidedState } from '../../../inspector/InspectorFrame';
 import { StoryTicketInspector, type StoryWrite } from './ticketBoard';
 import { forgetTicketDrafts } from './ticketDrafts';
 import {
@@ -269,7 +269,7 @@ export const RelatedCapped: Story = {
 const MATT_RESOLVED: DecidedState = {
   by: 'Matt Steinberg',
   at: RESOLVED.ticket.resolvedAt ?? 0,
-  decision: 'resolved',
+  decisionWord: 'resolved',
   byMe: false,
   actionId: 'ma_resolve_rob',
 };

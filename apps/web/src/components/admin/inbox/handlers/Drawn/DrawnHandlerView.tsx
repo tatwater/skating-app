@@ -16,16 +16,16 @@ import { PersonLockup } from '@/components/kit/person-lockup';
 import { Section } from '@/components/kit/section-slug';
 import { ComingSoonLink } from '@/components/kit/unavailable-button';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
+import {
+  InspectorHeadAge,
+  InspectorHeadEnd,
+  InspectorHeadTitle,
+} from '../../../inspector/InspectorFrame';
 import { dayMonth } from '../../../shell/consoleTime';
 import { UnmergeLive } from '../../../shell/UnmergeLeft';
 import { LinkChip } from '../../blocks/LinkChip';
 import { shownName } from '../../blocks/shownName';
 import { skateWords } from '../../blocks/skateWords';
-import {
-  InspectorHeadAge,
-  InspectorHeadEnd,
-  InspectorHeadTitle,
-} from '../../inspector/InspectorFrame';
 import {
   type DrawnItem,
   type DrawnSurvivor,

@@ -101,10 +101,30 @@ export interface CanonicalBody {
    * fixture being Auburn's water supply stored as NHD's `The Basin` while OSM calls it `Lake
    * Auburn`. The claims carry their source because that is what a moderator picking between them
    * needs to know, and because a moderator's own choice is stored as one with `source: 'user'`.
+   *
+   * `sources` (B01-7a): every catalog publishing the spelling, `source` (the top-ranked) first — so
+   * the Name conflicts lane can say three catalogs agree. Stored only from the campaign that first
+   * carries it; no backfill can recover it.
    */
-  nameClaims?: { source: string; value: string }[];
-  /** Every catalog's class for this water (B01-3d), stored for the Names tab's per-catalog lines. */
-  classClaims?: { source: string; value: string }[];
+  nameClaims?: { source: string; value: string; sources?: string[] }[];
+  /**
+   * Every catalog's class for this water (B01-3d), stored for the Names tab's per-catalog lines —
+   * with the catalog's own token (`nhd:fcode=46600`) and that feature's area (B01-7a).
+   */
+  classClaims?: { source: string; value: string; token?: string; areaSqM?: number }[];
+  /**
+   * **The catalogs that refused this water outright** while another classed it (B01-7a): each
+   * refusing feature's own token (`osm:natural=water`) and area. The merge emits it on every record,
+   * `[]` when none refused, so the import can tell "none" from "not recorded" (absent). Read by the
+   * Contested as water lane (D307); the merge kept it only in its run stats before.
+   */
+  classRefusals?: { source: string; token: string; areaSqM?: number }[];
+  /**
+   * **The features the merge folded into this body** as one catalog's duplicates (B01-7a, D310):
+   * each absorbed member's catalog, its id as `absorbed.ndjson` names it (`refOf`), and its area —
+   * at most 32 (`masterList.ABSORBED_FEATURES_MAX`). Omitted when the body absorbed nothing.
+   */
+  absorbedFeatures?: { source: string; externalId: string; areaSqM: number }[];
   /**
    * A point genuinely inside the water (A06c) — see `waterBodies.interiorPoint`. Absent only when
    * the geometry has no locatable interior, which is a body the transform is about to skip anyway.

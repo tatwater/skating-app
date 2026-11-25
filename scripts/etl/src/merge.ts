@@ -101,6 +101,7 @@ import {
   townLayerOf,
 } from './mergeRules';
 import { NHD_ID_CENSUS, NHD_SOURCES, nhdArchiveKey, normalizeGnisId } from './nhdArchive';
+import { mergeScope } from './runScopes';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const SCRATCH = join(HERE, '..', '.scratch', 'merge');
@@ -488,6 +489,11 @@ async function main(): Promise<void> {
     downstatePath: DOWNSTATE_FILE,
   });
   const absent = sourceStages.filter((s) => s.detail?.startsWith('MISSING'));
+  // Every state, every catalog — or, missing one, a different corpus (D218).
+  const scope = mergeScope(
+    OSM_STATES,
+    absent.map((s) => s.name),
+  );
 
   const logger = new RunLogger({
     kind: 'corpus_merge',
@@ -495,6 +501,7 @@ async function main(): Promise<void> {
     campaignId,
     target: resolveDeployment(),
     stages: sourceStages,
+    scope,
     call: runLogEnabled ? convexRun : () => undefined as never,
     notes: [
       'Read-only against Convex: this pass writes only .scratch/merge/.',
@@ -983,6 +990,7 @@ async function main(): Promise<void> {
       {
         producedAt: new Date().toISOString(),
         campaignId,
+        scope,
         // **The path, verbatim, so the loader can replay it.** This replaced a hand-rolled `inputs`
         // block that pulled seven fields per archive and dropped the ones that matter most — OSM's
         // resolved URL and build date, NHD's freeze verdict, GNIS's per-state row counts. One

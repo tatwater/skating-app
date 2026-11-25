@@ -2,8 +2,8 @@ import { zonedInstant } from '@skating/core';
 import { render, screen, within } from '@testing-library/react';
 import type { ReactElement } from 'react';
 import { describe, expect, it } from 'vitest';
+import { InspectorProvider } from '../../../inspector/inspectorContext';
 import { skateWords } from '../../blocks/skateWords';
-import { InspectorProvider } from '../../inspector/inspectorContext';
 import { AskList, askWhen, skateLine } from './AskList';
 import {
   ASKS_NOW,

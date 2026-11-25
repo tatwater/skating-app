@@ -71,6 +71,12 @@ export function useOverviewHome({
   const reviewCounts = useQuery(api.waterBodies.reviewQueueCounts, canCorpus ? {} : 'skip');
   const corpusCounts = useQuery(api.console.corpusCounts, canCorpus ? {} : 'skip');
   const minute = minuteOf(now);
+  // The built task lanes count from their tasks — the figures the Corpus sidebar draws. Held through
+  // each minute's new subscription, as Machinery is.
+  const taskLanes = useHeldRead(
+    useQuery(api.corpusTasks.lanes, canCorpus ? { now: minute } : 'skip'),
+    !canCorpus,
+  );
   // Held through each minute's new subscription, so the card doesn't fall back to loading as it lands.
   const jobs = useHeldRead(
     useQuery(api.machinery.overviewJobs, canMachinery ? { now: minute } : 'skip'),
@@ -123,12 +129,24 @@ export function useOverviewHome({
     return {
       inbox: overview ? inboxFromOverview(overview.inbox) : undefined,
       people: overview ? peopleFromOverview(overview.people) : undefined,
-      // The intake rows lead; the Corpus counts fill in what they carry once they land.
-      // Held until both reads land: drawn from the intake rows alone, Duplicates would read rows
-      // and then jump to decisions.
+      // The intake rows lead; the Corpus counts and the task lanes fill in what they carry. Held
+      // until every read lands: drawn from the intake rows alone, Duplicates would read rows and
+      // then jump to decisions, and a built lane would jump from its reason's rows to its tasks.
+      // While the server is still filing its tasks (`pending`: the backfill) their counts are
+      // short — zero before it starts — so the lanes read their reasons' rows until it is done,
+      // as the sidebar and Inbox Zero draw no task count then.
       corpus:
-        reviewCounts && corpusCounts
-          ? corpusFromReviewCounts(reviewCounts, corpusExtrasFrom(corpusCounts))
+        reviewCounts && corpusCounts && taskLanes
+          ? corpusFromReviewCounts(
+              reviewCounts,
+              corpusExtrasFrom(corpusCounts),
+              taskLanes.pending
+                ? null
+                : {
+                    nameConflicts: taskLanes.lanes.nameConflicts.open,
+                    classConflicts: taskLanes.lanes.classConflicts.open,
+                  },
+            )
           : undefined,
       machinery: !canMachinery
         ? 'withheld'
@@ -148,6 +166,7 @@ export function useOverviewHome({
     overview,
     reviewCounts,
     corpusCounts,
+    taskLanes,
     jobs,
     summary,
     feed,

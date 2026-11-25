@@ -161,7 +161,7 @@ describe('ItemMap’s dates', () => {
       },
     }));
     const { ItemMap } = await import('./ItemMap');
-    const { InspectorProvider } = await import('../inspector/inspectorContext');
+    const { InspectorProvider } = await import('../../inspector/inspectorContext');
     const at = (timeZone: string) =>
       render(
         <InspectorProvider
@@ -210,7 +210,7 @@ describe('ItemMap on a narrow page', () => {
       };
     });
     const { ItemMap } = await import('./ItemMap');
-    const { InspectorProvider } = await import('../inspector/inspectorContext');
+    const { InspectorProvider } = await import('../../inspector/inspectorContext');
     const at = (narrow: boolean) =>
       render(
         <InspectorProvider

@@ -24,9 +24,11 @@ import { SwitchRow } from '@/components/kit/switch';
 import type { MapSurface } from '@/lib/mapSurface';
 import { cn } from '@/lib/utils';
 import { formatDistance } from '../tabs/places/placesModel';
+import { AerialCredit } from './AerialCredit';
 import { BodyMapKey, PointFace } from './BodyMapMarks';
 import { LINE_STYLES, LIT_STYLE, tokenVar } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
+import type { AerialLoadView } from './consoleAerial';
 import { fieldOpacity } from './hazardField';
 import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescriptors';
 
@@ -49,7 +51,21 @@ import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescri
  *   the key (Review 13 #5).
  * - **An embed goes without the rack** (`rack={false}`, the Inbox's): no switches at all, and the
  *   `plate` slot (a legend, a caption) takes the rack's corner; beside a rack, a plate goes top right.
+ * - **The summer aerial** (`consoleAerial`) is the rack's last row (`aerial`): not a scene's layer
+ *   but the ground under all of them, so it is never disabled and never reset by a tab — the
+ *   viewer's own switch, kept by the frame. While it is on, its credit (`credit`) sits in the dock
+ *   before the scale, as board 4.3 draws it, saying while the photograph loads or didn't all come
+ *   (`aerialLoad`, `AerialCredit`).
  */
+
+/** A credit with no state handed: the photograph is in. */
+const LOADED: AerialLoadView = { load: 'loaded' };
+
+/** The rack's top while a tool's mode bar is up: under the bar, by the kit rack's own measure. */
+export const RACK_UNDER_TOOL = 'top-(--rack-under-mode)';
+
+/** The summer aerial's rack row: not the winter pass (*Aerial*, Imagery's), the NAIP photograph. */
+export const AERIAL_SWITCH_LABEL = 'Summer aerial';
 
 export const LAYER_LABELS: Record<BodyMapLayer, string> = {
   outline: 'Outline',
@@ -93,6 +109,12 @@ export interface BodyMapPaneProps {
    * rack; top right beside one. Marked `data-map-ui`, so the graticule's labels keep clear of it.
    */
   plate?: ReactNode;
+  /** The summer aerial's switch, as the rack's last row (a map with a rack only). */
+  aerial?: { on: boolean; onChange: (on: boolean) => void };
+  /** The summer aerial's credit while it is on, in the dock before the scale. */
+  credit?: string | null;
+  /** Where the summer aerial stands (loading, in, or not all of it came); in, unless said. */
+  aerialLoad?: AerialLoadView | null;
   /**
    * The tool a tab holds on the map (B01-6): its mode bar across the top — the mode, what to do
    * next, where it stands — with the Esc cap that leaves it. The rack drops below it.
@@ -114,6 +136,9 @@ export function BodyMapPane({
   hoverId: forcedHover = null,
   foot,
   plate,
+  aerial,
+  credit = null,
+  aerialLoad = null,
   tool = null,
   className,
 }: BodyMapPaneProps) {
@@ -132,8 +157,9 @@ export function BodyMapPane({
     paneRef,
     surface?.width ?? 0,
     surface?.height ?? 0,
-    rows.length,
+    rows.length + (aerial === undefined ? 0 : 1),
     plate != null,
+    tool !== null,
   );
 
   const footInset = drawn.keyKinds.length > 0 ? KEY_HEIGHT : 0;
@@ -223,7 +249,16 @@ export function BodyMapPane({
         </MapModeBar>
       )}
       {rack !== false && (
-        <MapLayerRack>
+        // The summer aerial's row names itself in two words, a step past the kit rack's 8rem: the
+        // rack takes 9 when it holds that row, so no name runs off its plate.
+        //
+        // Under a tool's mode bar the rack drops below it, and that is said here: the kit's own
+        // rule finds the bar inside `[data-slot=map-pane]`, and this pane is named `body-map`
+        // (its tests, its keep-outs and its stories find it by that), so the rule never matches
+        // and the bar covered the rack's top row. `--rack-under-mode` is the kit rack's own.
+        <MapLayerRack
+          className={cn(aerial !== undefined && 'w-[9rem]', tool !== null && RACK_UNDER_TOOL)}
+        >
           {rows.map((row) => (
             <SwitchRow
               key={row.layer}
@@ -234,6 +269,14 @@ export function BodyMapPane({
               onCheckedChange={(on) => onLayerChange?.(row.layer, on)}
             />
           ))}
+          {aerial !== undefined && (
+            <SwitchRow
+              data-layer="summerAerial"
+              label={AERIAL_SWITCH_LABEL}
+              checked={aerial.on}
+              onCheckedChange={(on) => aerial.onChange(on)}
+            />
+          )}
         </MapLayerRack>
       )}
       {plate != null && (
@@ -249,6 +292,7 @@ export function BodyMapPane({
         </div>
       )}
       <MapDock>
+        {credit !== null && <AerialCredit credit={credit} state={aerialLoad ?? LOADED} />}
         {surface !== null && (
           <MapScaleBar
             metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
@@ -428,8 +472,10 @@ const KEEPOUT_SELECTOR =
  * The chrome the graticule's labels keep clear of, in pane px: the rack, the dock, MapLibre's own
  * controls (the folded credits), and anything a tab marks `data-map-ui`. Measured after layout,
  * again whenever the pane changes size, and whenever one of them does — the foot's notice arriving,
- * a tab's dock mounting in it. A box with no area takes no room (the foot holds its live region
- * mounted while it says nothing), so it keeps nothing out.
+ * a tab's dock mounting in it — and when a tool's mode bar goes up or comes down (`moded`): the bar
+ * is a keep-out that arrives with no other box changing size, and the rack moves under it. A box
+ * with no area takes no room (the foot holds its live region mounted while it says nothing), so it
+ * keeps nothing out.
  */
 function useKeepouts(
   pane: React.RefObject<HTMLDivElement | null>,
@@ -437,9 +483,10 @@ function useKeepouts(
   height: number,
   rows: number,
   plated: boolean,
+  moded: boolean,
 ): readonly Rect[] {
   const [rects, setRects] = useState<readonly Rect[]>([]);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measured when the pane, the rack or the plate changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: re-measured when the pane, the rack, the plate or the mode bar changes.
   useLayoutEffect(() => {
     const el = pane.current;
     if (!el) return;
@@ -464,6 +511,6 @@ function useKeepouts(
     const observer = new ResizeObserver(measure);
     for (const node of el.querySelectorAll<HTMLElement>(KEEPOUT_SELECTOR)) observer.observe(node);
     return () => observer.disconnect();
-  }, [width, height, rows, plated]);
+  }, [width, height, rows, plated, moded]);
   return rects;
 }

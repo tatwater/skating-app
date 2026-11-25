@@ -545,7 +545,7 @@ rows look right, and something is quietly wrong for a person who can no longer c
 - **Banned and suspended users have no self-service path.** Both gates reject them, and erasure and
   access rights don't depend on good standing. Suspended users need only a gate change; a *banned* user
   is Clerk-banned and can't sign in at all, so that half has to be an operator-run export and deletion
-  from `/admin/users` plus a documented contact address. In the A05a deferred register.
+  from `/admin/people` plus a documented contact address. In the A05a deferred register.
 - ~~**Photo *images* survive indefinitely, and only the caption comes off.**~~ **Decided as
   [D66](../plans/01-decisions.md#d66--a-departed-skaters-photos-split-on-evidential-value-and-expire-at-the-season-boundary-a05a)
   and built in A05a (2026-07-28).** This was the largest unresolved question in the design: a photo on a

@@ -4,12 +4,11 @@ import { Quote } from '@/components/kit/note';
 import { PersonByline } from '@/components/kit/person-lockup';
 
 import { shortAge } from '@/lib/ages';
-
+import { useInspectorContext } from '../../../inspector/inspectorContext';
 import { dayMonth } from '../../../shell/consoleTime';
 import { ListCutLine, type ListTotal } from '../../blocks/listCut';
 import { shownName } from '../../blocks/shownName';
 import { skateWords } from '../../blocks/skateWords';
-import { useInspectorContext } from '../../inspector/inspectorContext';
 import type { InboxItemView } from '../../list/inboxTypes';
 import { ASK_LIST_WORDS as W } from './askListWords';
 

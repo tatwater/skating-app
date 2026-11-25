@@ -26,6 +26,8 @@ const mocks = vi.hoisted(() => ({
   roleLoading: false,
   mutate: vi.fn(() => Promise.resolve()),
   announce: vi.fn(() => Promise.resolve()),
+  /** Whether the map was last asked for the summer aerial. */
+  aerial: false as boolean | undefined,
 }));
 
 vi.mock('convex/react', async () => {
@@ -92,22 +94,28 @@ vi.mock('@/components/kit/toast', async (original) => ({
 }));
 vi.mock('../map/useBodyMapCanvas', () => ({
   FIT_PADDING: { top: 0, right: 0, bottom: 0, left: 0 },
-  useBodyMapCanvas: () => ({
-    ground: <div data-testid="ground" />,
-    surface: null,
-    zoomIn: () => {},
-    zoomOut: () => {},
-    atMinZoom: false,
-    atMaxZoom: false,
-    liveMap: () => null,
-  }),
+  useBodyMapCanvas: (options: { aerial?: boolean }) => {
+    mocks.aerial = options.aerial;
+    return {
+      ground: <div data-testid="ground" />,
+      surface: null,
+      zoomIn: () => {},
+      zoomOut: () => {},
+      atMinZoom: false,
+      atMaxZoom: false,
+      aerialCredit: options.aerial ? 'Aerial · NAIP' : null,
+      liveMap: () => null,
+    };
+  },
 }));
 
 import { api } from '@skating/convex/api';
+import { CAPABILITIES } from '@skating/core';
 import { getFunctionName } from 'convex/server';
 import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
 import { readOpened } from '../../bodies/openedRecently';
+import { AERIAL_KEY } from '../map/aerialSwitch';
 import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { ListWritersProvider } from '../tabs/listWriter';
 import { SHAPE_TAB } from '../tabs/shape/ShapeTabRoute';
@@ -126,6 +134,7 @@ import {
   REMOVAL_SENTENCE_SHORTENED,
 } from './bodyFixtures';
 import type { HistoryAction } from './bodyModel';
+import { validateBodySearch } from './bodySearch';
 import { registerBodyTabs } from './tabRegistry';
 
 type Ref = Parameters<typeof getFunctionName>[0];
@@ -395,6 +404,18 @@ describe('BodyConsoleRoute', () => {
     expect(mocks.push).toHaveBeenCalledWith('/admin/corpus?q=mascoma');
   });
 
+  it('goes back to a Corpus task whole on ⇧⏎: its lane, tab, search and open item', async () => {
+    const user = userEvent.setup();
+    // As a task's *Open in Body →* sends it, and as the route's `validateSearch` keeps it.
+    const task = '/admin/corpus?lane=name-conflicts&tab=oneLetter&q=basin&item=k57abc';
+    mocks.search = validateBodySearch({ tab: 'names', from: task });
+    expect(mocks.search).toEqual({ tab: 'names', from: task });
+    render(<Mounted />);
+    screen.getByRole('tab', { name: /Names/ }).focus();
+    await user.keyboard('{Shift>}{Enter}{/Shift}');
+    expect(mocks.push).toHaveBeenCalledWith(task);
+  });
+
   it('goes back to the list on ⇧⏎ from a bay row, without lighting the bay', async () => {
     const user = userEvent.setup();
     mocks.search = { from: '/admin/corpus?q=mascoma' };
@@ -403,6 +424,39 @@ describe('BodyConsoleRoute', () => {
     await user.keyboard('{Shift>}{Enter}{/Shift}');
     expect(mocks.push).toHaveBeenCalledWith('/admin/corpus?q=mascoma');
     expect(mocks.navigate).not.toHaveBeenCalled();
+  });
+
+  it('gives a moderator the summer aerial on every tab, kept across tabs, bodies and visits', async () => {
+    // A moderator: every capability an admin alone holds is refused. The switch is console staff's,
+    // gated by nothing past the console itself.
+    mocks.denied = new Set(
+      Object.entries(CAPABILITIES)
+        .filter(([, rule]) => rule.role === 'admin')
+        .map(([name]) => name),
+    );
+    window.localStorage.removeItem(AERIAL_KEY);
+    // The store outlives a test: however this one ends, the next finds the switch off.
+    onTestFinished(() => window.localStorage.removeItem(AERIAL_KEY));
+    const user = userEvent.setup();
+    const { rerender, unmount } = render(<Mounted />);
+    const aerial = () => screen.getByRole('switch', { name: /Summer aerial/ });
+    expect(aerial()).not.toBeChecked();
+    expect(mocks.aerial).toBe(false);
+    await user.click(aerial());
+    expect(aerial()).toBeChecked();
+    expect(mocks.aerial).toBe(true);
+    expect(screen.getByText('Aerial · NAIP')).toBeInTheDocument();
+    expect(window.localStorage.getItem(AERIAL_KEY)).toBe('on');
+    // Another tab puts the scene's switches back, never this one.
+    mocks.search = { tab: 'names' };
+    rerender(<Mounted />);
+    expect(aerial()).toBeChecked();
+    // Another visit finds it on.
+    unmount();
+    render(<Mounted />);
+    expect(aerial()).toBeChecked();
+    await user.click(aerial());
+    expect(window.localStorage.getItem(AERIAL_KEY)).toBeNull();
   });
 
   it('puts the map’s switches back for a new body on the same tab, though it opens at once', async () => {

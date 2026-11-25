@@ -138,7 +138,7 @@ export async function retryOrPage(
     subject: `Clerk ${what} failed — manual fix needed`,
     heading: `Clerk ${what} failed for ${subject}`,
     lines: [`Last error: ${failure} (after ${attempt + 1} attempt(s)).`, fix],
-    deepLinkPath: '/admin/users',
+    deepLinkPath: '/admin/people',
   });
   return 'paged';
 }

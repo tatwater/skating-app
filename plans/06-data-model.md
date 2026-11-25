@@ -50,7 +50,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `waterBodies` | the corpus: outline, our key + every catalog's claim, class, name + aliases, area, depth with provenance (D68), elevation, wind rose (D90), display score (A06c §4.2), public-access verdict (A06f), standing fields (D176) — D14, D93–D137 |
+| `waterBodies` | the corpus: outline, our key + every catalog's claim, class, name + aliases, area, depth with provenance (D68), elevation, wind rose (D90), display score (A06c §4.2), public-access verdict (A06f), standing fields (D176), the intake reasons and the questions a moderator settled with their evidence (`reviewSettled`, D306; a name *Keep*'s entry also records the spelling kept, `keptName`, which the import leaves shown while the settle holds), each catalog's class claim and refusal with its token (B01-7a), the catalog features the merge folded in as one catalog's duplicates (`absorbedFeatures`: catalog, id, area — B01-7a, D310) — D14, D93–D137 |
 | `waterBodyCells` | the ladder-grid spatial index: one row per (body, cell) — the read path every viewport and "near" query walks — D5 as rebuilt in A01 |
 | `waterBodySubAreas` | a named region inside one polygon — a bay, an arm — with aliases for the ten spellings of Malletts Bay; a place in its own right since A09; since D201 usually derived from a stored `mouth` (two shoreline points, a side, a sagitta) — D60 |
 | `waterBodySubAreaCells` | the same cell index for bays — A09 |
@@ -89,7 +89,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `imageryUnreadable` | the manifests the index build could not read, one row each until it reads: read last by the next build, least recently tried first, so a stalling few hold back neither good frames nor a repaired one — D214 |
 | `imageryCounts` | the granule ledger's totals per season, kept beside every status change — D214 |
 | `dailyThrottle` | once per key per New York day (operator alerts), or busy until a time (the full history fill) — A06i |
-| `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; `/admin/imports` — A06c §6.2 |
+| `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; what it set out to cover (`scope`: its pass, its states, whether that was the whole pass — intent, not outcome) and its heartbeat (`progressAt`, stamped by the server, so a dead run reads *stalled*) — D218, D310; `/admin/imports` — A06c §6.2 |
 
 ### Access
 
@@ -177,6 +177,9 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `inboxItemMembers` | the source rows an Inbox item holds (a flag, a request, a drawn body, a ticket), who filed each (D289) and which decision closed it, so an undo reopens exactly what one decision closed — B01-5 |
 | `inboxCounts` | the Inbox's stored counts — each lane's and tab's open items and the decided total — moved by the item writer with each row, so a count is the tally of the rows; the Overview's Inbox card reads them — B01-5 |
 | `inboxJobRuns` | where the Inbox's chained jobs stand — the items backfill, the drift repair, the dev seed's clear: the phase, the cursor, whether it is done — B01-5 |
+| `corpusTasks` | Corpus's task row: one per question a machine raised about a body — in B01-7a an intake reason (`name-conflict`, `class-conflict`) on one body — with its lane, tab, rank, search text (what the library finds its body by, so a lane's search reads only the lane's tasks) and status (`open`, `decided` by a person, or `left` when the question went away), and once decided who, when, what and the decision's audit row; written only by `lib/corpusTasks.ts` — B01-7, D306 |
+| `corpusTaskCounts` | Corpus's stored task counts — each lane's and tab's open tasks — moved by the task writer with each row, so a count is the tally of the rows; Corpus's sidebar and the Overview's Corpus card read them — B01-7 |
+| `corpusTaskJobRuns` | where the Corpus tasks' chained jobs stand — the backfill and the drift repair: the phase, the cursor, whether it is done — B01-7 |
 | `metricSnapshots` | pre-aggregated numbers every `/admin` chart reads, one row per (metric, day) — charts never scan the corpus — 07-2 |
 
 ---

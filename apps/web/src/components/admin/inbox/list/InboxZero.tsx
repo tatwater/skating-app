@@ -1,6 +1,14 @@
 import { INBOX_LANES, type InboxLane, zoneOffsetMs } from '@skating/core';
-import type { ReactNode } from 'react';
+import {
+  type ComponentProps,
+  cloneElement,
+  createContext,
+  type ReactElement,
+  type ReactNode,
+  useContext,
+} from 'react';
 
+import { buttonVariants } from '@/components/kit/button';
 import { DisplayWord } from '@/components/kit/display-word';
 import { Note } from '@/components/kit/note';
 import { RetryNote } from '@/components/kit/retry-note';
@@ -42,6 +50,13 @@ import type { InboxTodayView } from './inboxTypes';
  * what moderators did, never anything about ice (D3).
  */
 
+/**
+ * The live links of *Not in the inbox*, by the mode they open: the router's link element, worn as
+ * the row's link chip. A mode with none here is *Coming soon* (D286). The route provides them (Corpus
+ * from B01-7a: the first task lane with an open task), so the view between needs no prop for them.
+ */
+export const ZeroLinks = createContext<{ corpus?: ReactElement }>({});
+
 const HOUR = 3_600_000;
 /** The longest two whole local hours in a row are apart: 90 minutes, across a half-hour change. */
 const LONGEST_LOCAL_HOUR = 1.5 * HOUR;
@@ -67,6 +82,7 @@ export function InboxZero({
   notInInbox?: { corpus?: ReactNode; machinery?: ReactNode };
 }) {
   const time = (at: number) => clock(at, timeZone);
+  const links = useContext(ZeroLinks);
   return (
     <div data-slot="inbox-zero" className="min-h-0 flex-1 overflow-y-auto pb-(--space-14)">
       <div className="flex flex-col gap-(--space-2_5) px-gutter pt-(--space-7)">
@@ -121,7 +137,7 @@ export function InboxZero({
       )}
       <Section title={NOT_IN_INBOX} className="px-gutter pt-(--space-5_5)">
         <div data-slot="inbox-zero-elsewhere" className="flex flex-col">
-          <Elsewhere name={CORPUS} link={CORPUS_LINK}>
+          <Elsewhere name={CORPUS} link={CORPUS_LINK} to={links.corpus}>
             {notInInbox?.corpus}
           </Elsewhere>
           <Elsewhere name={MACHINERY} link={MACHINERY_LINK} last>
@@ -281,11 +297,14 @@ function Legend() {
 function Elsewhere({
   name,
   link,
+  to,
   last = false,
   children,
 }: {
   name: string;
   link: string;
+  /** The router's link to the mode; without one the mode is *Coming soon*. */
+  to?: ReactElement | undefined;
   last?: boolean;
   children?: ReactNode;
 }) {
@@ -300,7 +319,25 @@ function Elsewhere({
         {name}
       </span>
       <span className="min-w-0">{children}</span>
-      <ComingSoonLink>{link}</ComingSoonLink>
+      {to === undefined ? (
+        <ComingSoonLink>{link}</ComingSoonLink>
+      ) : (
+        cloneElement(
+          to as ReactElement<ComponentProps<'a'>>,
+          {
+            'data-slot': 'inbox-zero-link',
+            className: cn(buttonVariants({ variant: 'link', size: 'xs' }), 'no-underline'),
+            children: (
+              <span className="inline-flex items-center gap-[inherit]">
+                {link}
+                <span aria-hidden="true" className="-mr-[3px]">
+                  →
+                </span>
+              </span>
+            ),
+          } as ComponentProps<'a'>,
+        )
+      )}
     </div>
   );
 }

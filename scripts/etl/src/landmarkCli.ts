@@ -8,6 +8,11 @@
  *   pnpm --filter @skating/etl landmarks VT --refresh-bodies   # some, against fresh outlines
  *   pnpm --filter @skating/etl landmarks --refresh             # re-run osmium
  *   pnpm --filter @skating/etl landmarks --mentions=<mentions.csv>   # required, or --without-corpus
+ *   pnpm --filter @skating/etl landmarks --campaign=<id>       # the campaign its run row joins
+ *
+ * It leaves a run row (`landmark_match`, B01-7a) though it writes nothing else to Convex: a campaign
+ * read from what it stored must show this pass, its states and how it ended. `--no-run-log` opts out
+ * for a local experiment; a row that cannot be written never fails the match (`RunLogger`).
  *
  * Writes `.scratch/landmarks/landmarks.ndjson` — one line per body, `{ waterBodyId, landmarks }`; a
  * run of every state marks each line `complete` and writes an empty one for a body it placed nothing
@@ -38,7 +43,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
-import { convexRun } from '@skating/run-log';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import type { Feature } from 'geojson';
 import { EXTRACT_SOURCES } from './archive';
 import { osmLandmarkExportArgs, osmLandmarkFilterArgs } from './extract';
@@ -52,6 +57,7 @@ import {
   parseGnisLandmark,
   parseOsmLandmark,
 } from './landmarkSource';
+import { landmarkMatchScope } from './runScopes';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const OSM_DIR = join(ROOT, '.raw');
@@ -200,6 +206,9 @@ function csvCell(value: string | number | undefined): string {
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
+/** The run row, once opened — so a throw anywhere in `main` closes it as failed. */
+let activeLogger: RunLogger | undefined;
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
   const states = args.filter((a) => !a.startsWith('--')).map((s) => s.toLowerCase());
@@ -213,6 +222,27 @@ async function main(): Promise<void> {
       'pass --mentions=<mentions.csv> (training_data/google_group/mentions/), or --without-corpus to build without community names',
     );
   }
+
+  const logger = new RunLogger({
+    kind: 'landmark_match',
+    label: `Landmark match — OSM + GNIS onto the listed bodies${mentionsPath ? ', with the corpus' : ''} (D202)`,
+    campaignId: flag(args, 'campaign'),
+    target: resolveDeployment(),
+    scope: landmarkMatchScope(selected, ALL_STATES),
+    call: args.includes('--no-run-log') ? () => undefined as never : convexRun,
+    stages: [
+      {
+        name: 'match',
+        detail:
+          'Offline: OSM + GNIS landmark candidates placed on the listed bodies exported from ' +
+          'landmarks:listBodyGeometry. Writes only .scratch/landmarks/; `load-landmarks` loads it.',
+        output: join(SCRATCH, 'landmarks.ndjson'),
+      },
+    ],
+    notes: ['Read-only against Convex: this pass writes only .scratch/landmarks/.'],
+  });
+  if (!args.includes('--no-run-log')) logger.start();
+  activeLogger = logger;
 
   mkdirSync(SCRATCH, { recursive: true });
   const complete = runIsComplete(selected, ALL_STATES);
@@ -341,9 +371,25 @@ async function main(): Promise<void> {
   };
   writeFileSync(join(SCRATCH, 'summary.json'), `${JSON.stringify(summary, null, 2)}\n`);
   process.stdout.write(`${JSON.stringify(summary, null, 2)}\n`);
+
+  // Named tallies, none called `inserted` or `updated`: those are what a campaign sums as loaded.
+  logger.count('bodiesIndexed', bodies.length);
+  for (const [name, value] of Object.entries(counts)) logger.count(name, value);
+  logger.count('bodiesWithLandmarks', byBody.size);
+  logger.count('overIdTotal', overIdTotal.length);
+  if (corpus) {
+    logger.count('corpusMatched', corpus.matched);
+    logger.count('corpusAmbiguous', corpus.ambiguous.length);
+    logger.count('corpusUnmatched', corpus.unmatched.length);
+  }
+  logger.succeed([
+    'Read-only against Convex: this pass writes only .scratch/landmarks/.',
+    `${complete ? 'complete' : 'partial'} run over ${selected.join('/')}${corpus ? '' : ' — without the corpus'}`,
+  ]);
 }
 
 main().catch((error: unknown) => {
   log(error instanceof Error ? (error.stack ?? error.message) : String(error));
+  activeLogger?.failed(error);
   process.exit(1);
 });

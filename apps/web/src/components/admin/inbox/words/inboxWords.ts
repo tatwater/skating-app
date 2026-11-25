@@ -280,12 +280,11 @@ export const ITEM_FAILED = 'This item didn’t load.';
 /** The Support read's own refusal, word for word (`inbox.ts`'s `SUPPORT_REFUSAL`). */
 export const SUPPORT_REFUSED = 'Support tickets are read only by staff who answer them';
 export const BACK_TO_LIST = 'Back to the list';
-export const BACK_TO_QUEUE = 'Back to the queue';
+// *Back to the queue* and the lock's *Decided by …* moved with the frame to
+// `admin/inspector/inspectorWords.ts` (B01-7a).
 /** *History →* (the link chip draws the arrow). */
 export const HISTORY = 'History';
 
-/** The decided lock's line: "Decided by Sarah Berman · 14:42 · approved". */
-export const decidedBy = (name: string) => `Decided by ${name}`;
 /** A decider whose profile is gone (coined). */
 export const DECIDER_GONE = 'a former staff member';
 

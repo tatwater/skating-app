@@ -102,6 +102,7 @@ export const CORPUS_TASKS = [
   'duplicates',
   'nameConflicts',
   'classConflicts',
+  'contested',
   'orphanBays',
   'chordRefits',
   'placeNames',
@@ -115,8 +116,15 @@ export type PreIcePass = { state: 'not-run' } | { state: 'done'; at: number };
 
 export interface CorpusCardData {
   duplicates: Count;
+  /** The Name conflicts lane's open tasks (`corpusTasks.lanes`): exact, as the lane counts them. */
   nameConflicts: Count;
+  /** The Class conflicts lane's open tasks (`corpusTasks.lanes`): a `class-conflict` each. */
   classConflicts: Count;
+  /**
+   * The bodies a catalog says aren't lakes or ponds at all (`class-dissent`, on today's read): their
+   * own row, opening the old review page until their lane is built.
+   */
+  contested: Count;
   orphanBays: Count;
   /** Chord re-fits (`mouthReview` / `mouthStale`); `null` until a read counts them across bodies. */
   chordRefits: Count | null;
@@ -143,23 +151,32 @@ const NO_EXTRAS: Omit<CorpusExtras, 'duplicates'> = {
   campaignAt: null,
 };
 
+/** The Corpus task lanes' open counts (`corpusTasks.lanes`), as the card takes them. */
+export type CorpusTaskOpen = { nameConflicts: number; classConflicts: number };
+
 /**
  * The intake reasons, folded into the Corpus card's tasks the way the Corpus mode lists them:
- * both duplicate reasons are one *Duplicates* lane, and a class dissent sits with the conflicts.
+ * both duplicate reasons are one *Duplicates* lane, and the dissent bodies (`class-dissent`) are
+ * *Contested as water*, their own row. A built lane counts from its tasks (`tasks`, the lanes read's
+ * open counts — the same figures the Corpus sidebar draws); without them, the reason's rows.
  * `extras` is `console.corpusCounts` when it has landed: its *Duplicates* is the dedup queue's own
  * total (`dedupStatus` groups, as decisions), which replaces the intake reasons' sum. That is a
  * different population, not a finer count of the same rows; the intake sum is only what a caller
- * without that read gets (the Overview waits for both).
+ * without that read gets (the Overview waits for every read).
  */
 export function corpusFromReviewCounts(
   counts: ReviewQueueCounts,
   extras: Partial<CorpusExtras> = {},
+  tasks: CorpusTaskOpen | null = null,
 ): CorpusCardData {
   const at = (reason: string): Count | null => counts[reason] ?? null;
+  const exact = (count: number): Count => ({ count, capped: false });
   return {
     duplicates: sumCounts([at('duplicate-candidate'), at('same-source-duplicate')]),
-    nameConflicts: sumCounts([at('name-conflict')]),
-    classConflicts: sumCounts([at('class-conflict'), at('class-dissent')]),
+    nameConflicts: tasks === null ? sumCounts([at('name-conflict')]) : exact(tasks.nameConflicts),
+    classConflicts:
+      tasks === null ? sumCounts([at('class-conflict')]) : exact(tasks.classConflicts),
+    contested: sumCounts([at('class-dissent')]),
     orphanBays: sumCounts([at('bay-without-parent')]),
     ...NO_EXTRAS,
     ...extras,
@@ -402,6 +419,10 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   create_landmark: 'Named landmark',
   edit_landmark: 'Edited landmark',
   promote_landmark: 'Promoted landmark',
+  // The Corpus tasks' Keep (B01-7a): a name or class kept as recorded, and its undo. Words for
+  // the copy pass.
+  settle_review_reason: 'Kept as it is',
+  unsettle_review_reason: 'Reopened a kept question',
 };
 
 /**

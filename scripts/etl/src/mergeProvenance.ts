@@ -34,6 +34,7 @@ import {
   extractStage,
   type GnisStateManifest,
   gnisStage,
+  type ImportRunScope,
   type NhdManifest,
   nhdStage,
   type RunStage,
@@ -202,6 +203,12 @@ function readManifest<T>(path: string): T | undefined {
 export interface MergeManifestFile {
   producedAt?: string;
   campaignId?: string;
+  /**
+   * What the merge covered (D218) — replayed onto the rows of the passes that load its artifacts,
+   * so a campaign's load says *full re-import* without the loader working it out again. Absent in a
+   * manifest written before B01-7a.
+   */
+  scope?: ImportRunScope;
   stages?: RunStage[];
   outputs?: Record<string, number>;
 }

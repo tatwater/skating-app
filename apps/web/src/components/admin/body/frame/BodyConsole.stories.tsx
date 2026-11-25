@@ -151,6 +151,106 @@ export const ShapeScrolledLight: Story = {
 };
 
 /**
+ * Shape with the summer aerial on: the rack's last row lit, the photograph's stand-in over the
+ * fills and under the shore (a story can't fetch it — `Summer aerial (live)` draws the real one),
+ * its credit in the dock.
+ */
+export const SummerAerial: Story = {
+  args: { aerial: true },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    const aerial = page.getByRole('switch', { name: 'Summer aerial' });
+    await expect(aerial).toBeChecked();
+    // Every row's name sits on its plate: none runs off the rack.
+    for (const row of slots(canvasElement, 'switch-row')) {
+      const label = must(row.querySelector<HTMLElement>('[data-slot="switch-label"]'));
+      await expect(label.getBoundingClientRect().right).toBeLessThanOrEqual(
+        row.getBoundingClientRect().right,
+      );
+    }
+    await expect(slot(canvasElement, 'body-map-aerial-credit')).toHaveTextContent(
+      'Aerial · NAIP Jun 2023',
+    );
+    await expect(slot(canvasElement, 'body-map-aerial-still')).toBeInTheDocument();
+  },
+};
+
+/** Turned off again, the map is as it was: no stand-in, no credit. */
+export const SummerAerialOff: Story = {
+  args: { aerial: true },
+  play: async ({ canvasElement }) => {
+    const aerial = within(canvasElement).getByRole('switch', { name: 'Summer aerial' });
+    await userEvent.click(aerial);
+    await expect(aerial).not.toBeChecked();
+    await expect(canvasElement.querySelector('[data-slot="body-map-aerial-still"]')).toBeNull();
+    await expect(canvasElement.querySelector('[data-slot="body-map-aerial-credit"]')).toBeNull();
+  },
+};
+
+/** The same, light. */
+export const SummerAerialLight: Story = {
+  args: { aerial: true },
+  globals: { surface: 'admin', mode: 'light' },
+};
+
+/**
+ * The summer aerial on its way (a cold first view can take the service tens of seconds): the
+ * credit says so, quietly and still, and offers nothing to press — there is nothing to do but wait.
+ */
+export const SummerAerialLoading: Story = {
+  args: { aerial: true, aerialLoad: 'loading' },
+  play: async ({ canvasElement }) => {
+    const credit = slot(canvasElement, 'body-map-aerial-credit');
+    await expect(credit).toHaveTextContent('Aerial · NAIP Jun 2023 · Loading…');
+    await expect(credit).toHaveAttribute('role', 'status');
+    await expect(credit).toHaveAttribute('data-state', 'loading');
+    await expect(canvasElement.querySelector('[data-slot="body-map-aerial-retry"]')).toBeNull();
+    // Still: no animation runs on the words, so reduced motion has nothing to stop.
+    await expect(credit.getAnimations()).toHaveLength(0);
+  },
+};
+
+/**
+ * No cell of the view came: the credit says it didn't load, with *Try again* beside it — a read
+ * in place, never a toast. Pressed, it holds as *Trying again…* (still focusable).
+ */
+export const SummerAerialFailed: Story = {
+  args: { aerial: true, aerialLoad: 'failed' },
+  play: async ({ canvasElement }) => {
+    const credit = slot(canvasElement, 'body-map-aerial-credit');
+    await expect(credit).toHaveTextContent('Aerial · NAIP Jun 2023 · Didn’t load');
+    const retry = within(canvasElement).getByRole('button', { name: 'Try again' });
+    await expect(retry).toHaveAccessibleDescription('Aerial · NAIP Jun 2023 · Didn’t load');
+    // On the map's dock row, clear of the zoom pair, and inside the map.
+    const zoom = must(canvasElement.querySelector('[data-map-zoom]'));
+    await expect(retry.getBoundingClientRect().right).toBeLessThan(
+      zoom.getBoundingClientRect().left,
+    );
+    await userEvent.click(retry);
+    await expect(retry).toHaveTextContent('Trying again…');
+    await expect(retry).toHaveAttribute('aria-disabled', 'true');
+    await expect(retry).not.toBeDisabled();
+  },
+};
+
+/** Some cells came, some didn't: the photograph with a gap, and the credit says so. */
+export const SummerAerialPartial: Story = {
+  args: { aerial: true, aerialLoad: 'partial' },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'body-map-aerial-credit')).toHaveTextContent(
+      'Aerial · NAIP Jun 2023 · Part of it didn’t load',
+    );
+    await expect(within(canvasElement).getByRole('button', { name: 'Try again' })).toBeVisible();
+  },
+};
+
+/** The same, light. */
+export const SummerAerialPartialLight: Story = {
+  ...SummerAerialPartial,
+  globals: { surface: 'admin', mode: 'light' },
+};
+
+/**
  * An ask opened from the left: ⏎ on it opens its tab with the ask lit, and focus moves into the
  * inspector, where the tab's keys listen.
  */

@@ -119,6 +119,13 @@ import { bodyNamesRow, setNamesAllowance } from './lib/bodyNames';
 import { recomputeBodySummary } from './lib/bodySummary';
 import { syncWaterBodyCells, WATER_BODY_LADDER } from './lib/cellIndex';
 import { hydrateRanked, rankCandidates, scanCells } from './lib/cellScan';
+import {
+  evidenceOf,
+  isTaskReason,
+  leaveBodyTasks,
+  openTaskBatch,
+  syncBodyTasks,
+} from './lib/corpusTasks';
 import { inboxDecisionResult } from './lib/decisionResult';
 import { cutCard, DEDUP_GROUP_CAP, dedupGroups, readDedupFlags } from './lib/dedupQueue';
 import { isProdDeployment } from './lib/deployment';
@@ -344,11 +351,60 @@ const canonicalBody = v.object({
   ),
   /** Why this body wants a human (D110). Empty is normal and is omitted rather than stored. */
   reviewReasons: v.optional(v.array(literals(REVIEW_REASONS))),
-  /** Every publisher's name for this water, winner included — see the schema note on `nameClaims`. */
-  nameClaims: v.optional(v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() }))),
-  /** Every catalog's class for this water (B01-3d) — see the schema note on `classClaims`. */
+  /**
+   * Every publisher's name for this water, winner included, with every catalog publishing each
+   * spelling from B01-7a — see the schema note on `nameClaims`.
+   */
+  nameClaims: v.optional(
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        value: v.string(),
+        sources: v.optional(v.array(literals(CLAIM_SOURCES))),
+      }),
+    ),
+  ),
+  /**
+   * Every catalog's class for this water (B01-3d), with each catalog's own token and area from
+   * B01-7a — see the schema note on `classClaims`.
+   */
   classClaims: v.optional(
-    v.array(v.object({ source: literals(CLAIM_SOURCES), value: literals(WATER_BODY_CLASSES) })),
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        value: literals(WATER_BODY_CLASSES),
+        token: v.optional(v.string()),
+        areaSqM: v.optional(v.number()),
+      }),
+    ),
+  ),
+  /**
+   * The catalogs that refused this water outright (B01-7a) — see the schema note on
+   * `classRefusals`. The validator is exact, so a loader that sends it before this deploys is
+   * refused: the deploy comes first.
+   */
+  classRefusals: v.optional(
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        token: v.string(),
+        areaSqM: v.optional(v.number()),
+      }),
+    ),
+  ),
+  /**
+   * The features the merge folded into this body as one catalog's duplicates (B01-7a) — see the
+   * schema note on `absorbedFeatures`. Accepted here so the campaign that first carries it is not
+   * refused; the import stores it once `importCanonical` spreads it.
+   */
+  absorbedFeatures: v.optional(
+    v.array(
+      v.object({
+        source: literals(CLAIM_SOURCES),
+        externalId: v.string(),
+        areaSqM: v.number(),
+      }),
+    ),
   ),
   // A genuinely-interior point + the D85 shape stats, measured by the ETL on the source geometry
   // before it was simplified. All optional: a body whose geometry defeats one of them still loads.
@@ -402,21 +458,140 @@ function shapeFields(item: {
  * `pruneBelowAreaFloor` treats as a keep. That is the safe direction, and it is the direction the
  * prune already takes for an unknown area, so the explicit `undefined` is correct here too.
  */
-function mergeFields(item: {
-  sourceAreaSqM?: number;
-  inRegionFraction?: number;
-  confidence?: { name: string; polygon: string; cls: string };
-  reviewReasons?: string[];
-}) {
+function mergeFields(
+  item: {
+    sourceAreaSqM?: number;
+    inRegionFraction?: number;
+    confidence?: { name: string; polygon: string; cls: string };
+    reviewReasons?: string[];
+  },
+  honored: HonoredReasons = { reasons: item.reviewReasons as ReviewReason[] | undefined },
+) {
+  const reasons = honored.reasons;
   return {
     sourceAreaSqM: item.sourceAreaSqM,
     inRegionFraction: item.inRegionFraction,
     confidence: item.confidence as Doc<'waterBodies'>['confidence'],
-    reviewReasons: item.reviewReasons as Doc<'waterBodies'>['reviewReasons'],
+    reviewReasons: reasons as Doc<'waterBodies'>['reviewReasons'],
     // Derived here rather than sent, so the stored scalar cannot disagree with the array it indexes
     // — two spellings of one fact is how a queue starts missing rows nothing can see are missing.
-    reviewReason: primaryReviewReason(item.reviewReasons as ReviewReason[] | undefined),
+    reviewReason: primaryReviewReason(reasons),
+    // Only when the honoring rule ran on a stored body: an insert has nothing settled to keep.
+    ...('settled' in honored ? { reviewSettled: honored.settled } : {}),
   };
+}
+
+/** The incoming reasons after the honoring rule, and what it did to the stored settles (D306). */
+type HonoredReasons = {
+  reasons: ReviewReason[] | undefined;
+  settled?: Doc<'waterBodies'>['reviewSettled'];
+  held?: number;
+  raised?: number;
+  /**
+   * The spelling a held name *Keep* kept, while the body still shows it: `nameFields` leaves it
+   * shown over the record's `name`. Absent when no such settle holds.
+   */
+  keptName?: string;
+};
+
+/**
+ * **A settled question holds until its evidence changes** (B01-7a, D306): the import's half of the
+ * settle. Each incoming reason a moderator settled on this body is compared, by core's one rule
+ * (`reviewEvidence`, through `evidenceOf`), against the evidence the body will carry once this record
+ * lands — the record's catalog names, its class claims or, from an older loader that sends none, the
+ * stored ones it keeps. The same evidence **holds** the settle: the reason is dropped (`held`), and
+ * no task files. Different evidence **asks again**: the reason stays and its settle entry goes
+ * (`raised`), so the task files anew. A settle made on *not recorded* evidence is asked again by the
+ * first campaign that records it — once, since the settle that follows is made on what it brought.
+ *
+ * A settle whose reason the record doesn't raise is kept: the question is quiet, not answered
+ * differently, and a later campaign that raises it again is held to it.
+ *
+ * **A held name *Keep* holds its spelling too** (`keptName`). The name evidence is the distinct
+ * spellings alone, so a campaign whose ranking now prefers another of the same spellings is held,
+ * and without this its `name` would replace the one the moderator kept. Only while the body still
+ * shows the kept spelling: the import declines to overwrite a Keep, it never restores one a later
+ * write (a Body console rename, or its clear) has replaced.
+ */
+function honorSettled(
+  existing: Doc<'waterBodies'>,
+  item: {
+    reviewReasons?: string[];
+    nameClaims?: { source: string; value: string }[];
+    classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']>;
+  },
+): HonoredReasons {
+  const incoming = item.reviewReasons as ReviewReason[] | undefined;
+  const settledBefore = existing.reviewSettled ?? [];
+  if (settledBefore.length === 0 || incoming === undefined || incoming.length === 0) {
+    return { reasons: incoming, settled: existing.reviewSettled };
+  }
+  // The evidence as it will be stored: `nameFields` keeps only the record's catalog claims (a
+  // moderator's own is no evidence; folding its repeated spellings changes no spelling), and the
+  // class claims go through `classClaimFields` itself — one claim a catalog, bounded, the stored
+  // ones kept when the record sends none. A settle is made on the stored claims, so comparing it
+  // with the record's raw list would ask again, every campaign, any body whose record carries two
+  // claims from one catalog.
+  const after = {
+    nameClaims: item.nameClaims as Doc<'waterBodies'>['nameClaims'],
+    classClaims: classClaimFields(item).classClaims ?? existing.classClaims,
+  };
+  const reasons: ReviewReason[] = [];
+  const dropped = new Set<ReviewReason>();
+  let held = 0;
+  let keptName: string | undefined;
+  for (const reason of incoming) {
+    const entry = settledBefore.find((s) => s.reason === reason);
+    if (entry === undefined || !isTaskReason(reason)) {
+      reasons.push(reason);
+    } else if (entry.evidence === evidenceOf(reason, after)) {
+      held++;
+      if (entry.keptName !== undefined && entry.keptName === existing.name) {
+        keptName = entry.keptName;
+      }
+    } else {
+      reasons.push(reason);
+      dropped.add(reason);
+    }
+  }
+  const settled = settledBefore.filter((s) => !dropped.has(s.reason));
+  return {
+    reasons: reasons.length > 0 ? reasons : undefined,
+    settled: settled.length > 0 ? settled : undefined,
+    held,
+    raised: dropped.size,
+    ...(keptName !== undefined ? { keptName } : {}),
+  };
+}
+
+/**
+ * The catalogs' refusals as the import stores them (B01-7a, D307): a record's list replaces the
+ * stored one, `[]` clears it, and a record without the field (an older loader's) keeps what's stored.
+ * Bounded as the class claims are.
+ */
+function classRefusalFields(item: {
+  classRefusals?: NonNullable<Doc<'waterBodies'>['classRefusals']>;
+}): { classRefusals?: Doc<'waterBodies'>['classRefusals'] } {
+  if (item.classRefusals === undefined) return {};
+  return {
+    classRefusals:
+      item.classRefusals.length > 0 ? item.classRefusals.slice(0, MAX_CLASS_CLAIMS) : undefined,
+  };
+}
+/** The most absorbed features a body stores (the producer bounds them; this is the import's cap). */
+export const MAX_ABSORBED_FEATURES = 32;
+
+/**
+ * The features the merge folded into a body, as the import stores them (B01-7a): a record's list
+ * replaces the stored one (`[]` included: *none*, recorded), and a record without the field (an
+ * older loader's) keeps what's stored, since absent means *not recorded*. Capped at
+ * {@link MAX_ABSORBED_FEATURES}.
+ */
+function absorbedFeatureFields(item: {
+  absorbedFeatures?: NonNullable<Doc<'waterBodies'>['absorbedFeatures']>;
+}): { absorbedFeatures?: Doc<'waterBodies'>['absorbedFeatures'] } {
+  if (item.absorbedFeatures === undefined) return {};
+  return { absorbedFeatures: item.absorbedFeatures.slice(0, MAX_ABSORBED_FEATURES) };
 }
 // ⚠ `nameClaims` is deliberately NOT here. It belongs to `nameFields`, which merges the incoming
 // claims with a moderator's stored pick — and both are spread into the same patch object, with
@@ -472,6 +647,10 @@ async function flagAsDuplicates(
  * and no flag to keep in step — **the override is the evidence**. `NAME_SOURCE_RANK` already ranks
  * `user` above every catalog.
  *
+ * A Corpus *Keep* (B01-7a) writes no claim — it settles the question on the spelling shown — so
+ * `keptName`, from a held settle (`honorSettled`), keeps that spelling over the record's `name`. A
+ * pick still outranks it; it ends with the settle (an undo, or the question asked again).
+ *
  * `searchText` is rebuilt from whichever name wins plus every other claim, so a moderator's pick
  * changes what is *displayed* and never what is *findable*. Losing a name to a preference would be
  * the same outage this whole field exists to end.
@@ -479,6 +658,7 @@ async function flagAsDuplicates(
 function nameFields(
   existing: Doc<'waterBodies'> | undefined,
   item: { name: string; nameClaims?: { source: string; value: string }[] },
+  keptName?: string,
 ) {
   // **`composeNameClaims`, not a single dedupe.** A moderator's pick has the same *value* as the
   // catalog claim it prefers, so deduping the two together deletes that catalog claim — and then
@@ -488,7 +668,8 @@ function nameFields(
     (existing?.nameClaims ?? []).filter((c) => c.source === 'user') as NameClaim[],
     (item.nameClaims ?? []) as NameClaim[],
   );
-  const chosen = claims.find((c) => c.source === 'user')?.value ?? item.name;
+  // A pick outranks everything; a held *Keep* (`honorSettled`'s `keptName`) outranks the ranking.
+  const chosen = claims.find((c) => c.source === 'user')?.value ?? keptName ?? item.name;
   return {
     name: chosen,
     nameClaims: claims.length > 0 ? claims : undefined,
@@ -508,11 +689,12 @@ export const MAX_CLASS_CLAIMS = 8;
 /**
  * Each catalog's class claim as the import carries it (B01-3d): one per source (the first kept),
  * bounded. Omitted when the record carries none — an older loader's record, which leaves the stored
- * claims as they were rather than erasing them.
+ * claims as they were rather than erasing them. Each claim's `token` and `areaSqM` (B01-7a) ride
+ * through as the record sends them.
  */
-function classClaimFields(item: {
-  classClaims?: { source: (typeof CLAIM_SOURCES)[number]; value: Doc<'waterBodies'>['type'] }[];
-}): { classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']> } {
+function classClaimFields(item: { classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']> }): {
+  classClaims?: NonNullable<Doc<'waterBodies'>['classClaims']>;
+} {
   if (item.classClaims === undefined) return {};
   const seen = new Set<string>();
   const claims = item.classClaims.filter((c) => {
@@ -665,8 +847,14 @@ export const importCanonical = internalMutation({
     let keptByPin = 0;
     const outsideRegion: { externalId: string; waterBodyId: Id<'waterBodies'> | null }[] = [];
     let tooLong = 0;
+    // The honoring rule's two counts (D306): settled questions this batch held, and asked again.
+    let settledHeld = 0;
+    let raisedAgain = 0;
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
 
+    // One Corpus task batch: each count row the batch's bodies move is written once, at its end.
+    // A throw aborts the transaction, so no count can land without its tasks.
+    const taskBatch = openTaskBatch(ctx);
     for (const [index, item] of bodies.entries()) {
       const states = statesByItem[index] as string[];
       // A name or catalog id past its cap (B01-3h) skips the row, counted — never the campaign.
@@ -778,15 +966,21 @@ export const importCanonical = internalMutation({
           active: isActive(existing),
         });
         await queueLibraryRefresh(ctx, [existing._id]);
+        // A settled question holds until its evidence changes (D306).
+        const honored = honorSettled(existing, item);
+        settledHeld += honored.held ?? 0;
+        raisedAgain += honored.raised ?? 0;
         await ctx.db.patch(existing._id, {
           // `name` + `nameClaims` + `searchText` together, because a moderator's pick outranks the
           // import and the three must never disagree. See `nameFields`.
-          ...nameFields(existing, item),
+          ...nameFields(existing, item, honored.keptName),
           // A moderator's class outranks the catalogs' (B01-3d), as a moderator's name does; the
           // import's own ranking is kept beside it, for a clear to put back.
           type: existing.moderatorClass ?? item.type,
           baseClass: item.type,
           ...classClaimFields(item),
+          ...classRefusalFields(item),
+          ...absorbedFeatureFields(item),
           // **`source` is deliberately NOT patched, and it is not the same question as
           // `geometrySource`** (second audit, 2026-08-06 — noted because this was "fixed" and then
           // un-fixed within the hour).
@@ -813,7 +1007,7 @@ export const importCanonical = internalMutation({
           ...regionStatesFields(states.length === 0 ? ruleStatesOf(existing) : states, pins),
           ...scores,
           ...shapeFields(item),
-          ...mergeFields(item),
+          ...mergeFields(item, honored),
           // Stamped on every touch, so step 6 can find the rows this campaign never mentioned.
           // Left alone when the caller names no campaign: a partial load must not make the whole
           // corpus look re-affirmed by a run that only saw one state.
@@ -825,6 +1019,20 @@ export const importCanonical = internalMutation({
           // reconciliation guessed. Overwriting unconditionally is the opposite error and a far
           // worse one; see `assertedCatalogIds`.
           ...assertedCatalogIds(item),
+        });
+        // Its Corpus tasks follow its reasons: filed, refreshed, or left `notAsserted`. Handed the
+        // fields they read as just written, so an outline near 1 MiB isn't read twice.
+        await syncBodyTasks(ctx, existing._id, {
+          body: {
+            ...existing,
+            ...nameFields(existing, item, honored.keptName),
+            type: existing.moderatorClass ?? item.type,
+            ...classClaimFields(item),
+            ...scores,
+            ...mergeFields(item, honored),
+            // The ids the patch asserted: a task's search text carries them.
+            ...assertedCatalogIds(item),
+          },
         });
         // Re-derive listing from the preserved fields (removed stays removed, D48) and re-cell the
         // body against its new geometry + prominence (A01).
@@ -879,18 +1087,21 @@ export const importCanonical = internalMutation({
         // campaign (A07b). Inserting dormant would have made every fixture-seeded test body invisible
         // and every new-region import a season of dead map; the rollover is the honest clock.
         const scores = scoreFields({ surfaceAreaSqM: item.surfaceAreaSqM, active: true });
+        const waterBodyKey = `wb_${crypto.randomUUID()}`;
         const id = await ctx.db.insert('waterBodies', {
           ...nameFields(undefined, item),
           type: item.type,
           baseClass: item.type,
           ...classClaimFields(item),
+          ...classRefusalFields(item),
+          ...absorbedFeatureFields(item),
           source: item.source,
           externalId: item.externalId,
           // **Minted at insert, so no row is ever without one.** `mintWaterBodyKeys` exists to
           // backfill the rows that predate the field; a body created after it should not need that
           // pass to have run, or the corpus acquires a second class of row whose tile stamp is
           // pending. Same `wb_` prefix and opaque UUID (D93).
-          waterBodyKey: `wb_${crypto.randomUUID()}`,
+          waterBodyKey,
           // Identity alongside the key. Set here so a fresh import needs no backfill to be
           // reconcilable, and so the day `externalId` stops being an OSM id, this still is one.
           ...catalogIds(item),
@@ -910,6 +1121,21 @@ export const importCanonical = internalMutation({
           dedupStatus: 'clean', // default (D36)
           createdAt: now,
         });
+        // A new body's reasons file their tasks (nothing settled on it yet), from the fields they read
+        // as just written.
+        await syncBodyTasks(ctx, id, {
+          body: {
+            ...nameFields(undefined, item),
+            type: item.type,
+            ...classClaimFields(item),
+            ...scores,
+            ...mergeFields(item),
+            // Its ids, as inserted: a task's search text carries them.
+            externalId: item.externalId,
+            waterBodyKey,
+            ...catalogIds(item),
+          },
+        });
         await syncWaterBodyCells(ctx, id, {
           bbox: item.bbox,
           minVisibleZoom: scores.minVisibleZoom,
@@ -920,6 +1146,7 @@ export const importCanonical = internalMutation({
         inserted++;
       }
     }
+    await taskBatch.close();
     // `unresolved` is capped: a batch is 150 bodies and a pathological run could make every one of
     // them ambiguous, but the *counts* are what the loader reports and the samples are for a human
     // reading a run row. Twenty is enough to recognize a pattern and small enough to never dominate
@@ -940,6 +1167,10 @@ export const importCanonical = internalMutation({
       outsideRegion: outsideRegion.slice(0, 20),
       /** Rows skipped for a name or catalog id past its cap (B01-3h). */
       tooLong,
+      /** Settled questions the batch's records raised on unchanged evidence: held, no task (D306). */
+      settledHeld,
+      /** Settled questions raised on changed evidence: asked again, a task filed anew (D306). */
+      raisedAgain,
       unresolved: unresolved.slice(0, 20),
     };
   },
@@ -1283,6 +1514,8 @@ export const importReconciliation = internalMutation({
         continue;
       }
       await ctx.db.patch(key, { nhdId });
+      // A task's search text carries the body's ids.
+      await syncBodyTasks(ctx, key, { body: { ...body, nhdId } });
       idWritten++;
     }
 
@@ -1521,7 +1754,10 @@ export const backfillWaterBodyKeys = internalMutation({
         alreadySet++;
         continue;
       }
-      await ctx.db.patch(body._id, { waterBodyKey: `wb_${crypto.randomUUID()}` });
+      const waterBodyKey = `wb_${crypto.randomUUID()}`;
+      await ctx.db.patch(body._id, { waterBodyKey });
+      // A task's search text carries the body's ids.
+      await syncBodyTasks(ctx, body._id, { body: { ...body, waterBodyKey } });
       minted++;
     }
     return {
@@ -3262,6 +3498,8 @@ export async function removeBodyImpl(
     { removedAt: now, removedByUserId: actor._id, removalReason: args.reason },
     { actorId: actor._id, audit: false, now },
   );
+  // A removed body asks nothing: its Corpus tasks leave (`removed`), none decided by a person.
+  await leaveBodyTasks(ctx, args.waterBodyId, 'removed', { now });
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'remove',
@@ -3322,6 +3560,8 @@ export async function restoreBodyImpl(
     now,
     extraPatch: { removedAt: undefined, removedByUserId: undefined, removalReason: undefined },
   });
+  // Back on the map, its questions are live again: its reasons file their tasks anew.
+  await syncBodyTasks(ctx, args.waterBodyId, { now });
   await writeAudit(ctx, {
     actorId: actor._id,
     action: 'restore',
@@ -4302,6 +4542,9 @@ export async function mergeBodyInto(
           }
         : {}),
     });
+    // The loser's Corpus tasks leave with it (`merged`); the survivor's re-derive from its facts.
+    await syncBodyTasks(ctx, loserId);
+    await syncBodyTasks(ctx, survivorId);
     // …and clear the flag at the **other end of the pair**, which nothing used to do. A07a's
     // reconciliation flags every member of a duplicate group mutually, so the survivor is normally
     // itself `near_certain` naming the body just merged — a candidate `merge` would now refuse as
@@ -5075,6 +5318,10 @@ export async function setAliasesImpl(
   await ctx.db.patch(waterBodyId, {
     moderatorAliases: next.length > 0 ? next : undefined,
     searchText: bodySearchTextFor({ ...body, moderatorAliases: next }),
+  });
+  // A task's search text carries every name the body is found by.
+  await syncBodyTasks(ctx, waterBodyId, {
+    body: { ...body, moderatorAliases: next.length > 0 ? next : undefined },
   });
   await writeAudit(ctx, {
     actorId: actor._id,
@@ -6172,6 +6419,10 @@ export async function setWaterBodyNameImpl(
           moderatorAliases: body.moderatorAliases,
         }),
       });
+      // A name conflict's tab is read from the shown name against the claims: it follows at once.
+      await syncBodyTasks(ctx, waterBodyId, {
+        body: { ...body, name: restored, nameClaims: catalog.length > 0 ? catalog : undefined },
+      });
       await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
@@ -6216,6 +6467,7 @@ export async function setWaterBodyNameImpl(
           moderatorAliases: body.moderatorAliases,
         }),
       });
+      await syncBodyTasks(ctx, waterBodyId, { body: { ...body, name: chosen, nameClaims: next } });
       await writeAudit(ctx, {
         actorId: actor._id,
         action: 'set_water_body_name',
@@ -6251,6 +6503,9 @@ export async function setWaterBodyNameImpl(
         nameClaims: next,
         moderatorAliases: body.moderatorAliases,
       }),
+    });
+    await syncBodyTasks(ctx, waterBodyId, {
+      body: { ...body, name: match.value, nameClaims: next },
     });
     await writeAudit(ctx, {
       actorId: actor._id,
@@ -8381,6 +8636,8 @@ export const resolveIncomingMergeDuplicates = internalMutation({
               listed: false,
             });
             await ctx.db.delete(loser._id);
+            // Its Corpus tasks leave with it (`deleted`).
+            await leaveBodyTasks(ctx, loser._id, 'deleted');
             await queueLibraryRefresh(ctx, [loser._id]);
             await markGeoStale(ctx, [loser._id]);
           }
@@ -8496,6 +8753,8 @@ export const resolveCampaignDuplicates = internalMutation({
         listed: false,
       });
       await ctx.db.delete(body._id);
+      // Its Corpus tasks leave with it (`deleted`).
+      await leaveBodyTasks(ctx, body._id, 'deleted');
       await queueLibraryRefresh(ctx, [body._id]);
       await markGeoStale(ctx, [body._id]);
     }

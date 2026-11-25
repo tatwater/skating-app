@@ -45,6 +45,26 @@ describe('RunLogger', () => {
     });
   });
 
+  it('states its scope at the start, and only there (D218)', () => {
+    const rec = recorder();
+    const scope = { pass: 'full-canonical' as const, states: ['ME', 'VT'], complete: true };
+    const logger = makeLogger(rec, { scope });
+    logger.start();
+    logger.count('inserted', 1);
+    logger.flush();
+    logger.succeed();
+
+    expect(rec.calls[0]?.args.scope).toEqual(scope);
+    // Its intent, never re-sent: a progress or a close carrying it would be a second answer.
+    for (const later of rec.calls.slice(1)) expect(later.args).not.toHaveProperty('scope');
+  });
+
+  it('omits the scope key entirely when the loader states none', () => {
+    const rec = recorder();
+    makeLogger(rec).start();
+    expect(rec.calls[0]?.args).not.toHaveProperty('scope');
+  });
+
   it('sends counts as running totals, not deltas', () => {
     const rec = recorder();
     const logger = makeLogger(rec);

@@ -3,6 +3,11 @@
  *
  *   pnpm --filter @skating/admin-areas build-region
  *   pnpm --filter @skating/admin-areas build-region --refresh   # re-download the sources
+ *   pnpm --filter @skating/admin-areas build-region --campaign=<id>   # the campaign its row joins
+ *
+ * It leaves a run row (`region_masks`, B01-7a) though it writes nothing else to Convex: the corpus
+ * campaign starts here, and a campaign read from what it stored must show when its masks were built
+ * and how that ended. `--no-run-log` opts out; a row that cannot be written never fails the build.
  *
  * ## Why a map needs a shape of its own
  *
@@ -57,6 +62,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
+import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import bbox from '@turf/bbox';
 import buffer from '@turf/buffer';
 import difference from '@turf/difference';
@@ -73,7 +79,7 @@ import {
   needsClipping as needsClippingBox,
   roundCoords,
 } from './regionRules';
-import { archive, makeLog, RAW, STATES, TIGER_COUNTIES, TIGER_STATES } from './tiger';
+import { archive, makeLog, RAW, STATE_CODES, STATES, TIGER_COUNTIES, TIGER_STATES } from './tiger';
 
 /** Re-exported for the CLI's other readers; the rule itself lives in `./regionRules`. */
 export { DOWNSTATE_NY_COUNTIES };
@@ -315,7 +321,7 @@ function bboxOf(geometry: Polygon | MultiPolygon): {
   return { minLng, minLat, maxLng, maxLat };
 }
 
-function main(): void {
+function main(logger: RunLogger): void {
   const refresh = process.argv.includes('--refresh');
   mkdirSync(BASEMAP_SCRATCH, { recursive: true });
 
@@ -334,6 +340,7 @@ function main(): void {
   const region = unionAll(ours);
   writeFileSync(join(BASEMAP_SCRATCH, 'region.geojson'), JSON.stringify(region));
   log(`region.geojson       ${sizeOf(region)}  (${STATES.map((s) => s.code).join(' ')})`);
+  logger.count('states', ours.length);
 
   // ── 2. the data region: minus New York below I-84 ─────────────────────────
   const countyZip = archive(TIGER_COUNTIES, refresh, log);
@@ -353,6 +360,7 @@ function main(): void {
   if (!dataRegion) throw new Error('the downstate cut removed the entire region');
   writeFileSync(join(BASEMAP_SCRATCH, 'region-data.geojson'), JSON.stringify(dataRegion));
   log(`region-data.geojson  ${sizeOf(dataRegion)}  (less ${downstate.length} NY counties)`);
+  logger.count('downstateCounties', downstate.length);
 
   // The same cut as a set of counties rather than one hole, because that is the shape the ETL can
   // use. `merge.ts` tests a body against thousands of small town polygons through a cell grid; one
@@ -430,6 +438,7 @@ function main(): void {
   log(
     `boundaries.ndjson     ${ours.length} states + ${countyMask.length} counties, for the water ETL's region clip`,
   );
+  logger.count('counties', countyMask.length);
 
   // ── 3. the mask: the rest of the world, flat ──────────────────────────────
   const mask: Poly[] = [];
@@ -633,11 +642,36 @@ function main(): void {
   log(
     `regionMask.ts        ${sizeOf(collection)}  (${mask.length} features → ${MASK_OUTPUTS.length} apps)`,
   );
+  logger.count('maskFeatures', mask.length);
 }
 
+const runLogEnabled = !process.argv.includes('--no-run-log');
+const logger = new RunLogger({
+  kind: 'region_masks',
+  label: 'Region masks — TIGER states and counties, the corpus clip and the map mask',
+  campaignId: process.argv.find((a) => a.startsWith('--campaign='))?.slice('--campaign='.length),
+  target: resolveDeployment(),
+  // Every state the corpus covers, whole (D218): the masks are never built for a subset.
+  scope: { pass: 'derived', states: [...STATE_CODES].sort(), complete: true },
+  call: runLogEnabled ? convexRun : () => undefined as never,
+  stages: [
+    {
+      name: 'build',
+      detail:
+        'TIGER states + counties and Natural Earth → region.geojson, region-data.geojson, ' +
+        'boundaries.ndjson and downstate-ny(-coarse).geojson for the ETL, regionMask.ts for the apps',
+      output: BASEMAP_SCRATCH,
+    },
+  ],
+  notes: ['Writes files only: nothing in Convex but this row.'],
+});
+if (runLogEnabled) logger.start();
+
 try {
-  main();
+  main(logger);
+  logger.succeed();
 } catch (error) {
   log(`FAILED: ${error instanceof Error ? error.message : String(error)}`);
+  logger.failed(error);
   process.exitCode = 1;
 }
