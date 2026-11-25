@@ -423,7 +423,7 @@ describe('the inspector', () => {
     h.answers['corpusTasks:item'] = () => failed();
     mount();
     const error = must(
-      inspector().querySelector('[data-slot="corpus-item-error"]'),
+      inspector().querySelector<HTMLElement>('[data-slot="corpus-item-error"]'),
       'the failed note',
     );
     expect(error.textContent).toContain('couldn’t be read');
