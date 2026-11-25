@@ -6,12 +6,13 @@
  */
 
 import type { ReviewReason } from '@skating/core';
+import { getDocumentSize } from 'convex/values';
 import { convexTest } from 'convex-test';
 import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { BODY_PHASES, ITEM_BYTES } from './corpusTaskJobs';
+import { BODY_PHASES, ITEM_BYTES, ITEM_LIMITS } from './corpusTaskJobs';
 import { bodyTaskDrift, laneCountDrift } from './lib/corpusTaskRepair';
 import { corpusTasksPending, countKeysOf } from './lib/corpusTasks';
 import { ROW_MAX } from './lib/readBudget';
@@ -441,12 +442,15 @@ describe('the drift repair', () => {
 
   test('its lap is gated on what the transaction has really left: past heavy bodies it waits a pass', async () => {
     const t = harness();
-    // Sixteen bodies near the document limit (six rings of 8,000 points, about 0.92 MiB each): the
-    // oldest open tasks' items read close to the whole transaction before the lap starts, which the
-    // plan's budget can't see — a page sized by it alone read past Convex's 16 MiB.
+    // The gate is absolute: a page of n bodies needs n × ROW_MAX.waterBody plus one item's whole limits
+    // and reserve still unread (`lapPageBudget`), whatever step 1's items read before it — which the
+    // plan's budget can't see (it sizes this page at three bodies regardless). So each pass runs under
+    // a transaction cut to a size that puts what step 1 really reads (four bodies of two 8,000-point
+    // rings, about 0.3 MiB each) against the gate's edges: the first build reached them with sixteen
+    // 0.92 MiB bodies under Convex's whole 16 MiB, and ran past the suite's timeout under load.
     const heavy = (x: number): Polygon => ({
       type: 'Polygon',
-      coordinates: Array.from({ length: 6 }, (_, r) => {
+      coordinates: Array.from({ length: 2 }, (_, r) => {
         const ring = Array.from({ length: 7_999 }, (_, i) => [
           x + (i % 100) * 1e-4 + r * 1e-6,
           Math.floor(i / 100) * 1e-4,
@@ -455,21 +459,67 @@ describe('the drift repair', () => {
         return ring;
       }),
     });
-    for (let i = 0; i < 16; i++) await rawBody(t, i, ['name-conflict'], { polygon: heavy(i * 2) });
+    const { MiB } = recurringWork;
+    const BODIES = 4;
+    const ids: Id<'waterBodies'>[] = [];
+    for (let i = 0; i < BODIES; i++) {
+      ids.push(await rawBody(t, i, ['name-conflict'], { polygon: heavy(i * 2) }));
+    }
     await runToDone(t);
+    const bodyBytes = await t.run(async (ctx) =>
+      getDocumentSize((await ctx.db.get(ids[0] as Id<'waterBodies'>)) as Doc<'waterBodies'>),
+    );
+    expect(bodyBytes).toBeGreaterThan(MiB / 4);
+    /** What an item and its reserve need unread to start, and so what the page needs past its rows. */
+    const ITEM_NEED = ITEM_LIMITS.bytesRead + MiB / 4;
+    /** One pass, every step's reads charged to a transaction of `bytesRead` bytes. */
+    const repairUnder = (bytesRead: number, args: Record<string, unknown>) =>
+      t.run(
+        (ctx) =>
+          (
+            ctx as unknown as {
+              runMutation: (f: unknown, a: unknown, o: unknown) => Promise<unknown>;
+            }
+          ).runMutation(internal.corpusTaskJobs.repair, args, {
+            transactionLimits: { bytesRead },
+          }) as Promise<{
+            checked: number;
+            lapped: number;
+            failed: number;
+            lap: { phase: string; cursor: string | null; done: boolean };
+          }>,
+      );
+    // A transaction whose step 1 visits every open task (each starts with an item's need left, by a
+    // body's margin), reads their four bodies and leaves `left` — aimed half a MiB inside a gate's edge.
+    const leaving = (left: number) => left + BODIES * bodyBytes;
     const lap = { phase: 'reason:name-conflict', cursor: null };
 
-    const r = await t.mutation(internal.corpusTaskJobs.repair, { pageCap: 16, lap });
-    expect(r.checked).toBeGreaterThan(0);
-    expect(r).toMatchObject({ lapped: 0, failed: 0 });
+    // Past step 1, less than one body's page is left: the lap reads nothing and stays where it was.
+    // Before step 1 a page fit, so a gate read at the pass's start, or one that always reads a page,
+    // would lap here.
+    expect(leaving(ITEM_NEED + MiB / 2)).toBeGreaterThan(ITEM_NEED + ROW_MAX.waterBody + MiB / 4);
+    const r = await repairUnder(leaving(ITEM_NEED + MiB / 2), { pageCap: BODIES, lap });
+    expect(r).toMatchObject({ checked: BODIES, lapped: 0, failed: 0 });
     expect(r.lap).toEqual({ ...lap, done: false });
     const row = await t.run((ctx) => ctx.db.query('corpusTaskJobRuns').collect());
     expect(row.find((x) => x.job === 'repair')).toMatchObject(lap);
 
-    // A pass whose items leave room reads the page, and the lap goes on.
-    const next = await t.mutation(internal.corpusTaskJobs.repair, { pageCap: 2, lap });
-    expect(next.lapped).toBeGreaterThan(0);
-    expect(next.lap.cursor).not.toBeNull();
+    // Room for one body's page and not two: the page shrinks to the one, and the lap goes on past it.
+    // A page sized by the plan alone reads three here, and laps them all.
+    const one = await repairUnder(leaving(ITEM_NEED + ROW_MAX.waterBody + MiB / 2), {
+      pageCap: BODIES,
+      lap,
+    });
+    expect(one).toMatchObject({ checked: BODIES, lapped: 1, failed: 0 });
+    expect(one.lap.phase).toBe(lap.phase);
+    expect(one.lap.cursor).not.toBeNull();
+
+    // A whole transaction reads the plan's page from there.
+    const next = await t.mutation(internal.corpusTaskJobs.repair, {
+      pageCap: BODIES,
+      lap: { phase: one.lap.phase, cursor: one.lap.cursor },
+    });
+    expect(next.lapped).toBe(BODIES - 1);
   });
 
   test('a pass that can’t afford an item starts none, and its lap stays where it was', async () => {
