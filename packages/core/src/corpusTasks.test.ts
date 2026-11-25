@@ -9,7 +9,7 @@ import {
 } from './corpusTasks';
 
 describe('the Corpus tasks vocabulary (B01-6a)', () => {
-  it('builds two lanes, and leaves Contested as water out rather than reserving it (D306)', () => {
+  it('builds two lanes, and leaves Contested as water out rather than reserving it (D307)', () => {
     expect([...CORPUS_TASK_LANES]).toEqual(['nameConflicts', 'classConflicts']);
     expect(CORPUS_TASK_LANES as readonly string[]).not.toContain('contested');
   });

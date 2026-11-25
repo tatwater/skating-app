@@ -5,7 +5,7 @@
  * read from the body as stored; **every fact not stored reads `null`, never a guess** — class claims
  * a campaign hasn't recorded, a body's neighbors before its geometry facts are computed, the run of
  * a campaign with no run row. A `class-dissent` reason and a body's `classRefusals` are read by
- * nothing here: 6a files no task for them (D306).
+ * nothing here: 6a files no task for them (D307).
  *
  * **Bounds.** Every read here is one indexed read with a count cap, or a point read; none ranges
  * over an optional field without `eq`. A list row reads its task's body, its geometry facts and its
@@ -155,7 +155,7 @@ export type NameChoiceView = {
   /** "First: the authority on US names" (core's `nameRankWords`). */
   rankWords: string;
   shown: boolean;
-  /** `false` on every name until 6c's email counts name a suggestion (D307). */
+  /** `false` on every name until 6c's email counts name a suggestion (D308). */
   suggested: boolean;
   /** Other bodies in the library with the name, "50+" past fifty. */
   namesakes: { count: number; capped: boolean };
@@ -183,7 +183,7 @@ export type ClassRungView = {
 type ItemBase = RowBase & {
   /** The campaign that last asserted the reason: the body's `lastCampaignId`'s run; `null` with no run on file. */
   raisedBy: { campaignId: string; at: number } | null;
-  /** Asked again after a settle, because its evidence changed (D305). */
+  /** Asked again after a settle, because its evidence changed (D306). */
   raisedAgain: { previous: CorpusDecidedState } | null;
   /** Each counted to {@link ATTACHED_CAP} (asks to the library's own cap); `capped`: one is a floor. */
   attached: { reports: number; landmarks: number; asks: number; capped: boolean };
@@ -455,7 +455,7 @@ async function raisedByOf(
 }
 
 /**
- * The decision this question was settled by before a campaign asked it again (D305): the newest
+ * The decision this question was settled by before a campaign asked it again (D306): the newest
  * other task of the same key a person decided before this one was filed. The settle keeps its task
  * decided, and the campaign files a new one, so the two are rows of one key.
  */

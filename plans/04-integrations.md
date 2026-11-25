@@ -167,7 +167,7 @@ season-two decision with a written trigger (D158).
 | Source | Role | Terms |
 | --- | --- | --- |
 | **Sentinel-2 L2A** and **Sentinel-1 GRD** via **AWS Earth Search** (`earth-search.aws.element84.com`, anonymous STAC; S1 from the AWS open-data bucket) | a season of passes per body, cut to its outline on Fly, published as masked raster PMTiles on R2; the freeze-up scrubber | Copernicus: free, full, open, with attribution; AWS open data: no account |
-| **USGS / The National Map — NAIP** (`imagery.nationalmap.gov`, `USGSNAIPPlus` `exportImage`, behind CloudFront) | the aerial reveal — 0.3 m summer orthoimagery (D147), for reading *access*, never ice; web only — mobile has no aerial tier (register). The admin console draws it unmasked for staff, its date from the service's identify call (D311) | public domain, no key, no quota; grid-snap every URL (a 29 s cold render otherwise) |
+| **USGS / The National Map — NAIP** (`imagery.nationalmap.gov`, `USGSNAIPPlus` `exportImage`, behind CloudFront) | the aerial reveal — 0.3 m summer orthoimagery (D147), for reading *access*, never ice; web only — mobile has no aerial tier (register). The admin console draws it unmasked for staff, its date from the service's identify call (D312) | public domain, no key, no quota; grid-snap every URL (a 29 s cold render otherwise) |
 
 *Considered:* **Copernicus Data Space (CDSE)** — serves both missions from one place, but needs an
 account, sits in Europe, and Earth Search needed neither; the Sentinel Hub–compatible API's 10k

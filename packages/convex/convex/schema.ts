@@ -1132,7 +1132,7 @@ export default defineSchema({
     /**
      * The intake questions a moderator settled (B01-6a), each with the evidence it was settled on
      * (core's `reviewEvidence`): the import drops an incoming reason whose evidence is unchanged and
-     * asks again when it changed (D305). At most one entry per reason.
+     * asks again when it changed (D306). At most one entry per reason.
      */
     reviewSettled: v.optional(
       v.array(
@@ -1150,7 +1150,7 @@ export default defineSchema({
      * by the import from the merge, which kept them only in its run stats before. Absent on every
      * body loaded before the first campaign that carries them: *not recorded*, never *none*.
      * At most eight, as the class claims. Stored from 6a so the next campaign records them; 6b's
-     * Contested lane reads them (D306).
+     * Contested lane reads them (D307).
      */
     classRefusals: v.optional(
       v.array(

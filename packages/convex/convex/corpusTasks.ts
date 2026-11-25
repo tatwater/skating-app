@@ -12,7 +12,7 @@
  * console's read clock (`now`), though no answer here turns on the time yet.
  *
  * 6a's two lanes hold `name-conflict` and `class-conflict` tasks only: a `class-dissent` reason, or a
- * body's stored `classRefusals`, changes nothing these reads return (D306).
+ * body's stored `classRefusals`, changes nothing these reads return (D307).
  */
 
 import {

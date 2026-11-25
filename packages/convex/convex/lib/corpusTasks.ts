@@ -6,7 +6,7 @@
  *
  * **One task per question.** In 6a a question is one intake reason a campaign raised on one body —
  * `name-conflict` or `class-conflict` (`CORPUS_REASON_LANE`); a `class-dissent` stays on the body
- * with no task until 6b's Contested lane (D306). A question is *live* while the body is neither
+ * with no task until 6b's Contested lane (D307). A question is *live* while the body is neither
  * merged away nor removed (nor deleted) and its `reviewReasons` carries the reason; each live question
  * has exactly one open task, keyed `reason:<reason>:<bodyId>`.
  *
@@ -15,7 +15,7 @@
  * `leftBecause`): the question went away with no decision — a campaign stopped asserting the reason,
  * or the body was merged away, removed or deleted. A left task is in no tab and no count, so nothing
  * reads a machine's doing as a person's decision (Review 11 rule 7). A question asked again after a
- * decision (D305: its evidence changed) files a **new** open task; the decided one is kept.
+ * decision (D306: its evidence changed) files a **new** open task; the decided one is kept.
  *
  * **The counts move in the same transaction as the task** (the `inboxCounts` pattern): `open:<lane>`
  * and `open:<lane>:<facet>` (the `notRecorded` facet counted too; the read draws it under *All*
@@ -473,7 +473,7 @@ function withReason(
  * **The settle** (one path for every intake decision): the reason off `reviewReasons`,
  * `reviewReason` recomputed by `primaryReviewReason` (so the old readers surface the body's next
  * reason, whose own task already stands in its own lane), an entry on `reviewSettled` with today's
- * evidence (D305: the import holds the settle while the evidence stands), the task decided with
+ * evidence (D306: the import holds the settle while the evidence stands), the task decided with
  * `actionId`, the counts moved. In the caller's transaction, after its domain write — so a decision
  * can't half-land. The caller has already asked the rule; a task no longer open or a body gone is a
  * bug in the caller, and throws.

@@ -609,7 +609,7 @@ describe('the library’s rows follow a settle and its undo', () => {
 });
 
 describe('undo: overtaken', () => {
-  /** What a campaign does when the evidence moved (D305): the settle dropped, the reason back. */
+  /** What a campaign does when the evidence moved (D306): the settle dropped, the reason back. */
   const askAgain = async (t: T, bodyId: Id<'waterBodies'>, reason: ReviewReason) => {
     await t.run(async (ctx) => {
       const b = await ctx.db.get(bodyId);

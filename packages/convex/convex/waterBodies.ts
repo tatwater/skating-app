@@ -481,7 +481,7 @@ function mergeFields(
   };
 }
 
-/** The incoming reasons after the honoring rule, and what it did to the stored settles (D305). */
+/** The incoming reasons after the honoring rule, and what it did to the stored settles (D306). */
 type HonoredReasons = {
   reasons: ReviewReason[] | undefined;
   settled?: Doc<'waterBodies'>['reviewSettled'];
@@ -490,7 +490,7 @@ type HonoredReasons = {
 };
 
 /**
- * **A settled question holds until its evidence changes** (B01-6a, D305): the import's half of the
+ * **A settled question holds until its evidence changes** (B01-6a, D306): the import's half of the
  * settle. Each incoming reason a moderator settled on this body is compared, by core's one rule
  * (`reviewEvidence`, through `evidenceOf`), against the evidence the body will carry once this record
  * lands — the record's catalog names, its class claims or, from an older loader that sends none, the
@@ -549,7 +549,7 @@ function honorSettled(
 }
 
 /**
- * The catalogs' refusals as the import stores them (B01-6a, D306): a record's list replaces the
+ * The catalogs' refusals as the import stores them (B01-6a, D307): a record's list replaces the
  * stored one, `[]` clears it, and a record without the field (an older loader's) keeps what's stored.
  * Bounded as the class claims are.
  */
@@ -825,7 +825,7 @@ export const importCanonical = internalMutation({
     let keptByPin = 0;
     const outsideRegion: { externalId: string; waterBodyId: Id<'waterBodies'> | null }[] = [];
     let tooLong = 0;
-    // The honoring rule's two counts (D305): settled questions this batch held, and asked again.
+    // The honoring rule's two counts (D306): settled questions this batch held, and asked again.
     let settledHeld = 0;
     let raisedAgain = 0;
     const unresolved: { externalId: string; action: string; reason: string }[] = [];
@@ -944,7 +944,7 @@ export const importCanonical = internalMutation({
           active: isActive(existing),
         });
         await queueLibraryRefresh(ctx, [existing._id]);
-        // A settled question holds until its evidence changes (D305).
+        // A settled question holds until its evidence changes (D306).
         const honored = honorSettled(existing, item);
         settledHeld += honored.held ?? 0;
         raisedAgain += honored.raised ?? 0;
@@ -1145,9 +1145,9 @@ export const importCanonical = internalMutation({
       outsideRegion: outsideRegion.slice(0, 20),
       /** Rows skipped for a name or catalog id past its cap (B01-3h). */
       tooLong,
-      /** Settled questions the batch's records raised on unchanged evidence: held, no task (D305). */
+      /** Settled questions the batch's records raised on unchanged evidence: held, no task (D306). */
       settledHeld,
-      /** Settled questions raised on changed evidence: asked again, a task filed anew (D305). */
+      /** Settled questions raised on changed evidence: asked again, a task filed anew (D306). */
       raisedAgain,
       unresolved: unresolved.slice(0, 20),
     };

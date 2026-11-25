@@ -14,7 +14,7 @@ import { LANE_LABELS, TAB_LABELS, TASKS_GROUP } from './words/corpusWords';
  * (the type checker names it: the table is exhaustive over core's union) and the frame draws it.
  *
  * The URL names a lane by its `id` (`?lane=name-conflicts`), the server by its `task`
- * (`nameConflicts`). A lane joins the sidebar in the PR that builds it (D299): an id with no entry is
+ * (`nameConflicts`). A lane joins the sidebar in the PR that builds it (D300): an id with no entry is
  * dropped by the search, never drawn unbuilt.
  */
 

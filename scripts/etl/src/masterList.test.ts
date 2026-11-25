@@ -1064,7 +1064,7 @@ describe('the refusals and the claims’ tokens, kept rather than tallied (B01-6
   const shape = square(-70.4, 44.4, sideForAcres(300));
 
   it('keeps a dissent’s refusing catalog with its own token and area, queued or settled alike', () => {
-    // The Contested lane (D306) reads which catalog refused, with what token — which the merge kept
+    // The Contested lane (D307) reads which catalog refused, with what token — which the merge kept
     // only in its run stats. A settled refusal (`osm:water=river`) is stored too: the founder looks at
     // every refusal before 6b rules which ones the lane holds.
     for (const sourceToken of ['osm:natural=water', 'osm:water=river']) {
@@ -1395,9 +1395,9 @@ describe('matchLane, directly — the options the same-source lane needs', () =>
   });
 });
 
-// ── B01-6a (D309): the absorbed features, on the record ──────────────────────────────────────────
+// ── B01-6a (D310): the absorbed features, on the record ──────────────────────────────────────────
 
-describe('absorbedFeatures: what the merge folded in, emitted on the survivor (D309)', () => {
+describe('absorbedFeatures: what the merge folded in, emitted on the survivor (D310)', () => {
   /** `merge.ts`' `refOf`, as `absorbed.ndjson` names a pair: split at the first colon. */
   const refOf = (key: string) => {
     const at = key.indexOf(':');

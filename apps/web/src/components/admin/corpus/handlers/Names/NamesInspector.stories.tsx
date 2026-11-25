@@ -71,7 +71,7 @@ const bar = (q: HTMLElement) =>
     (t) => t.closest('[data-slot="action-bar-measure"]') === null,
   );
 
-/** 4.2 as the board draws it, every fact recorded; the pick opens on the shown name (D307). */
+/** 4.2 as the board draws it, every fact recorded; the pick opens on the shown name (D308). */
 export const FactsPresent: Story = {
   render: () => pair(() => <Names item={BASIN} />),
   play: async ({ canvasElement }) => {
@@ -166,7 +166,7 @@ export const Refused: Story = {
   },
 };
 
-/** Settled before and asked again because a catalog's spelling changed (D305). */
+/** Settled before and asked again because a catalog's spelling changed (D306). */
 export const AskedAgain: Story = {
   render: () => pair(() => <Names item={BASIN_ASKED_AGAIN} />),
   play: async ({ canvasElement }) => {

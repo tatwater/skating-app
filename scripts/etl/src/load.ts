@@ -68,9 +68,9 @@ interface ImportResult {
   outOfRegionKept: number;
   /** Stored bodies the rule places in no town, held in region by a moderator's pin. */
   keptByPin: number;
-  /** Settled Corpus questions the records raised on unchanged evidence: held, no task (D305). */
+  /** Settled Corpus questions the records raised on unchanged evidence: held, no task (D306). */
   settledHeld: number;
-  /** Settled Corpus questions raised on changed evidence: asked again (D305). */
+  /** Settled Corpus questions raised on changed evidence: asked again (D306). */
   raisedAgain: number;
   outsideRegion: { externalId: string; waterBodyId: string | null }[];
   unresolved: { externalId: string; action: string; reason: string }[];
@@ -308,7 +308,7 @@ function main(): void {
     kind: 'canonical_water',
     label: label ?? mergedLabel ?? 'unscoped canonical water',
     campaignId,
-    // The merge's scope (D309): the load runs over exactly what the merge produced.
+    // The merge's scope (D310): the load runs over exactly what the merge produced.
     ...(merge?.scope !== undefined && { scope: merge.scope }),
     target,
     stages,
@@ -445,7 +445,7 @@ function main(): void {
   logger.count('outOfRegion', outOfRegion);
   logger.count('outOfRegionKept', outOfRegionKept);
   logger.count('keptByPin', keptByPin);
-  // The Corpus's settles (D305): held while their evidence stands, asked again when it changed.
+  // The Corpus's settles (D306): held while their evidence stands, asked again when it changed.
   logger.count('settledHeld', settledHeld);
   logger.count('raisedAgain', raisedAgain);
   // The denominator is the *polygon features the filter emitted*, not the bodies the transform

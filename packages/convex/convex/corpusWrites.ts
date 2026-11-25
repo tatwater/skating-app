@@ -12,11 +12,11 @@
  *   `decisionActionId` and the toast's *Undo*. A *Keep* changes nothing on the body, so its row is
  *   the settle's own, `settle_review_reason`.
  * - **The settle** (`lib/corpusTasks.settleReason`): the reason off the body, recorded as settled on
- *   today's evidence (D305), the task decided — in the same transaction, so a decision that throws
+ *   today's evidence (D306), the task decided — in the same transaction, so a decision that throws
  *   anywhere leaves nothing behind.
  *
  * The undo needs nothing here: one hook in `lib/undo.ts` reopens the task any undone row decided.
- * No `decideContested` in 6a: it lands with the Contested lane in 6b (D306).
+ * No `decideContested` in 6a: it lands with the Contested lane in 6b (D307).
  */
 
 import { WATER_BODY_CLASSES } from '@skating/core';

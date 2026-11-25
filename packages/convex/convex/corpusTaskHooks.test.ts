@@ -1,6 +1,6 @@
 /**
  * **The Corpus tasks' hooks** (B01-6a): each write that changes a body's questions calls the one
- * writer — the import (with the honoring rule, D305), the merge and its unmerge, the remove and its
+ * writer — the import (with the honoring rule, D306), the merge and its unmerge, the remove and its
  * restore, and both duplicate resolutions' hard deletes — and the counts equal their tallies after
  * each.
  */

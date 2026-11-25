@@ -452,7 +452,7 @@ export const MODERATION_ACTIONS = [
   'purge_photo',
   // ── The Corpus tasks (B01-6a) ────────────────────────────────────────────────────────────────────
   // An intake question settled without changing the body (the shown name kept, the class kept) —
-  // its target the body, its evidence recorded so the next campaign honors it (D305) — and its undo,
+  // its target the body, its evidence recorded so the next campaign honors it (D306) — and its undo,
   // which puts the question back. A decision that changes the body writes that change's own verb.
   'settle_review_reason',
   'unsettle_review_reason',

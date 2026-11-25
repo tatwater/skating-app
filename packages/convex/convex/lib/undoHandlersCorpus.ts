@@ -1219,7 +1219,7 @@ const undoRequestReopen: UndoHandler = {
 
 /** A settle whose task no row records (none was filed, or it was written by hand). */
 export const SETTLE_NOT_FOUND = 'Nothing records the question this settled.';
-/** The question the settle answered has since been asked again — a campaign's new evidence (D305). */
+/** The question the settle answered has since been asked again — a campaign's new evidence (D306). */
 export const SETTLE_ASKED_AGAIN = 'This question was asked again since; decide it from its lane.';
 /** The task the settle decided is no longer decided by it (it left with its body, or was reopened). */
 export const SETTLE_CLOSED = 'This question has closed since, so there is nothing to reopen.';
@@ -1249,7 +1249,7 @@ export function settleStandsRefusal(
  * settle_review_reason → the question asked again: the task reopens, its reason back on the body and
  * its settled entry gone (`reopenTask`, the writer's), recorded as `unsettle_review_reason`. A *Keep*
  * changed nothing else, so the reopen is the whole undo. Refused once the question moved on without
- * it — a later campaign asked it again on new evidence (D305), or the body left with its task; a
+ * it — a later campaign asked it again on new evidence (D306), or the body left with its task; a
  * later write on the body overtakes it as any row is overtaken.
  */
 const undoSettle: UndoHandler = {

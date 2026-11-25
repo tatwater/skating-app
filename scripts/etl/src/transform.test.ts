@@ -101,7 +101,7 @@ describe('toCanonicalBody: the claims and refusals on the wire (B01-6a)', () => 
     expect(importedBody(waterFeature({ name: 'Test Pond' }))).not.toHaveProperty('classRefusals');
   });
 
-  it('emits the absorbed features, `[]` included, and omits them only for a caller that can’t know (D309)', () => {
+  it('emits the absorbed features, `[]` included, and omits them only for a caller that can’t know (D310)', () => {
     const absorbedFeatures = [
       { source: 'osm', externalId: 'relation/2602300', areaSqM: 10_250_000 },
     ];

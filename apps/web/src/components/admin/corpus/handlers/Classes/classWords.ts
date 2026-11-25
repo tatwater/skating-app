@@ -30,7 +30,7 @@ export const CLASS_WORDS = {
   meters: (m: string) => `${m} m`,
   /** Which depth is on file: the maximum, else the mean (the Water tab's two columns). */
   measure: { max: 'max', mean: 'mean' },
-  /** What changed when a settled class is asked again (D305). */
+  /** What changed when a settled class is asked again (D306). */
   classChanged: 'a catalog’s class',
   bar: 'Class conflict',
   whatSet: 'Sets the picked class; the catalogs’ own claims stay on the record.',

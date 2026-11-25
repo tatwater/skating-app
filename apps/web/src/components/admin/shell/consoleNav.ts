@@ -12,7 +12,7 @@ import type { GoLetter } from '@/lib/keys';
  * `oldShellPredicate.test.tsx` holds the two copies and all three behaviors to one answer.
  *
  * **Narrowing it is how a mode lands.** An old page retires in the PR that lands the last lane it
- * serves, and its code goes in that same PR (D304): its tree leaves {@link OLD_SHELL_TREES} (and
+ * serves, and its code goes in that same PR (D305): its tree leaves {@link OLD_SHELL_TREES} (and
  * the init script's copy), its entry leaves {@link LEGACY_PAGES}, and its route (or a redirect,
  * where links in the wild may hold it), its components and the tests that pinned them are deleted
  * together, never kept for a later sweep. A page that still serves something no lane replaces

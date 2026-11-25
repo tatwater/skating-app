@@ -123,7 +123,7 @@ export type KeptBody = Merged & {
    * The catalogs that **refused** this water outright while another classed it (B01-6a): each
    * refusing member's own token and area, at most {@link CLASS_REFUSALS_MAX}. `[]` when none refused.
    * Kept only in the run stats before; stored now so the Contested lane can read which catalog
-   * refused, with what token (D306).
+   * refused, with what token (D307).
    */
   classRefusals: ClassRefusal[];
 };
@@ -146,11 +146,11 @@ export type ClassRefusal = { source: ClaimSource; token: string; areaSqM: number
  */
 export const CLASS_REFUSALS_MAX = 8;
 
-/** The absorbed features kept on one body — the import's `MAX_ABSORBED_FEATURES` (D309). */
+/** The absorbed features kept on one body — the import's `MAX_ABSORBED_FEATURES` (D310). */
 export const ABSORBED_FEATURES_MAX = 32;
 
 /**
- * The members the merge folded into `k` (`absorbedIds`), as the record carries them (D309): each one's
+ * The members the merge folded into `k` (`absorbedIds`), as the record carries them (D310): each one's
  * catalog, its id exactly as `absorbed.ndjson` names it (`refOf` splits `${source}:${id}` at the first
  * colon, so the id is the member's own), and its area — the first {@link ABSORBED_FEATURES_MAX}.
  */
@@ -995,7 +995,7 @@ export function buildMasterList(input: MasterListInput): MasterList {
         token: m.sourceToken,
         areaSqM: m.areaSqM,
       }));
-    // The refusing members, kept rather than tallied (B01-6a, D306): the dissent stats below count
+    // The refusing members, kept rather than tallied (B01-6a, D307): the dissent stats below count
     // them; the body now carries them.
     const classRefusals: ClassRefusal[] = group.members
       .filter((m) => m.cls === null)

@@ -38,7 +38,7 @@ export function pickable(item: Pick<NamesItem, 'can' | 'decided'>, choice: NameC
 
 /**
  * The pick a task opens on (Review 11 rule 3): the suggestion, else the name shown now — each only
- * if it can be applied. In 6a nothing is suggested (D307), so it is the shown name: ⏎ keeps it.
+ * if it can be applied. In 6a nothing is suggested (D308), so it is the shown name: ⏎ keeps it.
  */
 export function defaultPick(item: Pick<NamesItem, 'names' | 'can' | 'decided'>): string | null {
   const suggested = item.names.find((n) => n.suggested && pickable(item, n));
@@ -124,13 +124,13 @@ export function bodyLine(body: NamesItem['body']): string {
     .join(' · ');
 }
 
-/** The *asked again* note (D305): a catalog's spelling changed since it was settled. */
+/** The *asked again* note (D306): a catalog's spelling changed since it was settled. */
 export const raisedAgainNote = (item: Pick<NamesItem, 'raisedAgain'>, timeZone?: string) =>
   raisedAgainWords(item.raisedAgain, W.spellingChanged, timeZone);
 
 /**
  * *Once … shows*: what the pick does — the name displayed, every other spelling kept as an alias
- * that search still finds, the choice holding until a catalog's spelling changes (D305), and its
+ * that search still finds, the choice holding until a catalog's spelling changes (D306), and its
  * undo. A keep says so (“The Basin, as now”).
  */
 export function onceRows(

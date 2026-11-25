@@ -116,11 +116,11 @@ export interface CanonicalBody {
    * **The catalogs that refused this water outright** while another classed it (B01-6a): each
    * refusing feature's own token (`osm:natural=water`) and area. The merge emits it on every record,
    * `[]` when none refused, so the import can tell "none" from "not recorded" (absent). Read by the
-   * Contested as water lane (D306); the merge kept it only in its run stats before.
+   * Contested as water lane (D307); the merge kept it only in its run stats before.
    */
   classRefusals?: { source: string; token: string; areaSqM?: number }[];
   /**
-   * **The features the merge folded into this body** as one catalog's duplicates (B01-6a, D309):
+   * **The features the merge folded into this body** as one catalog's duplicates (B01-6a, D310):
    * each absorbed member's catalog, its id as `absorbed.ndjson` names it (`refOf`), and its area —
    * at most 32 (`masterList.ABSORBED_FEATURES_MAX`). Omitted when the body absorbed nothing.
    */

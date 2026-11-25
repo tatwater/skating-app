@@ -1204,7 +1204,7 @@ describe('item', () => {
   });
 });
 
-// ── Contested as water is not 6a's (D306) ──────────────────────────────────────────────────────────────────────────
+// ── Contested as water is not 6a's (D307) ──────────────────────────────────────────────────────────────────────────
 
 test('a class-dissent reason or stored classRefusals changes nothing these reads return', async () => {
   const t = harness();

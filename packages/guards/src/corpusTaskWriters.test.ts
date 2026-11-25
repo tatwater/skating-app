@@ -43,7 +43,7 @@ const CONVEX = resolve(__dirname, '../../convex/convex');
 /** Every function that writes a task's source fields, by `file#function` — each calls the writer. */
 const SOURCE_WRITERS: Record<string, string> = {
   'waterBodies.ts#importCanonical':
-    'the import: reasons asserted, dropped, held or asked again (D305), insert and patch',
+    'the import: reasons asserted, dropped, held or asked again (D306), insert and patch',
   'waterBodies.ts#setWaterBodyNameImpl':
     'a moderator’s name pick or clear: the shown name and its claims, a name conflict’s tab',
   'waterBodies.ts#setAliasesImpl': 'a moderator’s aliases: names a task’s search text carries',

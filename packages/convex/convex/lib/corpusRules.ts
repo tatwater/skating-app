@@ -31,7 +31,7 @@ import type { QueryCtx } from '../_generated/server';
 import { goneBecause, TASK_LEFT, taskLockRefusal } from './corpusTasks';
 import { capabilityRefusal } from './inboxRules';
 
-/** 6a's verbs; 6b's Contested lane adds `remove` and `setDormant` (D306). */
+/** 6a's verbs; 6b's Contested lane adds `remove` and `setDormant` (D307). */
 export type CorpusVerb = 'pickName' | 'keepName' | 'setClass' | 'keepClass';
 
 /** `null`: allowed. A sentence: the write's own refusal. A verb absent: not this lane's. */

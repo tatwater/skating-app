@@ -56,7 +56,7 @@ import { NAME_WORDS as W } from './nameWords';
  * - **The names**: one card per spelling (`ChoiceRows`), each with its catalogs (every one
  *   recorded, or the top one alone), *From*, the catalog's rank in words and how many other bodies
  *   carry the name. *Shown now* on the displayed name; *Suggested* only where the item says so,
- *   which no name does until the emails arrive (D307) — so the pick opens on the shown name.
+ *   which no name does until the emails arrive (D308) — so the pick opens on the shown name.
  * - **Once … shows** and **In the app**: what the pick does, as facts and as pictures.
  * - **The bar**: one button naming the pick (*Display “Lake Auburn” instead*, *Keep “The
  *   Basin”*), ⏎ in the pane. Drawn only where the item's `can` allows the pick's verb.
@@ -242,7 +242,7 @@ export function NamesInspector({
                 suggested: n.suggested,
                 disabled: !decided && !pickable(item, n),
                 aside: <CatalogBoxes choice={n} />,
-                // 6c adds an *Emails* row and the strip by winter under these (D307).
+                // 6c adds an *Emails* row and the strip by winter under these (D308).
                 children: (
                   <FactList
                     rows={[

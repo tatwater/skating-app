@@ -8,7 +8,7 @@ import type { NamesItem } from './namesModel';
  * page draws only what a read returned, `fixturesStayInStories.test.ts`). The Basin in Auburn, ME,
  * which OpenStreetMap calls Lake Auburn, and the other states the task can be in: before the
  * campaign that records each spelling's catalogs, decided, and refused. Nothing is suggested
- * (D307: 6c's emails name a suggestion), so every one opens on the shown name.
+ * (D308: 6c's emails name a suggestion), so every one opens on the shown name.
  */
 
 /**
@@ -115,7 +115,7 @@ export const BASIN_REFUSED = {
   },
 } as unknown as NamesItem;
 
-/** Settled once, asked again: a catalog's spelling changed since (D305). */
+/** Settled once, asked again: a catalog's spelling changed since (D306). */
 export const BASIN_ASKED_AGAIN = {
   ...BASIN,
   raisedAgain: {

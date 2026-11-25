@@ -168,7 +168,7 @@ export function toCanonicalBody(input: {
    * catalog) leaves it out, and the record omits it.
    */
   classRefusals?: readonly { source: string; token: string; areaSqM?: number }[] | undefined;
-  /** The features the merge folded into this body (B01-6a, D309) — see `CanonicalBody.absorbedFeatures`. */
+  /** The features the merge folded into this body (B01-6a, D310) — see `CanonicalBody.absorbedFeatures`. */
   absorbedFeatures?: readonly { source: string; externalId: string; areaSqM: number }[] | undefined;
 }): CanonicalBody {
   const { stats, interiorPoint, polygon, centroid } = prepareBodyGeometry(input.geometry);
@@ -214,7 +214,7 @@ export function toCanonicalBody(input: {
     ...(input.classRefusals !== undefined
       ? { classRefusals: input.classRefusals.map((r) => ({ ...r })) }
       : {}),
-    // **Emitted empty, as the refusals are** (D309): the merge passes the list for every body it
+    // **Emitted empty, as the refusals are** (D310): the merge passes the list for every body it
     // keeps, so `[]` is its answer — it absorbed nothing — and the import replaces a stale list with
     // it. An absent list (the OSM-only lane's) is a record that doesn't know, and the import keeps
     // what is stored.

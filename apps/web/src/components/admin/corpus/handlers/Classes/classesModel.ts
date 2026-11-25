@@ -199,7 +199,7 @@ export function consequenceParts(consequence: ClassRung['consequence']): {
   return { lead, rest: words.slice(lead.length) };
 }
 
-/** The *asked again* note (D305): a catalog's class changed since it was settled. */
+/** The *asked again* note (D306): a catalog's class changed since it was settled. */
 export const raisedAgainNote = (item: Pick<ClassesItem, 'raisedAgain'>, timeZone?: string) =>
   raisedAgainWords(item.raisedAgain, W.classChanged, timeZone);
 

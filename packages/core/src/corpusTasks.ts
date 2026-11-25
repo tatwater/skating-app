@@ -4,7 +4,7 @@
  * thing on the server and another on the page.
  *
  * B01-6a builds two lanes, Name conflicts and Class conflicts. **Contested as water is left out on
- * purpose, not reserved** (D306): every map keyed by `CorpusTaskLane` is exhaustive, so a reserved id
+ * purpose, not reserved** (D307): every map keyed by `CorpusTaskLane` is exhaustive, so a reserved id
  * would be a dead entry each had to fill with a placeholder. 6b widens these constants with its lanes
  * — `contested` and its facets, `'class-dissent': 'contested'`, the `dormant` and `removed`
  * decisions — and the type checker then names every map that needs its entry (a widening; the
@@ -25,7 +25,7 @@ export type CorpusTaskKind = (typeof CORPUS_TASK_KINDS)[number];
 export const CORPUS_TASK_STATUSES = ['open', 'decided', 'left'] as const;
 export type CorpusTaskStatus = (typeof CORPUS_TASK_STATUSES)[number];
 
-/** What a person decided. 6b's Contested lane adds `dormant` and `removed` (D306). */
+/** What a person decided. 6b's Contested lane adds `dormant` and `removed` (D307). */
 export const CORPUS_TASK_DECISIONS = ['kept', 'renamed', 'reclassed'] as const;
 export type CorpusTaskDecision = (typeof CORPUS_TASK_DECISIONS)[number];
 

@@ -1,7 +1,7 @@
 /**
  * Board 4.2's words, and every word the board did not supply (marked *invented*, for the copy pass).
  * Nothing here says anything about the ice (D3): a name conflict is about what a body is called,
- * never about what its ice is like. No email fact and no *Suggested* in 6a (D307): 6c adds both.
+ * never about what its ice is like. No email fact and no *Suggested* in 6a (D308): 6c adds both.
  */
 export const NAME_WORDS = {
   // ── From the board ──────────────────────────────────────────────────────────────────────────────────
@@ -45,9 +45,9 @@ export const NAME_WORDS = {
   keep: (name: string) => `Keep “${name}”`,
   onceKept: (name: string) => `Once ${name} is kept`,
   asNow: (name: string) => `${name}, as now`,
-  /** D305: a settled name holds until a catalog's spellings change, then it is asked again. */
+  /** D306: a settled name holds until a catalog's spellings change, then it is asked again. */
   holds: 'Holds until a catalog renames it',
-  /** What changed when a settled name is asked again (D305). */
+  /** What changed when a settled name is asked again (D306). */
   spellingChanged: 'a catalog’s spelling',
   /** The bar's name, and its button's tooltip. */
   bar: 'Name conflict',

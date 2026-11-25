@@ -5,7 +5,7 @@ import { dayMonth } from '../../shell/consoleTime';
 /**
  * **The facts both 6a handlers say alike** (boards 4.2 and 4.3), from a task item's shared part:
  * what hangs on the body, its neighbors, the campaign that queued it, a question asked again
- * (D305), its acres. Pure; every fact the item holds as not recorded is said so, never guessed.
+ * (D306), its acres. Pure; every fact the item holds as not recorded is said so, never guessed.
  * The words are invented where no board supplied them, for the copy pass; none is about the ice.
  */
 
@@ -70,7 +70,7 @@ export function acresText(acres: number): string {
   return Math.round(acres).toLocaleString('en-US');
 }
 
-/** The *asked again* note (D305), from the decision it reopened; `what` is what changed. */
+/** The *asked again* note (D306), from the decision it reopened; `what` is what changed. */
 export function raisedAgainWords(
   raisedAgain: { previous: Decided } | null,
   what: string,

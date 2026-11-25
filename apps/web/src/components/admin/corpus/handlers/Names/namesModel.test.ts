@@ -27,7 +27,7 @@ const NOT_RECORDED = 'Not recorded until the next campaign';
 const [SHOWN, OTHER] = BASIN.names as [NamesItem['names'][number], NamesItem['names'][number]];
 
 describe('the pick', () => {
-  it('opens on the shown name while nothing is suggested (D307), so the bar keeps it', () => {
+  it('opens on the shown name while nothing is suggested (D308), so the bar keeps it', () => {
     expect(defaultPick(BASIN)).toBe('The Basin');
     expect(leverOf(BASIN, 'The Basin')).toEqual({
       verb: 'keepName',
@@ -145,7 +145,7 @@ describe('the facts, recorded or said not to be', () => {
     expect(typedFor('   ')).toBe('   ');
   });
 
-  it('says a question asked again, by whom and what changed (D305)', () => {
+  it('says a question asked again, by whom and what changed (D306)', () => {
     expect(raisedAgainNote(BASIN)).toBeNull();
     expect(raisedAgainNote(BASIN_ASKED_AGAIN, 'America/New_York')).toBe(
       'Asked again: Kate Donovan settled it on 4 Sep (kept), and a catalog’s spelling has changed since.',
