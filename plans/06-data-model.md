@@ -50,7 +50,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `waterBodies` | the corpus: outline, our key + every catalog's claim, class, name + aliases, area, depth with provenance (D68), elevation, wind rose (D90), display score (A06c §4.2), public-access verdict (A06f), standing fields (D176), the intake reasons and the questions a moderator settled with their evidence (`reviewSettled`, D305), each catalog's class claim and refusal with its token (B01-6a) — D14, D93–D137 |
+| `waterBodies` | the corpus: outline, our key + every catalog's claim, class, name + aliases, area, depth with provenance (D68), elevation, wind rose (D90), display score (A06c §4.2), public-access verdict (A06f), standing fields (D176), the intake reasons and the questions a moderator settled with their evidence (`reviewSettled`, D305), each catalog's class claim and refusal with its token (B01-6a), the catalog features the merge folded in as one catalog's duplicates (`absorbedFeatures`: catalog, id, area — B01-6a, D309) — D14, D93–D137 |
 | `waterBodyCells` | the ladder-grid spatial index: one row per (body, cell) — the read path every viewport and "near" query walks — D5 as rebuilt in A01 |
 | `waterBodySubAreas` | a named region inside one polygon — a bay, an arm — with aliases for the ten spellings of Malletts Bay; a place in its own right since A09; since D201 usually derived from a stored `mouth` (two shoreline points, a side, a sagitta) — D60 |
 | `waterBodySubAreaCells` | the same cell index for bays — A09 |
@@ -89,7 +89,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `imageryUnreadable` | the manifests the index build could not read, one row each until it reads: read last by the next build, least recently tried first, so a stalling few hold back neither good frames nor a repaired one — D214 |
 | `imageryCounts` | the granule ledger's totals per season, kept beside every status change — D214 |
 | `dailyThrottle` | once per key per New York day (operator alerts), or busy until a time (the full history fill) — A06i |
-| `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; `/admin/imports` — A06c §6.2 |
+| `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; what it set out to cover (`scope`: its pass, its states, whether that was the whole pass — intent, not outcome) and its heartbeat (`progressAt`, stamped by the server, so a dead run reads *stalled*) — D218, D309; `/admin/imports` — A06c §6.2 |
 
 ### Access
 

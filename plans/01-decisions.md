@@ -6859,7 +6859,27 @@ vocabulary above is built so it can land without a redesign.
 only signals are a terminal that scrolled past and a row that says `running` after the process
 died.
 
-**Related:** D37, A06c §6.2, A06i, D214.
+**Amended 2026-11-25 (B01-6a; the governor's ruling, not a founder call) — the scope gains
+`derived` and `cleanup`, and the scope and heartbeat are built (D309).** None of the original six
+fit the corpus campaign's passes that load no corpus of their own, so the vocabulary
+(`IMPORT_RUN_SCOPES` in `packages/convex/convex/lib/enums.ts`) is eight:
+
+- **`derived`** — computed from data already held, writing no third-party data into the model: the
+  region masks (`build-region`), the offline landmark match, region stats.
+- **`cleanup`** — brings the stored corpus into line with what a campaign decided, by demoting or
+  folding rather than loading: the floor prune and `retire-absorbed`.
+
+As built, the scope is `importRuns.scope: { pass, states?, complete }`, stated by the writer when
+the run starts. `pass` is one of the eight; `states` the two-letter codes it covered, absent for a
+pass that isn't by state (the floor prune walks the whole corpus); `complete` whether that was all
+of what its pass covers — `false` for a subset of states, a resumed walk, or a merge missing a
+catalog. **`complete` is intent, not outcome:** what a run achieved is still its `status` and
+`coverage`. The heartbeat is `importRuns.progressAt`, **stamped by the server** at start, at each
+progress report and at finish, never sent by a loader — a `running` row silent long past its
+loader's flush interval reads *stalled*. Both fields are absent on every row written before B01-6a,
+which reads as *not recorded*.
+
+**Related:** D37, A06c §6.2, A06i, D214, D309.
 
 ## D219 — A cost ledger: every third party, every day, in its own unit, with dollars where a rate is known (B01)
 
