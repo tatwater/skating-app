@@ -1,11 +1,9 @@
-import type { InboxDecidedView } from '../list/inboxTypes';
-import { DECIDER_GONE } from '../words/inboxWords';
-import type { DecidedState } from './InspectorFrame';
-
 /**
  * **The decided-only lock, as a state machine** (D283) — pure, so every path is tested without a
- * subscription. The lock is the item's own decision, read live (`inbox.item` is a subscription);
- * what it means depends on what the item was when it opened:
+ * subscription. Shared by the Inbox and Corpus (moved here from `inbox/inspector/` in B01-6a); each
+ * mode maps its own decided view to the frame's `DecidedState` (the Inbox's `decidedStateOf` is in
+ * `inbox/inspector/inboxLock.ts`). The lock is the item's own decision, read live (the item read is
+ * a subscription); what it means depends on what the item was when it opened:
  *
  * - **`none`** — nothing read yet for this ref (on its way).
  * - **`live`** — open and undecided: the handler's verbs stand.
@@ -69,20 +67,9 @@ function step(phase: LockPhase, seen: LockSeen): LockPhase {
 export const isDecidedPhase = (phase: LockPhase): boolean =>
   phase === 'onOpen' || phase === 'locked' || phase === 'quiet';
 
-/** The server's decided state as the frame takes it: the decider's name, the audit row's id. */
-export function decidedStateOf(view: InboxDecidedView): DecidedState {
-  return {
-    by: view.by?.displayName ?? DECIDER_GONE,
-    at: view.at,
-    decision: view.decision,
-    byMe: view.byMe,
-    actionId: view.actionId ?? '',
-  };
-}
-
-/** The lock's reading of one item read's answer. */
-export function lockSeenOf(
-  item: { decided: InboxDecidedView | null } | null | undefined,
+/** The lock's reading of one item read's answer (either mode's: only `byMe` is read). */
+export function lockSeenOf<Decided extends { byMe: boolean }>(
+  item: { decided: Decided | null } | null | undefined,
 ): LockSeen | undefined {
   if (item === undefined) return undefined;
   if (item === null) return { item: false };

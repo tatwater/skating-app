@@ -7,7 +7,9 @@ import { Badge } from '@/components/kit/badge';
 import { must } from '@/components/kit/storyKit';
 import { KeysProvider } from '@/lib/keys';
 
-import { storyLink } from '../inboxBoard';
+import { storyLink } from '../inbox/inboxBoard';
+import type { HandlerKey, InboxHandler } from '../inbox/inspector/handlerRegistry';
+import { InboxInspector, type InspectorState } from '../inbox/inspector/InboxInspector';
 import {
   ACCESS_ITEM,
   ADMIT_ITEM,
@@ -17,10 +19,8 @@ import {
   SARAH,
   TEAGAN,
   TICKET_ITEM,
-} from '../list/inboxFixtures';
-import type { InboxItemView } from '../list/inboxTypes';
-import type { HandlerKey, InboxHandler } from './handlerRegistry';
-import { InboxInspector, type InspectorState } from './InboxInspector';
+} from '../inbox/list/inboxFixtures';
+import type { InboxItemView } from '../inbox/list/inboxTypes';
 import {
   type DecidedState,
   InspectorFrame,
@@ -118,7 +118,7 @@ const pane = (root: HTMLElement) => must(root.querySelector<HTMLElement>('[data-
 const LOCK: DecidedState = {
   by: 'Sarah Berman',
   at: NOW - 18 * 60_000,
-  decision: 'approved',
+  decisionWord: 'approved',
   byMe: false,
   actionId: 'm1',
 };

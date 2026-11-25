@@ -22,6 +22,10 @@ import {
   CONFIDENCE_LEVELS,
   CORPUS_NAME_DISMISS_REASONS,
   CORPUS_NAME_STATUSES,
+  CORPUS_TASK_DECISIONS,
+  CORPUS_TASK_LANES,
+  CORPUS_TASK_LEFT_REASONS,
+  CORPUS_TASK_STATUSES,
   DEPTH_SOURCES,
   ELEVATION_SOURCES,
   HAZARD_TYPES,
@@ -858,7 +862,20 @@ export default defineSchema({
      * with `source: 'user'`, which is why there is one field here and not two.
      */
     nameClaims: v.optional(
-      v.array(v.object({ source: literals(CLAIM_SOURCES), value: v.string() })),
+      v.array(
+        v.object({
+          /** The top-ranked catalog publishing this spelling (`NAME_SOURCE_RANK`). */
+          source: literals(CLAIM_SOURCES),
+          value: v.string(),
+          /**
+           * Every catalog publishing this spelling, in rank order, `source` first (B01-6a): the merge
+           * folds identical spellings, and kept only the winner's source before. Absent on a body
+           * loaded before the first campaign that carries it, and on a moderator's own claim: the
+           * catalog run then shows `source` alone, and nothing says the catalogs agree.
+           */
+          sources: v.optional(v.array(literals(CLAIM_SOURCES))),
+        }),
+      ),
     ),
     /**
      * **Each catalog's class for this water** (B01-3d), one per source, at most eight — stored by the
@@ -867,7 +884,19 @@ export default defineSchema({
      * them. A moderator's choice is never a claim here; it is `moderatorClass`.
      */
     classClaims: v.optional(
-      v.array(v.object({ source: literals(CLAIM_SOURCES), value: literals(WATER_BODY_CLASSES) })),
+      v.array(
+        v.object({
+          source: literals(CLAIM_SOURCES),
+          value: literals(WATER_BODY_CLASSES),
+          /**
+           * The catalog's own class token (`nhd:fcode=46600`, `osm:water=pond`), B01-6a; absent
+           * before the first campaign that carries it.
+           */
+          token: v.optional(v.string()),
+          /** That catalog's feature's area, B01-6a; absent as `token` is. */
+          areaSqM: v.optional(v.number()),
+        }),
+      ),
     ),
     /**
      * **A moderator's class for this water** (B01-3d, `setClass`) — its own fact, outranking the
@@ -1099,6 +1128,38 @@ export default defineSchema({
      * index small enough to page prominence-first.
      */
     reviewReason: v.optional(literals(REVIEW_REASONS)),
+    /**
+     * The intake questions a moderator settled (B01-6a), each with the evidence it was settled on
+     * (core's `reviewEvidence`): the import drops an incoming reason whose evidence is unchanged and
+     * asks again when it changed (D305). At most one entry per reason.
+     */
+    reviewSettled: v.optional(
+      v.array(
+        v.object({
+          reason: literals(REVIEW_REASONS),
+          evidence: v.string(),
+          at: v.number(),
+          actionId: v.id('moderationActions'),
+        }),
+      ),
+    ),
+    /**
+     * The catalogs that refused this water outright while another classed it (B01-6a): the
+     * catalog's own token (`osm:natural=water`, `nhd:fcode=39004`) and that feature's area. Stored
+     * by the import from the merge, which kept them only in its run stats before. Absent on every
+     * body loaded before the first campaign that carries them: *not recorded*, never *none*.
+     * At most eight, as the class claims. Stored from 6a so the next campaign records them; 6b's
+     * Contested lane reads them (D306).
+     */
+    classRefusals: v.optional(
+      v.array(
+        v.object({
+          source: literals(CLAIM_SOURCES),
+          token: v.string(),
+          areaSqM: v.optional(v.number()),
+        }),
+      ),
+    ),
     /**
      * The last import campaign that **re-affirmed** this body — campaign membership (A07a step 6).
      *
@@ -1587,15 +1648,12 @@ export default defineSchema({
     // rows and nothing else: `undefined` sorts before every number, so unboosted bodies are excluded
     // by the range rather than filtered after the read.
     .index('by_curated_boost', ['curatedBoost'])
-    // The standing lists (A07b): dormant bodies by reason, newest first, and recent activations. Both
-    // are `eq()` / `gt()` reads on optional fields — `undefined` sorts first and an equality or a
-    // strictly-positive range never includes it, so neither read touches the active majority.
-    .index('by_dormant_reason', ['dormant.reason', 'dormant.since'])
+    // Recent activations (A07b's standing lists): a `gt()` read on an optional field — `undefined`
+    // sorts first and a strictly-positive range never includes it, so the read never touches the
+    // active majority. Its three siblings (`by_dormant_reason`, `by_removed_at`,
+    // `by_public_access_verdict`) were dropped in B01-6a: their only reader, `standing.listLane`,
+    // went with Standing's lanes half, and the library reads those lanes from `bodyLibraryRows`.
     .index('by_activated_at', ['activatedAt'])
-    // The other two standing lanes (A07b): removed bodies newest first (`gt(0)` — undefined sorts
-    // first and is excluded by the range), and `none` rulings (`eq('none')`).
-    .index('by_removed_at', ['removedAt'])
-    .index('by_public_access_verdict', ['publicAccess.verdict', 'publicAccess.decidedAt'])
     // **Reason first, then prominence**, so the queue opens on the lakes anybody has heard of. An
     // `.eq()` on the reason never reads the rows that carry none — `undefined` sorts before every
     // value, but an equality range simply does not include it, which is what makes this cheap.
@@ -5776,5 +5834,65 @@ export default defineSchema({
     fixed: v.optional(v.number()),
     changed: v.optional(v.record(v.string(), v.number())),
     failures: v.optional(v.number()),
+  }).index('by_job', ['job']),
+
+  /**
+   * One Corpus task per question a machine raised about a body (B01-6). In 6a: one intake reason
+   * (`name-conflict`, `class-conflict`) on one body. Written only by
+   * `lib/corpusTasks.ts`; `corpusTaskWriters.test.ts` holds every writer of its sources to it.
+   */
+  corpusTasks: defineTable({
+    /** `reason:<reason>:<bodyId>` in 6a; one open task per key. */
+    key: v.string(),
+    // `CORPUS_TASK_KINDS` has one kind in 6a and `literals` needs two; 6b's `duplicate` makes it
+    // `literals(CORPUS_TASK_KINDS)` (a widening).
+    kind: v.literal('reason'),
+    lane: literals(CORPUS_TASK_LANES),
+    /** The lane's tab it sits in (`CORPUS_TASK_FACETS[lane]`); never `all`. */
+    facet: v.string(),
+    status: literals(CORPUS_TASK_STATUSES),
+    /** Smaller first: an intake task's is its body's `displayScore`, negated. */
+    rankKey: v.number(),
+    filedAt: v.number(),
+    waterBodyId: v.id('waterBodies'),
+    /** What the task is about, as its kind names it; in 6a, the body's id again. */
+    subjectId: v.string(),
+    /** Set with `status: 'decided'`: a person decided it. */
+    decidedAt: v.optional(v.number()),
+    decidedByUserId: v.optional(v.id('profiles')),
+    decision: v.optional(literals(CORPUS_TASK_DECISIONS)),
+    decisionActionId: v.optional(v.id('moderationActions')),
+    /** Set with `status: 'left'`: the question went away with no decision. */
+    leftAt: v.optional(v.number()),
+    leftBecause: v.optional(literals(CORPUS_TASK_LEFT_REASONS)),
+    refreshedAt: v.number(),
+  })
+    .index('by_key', ['key', 'status'])
+    .index('by_status_lane_rank', ['status', 'lane', 'rankKey'])
+    .index('by_status_lane_facet_rank', ['status', 'lane', 'facet', 'rankKey'])
+    // The decided tab, newest first: `eq` on lane and status, so the open rows (no `decidedAt`)
+    // are never in the range.
+    .index('by_lane_status_decided', ['lane', 'status', 'decidedAt'])
+    // A body's tasks (the import's hook, the Body console later): `eq` on the body.
+    .index('by_body_status', ['waterBodyId', 'status', 'filedAt'])
+    // The undo's way back to a task. `eq` only: the field is optional and the index not sparse.
+    .index('by_decision_action', ['decisionActionId'])
+    // The drift repair's walk over open tasks, oldest refresh first.
+    .index('by_refreshed_at', ['status', 'refreshedAt']),
+
+  /** The Corpus tasks' counts, moved with the tasks by their one writer: `open:<lane>`, `open:<lane>:<facet>`. 6b–6d add theirs. */
+  corpusTaskCounts: defineTable({
+    key: v.string(),
+    count: v.number(),
+  }).index('by_key', ['key']),
+
+  /** Where the Corpus tasks' chained jobs stand: the backfill and the drift repair. */
+  corpusTaskJobRuns: defineTable({
+    job: literals(['backfill', 'repair'] as const),
+    phase: v.string(),
+    cursor: v.union(v.string(), v.null()),
+    done: v.boolean(),
+    startedAt: v.number(),
+    updatedAt: v.number(),
   }).index('by_job', ['job']),
 });

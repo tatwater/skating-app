@@ -14,7 +14,7 @@ import {
   useConsoleReads,
 } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
-import { undoOf } from '../../../inbox/actions/useDecisionRunner';
+import { undoOf } from '../../../actions/useDecisionRunner';
 import type { Receipt } from '../../../shell/undo';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useTabAction } from '../useTabAction';

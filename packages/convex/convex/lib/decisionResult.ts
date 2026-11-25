@@ -1,5 +1,9 @@
 /**
- * **What a request or drawing decision answers** (B01-5c): the Inbox writes' shape (`InboxWriteResult`
+ * **What a decision answers** — the Inbox's (`InboxDecisionResult`) and, from B01-6a, Corpus's
+ * (`CorpusDecisionResult`), side by side; the Inbox's name is kept, since its importers predate the
+ * second mode.
+ *
+ * **A request or drawing decision** (B01-5c): the Inbox writes' shape (`InboxWriteResult`
  * in `inboxWrites.ts`) — the item the decision decided, the decision's own audit row (the one the
  * toast's Undo undoes), and whether this viewer can undo that row now, read by the undo engine's own
  * rule (`undoOfferAfterWrite`, the reading `undo.run` makes) — asked through `ctx.runQuery`
@@ -15,7 +19,7 @@ import type { MutationCtx } from '../_generated/server';
 import type { InboxSource } from './inboxItems';
 
 /** What the undo engine offers this viewer for a row, now. */
-type UndoOffer = { undoable: true; undoNeedsReason: boolean } | { undoable: false };
+export type UndoOffer = { undoable: true; undoNeedsReason: boolean } | { undoable: false };
 
 export type InboxDecisionResult = {
   /** The Inbox item the decision decided; `null` for a source that is no item (a script's ask, D289). */
@@ -42,4 +46,30 @@ export async function inboxDecisionResult(
     actionId,
   });
   return { itemId: member?.itemId ?? null, actionId, ...offer };
+}
+
+/**
+ * **What a Corpus task decision answers** (B01-6a): the task it decided, the audit row the decision
+ * wrote (the domain write's own row — `set_water_body_name`, `set_class` — or `settle_review_reason`
+ * for a settle-only outcome; the toast's Undo undoes it), and the undo offer, read as
+ * `inboxDecisionResult` reads it.
+ */
+export type CorpusDecisionResult = {
+  taskId: Id<'corpusTasks'>;
+  actionId: Id<'moderationActions'>;
+} & UndoOffer;
+
+/** The answer for the decision on `taskId`, written as `actionId` by `actorId`. */
+export async function corpusDecisionResult(
+  ctx: MutationCtx,
+  actorId: Id<'profiles'>,
+  taskId: Id<'corpusTasks'>,
+  actionId: Id<'moderationActions'>,
+): Promise<CorpusDecisionResult> {
+  // A nested query in this transaction: it reads the decision just written.
+  const offer: UndoOffer = await ctx.runQuery(internal.moderation.undoOfferForRow, {
+    actorId,
+    actionId,
+  });
+  return { taskId, actionId, ...offer };
 }

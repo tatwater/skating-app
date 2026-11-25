@@ -40,6 +40,10 @@ yarn-debug.log*
 # CDN (keys per upload), and a 40 MB pmtiles must never ride into the repo or a deploy
 /apps/web/public/dev-tiles/
 
+# The Pre-Season Pass dress builder's render output (B01-6, the PassDress stories beside their
+# board): screenshots for the founder's pick, regenerable, never the source of truth.
+/apps/web/.pass-dress/
+
 # OS / editor
 .DS_Store
 .idea/

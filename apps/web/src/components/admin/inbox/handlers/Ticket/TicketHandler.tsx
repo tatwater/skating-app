@@ -1,7 +1,7 @@
 import { type RefObject, useCallback, useEffect, useState } from 'react';
+import { useInspectorContext } from '../../../inspector/inspectorContext';
 import { type InboxQuery, inboxHref } from '../../inboxSearch';
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
-import { useInspectorContext } from '../../inspector/inspectorContext';
 import { TicketView } from './TicketView';
 import { useTicketDraft } from './ticketDrafts';
 import { anySettling, type DockMode, type TicketItem } from './ticketModel';

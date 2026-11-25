@@ -1,8 +1,8 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react';
 
-import { notSavedTitle, notSavedWhat } from '../../body/consoleWords';
-import { said } from '../../said';
-import { type Receipt, type UndoTarget, useUndo } from '../../shell/undo';
+import { notSavedTitle, notSavedWhat } from '../body/consoleWords';
+import { said } from '../said';
+import { type Receipt, type UndoTarget, useUndo } from '../shell/undo';
 
 /**
  * **The Inbox's one decision runner** — every request, place and drawn write runs through it

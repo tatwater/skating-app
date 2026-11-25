@@ -1,4 +1,3 @@
-import type { InboxDecision } from '@skating/core';
 import { type ReactNode, useEffect, useRef } from 'react';
 
 import { usePaneKeys } from '@/lib/keys';
@@ -8,9 +7,10 @@ import { DecidedLock } from './DecidedLock';
 import { useInspectorContext } from './inspectorContext';
 
 /**
- * **The inspector's frame** — every Inbox handler draws inside it (the canonical seam: W2, W3 and
- * W5–W8 import it by this signature; its props change only with the governor's word). From the
- * boards (2.1–2.8, `.inspector`): the pane head (36 px: the item's kicker, its chips, its age written
+ * **The inspector's frame** — every Inbox handler draws inside it, and from B01-6a every Corpus task
+ * handler too (moved here from `inbox/inspector/` then; the canonical seam: handlers import it by
+ * this signature; its props change only with the governor's word). From the boards (2.1–2.8,
+ * `.inspector`): the pane head (36 px: the item's kicker, its chips, its age written
  * out, a link at its end), the scroll, and the floating action bar at the pane's foot.
  *
  * - **`head`** — the pane head's contents, left to right; `InspectorHeadEnd` pushes a link to its
@@ -31,12 +31,17 @@ import { useInspectorContext } from './inspectorContext';
  * gives it the way back, the history link, the clock and the pane its keys bind to.
  */
 
-/** Who decided an item, when and what — the lock's facts, as every handler receives them. */
+/**
+ * Who decided an item, when and what — the lock's facts, as every handler receives them. The
+ * decision arrives already in its mode's words (the Inbox maps its `DECISION_WORDS` in
+ * `inbox/inspector/inboxLock.ts`), so the frame says it without knowing whose decisions they are.
+ */
 export type DecidedState = {
   /** The decider's real name. */
   by: string;
   at: number;
-  decision: InboxDecision;
+  /** The decision as the lock's line says it: "approved", "no public access". */
+  decisionWord: string;
   /** The viewer decided it. */
   byMe: boolean;
   /** The audit row the decision wrote (`''` for a decision recorded before the Inbox). */

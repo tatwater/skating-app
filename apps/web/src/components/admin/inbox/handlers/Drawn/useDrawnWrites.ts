@@ -3,14 +3,13 @@ import type { Id } from '@skating/convex/dataModel';
 import { useMutation } from 'convex/react';
 import type { FunctionReturnType } from 'convex/server';
 import { useCallback, useMemo } from 'react';
-
-import type { UndoTarget } from '../../../shell/undo';
 import {
   type Decision,
   type Landed,
   useDecisionRunner,
   type WriteAnswer,
-} from '../../actions/useDecisionRunner';
+} from '../../../actions/useDecisionRunner';
+import type { UndoTarget } from '../../../shell/undo';
 import type { DrawnItem, DrawnSurvivor } from './drawnModel';
 import { DRAWN_WORDS as W } from './drawnWords';
 

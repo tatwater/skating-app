@@ -5,7 +5,7 @@ import { useMemo, useRef, useState } from 'react';
 
 import { routerTarget } from '@/lib/routerTarget';
 import { useRole } from '@/lib/useRole';
-
+import { LOCK_START, lockSeenOf, nextLock } from '../inspector/lockModel';
 import { isFailed, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
 import { useClockFor } from '../reads/readArgs';
@@ -22,7 +22,6 @@ import {
   serverFilter,
 } from './inboxSearch';
 import type { InspectorState } from './inspector/InboxInspector';
-import { LOCK_START, lockSeenOf, nextLock } from './inspector/lockModel';
 import { localMidnight } from './lanes/laneModel';
 import type { ZeroToday } from './list/InboxZero';
 import { decidedSince } from './list/inboxModel';

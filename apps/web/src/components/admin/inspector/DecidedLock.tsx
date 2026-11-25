@@ -4,9 +4,9 @@ import { Button } from '@/components/kit/button';
 import { Kbd } from '@/components/kit/kbd';
 import { LockBanner } from '@/components/kit/note';
 
-import { historyWhen } from '../../shell/consoleTime';
-import { BACK_TO_QUEUE, DECISION_WORDS, decidedBy } from '../words/inboxWords';
+import { historyWhen } from '../shell/consoleTime';
 import type { DecidedState } from './InspectorFrame';
+import { BACK_TO_QUEUE, decidedBy } from './inspectorWords';
 
 /**
  * **The decided-only lock** (D283, `states-v5.html`'s *Decided while you looked*): an item someone
@@ -52,7 +52,7 @@ export function DecidedLock({
       })}
     >
       <strong>{decidedBy(locked.by)}</strong>
-      {` · ${historyWhen(locked.at, now, timeZone)} · ${DECISION_WORDS[locked.decision]}`}
+      {` · ${historyWhen(locked.at, now, timeZone)} · ${locked.decisionWord}`}
     </LockBanner>
   );
 }

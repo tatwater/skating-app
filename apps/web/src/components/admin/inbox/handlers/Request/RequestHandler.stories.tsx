@@ -311,7 +311,7 @@ export const DecidedByColleague: Story = {
         locked={{
           by: 'Sarah Berman',
           at: REQUEST_NOW - 600_000,
-          decision: 'approved',
+          decisionWord: 'approved',
           byMe: false,
           actionId: 'a1',
         }}

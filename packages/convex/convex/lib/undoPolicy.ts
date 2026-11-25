@@ -473,6 +473,22 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: always,
     capability: 'content.moderate',
   },
+
+  // ── The Corpus tasks (B01-6a) ──────────────────────────────────────────────────────────────────
+  // PLACEHOLDER (S2's): the T0 rows, so the registry compiles over the two new verbs. S2 owns them
+  // from here and writes the final rules with their handler (`undoHandlersCorpus.ts`); until then
+  // the engine finds no handler for either and offers no undo.
+  // Settling changes nothing a skater sees, and neither does putting the question back.
+  settle_review_reason: {
+    undo: inverse('unsettle_review_reason'),
+    takesAway: never,
+    capability: 'corpus.intake',
+  },
+  unsettle_review_reason: {
+    undo: { kind: 'none', why: 'Settle it again from its lane.' },
+    takesAway: never,
+    capability: 'corpus.intake',
+  },
 };
 
 /** The verbs whose undo is still owed by a later workstream — the register the build closes. */

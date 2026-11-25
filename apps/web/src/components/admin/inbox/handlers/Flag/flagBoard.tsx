@@ -2,16 +2,15 @@ import { AROUND_IT_DEFAULT_DAYS } from '@skating/core';
 import { type ReactNode, useRef, useState } from 'react';
 
 import { createToastManager, Toaster } from '@/components/kit/toast';
-
+import { InspectorFrame } from '../../../inspector/InspectorFrame';
+import { InspectorProvider, useInspectorContext } from '../../../inspector/inspectorContext';
 import { UndoProvider, type UndoServer } from '../../../shell/undo';
 import type { AroundState } from '../../around/AroundLine';
 import { AroundSheet } from '../../around/AroundSheet';
 import { storyLink } from '../../inboxBoard';
 import { AuthorMenuView, type MenuLever } from '../../inspector/AuthorMenu';
 import type { HandlerKey, InboxHandler } from '../../inspector/handlerRegistry';
-import { InspectorFrame } from '../../inspector/InspectorFrame';
-import { InspectorProvider, useInspectorContext } from '../../inspector/inspectorContext';
-import { decidedStateOf } from '../../inspector/lockModel';
+import { decidedStateOf } from '../../inspector/inboxLock';
 import { flagSlots } from './FlagView';
 import { BOARD_NOW, BOARD_ZONE } from './flagFixtures';
 import type { FlagItem } from './flagTypes';

@@ -9,11 +9,11 @@ import { LabelRows } from '@/components/kit/label-rows';
 import { Section } from '@/components/kit/section-slug';
 import { StatGrid, StatTile } from '@/components/kit/stat-tile';
 import { ReasonAsk } from '../../../body/tabs/access/ReasonAsk';
+import { InspectorHeadEnd, InspectorHeadTitle } from '../../../inspector/InspectorFrame';
 import { dayMonth } from '../../../shell/consoleTime';
 import { LinkChip } from '../../blocks/LinkChip';
 import { ListCutLine, listTotalOf } from '../../blocks/listCut';
 import { TimelineEventBody } from '../../blocks/TimelineEventBody';
-import { InspectorHeadEnd, InspectorHeadTitle } from '../../inspector/InspectorFrame';
 import {
   type AccessAct,
   type AccessItem,

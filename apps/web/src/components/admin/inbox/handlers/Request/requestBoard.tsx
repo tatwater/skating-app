@@ -1,8 +1,7 @@
 import { type RefObject, useRef } from 'react';
-
+import { type DecidedState, InspectorFrame } from '../../../inspector/InspectorFrame';
+import { InspectorProvider, useInspectorContext } from '../../../inspector/inspectorContext';
 import type { HandlerKey, InboxHandler } from '../../inspector/handlerRegistry';
-import { type DecidedState, InspectorFrame } from '../../inspector/InspectorFrame';
-import { InspectorProvider, useInspectorContext } from '../../inspector/inspectorContext';
 import { InboxMapStill } from '../../map/InboxMap';
 import { ItemMapView } from '../../map/ItemMap';
 import type { ServerItemMap } from '../../map/itemMapAdapters';

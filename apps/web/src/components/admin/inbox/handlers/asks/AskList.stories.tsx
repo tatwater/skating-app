@@ -1,7 +1,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, within } from 'storybook/test';
 
-import { InspectorProvider } from '../../inspector/inspectorContext';
+import { InspectorProvider } from '../../../inspector/inspectorContext';
 import { AskList } from './AskList';
 import {
   ASKS_NOW,

@@ -1,8 +1,7 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-
+import { InspectorFrame } from '../../../inspector/InspectorFrame';
+import { useInspectorContext } from '../../../inspector/inspectorContext';
 import type { InboxHandlerProps } from '../../inspector/handlerRegistry';
-import { InspectorFrame } from '../../inspector/InspectorFrame';
-import { useInspectorContext } from '../../inspector/inspectorContext';
 import { ItemMap } from '../../map/ItemMap';
 import { drawnSlots } from './DrawnHandlerView';
 import type { DrawnItem } from './drawnModel';
