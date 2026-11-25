@@ -29,9 +29,10 @@ import { RulingStrip } from './RulingStrip';
  * without the row that made the ruling says who ruled isn't recorded (or is past the read); a
  * history read that stopped short makes the earlier rulings' count a floor ("19+").
  *
- * Every control is drawn only when its handler is passed. Placing a put-in or a lot, linking a lot
- * and writing what a sign says are task modes not built yet: drawn as the board draws them, they
- * say so instead of acting.
+ * Every control is drawn only when its handler is passed. Placing a put-in or a lot and linking a
+ * lot to a put-in are map tasks (B01-6b): the caller draws the task in `task`, over the blocks, and
+ * the entry points rest until it is saved or discarded. Writing what a sign says is the posted-rules
+ * editor's, not built yet: drawn as the board draws it, it says so instead of acting.
  */
 
 export type AccessViewProps = {
@@ -59,18 +60,23 @@ export type AccessViewProps = {
   onMakeOfficial?: ((putIn: PutInRow) => void) | typeof UNAVAILABLE;
   /** Hide a put-in, with the reason. Resolves whether it landed (a refusal is a toast). */
   onHide?: (putIn: PutInRow, reason: string) => Promise<boolean>;
+  /** Start placing a put-in on the map (P). */
+  onAddPutIn?: () => void;
+  /** Start placing a lot on the map (L). */
+  onAddLot?: () => void;
+  /** Start linking a lot to this put-in on the map — any put-in, an official one included. */
+  onLinkLot?: (putIn: PutInRow) => void;
+  /** The map task in progress, drawn over the blocks; its entry points rest while it is up. */
+  task?: ReactNode;
 };
 
 const TOOLS = {
-  putIn: 'Placing a put-in on the map comes with the map’s parking and put-in tools.',
-  lot: 'Placing a lot on the map comes with the map’s parking and put-in tools.',
-  link: 'Linking a lot to a put-in comes with the map’s parking and put-in tools.',
   rules: 'Writing what a sign says comes with the posted-rules editor.',
   official: 'Making a launch official where it stands, keeping its parking and walk.',
 };
 
 /**
- * A walk a moderator's lot link stored: a straight line from the lot, until the ETL routes it.
+ * A walk a moderator's lot link stored: a straight line from the lot, until it is routed.
  * Trails weave, so it is a floor — written as one, never as a measured route. Distances only: no
  * word here says the way or the ice is safe (D3).
  */
@@ -106,14 +112,19 @@ export function AccessView({
   canPlace = false,
   onMakeOfficial,
   onHide,
+  onAddPutIn,
+  onAddLot,
+  onLinkLot,
+  task,
 }: AccessViewProps) {
   const root = useRef<HTMLDivElement>(null);
+  const tasked = task != null;
   // A key answers only while its control is drawn: none while the tab loads or its read failed
   // (the inspector listens then too), and R only while the posted rules' tile is there.
   const ready = data !== undefined && !isFailed(data) ? data : null;
   useTabKeys(root, [
-    { key: 'P', run: () => sayUnavailable(TOOLS.putIn), enabled: canPlace && ready !== null },
-    { key: 'L', run: () => sayUnavailable(TOOLS.lot), enabled: canPlace && ready !== null },
+    { key: 'P', run: () => onAddPutIn?.(), enabled: !!onAddPutIn && ready !== null && !tasked },
+    { key: 'L', run: () => onAddLot?.(), enabled: !!onAddLot && ready !== null && !tasked },
     {
       key: 'R',
       run: () => sayUnavailable(TOOLS.rules),
@@ -147,6 +158,7 @@ export function AccessView({
   return (
     <TabBody ref={root} data-slot="access-tab">
       <ReadFailures failures={data.failures} onRetry={onRetry} pending={retryPending} />
+      {task}
       <RulingSection data={data} lit={lit} now={now} onRule={onRule} />
       <Section title="Put-ins" count={data.putIns.length} data-slot="put-ins">
         {groups.length > 0 && (
@@ -163,9 +175,9 @@ export function AccessView({
                       key={p.id}
                       putIn={p}
                       lit={lit}
-                      canPlace={canPlace}
                       onMakeOfficial={onMakeOfficial}
                       onHide={onHide}
+                      onLinkLot={tasked ? undefined : onLinkLot}
                     />
                   ))}
                 </ul>
@@ -173,20 +185,24 @@ export function AccessView({
             ))}
           </ul>
         )}
-        {canPlace && (
+        {(onAddPutIn || onAddLot) && !tasked && (
           <div className="mt-(--space-1_5) flex flex-wrap gap-(--space-2)">
-            <UnavailableButton size="sm" what={TOOLS.putIn}>
-              Add a put-in
-              <Kbd variant="dim" aria-hidden="true">
-                P
-              </Kbd>
-            </UnavailableButton>
-            <UnavailableButton size="sm" what={TOOLS.lot}>
-              Add a lot
-              <Kbd variant="dim" aria-hidden="true">
-                L
-              </Kbd>
-            </UnavailableButton>
+            {onAddPutIn && (
+              <Button size="sm" data-slot="add-put-in" onClick={onAddPutIn}>
+                Add a put-in
+                <Kbd variant="dim" aria-hidden="true">
+                  P
+                </Kbd>
+              </Button>
+            )}
+            {onAddLot && (
+              <Button size="sm" data-slot="add-lot" onClick={onAddLot}>
+                Add a lot
+                <Kbd variant="dim" aria-hidden="true">
+                  L
+                </Kbd>
+              </Button>
+            )}
           </div>
         )}
       </Section>
@@ -351,13 +367,13 @@ function RulingSection({
 function PutInItem({
   putIn: p,
   lit,
-  canPlace,
   onMakeOfficial,
   onHide,
+  onLinkLot,
 }: {
   putIn: PutInRow;
   lit: string | null;
-} & Pick<AccessViewProps, 'canPlace' | 'onMakeOfficial' | 'onHide'>) {
+} & Pick<AccessViewProps, 'onMakeOfficial' | 'onHide' | 'onLinkLot'>) {
   const walk =
     p.walk !== null ? (
       <span
@@ -373,17 +389,24 @@ function PutInItem({
         </span>
         <span className="w-(--space-3) font-(family-name:--family-mono) text-kick text-fg3">m</span>
       </span>
-    ) : canPlace && p.source !== 'official' ? (
-      <UnavailableButton size="xs" what={TOOLS.link} className="justify-self-end">
+    ) : onLinkLot ? (
+      <Button size="xs" className="justify-self-end" onClick={() => onLinkLot(p)}>
         Link a lot
-      </UnavailableButton>
+      </Button>
     ) : null;
-  const actions = p.source !== 'official' && (onMakeOfficial || onHide) && (
+  // A put-in with a lot already can be linked to another (or none), an official one included.
+  const relink = onLinkLot && p.walk !== null && (
+    <Button size="xs" onClick={() => onLinkLot(p)}>
+      Change lot
+    </Button>
+  );
+  const levers = p.source !== 'official' && (onMakeOfficial || onHide);
+  const actions = (levers || relink) && (
     <span className="flex gap-(--space-1_5)">
       {
         // One rule with the write (`putIns.promote`) and the old editor's list, for the button
         // drawn live and the one drawn unavailable alike.
-        !canMakeOfficial(p) ? null : onMakeOfficial === UNAVAILABLE ? (
+        !levers || !canMakeOfficial(p) ? null : onMakeOfficial === UNAVAILABLE ? (
           <UnavailableButton size="xs" what={TOOLS.official}>
             Make official
           </UnavailableButton>
@@ -395,7 +418,7 @@ function PutInItem({
           )
         )
       }
-      {onHide && (
+      {levers && onHide && (
         <ReasonAsk
           trigger={<Button size="xs">Hide</Button>}
           title={`Hide ${p.name}`}
@@ -407,9 +430,11 @@ function PutInItem({
           onConfirm={(reason) => onHide(p, reason)}
         />
       )}
+      {relink}
     </span>
   );
-  const twoLines = p.source !== 'official';
+  // An official launch names no landmark (its name is its own): its second line is only its levers.
+  const twoLines = p.source !== 'official' || Boolean(actions);
   return (
     <li
       data-slot="put-in"
@@ -425,7 +450,7 @@ function PutInItem({
       {twoLines && (
         <>
           <span className="truncate text-assist text-fg3">
-            {p.where === undefined ? (
+            {p.source === 'official' ? null : p.where === undefined ? (
               <LoadingLine width="7rem" />
             ) : isFailed(p.where) ? (
               <CouldntRead />

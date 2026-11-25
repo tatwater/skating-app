@@ -86,6 +86,8 @@ const settle = async () => true;
 /** The landmark tools' entry points (B01-6b): the wiring opens them; here they're only counted. */
 const dropped = vi.fn();
 const moved = vi.fn();
+/** Access's map tasks started (B01-6b): P places a put-in, L a lot. */
+const placing = vi.fn();
 
 // ── The tabs with every lever ─────────────────────────────────────────────────────────────────
 
@@ -131,6 +133,8 @@ const LEVERS: Record<string, ReactNode> = {
       onRule={settle}
       onMakeOfficial={() => {}}
       onHide={settle}
+      onAddPutIn={placing}
+      onAddLot={placing}
     />
   ),
   Water: <WaterView data={MASCOMA_WATER} onChooseDepth={() => {}} canChooseDepth canFileSurvey />,
@@ -246,6 +250,8 @@ const ACCESS_BARE: AccessData = {
       at: { lat: 43.63, lng: -72.15 },
       walk: null,
       approach: null,
+      lotId: null,
+      hikeIn: false,
       where: null,
     },
   ],
@@ -375,7 +381,7 @@ const toldBy = (words: RegExp) => () => toasts.said.length === 1 && words.test(s
 
 /** Each tab with keys, one of its keys, and how to tell the right tool acted. */
 const KEYED: [string, () => ReactNode, string, () => boolean][] = [
-  ['Access', () => LEVERS.Access, 'p', toldBy(/Placing a put-in/)],
+  ['Access', () => LEVERS.Access, 'p', () => placing.mock.calls.length === 1],
   ['Places', () => LEVERS['Places, the list'], 'l', () => dropped.mock.calls.length === 1],
   ['a landmark’s card in Places', () => LEVERS.Places, 'm', () => moved.mock.calls.length === 1],
   [
@@ -426,6 +432,7 @@ describe('a tab’s keys work however the tab is reached', () => {
     overridden.mockClear();
     dropped.mockClear();
     moved.mockClear();
+    placing.mockClear();
   });
   for (const [tab, node, key, acted] of KEYED) {
     it.each(ARRIVALS)(`${tab}: ${key.toUpperCase()} after %s`, async (_way, arrive) => {
@@ -441,11 +448,27 @@ describe('a tab’s keys work however the tab is reached', () => {
 describe('a tab’s key answers only while its control is drawn', () => {
   // The inspector listens whatever the tab draws, so a key must rest with its control.
   it.each<[string, ReactNode, string]>([
-    ['Access, loading', <AccessView key="a" data={undefined} now={BOARD_TODAY} canPlace />, 'p'],
+    [
+      'Access, loading',
+      <AccessView key="a" data={undefined} now={BOARD_TODAY} canPlace onAddPutIn={placing} />,
+      'p',
+    ],
     [
       'Access, its read failed',
-      <AccessView key="a" data={FAILED_READ} now={BOARD_TODAY} canPlace />,
+      <AccessView key="a" data={FAILED_READ} now={BOARD_TODAY} canPlace onAddLot={placing} />,
       'l',
+    ],
+    [
+      'Access, a task already up',
+      <AccessView
+        key="a"
+        data={MASCOMA_ACCESS}
+        now={BOARD_TODAY}
+        canPlace
+        onAddPutIn={placing}
+        task={<p>A task</p>}
+      />,
+      'p',
     ],
     [
       'Access, a posted rule already written',
@@ -461,8 +484,10 @@ describe('a tab’s key answers only while its control is drawn', () => {
   ])('%s', async (_case, node, key) => {
     const user = userEvent.setup();
     render(<InConsole panel={node} />);
+    placing.mockClear();
     await user.keyboard(key);
     expect(toasts.said).toEqual([]);
+    expect(placing).not.toHaveBeenCalled();
   });
 });
 

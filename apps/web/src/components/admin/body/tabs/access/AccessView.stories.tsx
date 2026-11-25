@@ -39,6 +39,9 @@ const EVERY_LEVER = {
   onRule: fn(async () => true),
   onMakeOfficial: fn(),
   onHide: fn(async () => true),
+  onAddPutIn: fn(),
+  onAddLot: fn(),
+  onLinkLot: fn(),
 };
 
 /** Board 5.4.4 as drawn. */
@@ -62,12 +65,41 @@ export const Board: Story = {
     ]);
     const page = within(canvasElement);
     await expect(page.getAllByRole('button', { name: 'Make official' })).toHaveLength(3);
+    // Every put-in can be linked: one with no lot links one, one with a lot changes it.
     await expect(page.getAllByRole('button', { name: 'Link a lot' })).toHaveLength(2);
+    await expect(page.getAllByRole('button', { name: 'Change lot' })).toHaveLength(4);
     // An accessible ruling is never green: the statement is the plain ink.
     await expect(getComputedStyle(statement).color).toEqual(
       sameColor(computedColor(statement, 'var(--fg)')),
     );
     await expect(slot(slot(canvasElement, 'posted-rules'), 'section-count')).toHaveTextContent('0');
+  },
+};
+
+/** The map tasks' entry points: P and L, and each put-in's link. */
+export const MapTasks: Story = {
+  args: EVERY_LEVER,
+  play: async ({ canvasElement, args }) => {
+    const page = within(canvasElement);
+    await userEvent.click(page.getByRole('button', { name: /Add a put-in/ }));
+    await expect(args.onAddPutIn).toHaveBeenCalled();
+    await userEvent.click(page.getByRole('button', { name: /Add a lot/ }));
+    await expect(args.onAddLot).toHaveBeenCalled();
+    const [link] = page.getAllByRole('button', { name: 'Link a lot' });
+    await userEvent.click(must(link));
+    await expect(args.onLinkLot).toHaveBeenCalledWith(expect.objectContaining({ id: 'pi-lower' }));
+  },
+};
+
+/** A task up: drawn over the blocks, and the entry points rest. */
+export const TaskUp: Story = {
+  args: { ...EVERY_LEVER, task: <p data-slot="a-task">A task</p> },
+  play: async ({ canvasElement }) => {
+    const page = within(canvasElement);
+    await expect(slot(canvasElement, 'a-task')).toBeVisible();
+    await expect(page.queryByRole('button', { name: /Add a put-in/ })).toBeNull();
+    await expect(page.queryByRole('button', { name: 'Link a lot' })).toBeNull();
+    await expect(page.queryByRole('button', { name: 'Change lot' })).toBeNull();
   },
 };
 

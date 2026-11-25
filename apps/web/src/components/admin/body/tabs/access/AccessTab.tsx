@@ -21,10 +21,12 @@ import {
   type AccessData,
   accessFrom,
   accessMapScene,
+  type LotRow,
   RULING_HISTORY_LIMIT,
   rulingFrom,
   rulingWithPick,
 } from './accessModel';
+import { useAccessTask } from './useAccessTask';
 
 /**
  * Body › Access, wired. Reads: the body's record (the ruling, the posted rule), its access in one
@@ -33,8 +35,9 @@ import {
  * many rulings came earlier (`bodyConsole.history` by verb, `audit.read`). Writes, each behind its
  * capability and announced for undo: the ruling (`waterBodies.setPublicAccess`, `access.rule` — no
  * public access asks its reason), and a mapped launch made official in place (`putIns.promote`)
- * or hidden (`putIns.hide`), `body.access`. Placing
- * put-ins and lots, linking a lot and the posted-rules editor are task modes.
+ * or hidden (`putIns.hide`), `body.access`. Placing a put-in or a lot and linking a lot to a
+ * put-in are map tasks on the console map (`useAccessTask`, B01-6b), `body.access` too; the
+ * posted-rules editor is still to come.
  */
 /**
  * The Access tab's reads and its data — memoized on the reads, so the map's `useData` keeps its
@@ -45,6 +48,8 @@ export function useAccessRead(bodyId: string): {
   data: Loadable<AccessData>;
   retry: () => void;
   pending: boolean;
+  /** The body's outline, once read: what a put-in placed on the map snaps to. */
+  outline: GeoJSON.Polygon | GeoJSON.MultiPolygon | null;
 } {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { can, isLoading } = useRole();
@@ -75,7 +80,11 @@ export function useAccessRead(bodyId: string): {
       landmarks,
     );
   }, [body, access, landmarks, history, bodyId]);
-  return { data, retry, pending };
+  const outline =
+    body !== undefined && !isFailed(body)
+      ? ((body.polygon as GeoJSON.Polygon | GeoJSON.MultiPolygon | undefined) ?? null)
+      : null;
+  return { data, retry, pending, outline };
 }
 
 /** The drawing's data: the tab's, once its record and access are read. */
@@ -84,10 +93,10 @@ export function useAccessData(bodyId: string): AccessData | undefined {
   return isFailed(data) ? undefined : data;
 }
 
-export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
+export function AccessTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const waterBodyId = bodyId as Id<'waterBodies'>;
   const { can } = useRole();
-  const { data, retry, pending } = useAccessRead(bodyId);
+  const { data, retry, pending, outline } = useAccessRead(bodyId);
   const setPublicAccess = useMutation(api.waterBodies.setPublicAccess);
   const hide = useMutation(api.putIns.hide);
   const promote = useMutation(api.putIns.promote);
@@ -102,6 +111,14 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
         ? 'Ruled no public access'
         : 'Cleared the ruling';
   const loaded = data !== undefined && !isFailed(data) ? data : null;
+  // The map tasks (B01-6b): a put-in or a lot placed, a lot linked, each saved with Undo.
+  const tasks = useAccessTask({
+    bodyId,
+    parent: outline,
+    lots: loaded?.lots ?? NO_LOTS,
+    onLitChange,
+  });
+  const canPlace = can('body.access');
   // **The latest press wins** (`useLatestPick`): the ruling pressed shows at once, presses are sent
   // one at a time in press order (one waiting behind the write out is replaced by a newer one), and
   // the record is drawn again once every press has been answered. Ruling
@@ -132,7 +149,11 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
       retryPending={pending}
       lit={lit}
       now={now}
-      canPlace={can('body.access')}
+      canPlace={canPlace}
+      task={tasks.task}
+      {...(canPlace
+        ? { onAddPutIn: tasks.addPutIn, onAddLot: tasks.addLot, onLinkLot: tasks.linkLot }
+        : {})}
       onRule={
         can('access.rule')
           ? async (verdict, reason) => {
@@ -171,6 +192,9 @@ export function AccessTab({ bodyId, lit = null }: BodyTabProps) {
     />
   );
 }
+
+/** No lots read yet: one constant, so the task's lots keep their identity. */
+const NO_LOTS: readonly LotRow[] = [];
 
 /** The Access tab's registration in the frame's registry. */
 export const ACCESS_TAB: BodyTabRegistration<AccessData> = {

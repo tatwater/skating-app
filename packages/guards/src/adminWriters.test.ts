@@ -46,6 +46,7 @@ const INVENTORY: Record<string, string> = {
     'the landmark tools (drop, move): act (sendFor)',
   'components/admin/body/tabs/shape/ShapeTabRoute.tsx': 'the merge: attempt (sendFor)',
   'components/admin/body/tabs/shape/useBayTask.tsx': 'the bay task: act (sendFor)',
+  'components/admin/body/tabs/access/useAccessTask.tsx': 'the access tasks: act (sendFor)',
   'components/admin/body/tabs/standing/StandingTab.tsx': 'sendFor',
   'components/admin/body/tabs/water/WaterTab.tsx': 'the pick store',
   'components/admin/body/tabs/water/useSampleTask.tsx': 'the sample-point task: act (sendFor)',

@@ -311,11 +311,8 @@ describe('undo: a lot placed by hand (D300)', () => {
   }
 
   const links = (t: T, lotId: Id<'parkingAreas'>) =>
-    t.run((ctx) =>
-      ctx.db
-        .query('parkingAreaBodies')
-        .withIndex('by_parking_area', (q) => q.eq('parkingAreaId', lotId))
-        .collect(),
+    t.run(async (ctx) =>
+      (await ctx.db.query('parkingAreaBodies').collect()).filter((l) => l.parkingAreaId === lotId),
     );
 
   test('its undo deletes it with its lake links (asking why); undoing that places it again', async () => {
