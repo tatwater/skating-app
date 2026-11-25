@@ -10,9 +10,11 @@
  * 1. **The capability** (D217) — the verb's ({@link CORPUS_VERB_CAPABILITY}), in `requireCapability`'s
  *    words: a decision that changes the body needs that change's own capability; one that changes
  *    nothing but the queue needs `corpus.intake`.
- * 2. **A decided task** (D283's lock) — someone decided it; the Inbox's sentence, word for word.
- * 3. **The subject changed under it** — the body gone, merged away or removed; then a task that left
- *    with no decision (its question went away).
+ * 2. **The lock** (D283) — a task someone decided (*Decided by Sarah · renamed*), or one that left
+ *    with no decision (its question went away): the writer's own `taskLockRefusal`, the sentence
+ *    `taskToDecide` throws, so the read and the write can't word it apart.
+ * 3. **The subject changed under it** — an open task whose body is gone, merged away or removed, in
+ *    the writer's words for a task that left for that reason (`TASK_LEFT`).
  * 4. **The verb's own precondition** — from the body's stored facts: *Pick* needs a catalog name to
  *    pick that isn't the one shown.
  *
@@ -26,7 +28,8 @@ import type { Capability, CorpusTaskLane } from '@skating/core';
 import { ConvexError } from 'convex/values';
 import type { Doc } from '../_generated/dataModel';
 import type { QueryCtx } from '../_generated/server';
-import { capabilityRefusal, DECIDED_REFUSAL } from './inboxRules';
+import { goneBecause, TASK_LEFT, taskLockRefusal } from './corpusTasks';
+import { capabilityRefusal } from './inboxRules';
 
 /** 6a's verbs; 6b's Contested lane adds `remove` and `setDormant` (D306). */
 export type CorpusVerb = 'pickName' | 'keepName' | 'setClass' | 'keepClass';
@@ -65,20 +68,6 @@ export const NOT_THIS_LANE: Record<CorpusTaskLane, string> = {
   nameConflicts: 'This task isn’t a name conflict.',
   classConflicts: 'This task isn’t a class conflict.',
 };
-/** A task id that names no task. */
-export const NO_SUCH_TASK = 'No such task.';
-/** The task's body is gone (a duplicate resolution deleted it). */
-export const BODY_GONE = 'This body no longer exists.';
-/** The task's body was merged into another since it was filed. */
-export const BODY_MERGED =
-  'This body was merged into another since; decide on the body it was merged into.';
-/** The task's body was removed from the corpus since it was filed. */
-export const BODY_REMOVED = 'This body was removed from the corpus since.';
-/** A task that left because the latest campaign stopped raising its question. */
-export const NO_LONGER_ASKED = 'The latest campaign no longer raises this question.';
-/** A task that left for any other reason (its body was merged, removed or deleted, then put back). */
-export const QUESTION_CLOSED =
-  'This question closed without a decision; its lane holds the current one.';
 /** *Pick* on a body no catalog gives another name. */
 export const NO_OTHER_NAME = 'No catalog gives this body another name to show.';
 /** A pick that isn't one of the catalogs' names for the body. */
@@ -93,16 +82,6 @@ const nameKey = (value: string) => value.trim().toLowerCase();
 const catalogNames = (body: Doc<'waterBodies'>) =>
   (body.nameClaims ?? []).filter((c) => c.source !== 'user');
 
-/** Rule 3, past a body that is gone: merged or removed, then a task whose question went away. */
-function subjectRefusal(task: Doc<'corpusTasks'>, body: Doc<'waterBodies'>): string | null {
-  if (body.mergedIntoId !== undefined || body.dedupStatus === 'merged') return BODY_MERGED;
-  if (body.removedAt !== undefined) return BODY_REMOVED;
-  if (task.status === 'left') {
-    return task.leftBecause === 'notAsserted' ? NO_LONGER_ASKED : QUESTION_CLOSED;
-  }
-  return null;
-}
-
 /** Rule 4: the verb's own precondition, from the body's stored facts. */
 function preconditionRefusal(verb: CorpusVerb, body: Doc<'waterBodies'>): string | null {
   if (verb !== 'pickName') return null;
@@ -110,34 +89,47 @@ function preconditionRefusal(verb: CorpusVerb, body: Doc<'waterBodies'>): string
   return catalogNames(body).some((c) => nameKey(c.value) !== shown) ? null : NO_OTHER_NAME;
 }
 
-/** Rules 1–4 for one verb of the task's own lane. */
-function laneVerbRefusal(
-  viewer: Doc<'profiles'>,
+/**
+ * Rules 2–4, which are the same for every verb of a lane: the lock, the body gone, merged or
+ * removed, then the precondition per verb. The lock reads the decider's profile (one row) when the
+ * task is decided; nothing else is read.
+ */
+async function taskRefusals(
+  ctx: QueryCtx,
   task: Doc<'corpusTasks'>,
   body: Doc<'waterBodies'> | null,
+): Promise<(verb: CorpusVerb) => string | null> {
+  const locked = await taskLockRefusal(ctx, task);
+  if (locked !== null) return () => locked;
+  const gone = goneBecause(body);
+  if (gone !== null || body === null) return () => TASK_LEFT[gone ?? 'deleted'];
+  return (verb) => preconditionRefusal(verb, body);
+}
+
+/** Rule 1, then the task's own rungs, for one verb of the task's lane. */
+function laneVerbRefusal(
+  viewer: Doc<'profiles'>,
+  rest: (verb: CorpusVerb) => string | null,
   verb: CorpusVerb,
 ): string | null {
-  const refused = capabilityRefusal(viewer, CORPUS_VERB_CAPABILITY[verb]);
-  if (refused !== null) return refused;
-  if (task.status === 'decided') return DECIDED_REFUSAL;
-  if (body === null) return BODY_GONE;
-  return subjectRefusal(task, body) ?? preconditionRefusal(verb, body);
+  return capabilityRefusal(viewer, CORPUS_VERB_CAPABILITY[verb]) ?? rest(verb);
 }
 
 /**
  * The task's `can`: every verb its lane draws, each `null` or the write's refusal — in one order:
- * capability (D217) → decided (D283's lock) → the body merged away or removed → the verb's
- * preconditions. `body` is the task's, read by the caller (`null`: gone). Reads nothing itself;
- * `ctx` is the rule's, for the verbs whose preconditions will read (6b's).
+ * capability (D217) → the lock (D283: decided, or left) → the body merged away or removed → the
+ * verb's preconditions. `body` is the task's, read by the caller (`null`: gone). It reads the
+ * decider's profile for a decided task's lock, and nothing else.
  */
 export async function corpusCan(
-  _ctx: QueryCtx,
+  ctx: QueryCtx,
   viewer: Doc<'profiles'>,
   task: Doc<'corpusTasks'>,
   body: Doc<'waterBodies'> | null,
 ): Promise<CorpusCan> {
+  const rest = await taskRefusals(ctx, task, body);
   const can: CorpusCan = {};
-  for (const verb of CORPUS_LANE_VERBS[task.lane]) can[verb] = laneVerbRefusal(viewer, task, body, verb);
+  for (const verb of CORPUS_LANE_VERBS[task.lane]) can[verb] = laneVerbRefusal(viewer, rest, verb);
   return can;
 }
 
@@ -146,14 +138,14 @@ export async function corpusCan(
  * another lane first ({@link NOT_THIS_LANE}), then {@link corpusCan}'s answer for it.
  */
 export async function corpusVerbRefusal(
-  _ctx: QueryCtx,
+  ctx: QueryCtx,
   viewer: Doc<'profiles'>,
   task: Doc<'corpusTasks'>,
   body: Doc<'waterBodies'> | null,
   verb: CorpusVerb,
 ): Promise<string | null> {
   if (VERB_LANE[verb] !== task.lane) return NOT_THIS_LANE[VERB_LANE[verb]];
-  return laneVerbRefusal(viewer, task, body, verb);
+  return laneVerbRefusal(viewer, await taskRefusals(ctx, task, body), verb);
 }
 
 /** The write's side: refuse `verb` on `task` in the rule's words (a `ConvexError`, for a toast). */

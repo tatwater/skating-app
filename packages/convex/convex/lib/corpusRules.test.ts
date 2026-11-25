@@ -10,25 +10,26 @@ import type { QueryCtx } from '../_generated/server';
 import { DELETION_PENDING_MESSAGE } from './auth';
 import {
   ALREADY_SHOWN,
-  BODY_GONE,
-  BODY_MERGED,
-  BODY_REMOVED,
   CORPUS_LANE_VERBS,
   CORPUS_VERB_CAPABILITY,
   type CorpusVerb,
   corpusCan,
   corpusVerbRefusal,
-  NO_LONGER_ASKED,
   NO_OTHER_NAME,
   NOT_A_CATALOG_NAME,
   NOT_THIS_LANE,
   namePickRefusal,
-  QUESTION_CLOSED,
 } from './corpusRules';
-import { DECIDED_REFUSAL } from './inboxRules';
+import { TASK_DECIDED, TASK_LEFT } from './corpusTasks';
 
-// The rule reads nothing itself in 6a: its context is the verbs' to come.
-const ctx = {} as QueryCtx;
+// The rule reads one row: a decided task's decider, for the lock's sentence. Nothing else.
+const DECIDER = 'p9' as Id<'profiles'>;
+const ctx = {
+  db: { get: async (id: string) => (id === DECIDER ? { displayName: 'Casey Example' } : null) },
+} as unknown as QueryCtx;
+const LOCK = 'Decided by Casey Example · renamed';
+const decided = (lane: Doc<'corpusTasks'>['lane']) =>
+  task(lane, { status: 'decided', decidedByUserId: DECIDER, decision: 'renamed' });
 
 const viewer = (
   role: Doc<'profiles'>['role'],
@@ -98,8 +99,7 @@ describe('the rule’s order: the first that refuses answers', () => {
 
   test('1. the capability, in requireCapability’s words — before the lock and the body', async () => {
     const member = viewer('member');
-    const decided = task('nameConflicts', { status: 'decided' });
-    expect(await every(member, decided, null)).toEqual({
+    expect(await every(member, decided('nameConflicts'), null)).toEqual({
       pickName: 'Requires moderator role',
       keepName: 'Requires moderator role',
     });
@@ -111,34 +111,41 @@ describe('the rule’s order: the first that refuses answers', () => {
     });
   });
 
-  test('2. a decided task: the lock, before the body’s state', async () => {
-    const decided = task('classConflicts', { status: 'decided' });
-    expect(await every(viewer('admin'), decided, body({ removedAt: 1 }))).toEqual({
-      setClass: DECIDED_REFUSAL,
-      keepClass: DECIDED_REFUSAL,
+  test('2. a decided task: the lock’s own sentence, who and what, before the body’s state', async () => {
+    expect(await every(viewer('admin'), decided('classConflicts'), body({ removedAt: 1 }))).toEqual(
+      {
+        setClass: LOCK,
+        keepClass: LOCK,
+      },
+    );
+    // A decider since erased: the lock still holds, in its plain words.
+    const orphan = task('classConflicts', {
+      status: 'decided',
+      decidedByUserId: 'p0' as Id<'profiles'>,
+      decision: 'kept',
     });
+    expect((await every(viewer('admin'), orphan, body())).keepClass).toBe(TASK_DECIDED);
   });
 
-  test('3. the body gone, merged away or removed — merged before removed', async () => {
-    const mod = viewer('moderator');
-    const t = task('nameConflicts');
-    expect((await every(mod, t, null)).keepName).toBe(BODY_GONE);
-    expect((await every(mod, t, body({ dedupStatus: 'merged' }))).keepName).toBe(BODY_MERGED);
-    expect(
-      (await every(mod, t, body({ mergedIntoId: 'b2' as Id<'waterBodies'>, removedAt: 1 })))
-        .keepName,
-    ).toBe(BODY_MERGED);
-    expect((await every(mod, t, body({ removedAt: 1 }))).pickName).toBe(BODY_REMOVED);
-  });
-
-  test('3. then a task that left: the campaign stopped asking, or its body changed', async () => {
+  test('2. a task that left: why its question went away, whatever the body is now', async () => {
     const mod = viewer('moderator');
     const left = (leftBecause: Doc<'corpusTasks'>['leftBecause']) =>
       task('classConflicts', { status: 'left', leftBecause });
-    expect((await every(mod, left('notAsserted'), body())).keepClass).toBe(NO_LONGER_ASKED);
-    for (const why of ['merged', 'removed', 'deleted'] as const) {
-      expect((await every(mod, left(why), body())).setClass).toBe(QUESTION_CLOSED);
+    for (const why of ['notAsserted', 'merged', 'removed', 'deleted'] as const) {
+      expect((await every(mod, left(why), body())).setClass).toBe(TASK_LEFT[why]);
     }
+  });
+
+  test('3. an open task whose body is gone, merged away or removed — merged before removed', async () => {
+    const mod = viewer('moderator');
+    const t = task('nameConflicts');
+    expect((await every(mod, t, null)).keepName).toBe(TASK_LEFT.deleted);
+    expect((await every(mod, t, body({ dedupStatus: 'merged' }))).keepName).toBe(TASK_LEFT.merged);
+    expect(
+      (await every(mod, t, body({ mergedIntoId: 'b2' as Id<'waterBodies'>, removedAt: 1 })))
+        .keepName,
+    ).toBe(TASK_LEFT.merged);
+    expect((await every(mod, t, body({ removedAt: 1 }))).pickName).toBe(TASK_LEFT.removed);
   });
 
   test('4. Pick needs a catalog name that isn’t the one shown; Keep needs nothing', async () => {
@@ -172,7 +179,12 @@ describe('corpusVerbRefusal: the write’s question', () => {
   test('a verb of the lane answers exactly what corpusCan says of it', async () => {
     const cases: [Doc<'profiles'>, Doc<'corpusTasks'>, Doc<'waterBodies'> | null][] = [
       [viewer('member'), task('nameConflicts'), body()],
-      [viewer('moderator'), task('nameConflicts', { status: 'decided' }), body()],
+      [viewer('moderator'), decided('nameConflicts'), body()],
+      [
+        viewer('moderator'),
+        task('classConflicts', { status: 'left', leftBecause: 'merged' }),
+        body(),
+      ],
       [viewer('moderator'), task('classConflicts'), null],
       [viewer('admin'), task('classConflicts'), body({ removedAt: 1 })],
       [viewer('admin'), task('nameConflicts'), body({ nameClaims: [] })],

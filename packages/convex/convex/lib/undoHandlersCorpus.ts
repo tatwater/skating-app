@@ -42,7 +42,7 @@ import {
   writeAudit,
 } from './audit';
 import { hasCapability } from './auth';
-import { reopenTask } from './corpusTasks';
+import { goneBecause, reasonOfLane, reopenTask } from './corpusTasks';
 import { flagSubject } from './flagSubject';
 import {
   closeFlagsUnder,
@@ -1225,9 +1225,10 @@ export const SETTLE_ASKED_AGAIN = 'This question was asked again since; decide i
 export const SETTLE_CLOSED = 'This question has closed since, so there is nothing to reopen.';
 
 /**
- * Whether a settle still stands: its task decided by it, its body still recording it as settled,
- * and no open task asking the same question again. The offer's check (History, the toast); the
- * reopen itself is the writer's (`reopenTask`), which answers `'overtaken'` in the same cases.
+ * Whether a settle still stands: its task decided by it, its body still in the corpus and still
+ * recording this decision as the reason's settle, and no open task asking the same question again.
+ * The offer's check (History, the toast), case for case where the reopen itself (`reopenTask`, the
+ * writer's) answers `'none'` or `'overtaken'` — so History never offers an undo the run refuses.
  */
 export function settleStandsRefusal(
   row: Doc<'moderationActions'>,
@@ -1236,10 +1237,12 @@ export function settleStandsRefusal(
   askedAgain: boolean,
 ): string | null {
   if (task === null) return SETTLE_NOT_FOUND;
-  if (task.status !== 'decided') return SETTLE_CLOSED;
-  if (askedAgain) return SETTLE_ASKED_AGAIN;
-  const recorded = body?.reviewSettled?.some((s) => s.actionId === row._id) ?? false;
-  return recorded ? null : SETTLE_ASKED_AGAIN;
+  if (task.status !== 'decided' || body === null || goneBecause(body) !== null) {
+    return SETTLE_CLOSED;
+  }
+  const reason = reasonOfLane(task.lane);
+  const entry = (body.reviewSettled ?? []).find((s) => s.reason === reason);
+  return entry?.actionId !== row._id || askedAgain ? SETTLE_ASKED_AGAIN : null;
 }
 
 /**

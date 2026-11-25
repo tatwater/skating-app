@@ -1092,7 +1092,7 @@ describe('the refusals and the claims’ tokens, kept rather than tallied (B01-6
         osm: [
           feat('osm', 'way/m', {
             name: 'Marsh Pond',
-            cls: 'swampMarsh',
+            cls: 'wetland',
             token: 'name:pond',
             sourceToken: 'osm:wetland=marsh',
             polygon: shape,
@@ -1115,7 +1115,7 @@ describe('the refusals and the claims’ tokens, kept rather than tallied (B01-6
     );
     expect(claims).toEqual([
       { source: 'nhd', value: 'lakePond', token: 'nhd:fcode=39004', areaSqM: 1_250_000 },
-      { source: 'osm', value: 'swampMarsh', token: 'osm:wetland=marsh', areaSqM: 1_200_000 },
+      { source: 'osm', value: 'wetland', token: 'osm:wetland=marsh', areaSqM: 1_200_000 },
     ]);
     expect(result.bodies[0]?.classRefusals).toEqual([]);
   });

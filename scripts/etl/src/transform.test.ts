@@ -105,7 +105,7 @@ describe('toCanonicalBody: the claims and refusals on the wire (B01-6a)', () => 
     const record = toCanonicalBody({
       ...base,
       classClaims: [
-        { source: 'nhd', value: 'swampMarsh', token: 'nhd:fcode=46600', areaSqM: 28_000 },
+        { source: 'nhd', value: 'wetland', token: 'nhd:fcode=46600', areaSqM: 28_000 },
       ],
       nameClaims: [
         { source: 'nhd', value: 'Test Pond', sources: ['nhd', '3dhp'] },
@@ -113,7 +113,7 @@ describe('toCanonicalBody: the claims and refusals on the wire (B01-6a)', () => 
       ],
     });
     expect(record.classClaims).toEqual([
-      { source: 'nhd', value: 'swampMarsh', token: 'nhd:fcode=46600', areaSqM: 28_000 },
+      { source: 'nhd', value: 'wetland', token: 'nhd:fcode=46600', areaSqM: 28_000 },
     ]);
     expect(record.nameClaims).toEqual([
       { source: 'nhd', value: 'Test Pond', sources: ['nhd', '3dhp'] },

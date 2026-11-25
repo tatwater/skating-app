@@ -19,7 +19,7 @@
  * No `decideContested` in 6a: it lands with the Contested lane in 6b (D306).
  */
 
-import { CORPUS_REASON_LANE, type CorpusTaskLane, WATER_BODY_CLASSES } from '@skating/core';
+import { WATER_BODY_CLASSES } from '@skating/core';
 import { ConvexError, v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type MutationCtx, mutation } from './_generated/server';
@@ -35,10 +35,9 @@ import {
   assertCorpusVerb,
   CORPUS_VERB_CAPABILITY,
   type CorpusVerb,
-  NO_SUCH_TASK,
   namePickRefusal,
 } from './lib/corpusRules';
-import { settleReason, taskToDecide } from './lib/corpusTasks';
+import { NO_SUCH_TASK, reasonOfLane, settleReason } from './lib/corpusTasks';
 import { type CorpusDecisionResult, corpusDecisionResult } from './lib/decisionResult';
 import { literals } from './lib/validators';
 import { setClassImpl, setWaterBodyNameImpl } from './waterBodies';
@@ -59,7 +58,11 @@ async function actorFor(ctx: MutationCtx, verb: CorpusVerb): Promise<Doc<'profil
   }
 }
 
-/** The task and its body as they stand (`null`: the body is gone, which the rule refuses). */
+/**
+ * The task and its body as they stand (`null`: the body is gone, which the rule refuses). Read
+ * plainly rather than through `taskToDecide`, whose lock would answer before the capability: the
+ * rule's order is the capability first, and `settleReason` asks `taskToDecide` again as it writes.
+ */
 async function taskAndBody(
   ctx: MutationCtx,
   taskId: Id<'corpusTasks'>,
@@ -68,11 +71,6 @@ async function taskAndBody(
   if (!task) throw new ConvexError(NO_SUCH_TASK);
   return { task, body: await ctx.db.get(task.waterBodyId) };
 }
-
-/** The intake reason a lane's task settles (6a: one reason a lane). */
-const REASON_OF_LANE = Object.fromEntries(
-  Object.entries(CORPUS_REASON_LANE).map(([reason, lane]) => [lane, reason]),
-) as Record<CorpusTaskLane, keyof typeof CORPUS_REASON_LANE>;
 
 /**
  * The audit row the domain write wrote for `action` — the last such row, the write's own. Its impl
@@ -98,7 +96,6 @@ async function keep(
   task: Doc<'corpusTasks'>,
   body: Doc<'waterBodies'>,
 ): Promise<CorpusDecisionResult> {
-  const open = await taskToDecide(ctx, task._id);
   const actionId = await writeAudit(ctx, {
     actorId: actor._id,
     action: 'settle_review_reason',
@@ -111,13 +108,13 @@ async function keep(
     metadata: {
       taskId: task._id,
       lane: task.lane,
-      reviewReason: REASON_OF_LANE[task.lane],
+      reviewReason: reasonOfLane(task.lane),
       decision: 'kept',
       // What the settle takes off the body, for History; the undo puts it back through the writer.
       prev: { reviewReasons: body.reviewReasons ?? [], reviewReason: body.reviewReason ?? null },
     },
   });
-  await settleReason(ctx, { task: open, decision: 'kept', actionId, actorId: actor._id });
+  await settleReason(ctx, { task, decision: 'kept', actionId, actorId: actor._id });
   return corpusDecisionResult(ctx, actor._id, task._id, actionId);
 }
 
@@ -138,12 +135,11 @@ export const decideName = mutation({
     if (verb === 'keepName') return keep(ctx, actor, task, live);
     const picked = namePickRefusal(live, pick);
     if ('refused' in picked) throw new ConvexError(picked.refused);
-    const open = await taskToDecide(ctx, taskId);
     const { rows } = await capturingAudit(ctx, () =>
       setWaterBodyNameImpl(ctx, actor, { waterBodyId: live._id, name: picked.claim.value }),
     );
     const actionId = decisionRowOf(rows, 'set_water_body_name');
-    await settleReason(ctx, { task: open, decision: 'renamed', actionId, actorId: actor._id });
+    await settleReason(ctx, { task, decision: 'renamed', actionId, actorId: actor._id });
     return corpusDecisionResult(ctx, actor._id, taskId, actionId);
   },
 });
@@ -163,12 +159,11 @@ export const decideClass = mutation({
     // The rule refuses a body that is gone, so from here it stands.
     const live = body as Doc<'waterBodies'>;
     if (verb === 'keepClass') return keep(ctx, actor, task, live);
-    const open = await taskToDecide(ctx, taskId);
     const { rows } = await capturingAudit(ctx, () =>
       setClassImpl(ctx, actor, { waterBodyId: live._id, bodyClass }),
     );
     const actionId = decisionRowOf(rows, 'set_class');
-    await settleReason(ctx, { task: open, decision: 'reclassed', actionId, actorId: actor._id });
+    await settleReason(ctx, { task, decision: 'reclassed', actionId, actorId: actor._id });
     return corpusDecisionResult(ctx, actor._id, taskId, actionId);
   },
 });
