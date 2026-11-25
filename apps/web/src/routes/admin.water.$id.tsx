@@ -10,6 +10,7 @@ import {
   DEPTH_SOURCE_LABELS,
   type DepthSource,
   displayScore,
+  drawableMouth,
   formatDepthFeet,
   formatSeason,
   isShallowDepth,
@@ -191,19 +192,19 @@ function LakeEditor() {
               },
               subAreas: (subAreas ?? [])
                 .filter((s) => !s.removed)
-                .map((s) => ({
-                  _id: s._id,
-                  waterBodyId: body._id,
-                  name: s.name,
-                  polygon: s.polygon as GeoJSON.Geometry,
-                  centroid: s.centroid,
-                  // A stale mouth is not the bay's edge any more — drawing it would say it was. Nor,
-                  // until a moderator checks it, is the mouth of a bay whose old outline was kept
-                  // (D215): it describes the re-fit, not the edge it would be drawn on.
-                  ...(s.mouth && !s.mouthStale && s.mouthReview?.outcome !== 'kept'
-                    ? { mouth: s.mouth }
-                    : {}),
-                })),
+                .map((s) => {
+                  // Only a mouth that is still the bay's edge (`drawableMouth`: not stale, not a
+                  // kept outline's re-fit, D215).
+                  const mouth = drawableMouth(s);
+                  return {
+                    _id: s._id,
+                    waterBodyId: body._id,
+                    name: s.name,
+                    polygon: s.polygon as GeoJSON.Geometry,
+                    centroid: s.centroid,
+                    ...(mouth !== undefined ? { mouth } : {}),
+                  };
+                }),
               putIns: putIns ?? [],
               parkingAreas: access?.parking ?? [],
               samplePoints: body.weatherSamplePoints ?? [],

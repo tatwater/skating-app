@@ -1,4 +1,10 @@
-import { type LandmarkKind, pointInPolygon, representativePoint } from '@skating/core';
+import {
+  type LandmarkKind,
+  mouthLine,
+  pointInPolygon,
+  representativePoint,
+  type SubAreaMouth,
+} from '@skating/core';
 import { PLACE_KEY_LABELS } from '@/components/kit/map-marks';
 import type { BodyMapScene, LngLat, MapItem } from './mapDescriptors';
 
@@ -19,8 +25,11 @@ export interface BodyMapBaseInput {
     id: string;
     name: string;
     polygon: GeoJSON.Polygon | GeoJSON.MultiPolygon;
-    /** A chord bay's stored mouth: drawn as the line where the bay begins. */
-    mouth?: { a: Coord; b: Coord } | null;
+    /**
+     * A chord bay's stored mouth (one `drawableMouth` allows): drawn as the line where the bay
+     * begins, along its arc (`mouthLine`) — the edge the bay's own polygon closes on.
+     */
+    mouth?: SubAreaMouth | null;
   }[];
   landmarks: readonly {
     id: string;
@@ -122,7 +131,7 @@ export function bodyMapBase(input: BodyMapBaseInput): BodyMapScene {
         kind: 'line',
         id: `mouth:${bay.id}`,
         layer: 'bays',
-        path: [at(bay.mouth.a), at(bay.mouth.b)],
+        path: mouthLine(input.polygon, bay.mouth).map(at),
         style: 'mouth',
       });
     }

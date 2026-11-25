@@ -42,6 +42,8 @@ export interface ShapeBay {
   sub: string | null;
   /** Something about it waits on a person (a chord that wants a re-fit). */
   attention: string | null;
+  /** Whether it was cut by a chord across its mouth (*Move the mouth*), else *Draw the mouth*. */
+  hasMouth: boolean;
 }
 
 export interface ShapeBody {
@@ -174,6 +176,7 @@ export function shapeBays(
           : s.mouthReview !== undefined
             ? 'A re-fit waits on a person'
             : null,
+      hasMouth: s.mouth !== undefined,
     }));
 }
 

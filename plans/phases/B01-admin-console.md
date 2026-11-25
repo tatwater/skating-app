@@ -1439,7 +1439,8 @@ around:
 - An undone dormancy restarts its clock; a body restore clears any stored dormancy.
 - A sub-area redraw's undo puts the outline and mouth back but not `mouthStale`, `mouthReview`,
   `systemDelistReason` or the cleared derived depth; landmarks the redraw retired stay retired.
-- Undoing a sub-area create does not reopen the request it answered or restore a promoted landmark.
+- Undoing a sub-area create does not reopen the request it answered. It restores the landmarks the
+  bay retired (B01-6a, founder call 2026-11-25).
 - Undoing a hazard merge also keeps the pair from auto-merging again (the unmerge verb's rule).
 - Rows the engine can't see change — an author's own retraction, an ETL re-route — are checked when
   the undo runs, not when History draws it.
@@ -12944,6 +12945,125 @@ These are in the register, *The Inbox wave's rows* (In1–In31), each with who c
 - task modes (the old editor's last pieces).
 
 **For B04:** a report's photo cap, and the phone's cached photo.
+
+### The map's tools (B01-6, the design)
+
+*Designed 2026-11-25 against `origin/main` at `28a6934c`; B01-6a built the same day (below).* The wave after the Inbox
+(founder call 3, the register's Bo23–Bo25), scoped by the founder's test pass: the Shape tab's
+*Draw by chord* sent him to the old editor, and every action should be done in the Body console.
+D299 records the calls.
+
+#### The founder's calls (2026-11-25)
+
+1. **Drawing and placing only.** The non-map edits (aliases, class, depth, survey filing, the imagery
+   override, posted rules) and deleting the old editor are a later wave. The Body console's link to
+   the old editor stays for them.
+2. **Hazards are marked only from the skater apps.** No *Mark a hazard* in the console; the Hazards
+   tab's *Not available yet* button comes out.
+3. **A landmark drawn as a bay goes away**, in the same write (D202's `promoteLandmarkId`).
+
+#### What exists today
+
+| Body console action | Today | Old editor | Server write (capability) | Undo | Board |
+|---|---|---|---|---|---|
+| Shape: a bay by chord, freehand or paste | hands off to the old editor | `SubAreaTool` | `subAreas.createFromChord`, `create` (`body.shape`) | `create_sub_area` | `body-v5.html` (bay mode, the task) |
+| Shape: redraw a bay, edit its mouth | absent | `SubAreaTool` | `subAreas.redraw`, `updateChord` | `redraw_sub_area` | none |
+| Places: drop or move a landmark | *Not available yet* | `LandmarkTool` | `landmarks.create`, `update` (`body.places`) | `create_landmark`, `edit_landmark` | `body-tab-places-v5.js` (Drop); `body-tabs-v5.js` (landmark mode, move) |
+| Places: place an emailed name or a skater's proposal | *Not available yet* | `LandmarkTool` | `landmarks.create` with its ask | `create_landmark` | the Drop board's card |
+| Places: a landmark drawn as a bay | *Not available yet* | none | `createFromChord` / `create` with `promoteLandmarkId` | `create_sub_area` | bay mode |
+| Access: place a put-in | *Not available yet* | `PutInTool` | `putIns.setOfficial` (`body.access`) | `set_put_in` | none (parking mode's pattern) |
+| Access: place a lot | *Not available yet* | `AccessTool` | `accessPoints.setOfficialParking` | **none** | `body-tabs-v5.js` (parking mode) |
+| Access: link a lot to a put-in | *Not available yet* | `AccessTool` | `accessPoints.setPutInAccess` | **none** | `body-tab-access-v5.js` (Link a Lot) |
+| Hazards: draw a known feature | *Not available yet* | `BodyFeatureTool` | `bodyFeatures.create` (`corpus.preIce`) | `promote_body_feature` | none |
+| Hazards: redraw a feature's shape (Bo25) | *Not available yet* | none | `bodyFeatures.updateShape` | `update_body_feature_shape` | none |
+| Hazards: mark a hazard | *Not available yet* | none | none | — | out (call 2) |
+| Water: weather sample points | read only | `SamplePointTool` | `waterBodies.setWeatherSamplePoints` (`body.water`) | `set_weather_sample_points` | `body-tabs-v5.js` (sample points) |
+| Inbox: *Draw in Body →* | opens the old editor | — | — | — | `roundtrip-v5.js` (four frames) |
+
+The Hazards tab's own comment says *Add a feature* and *Edit shape* have no writer; both writers exist
+(B01-3d built `updateShape`), so the comment is stale.
+
+#### The design
+
+- **One map tool at a time, owned by the frame.** The tab contract (`frame/tabRegistry.tsx`) says a
+  tab never touches the map. It stays true: a tab *asks* the frame for a tool (a point, a chord, a
+  ring, a ring's vertices to edit, a set of points) and is handed the result; the frame's `BodyMap`
+  attaches the engine to its own MapLibre instance. Arming a tool clears any other, as the old
+  editor's one `placing` slot does, so no shape on screen has an ambiguous owner. Esc, or leaving the
+  tab or the body, disarms it.
+- **The engines are the old editor's**, already written against a slice of the map:
+  `lib/chordDraw.ts` (two shore points, a side, a sagitta handle, the preview computed by core's
+  own `chordSubArea`) and `lib/polygonDraw.ts` (terra-draw, lazy-loaded; draw and vertex edit). A
+  point tool is a click, snapped where the old tool snaps (a put-in to the shore, a lot nowhere).
+- **The boards' chrome**: the mode banner on the map (*Bay mode*, *Landmark mode*, *Parking mode*,
+  its step and Esc), the step card listing what is placed and what is next, and the tab's own
+  block or inset card holding the fields and *Save*. Where no board draws a tool (a put-in, a known
+  feature, a bay redraw), it is built from the drawn ones' pattern and listed for the look pass.
+- **Writes are the existing server functions**, announced to Undo. Two have no undo, and D226 wants
+  one for every action: placing a lot (`set_parking_area`) undoes by removing a lot it created, and
+  refuses when a put-in has been linked to it since; linking a lot (`setPutInAccess`) undoes to the
+  link it replaced, kept in its audit row. Lot editing and removal stay Bo22's.
+- **Task arrival.** The Inbox's *Draw in Body →* opens `/admin/body/$id?tab=shape&task=<item>` (or
+  `?tab=places` for a landmark ask): the tool armed, the asked name filled, the ask shown in the
+  task block; *Save* sends the ask's id (`createFromChord`'s and `create`'s `requestId`, which
+  approves it), and the console goes back to the Inbox item.
+
+#### The PRs
+
+- **B01-6a** — the frame's map tool contract; Shape: bays by chord, freehand and paste, a bay
+  redrawn and its mouth edited; a landmark drawn as a bay; task arrival from the Inbox; *Mark a
+  hazard* out.
+- **B01-6b** — Places: drop and move, an emailed name or proposal placed; Access: a put-in, a lot,
+  a link, and the two undos on the server; Hazards: a known feature drawn and its shape redrawn;
+  Water: the sample points.
+
+#### B01-6a, as built (2026-11-25)
+
+- **The contract.** A tab claims the map through `frame/mapTool.tsx` (`useClaimMapTool`): the engine
+  (`chord`, `ring`, or `none` for a paste), the mode bar's words, the draft and a focus; the frame's
+  `MapToolProvider` holds one claim and binds Esc. `map/useMapToolEngine.ts` attaches the old
+  editor's engines (`lib/chordDraw`, `lib/polygonDraw`) to the console's MapLibre instance once per
+  session and per map, draws the draft under them, and frames the focus once. The mode bar is the
+  kit's `MapModeBar`, drawn by `BodyMapPane`'s new `tool` prop. The tab contract's "a tab never
+  touches the map" holds.
+- **Shape.** *Add a bay*'s three ways open the bay task (`tabs/shape/BayTask.tsx`, the board's task
+  block), over the tab's blocks; a lit bay offers *Redraw* (R) and *Draw the mouth* / *Move the
+  mouth* (M). The draft is `tabs/shape/bayDraft.ts` (pure but for its session counter); the wiring
+  is `tabs/shape/useBayTask.tsx`. Saves: `createFromChord` or `create` (with the ask and the
+  landmark), `redraw`, `updateChord`, each announced to Undo; the saved bay is lit.
+- **Arrivals.** `?task=<request id>` (an Inbox bay ask: name, spellings and point from
+  `openBayRequestsForBody`; the save approves it and goes back to the Inbox item) and
+  `?promote=<landmark id>` (Places' *Draw as a bay*, for a viewer with `body.shape` and
+  `body.places`). Each is taken once and dropped from the address; an ask no longer open says so in
+  a toast.
+- **The Inbox.** A bay ask's *Draw in Body →* opens the console in the same tab; a landmark ask's
+  still opens the old editor in a new tab, until B01-6b.
+- **Hazards.** *Mark a hazard* is gone (call 2).
+- **Two server changes, widen-only:** `subAreas.create` takes `requestId` and approves the ask as
+  `createFromChord` does (a traced or pasted bay can answer an ask); `openBayRequestsForBody`'s rows
+  carry `requestIds`, every ask in the group, so an Inbox item's own ask finds its row. On dev:
+  `convex dev --once`, nothing to backfill.
+- **Found and fixed (founder call 2026-11-25):** undoing a bay drawn from a landmark removed the bay
+  and left the landmark retired, so the place left the map until someone restored it by hand.
+  `create_sub_area`'s undo now restores, through the landmark's own restore, every landmark the bay
+  retired when it was drawn (promoted from Places, or claimed by its name) and still holds retired —
+  one removed since stays removed; one another live bay names, or a lake at its cap, stays retired
+  and the bay's undo still lands. Each restore names the bay, so re-doing the bay (undoing its
+  removal) retires them again, and undoing that brings them back. The request it answered still
+  isn't reopened.
+- **Owed, small:** a bay traced or pasted for an ask someone decided meanwhile doesn't say the ask
+  kept its other answer — `subAreas.create` returns only the id, where `createFromChord` returns the
+  ask's outcome too. Widening `create`'s return touches the old editor's callers; left for 6b.
+- **Owed:** the look pass on the boards no board draws (the redraw, the mouth, the paste, the lit
+  bay's tools); a device-free check against dev of the chord and freehand on a real body.
+
+#### Open
+
+- **The task round trip's reach.** The board's frames 2–4 draw a queue walk: *Task 2 of 4* with
+  ‹ › in the top bar, *Save and approve 3* for the similar asks together, and an automatic return to
+  the queue after two seconds with *Stay*. The plan above builds the arrival and the return to the
+  one item; the counter, ‹ › and approving similar asks together are Bo23's remainder (founder
+  call 2026-11-25: later).
 
 ### What B01 still owes (the register, 2026-11-17)
 

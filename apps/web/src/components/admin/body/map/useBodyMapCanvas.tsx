@@ -49,6 +49,8 @@ export interface BodyMapCanvas {
   zoomOut: () => void;
   atMinZoom: boolean;
   atMaxZoom: boolean;
+  /** The live map, or `null` while it is down: what a tool attaches to (`useMapToolEngine`). */
+  liveMap: () => maplibregl.Map | null;
 }
 
 /** A box `factor` of its own size larger on each side: how far the camera may wander. */
@@ -178,6 +180,7 @@ export function useBodyMapCanvas({
     zoomOut,
     atMinZoom: map !== null && zoom <= map.getMinZoom() + 1e-6,
     atMaxZoom: map !== null && zoom >= map.getMaxZoom() - 1e-6,
+    liveMap,
   };
 }
 

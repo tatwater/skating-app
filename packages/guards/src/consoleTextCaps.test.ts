@@ -55,6 +55,10 @@ const NO_CAPPED_WRITE: Record<string, string> = {
     'a search for the body to merge into: a read, and the server never refuses its length',
   'components/admin/bodies/ListTools.tsx :: Find a body':
     'a search: the server cuts a long one to its length, never refuses it',
+  'components/admin/body/tabs/shape/BayTask.tsx :: #2':
+    'a bay’s other spellings, comma-separated: the server holds each one to the name’s cap and says so; the field’s own length is no write’s',
+  'components/admin/body/tabs/shape/BayTask.tsx :: #3':
+    'a pasted GeoJSON shape: parsed here, and the write is a geometry, never this text',
   'components/admin/inbox/list/LaneFacets.tsx :: #1':
     'the filter menu’s search for a body or a person: a read, never refused for its length',
 };

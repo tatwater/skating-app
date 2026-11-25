@@ -20,9 +20,11 @@ import {
   chordRederivationPlan,
   chordSubArea,
   clampSagitta,
+  drawableMouth,
   MAX_SAGITTA_RATIO,
   maxSagittaM,
   mouthArcSide,
+  mouthLine,
   onCandidateWater,
   rederiveChordSubArea,
   type SubAreaMouth,
@@ -459,6 +461,40 @@ describe('the arc', () => {
     const segment =
       R * R * Math.acos((R - 150) / R) - (R - 150) * Math.sqrt(2 * R * 150 - 150 * 150);
     expectArea(out - straight, segment);
+  });
+});
+
+describe('a stored mouth on a map', () => {
+  it('draws along the arc the bay closes on, never the bare chord across it', () => {
+    const mouth = { ...BAY_MOUTH, sagittaM: 150 };
+    const line = mouthLine(LAKE, mouth);
+    expect(line[0]).toEqual(mouth.a);
+    expect(line[line.length - 1]).toEqual(mouth.b);
+    // Bowed out of the bay into open water, through the apex 150 m south of the chord.
+    expect(Math.min(...line.map((p) => haversineMeters(p, at(2000, 2850))))).toBeLessThan(5);
+    // Every point of it is on the bay's own edge: the line and the polygon coincide.
+    const bay = chordSubArea(LAKE, mouth);
+    if (!bay.ok) throw new Error(bay.reason);
+    if (bay.polygon.type !== 'Polygon') throw new Error('one ring expected');
+    const ring = bay.polygon.coordinates[0] ?? [];
+    for (const p of line) {
+      const nearest = Math.min(
+        ...ring.map(([lng = 0, lat = 0]) => haversineMeters(p, { lat, lng })),
+      );
+      expect(nearest).toBeLessThan(1);
+    }
+    // A straight mouth is the chord itself.
+    expect(mouthLine(LAKE, BAY_MOUTH)).toEqual([BAY_MOUTH.a, BAY_MOUTH.b]);
+  });
+
+  it('draws no mouth that is stale, nor one whose bay kept its old outline', () => {
+    expect(drawableMouth({})).toBeUndefined();
+    expect(drawableMouth({ mouth: BAY_MOUTH })).toBe(BAY_MOUTH);
+    expect(drawableMouth({ mouth: BAY_MOUTH, mouthStale: 'islet' })).toBeUndefined();
+    expect(drawableMouth({ mouth: BAY_MOUTH, mouthReview: { outcome: 'kept' } })).toBeUndefined();
+    expect(drawableMouth({ mouth: BAY_MOUTH, mouthReview: { outcome: 'refitted' } })).toBe(
+      BAY_MOUTH,
+    );
   });
 });
 

@@ -44,7 +44,6 @@ const meta = {
     onRetry: fn(),
     onOpenRecurrence: fn(),
     onDemote: fn(async () => true),
-    onMarkHazard: fn() as HazardsTabViewProps['onMarkHazard'],
     onAddFeature: fn() as HazardsTabViewProps['onAddFeature'],
     onEditShape: fn() as HazardsTabViewProps['onEditShape'],
     lit: null,
@@ -75,7 +74,7 @@ function Inspector({ children }: { children: ReactNode }) {
 
 const quad = (canvas: HTMLElement) => must(canvas.querySelector<HTMLElement>('[data-theme-scope]'));
 
-/** The board: nothing marked yet, the two winters, two known features, Mark a hazard. */
+/** The board: nothing marked yet, the two winters, two known features; no Mark a hazard (D299). */
 export const Default: Story = {
   play: async ({ canvasElement }) => {
     const q = quad(canvasElement);
@@ -100,7 +99,8 @@ export const Default: Story = {
     await expect(getComputedStyle(kick).color).toEqual(
       sameColor(computedColor(kick, 'var(--bad)')),
     );
-    await expect(within(q).getByRole('button', { name: /Mark a hazard/ })).toBeVisible();
+    // Hazards are marked from the skater apps alone (D299): the console offers no way to.
+    await expect(within(q).queryByRole('button', { name: /Mark a hazard/ })).toBeNull();
   },
 };
 
@@ -139,13 +139,12 @@ export const PastWinter: Story = {
  */
 export const Wired: Story = {
   args: {
-    onMarkHazard: UNAVAILABLE,
     onAddFeature: UNAVAILABLE,
     onEditShape: UNAVAILABLE,
   },
   play: async ({ canvasElement }) => {
     const q = within(quad(canvasElement));
-    await expect(q.getByRole('button', { name: /Mark a hazard/ })).toHaveAttribute(
+    await expect(q.getByRole('button', { name: /Add a feature/ })).toHaveAttribute(
       'aria-disabled',
       'true',
     );

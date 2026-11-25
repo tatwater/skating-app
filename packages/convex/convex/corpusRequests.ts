@@ -833,8 +833,15 @@ export const closeSiblings = internalMutation({
  * lake has more open bay asks than the read takes.
  */
 export const openBayRequestsForBody = query({
-  args: { waterBodyId: v.id('waterBodies') },
-  handler: async (ctx, { waterBodyId: requested }) => {
+  args: {
+    waterBodyId: v.id('waterBodies'),
+    /**
+     * An ask the reader arrived for (the Inbox's *Draw in Body →*, B01-6a): read by its id when the
+     * bounded read leaves it out, so an open ask past the first {@link QUEUE_CAP} still opens.
+     */
+    including: v.optional(v.id('waterBodyRequests')),
+  },
+  handler: async (ctx, { waterBodyId: requested, including }) => {
     await requireCapability(ctx, 'body.read');
     // A merged-away id reads its survivor's (a merge moves the asks).
     const body = await resolveSurvivor(ctx, requested);
@@ -847,10 +854,23 @@ export const openBayRequestsForBody = query({
       )
       .take(QUEUE_CAP + 1);
     const rows = read.slice(0, QUEUE_CAP);
+    if (including !== undefined && !rows.some((r) => r._id === including)) {
+      const asked = await ctx.db.get(including);
+      if (
+        asked !== null &&
+        asked.waterBodyId === waterBodyId &&
+        asked.kind === 'name_bay' &&
+        asked.status === 'open'
+      ) {
+        rows.push(asked);
+      }
+    }
     const byKey = new Map<
       string,
       {
         requestId: Id<'waterBodyRequests'>;
+        /** Every open ask in the group, so an Inbox item's own ask finds its row (B01-6a). */
+        requestIds: Id<'waterBodyRequests'>[];
         name: string;
         aliases: string[];
         /** Where the bay is, when someone said — absent for an ask filed from the lake's drawer. */
@@ -869,6 +889,7 @@ export const openBayRequestsForBody = query({
       const entry = byKey.get(key);
       if (entry) {
         entry.askers += 1;
+        entry.requestIds.push(r._id);
         if (r.note) entry.notes.push(r.note);
         for (const alias of r.aliases ?? [])
           if (!entry.aliases.includes(alias)) entry.aliases.push(alias);
@@ -877,6 +898,7 @@ export const openBayRequestsForBody = query({
       }
       byKey.set(key, {
         requestId: r._id,
+        requestIds: [r._id],
         name: r.name ?? '',
         aliases: [...(r.aliases ?? [])],
         ...(pointed ? { coord: r.coord } : {}),

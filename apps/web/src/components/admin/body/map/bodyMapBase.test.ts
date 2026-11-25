@@ -1,11 +1,31 @@
+import { mouthLine } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-
 import { MASCOMA_BASE_INPUT } from '../frame/bodyFixtures';
 import { MASCOMA_NORTH, MASCOMA_SOUTH } from '../frame/mascomaFixtures';
 import { basinLabel, bodyMapBase } from './bodyMapBase';
 
 describe('bodyMapBase', () => {
+  it('draws a chord bay’s mouth along its arc, never the straight chord under it', () => {
+    const mouth = {
+      a: { lat: 43.64, lng: -72.16 },
+      b: { lat: 43.64, lng: -72.14 },
+      side: { lat: 43.645, lng: -72.15 },
+      sagittaM: 300,
+    };
+    const scene = bodyMapBase({
+      ...MASCOMA_BASE_INPUT,
+      bays: [{ id: 'cove', name: 'Cove', polygon: MASCOMA_NORTH, mouth }],
+    });
+    const line = scene.items.find((i) => i.id === 'mouth:cove');
+    const path = line?.kind === 'line' ? line.path : [];
+    expect(path).toEqual(mouthLine(MASCOMA_BASE_INPUT.polygon, mouth).map((p) => [p.lng, p.lat]));
+    // An arc, from a to b: more than the chord's two ends.
+    expect(path.length).toBeGreaterThan(2);
+    expect(path[0]).toEqual([mouth.a.lng, mouth.a.lat]);
+    expect(path.at(-1)).toEqual([mouth.b.lng, mouth.b.lat]);
+  });
+
   it('addresses every item the way ?lit= does, and files it under its layer', () => {
     const scene = bodyMapBase({
       ...MASCOMA_BASE_INPUT,
@@ -14,7 +34,12 @@ describe('bodyMapBase', () => {
           id: 'bay-north',
           name: 'Mascoma North',
           polygon: MASCOMA_NORTH,
-          mouth: { a: { lat: 1, lng: 2 }, b: { lat: 3, lng: 4 } },
+          mouth: {
+            a: { lat: 1, lng: 2 },
+            b: { lat: 3, lng: 4 },
+            side: { lat: 2, lng: 4 },
+            sagittaM: 0,
+          },
         },
       ],
       samplePoints: [{ lat: 43.62, lng: -72.15 }],

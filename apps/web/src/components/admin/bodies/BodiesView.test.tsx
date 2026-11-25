@@ -221,6 +221,29 @@ describe('the keyboard', () => {
     expect(grid()).toHaveFocus();
   });
 
+  it('opens the body with one ⏎ on the row already open in the preview', async () => {
+    const spy = vi.fn();
+    const onOpenBody = vi.fn();
+    render(<Harness spy={spy} onOpenBody={onOpenBody} />);
+    // Clicked: the preview shows it, focus stays in the rows.
+    await userEvent.click(screen.getByText('Crystal Lake'));
+    await userEvent.keyboard('{Enter}');
+    expect(onOpenBody).not.toHaveBeenCalled();
+    // Crystal isn't the harness's previewable body: ⏎ only moved focus to its (empty) preview.
+    act(() => grid().focus());
+    await userEvent.keyboard('{Home}');
+    await userEvent.click(screen.getByText('Mascoma Lake'));
+    await userEvent.keyboard('{Enter}');
+    expect(onOpenBody).toHaveBeenCalledOnce();
+    expect(onOpenBody).toHaveBeenCalledWith('mascoma-lake');
+    // Another row under the cursor is opened in the preview first, as ever.
+    onOpenBody.mockClear();
+    act(() => grid().focus());
+    await userEvent.keyboard('{ArrowDown}{Enter}');
+    expect(onOpenBody).not.toHaveBeenCalled();
+    expect(screen.getByRole('region', { name: 'Preview' })).toHaveFocus();
+  });
+
   it('types ahead by name, a letter again cycling; G and ? pass through', async () => {
     render(<Harness />);
     act(() => grid().focus());
@@ -458,6 +481,73 @@ describe('the search', () => {
     ).toBeInTheDocument();
     // The group's divider says the same floor, never "50" as a total.
     expect(document.querySelector('[data-slot=table-group-count]')).toHaveTextContent(/^50\+$/);
+  });
+
+  it('offers the rest of a standing’s matches in its own list, the search kept', async () => {
+    const [dormant] = LIST_SEARCH.others ?? [];
+    if (dormant === undefined) throw new Error('fixture');
+    const spy = vi.fn();
+    render(
+      <Harness
+        spy={spy}
+        initial={queryOf({ q: 'mor', state: 'VT', size: '1000-up' })}
+        list={{
+          ...LIST_SEARCH,
+          others: [
+            {
+              ...dormant,
+              count: 26,
+              more: [{ lane: 'inactive', count: 23, capped: false }],
+            },
+          ],
+        }}
+      />,
+    );
+    const more = document.querySelectorAll('[data-slot=bodies-more]');
+    expect(more).toHaveLength(1);
+    // Under the group's own rows, at the group's end.
+    expect(more[0]?.previousElementSibling).toHaveTextContent('Morrison Lake');
+    await userEvent.click(screen.getByRole('button', { name: /See all 23 in Dormant · inactive/ }));
+    const next = spy.mock.lastCall?.[0] as BodiesQuery;
+    expect(next.lane.id).toBe('inactive');
+    expect(next).toMatchObject({ q: 'mor', state: 'VT', facets: {}, sort: { column: 'match' } });
+  });
+
+  it('presses *See all* from the keyboard, never the row under the cursor', async () => {
+    const [dormant] = LIST_SEARCH.others ?? [];
+    if (dormant === undefined) throw new Error('fixture');
+    const spy = vi.fn();
+    render(
+      <Harness
+        spy={spy}
+        initial={queryOf({ q: 'mor' })}
+        list={{
+          ...LIST_SEARCH,
+          others: [{ ...dormant, more: [{ lane: 'inactive', count: 23, capped: false }] }],
+        }}
+      />,
+    );
+    const seeAll = screen.getByRole('button', { name: /See all 23 in Dormant · inactive/ });
+    act(() => seeAll.focus());
+    await userEvent.keyboard('{Enter}');
+    const next = spy.mock.lastCall?.[0] as BodiesQuery;
+    expect(next.lane.id).toBe('inactive');
+    expect(next.bodyId).toBeNull();
+  });
+
+  it('ends the list on the lane’s own rows, never the other standings’', () => {
+    render(
+      <Harness initial={queryOf({ q: 'mor' })} list={{ ...LIST_SEARCH, rows: [], total: null }} />,
+    );
+    // Four dormant matches drawn, none of them this lane's.
+    expect(document.querySelector('[data-slot=bodies-end]')).toHaveTextContent(
+      'Nothing here matches “mor”',
+    );
+  });
+
+  it('counts the lane’s own rows at the end when no total is read', () => {
+    render(<Harness initial={queryOf({ q: 'mor' })} list={{ ...LIST_SEARCH, total: null }} />);
+    expect(document.querySelector('[data-slot=bodies-end]')).toHaveTextContent(/^All 2$/);
   });
 
   it('draws no other-standing group and no tally while no read gives the other standings', () => {

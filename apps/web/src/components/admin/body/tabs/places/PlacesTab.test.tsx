@@ -47,6 +47,11 @@ vi.mock('@/lib/useRole', () => ({
 }));
 vi.mock('../../../shell/undo', () => ({ useUndo: () => ({ announce: mocks.announce }) }));
 const toasts = vi.hoisted(() => [] as unknown[]);
+const router = vi.hoisted(() => ({ navigate: vi.fn() }));
+vi.mock('@tanstack/react-router', async (original) => ({
+  ...(await original<typeof import('@tanstack/react-router')>()),
+  useNavigate: () => router.navigate,
+}));
 vi.mock('@/components/kit/toast', async (original) => ({
   ...(await original<typeof import('@/components/kit/toast')>()),
   toast: (t: unknown) => toasts.push(t),
@@ -77,6 +82,7 @@ beforeEach(() => {
   mocks.roleLoading = false;
   mocks.gate = null;
   mocks.server = null;
+  router.navigate.mockClear();
   toasts.length = 0;
   const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
     mocks.results.set(getFunctionName(ref), value);
@@ -292,6 +298,55 @@ describe('PlacesTab', () => {
     render(<PlacesTab bodyId="wb1" lit="landmark:lm-mod" />);
     const source = screen.getByText('A moderator').closest('span') as HTMLElement;
     expect(source).toHaveTextContent('A moderatorMODERATOR');
+  });
+
+  it('draws a bay-shaped landmark as a bay: the Shape tab’s task, the landmark named, the way back kept', async () => {
+    mocks.can = new Set([...ALL, 'body.shape']);
+    const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
+      mocks.results.set(getFunctionName(ref), value);
+    set(api.landmarks.listForEditor, [
+      {
+        _id: 'lm-cove',
+        name: 'Shaker cove',
+        kind: 'bay',
+        point: { lat: 43.6312, lng: -72.1575 },
+        aliases: [],
+        source: 'moderator',
+        externalIds: [],
+      },
+    ]);
+    render(<PlacesTab bodyId="wb1" lit="landmark:lm-cove" />);
+    await userEvent.click(screen.getByRole('button', { name: /Draw as a bay/ }));
+    expect(router.navigate).toHaveBeenCalledTimes(1);
+    const [opts] = router.navigate.mock.calls[0] ?? [];
+    const { search } = opts as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(
+      search({ tab: 'places', lit: 'landmark:lm-cove', from: '/admin/corpus?lane=active' }),
+    ).toEqual({ promote: 'lm-cove', from: '/admin/corpus?lane=active' });
+    expect(mocks.calls).toEqual([]);
+  });
+
+  it('a viewer who can’t draw bays is told Draw as a bay isn’t theirs, and nothing moves', async () => {
+    const set = (ref: Parameters<typeof getFunctionName>[0], value: unknown) =>
+      mocks.results.set(getFunctionName(ref), value);
+    set(api.landmarks.listForEditor, [
+      {
+        _id: 'lm-cove',
+        name: 'Shaker cove',
+        kind: 'bay',
+        point: { lat: 43.6312, lng: -72.1575 },
+        aliases: [],
+        source: 'moderator',
+        externalIds: [],
+      },
+    ]);
+    render(<PlacesTab bodyId="wb1" lit="landmark:lm-cove" />);
+    expect(screen.getByRole('button', { name: /Draw as a bay/ })).toHaveAttribute(
+      'data-unavailable',
+    );
+    expect(router.navigate).not.toHaveBeenCalled();
   });
 
   it('draws no lever a viewer without the capabilities holds, and no map tool', () => {

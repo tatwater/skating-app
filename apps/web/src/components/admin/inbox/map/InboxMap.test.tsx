@@ -183,6 +183,7 @@ describe('the live embed', () => {
           zoomOut: () => {},
           atMinZoom: false,
           atMaxZoom: true,
+          liveMap: () => null,
         };
       },
     }));

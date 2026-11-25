@@ -148,7 +148,13 @@ export function ClaimWeather({
                     </span>
                   ),
                 })}
-                className={cell.value === null ? '[&_[data-slot=value]]:text-row' : undefined}
+                // A missing figure is said in words, a step down, and wraps in its cell: a figure
+                // never breaks, but *Too much thaw in the last 60 days for the estimate* has to.
+                className={
+                  cell.value === null
+                    ? '[&_[data-slot=value]]:text-row [&_[data-slot=value]]:leading-list [&_[data-slot=value]]:whitespace-normal'
+                    : undefined
+                }
               />
             ))}
           </StatGrid>

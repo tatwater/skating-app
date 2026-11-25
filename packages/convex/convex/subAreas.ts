@@ -1041,6 +1041,12 @@ export const create = mutation({
     /** The drawn outline. Clipped to the parent before storage — never stored as supplied. */
     polygon: geoJson,
     curatedBoost: v.optional(v.number()),
+    /**
+     * The `name_bay` ask this bay answers (B01-6a): approved in the same transaction, with every
+     * open ask of the same bay, as `createFromChord`'s — a bay traced or pasted answers an ask as
+     * well as one cut by a chord.
+     */
+    requestId: v.optional(v.id('waterBodyRequests')),
     /** The landmark this bay is promoted from (D202) — retired in the same transaction. */
     promoteLandmarkId: v.optional(v.id('bodyLandmarks')),
   },
@@ -1075,8 +1081,12 @@ export const create = mutation({
         via: 'drawn',
         clipped: geometry.clipped,
         retainedFraction: geometry.retainedFraction,
+        ...(args.requestId !== undefined ? { requestId: args.requestId } : {}),
       },
     );
+    if (args.requestId !== undefined) {
+      await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
+    }
     if (args.promoteLandmarkId !== undefined) {
       await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
     }

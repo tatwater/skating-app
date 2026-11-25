@@ -13,6 +13,17 @@ export const OTHERS_UNFILTERED = ' (other standings unfiltered)';
 /** The other standings' read failed: said in the groups' place, with Try again. */
 export const OTHERS_FAILED = 'Other standings couldn’t be checked';
 
+/**
+ * The way from a group's best matches to all of them, in their lane's own list: "See all 26 in
+ * Dormant · inactive" (the lane by its sidebar words; "50+" when the count is a floor).
+ */
+export function seeAllWords(count: string, laneLabel: string): string {
+  return `See all ${count} in ${laneLabel}`;
+}
+
+/** The list's end under a search this lane has no match for, while other standings do. */
+export const NOTHING_HERE_MATCHES = (q: string) => `Nothing here matches “${q}”`;
+
 /** A body opened here that the read gave no name for (a read from before it named them). */
 export const UNNAMED_OPENED = 'A body opened here';
 

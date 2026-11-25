@@ -594,6 +594,31 @@ export function mouthArcSide(parent: Polygon | MultiPolygon, mouth: SubAreaMouth
   return regionSideAt(pick.a, pick.b, pick.polygon) ?? mouth.side;
 }
 
+/**
+ * **A stored mouth as a map draws it** — the line where a chord bay begins, `a` to `b` along the
+ * arc of its sagitta (a straight chord when the sagitta is 0), bowed the way the derivation judges
+ * "out" (`mouthArcSide`). The bay's own polygon closes along this same arc, so the two coincide;
+ * drawing the bare chord instead puts a second, straight line across the water.
+ */
+export function mouthLine(parent: Polygon | MultiPolygon, mouth: SubAreaMouth): LatLng[] {
+  return chordArc(mouth.a, mouth.b, mouthArcSide(parent, mouth), mouth.sagittaM);
+}
+
+/**
+ * The mouth a map may draw as a bay's edge, or `undefined`. A **stale** mouth (a re-import moved
+ * the shore so it no longer derives) is not the bay's edge any more — drawing it would say it was.
+ * Nor, until a moderator checks it, is the mouth of a bay whose old outline was **kept** (D215): it
+ * describes the re-fit, not the edge it would be drawn on.
+ */
+export function drawableMouth(bay: {
+  mouth?: SubAreaMouth | undefined;
+  mouthStale?: string | undefined;
+  mouthReview?: { outcome: 'kept' | 'refitted' } | undefined;
+}): SubAreaMouth | undefined {
+  if (bay.mouth === undefined || bay.mouthStale !== undefined) return undefined;
+  return bay.mouthReview?.outcome === 'kept' ? undefined : bay.mouth;
+}
+
 function regionSideAt(a: LatLng, b: LatLng, region: Polygon): LatLng | null {
   const origin = { lat: (a.lat + b.lat) / 2, lng: (a.lng + b.lng) / 2 };
   const A = toLocal(a, origin);

@@ -1,9 +1,11 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
+import { useNavigate } from '@tanstack/react-router';
 import { useMutation } from 'convex/react';
 import { useMemo, useState } from 'react';
 import { read, useConsoleReadSet } from '@/components/admin/reads/consoleReads';
 import { useRole } from '@/lib/useRole';
+import { arrivalSearch, validateBodySearch } from '../../frame/bodySearch';
 import type { BodyTabProps, BodyTabRegistration } from '../../frame/tabRegistry';
 import { useTabAction } from '../useTabAction';
 import { PlacesView } from './PlacesView';
@@ -56,7 +58,9 @@ export function usePlacesData(bodyId: string): PlacesData | undefined {
  * for undo: a landmark's name, spellings and kind (`landmarks.update`, `body.places`); filing or
  * dismissing an emailed name (`corpusPlaceNames.fileAsSpelling` / `dismiss`,
  * `corpus.placeNames`); answering a proposal with the landmark already there or declining it
- * (`corpusRequests.approve` / `decline`, `inbox.request`). The map tools are task modes, not built.
+ * (`corpusRequests.approve` / `decline`, `inbox.request`). *Draw as a bay* opens the Shape tab's
+ * bay task with the landmark (`?promote=`, B01-6a, `body.shape`); moving, dropping and removing a
+ * landmark on the map come with B01-6b.
  */
 export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const { data, retry, pending } = usePlacesRead(bodyId);
@@ -70,6 +74,7 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
   const decline = useMutation(api.corpusRequests.decline);
   const { act } = useTabAction(bodyId);
   const { can } = useRole();
+  const navigate = useNavigate();
 
   const nameOf = (id: string) =>
     rowsOf(data.landmarks).find((l) => l.id === id)?.name ?? 'the landmark';
@@ -94,6 +99,16 @@ export function PlacesTab({ bodyId, lit = null, onLitChange }: BodyTabProps) {
               })
           : undefined
       }
+      {...(can('body.shape') && can('body.places')
+        ? {
+            onDrawAsBay: (id: string) =>
+              void navigate({
+                to: '.',
+                search: (prev: Record<string, unknown>) =>
+                  arrivalSearch(validateBodySearch(prev), { promote: id }),
+              } as never),
+          }
+        : {})}
       onFileAsSpelling={
         can('corpus.placeNames')
           ? (askId, landmarkId) =>

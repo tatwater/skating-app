@@ -2668,6 +2668,39 @@ describe('sub-areas by chord (D201)', () => {
     expect(audit?.metadata).toMatchObject({ kind: 'name_bay', subAreaId: id });
   });
 
+  test('a bay traced or pasted from a request approves it as well — and every open ask for the same bay', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const two = await seedUser(t, 'two');
+    const requestId = await bayRequest(t, one.id, body, 'Corner Bay');
+    const sibling = await bayRequest(t, two.id, body, 'corner bay');
+    const unrelated = await bayRequest(t, two.id, body, 'Other Bay');
+    vi.advanceTimersByTime(1_000);
+
+    const id = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      polygon: rect(-73.45, 44.05, -73.35, 44.15),
+      requestId,
+    });
+
+    const rows = await t.run((ctx) =>
+      Promise.all([requestId, sibling, unrelated].map((r) => ctx.db.get(r))),
+    );
+    expect(rows.map((r) => r?.status)).toEqual(['approved', 'approved', 'open']);
+    const audits = await t.run((ctx) =>
+      ctx.db
+        .query('moderationActions')
+        .withIndex('by_target', (q) =>
+          q.eq('targetType', 'waterBodySubArea').eq('targetId', id as string),
+        )
+        .collect(),
+    );
+    expect(audits[0]?.metadata).toMatchObject({ via: 'drawn', requestId });
+  });
+
   test('a request decided while the bay was being drawn does not roll the drawing back', async () => {
     const t = harness();
     const body = await seedCanonicalBody(t);

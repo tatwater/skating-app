@@ -11,6 +11,10 @@
  *   the list exactly as it was. Only a path under {@link RETURN_PATHS} is kept: a same-origin path,
  *   never a scheme, a host or a protocol-relative `//`, so a crafted link can't send the console
  *   anywhere else.
+ * - **`task`** and **`promote`** — an arrival that arms a map tool (B01-6a): an Inbox bay ask to draw
+ *   (`?task=<request id>`, Shape) or a landmark to draw as a bay (`?promote=<landmark id>`, Shape).
+ *   An id of word characters only. The tab takes each once, into its own state, and drops it from
+ *   the address; any other navigation drops it too ({@link searchFor}), so Back never re-arms it.
  */
 
 export const BODY_TABS = [
@@ -31,6 +35,8 @@ export type BodyConsoleSearch = {
   tab?: Exclude<BodyTabKey, 'shape'>;
   lit?: string;
   from?: string;
+  task?: string;
+  promote?: string;
 };
 
 /**
@@ -47,6 +53,9 @@ export const DEFAULT_RETURN = '/admin/corpus';
 const LIT = /^[a-z][a-zA-Z]{0,31}:[A-Za-z0-9_.-]{1,128}$/;
 
 const MAX_FROM = 2048;
+
+/** A Convex document id, as an arrival names one. */
+const ARRIVAL_ID = /^[A-Za-z0-9_]{1,64}$/;
 
 export function isBodyTab(value: unknown): value is BodyTabKey {
   return typeof value === 'string' && (BODY_TABS as readonly string[]).includes(value);
@@ -83,6 +92,8 @@ export function validateBodySearch(raw: Record<string, unknown>): BodyConsoleSea
   if (isLit(raw.lit)) out.lit = raw.lit;
   const from = safeReturnPath(raw.from);
   if (from !== null) out.from = from;
+  if (typeof raw.task === 'string' && ARRIVAL_ID.test(raw.task)) out.task = raw.task;
+  if (typeof raw.promote === 'string' && ARRIVAL_ID.test(raw.promote)) out.promote = raw.promote;
   return out;
 }
 
@@ -112,6 +123,17 @@ export function searchFor(
     ...(lit !== null && isLit(lit) ? { lit } : {}),
     ...(search.from !== undefined ? { from: search.from } : {}),
   };
+}
+
+/**
+ * The search that arms the Shape tab's bay task: an Inbox ask (`task`) or a landmark (`promote`),
+ * keeping the return path. Lights nothing; the task lights the bay once it saves.
+ */
+export function arrivalSearch(
+  search: BodyConsoleSearch,
+  arrival: { task: string } | { promote: string },
+): BodyConsoleSearch {
+  return { ...(search.from !== undefined ? { from: search.from } : {}), ...arrival };
 }
 
 /** The link that opens a body's console from a list, carrying the list's own address back. */
