@@ -232,9 +232,12 @@ its key, the states that list it, the pick (an item id in that table), the step 
 (`leafOn` or `offSeason`), the fallback stack (ids in order), whether the pick covers its cell
 (`partial`), its cloud score, and the work tiles it touches. Per work tile (§2.2): its input hash,
 its cells, and whether this build cuts it (`retile`; `false` only for a `--from-current` work tile
-whose hash is unchanged, which the assembler copies). About 1.5–3 MB raw. The assembler adds the
-archive's and the date index's name, size and SHA-256 (§2.7) before publishing it. The types are
-`NaipManifest` in core's `naipManifest.ts`.
+whose hash is unchanged, which the assembler copies). About 1.5–3 MB raw. The assembler adds, before
+publishing it, the archive's and the date index's name, size and SHA-256 (§2.7) — the archive's over
+its bytes as uploaded, the index's over its **decoded JSON**, since the index is stored gzip-encoded
+and a CDN may re-encode it — and each work tile's per-cell counts (`cellCounts`, §2.2 step 4), so a
+later `--from-current` build that copies a work tile can still date it once the shards are deleted.
+The types are `NaipManifest` in core's `naipManifest.ts`.
 
 The run's counts say how many cells picked by each step, how many fell back to October, how many
 items each exclusion dropped, and assert the rule's invariants on the whole catalog (every cell has
@@ -332,7 +335,7 @@ What can be avoided is re-tiling.
 changed; the assembler copies every other work tile's tiles **out of the current archive** by range
 reads (in a clustered archive each work tile's tiles at a zoom are one contiguous run, because the
 Hilbert order keeps an aligned block's descendants together), and their per-cell counts out of the
-current date index's build record. Keeping a separate shard cache would double storage (~$70 a year)
+current manifest's work tiles (`cellCounts`, which the assembler writes there for this reason). Keeping a separate shard cache would double storage (~$70 a year)
 to save work the old archive already holds (Governor fork G-4).
 
 **A streaming writer, not `pmtiles convert`.** `pmtiles convert` wants the whole input as an MBTiles
@@ -380,7 +383,7 @@ points at the same dated object. No prod copy is made.
   listed. Expected: only cells cut by the coast or the Canadian border.
 - **Dates (D318).** Every cell any tile touches has an entry in the date index; every entry names at
   least one flight; every flight's date is a real day that matches its item id's; the index names
-  this archive, and its hash is the manifest's. Any miss refuses the build: **an undated cell is
+  this archive, and the SHA-256 of its decoded JSON is the manifest's. Any miss refuses the build: **an undated cell is
   never published.**
 - **Seams.** For every quarter-quad edge whose two sides differ in flight (year or gsd), a sampled
   tile pair rendered into a contact sheet; and a low-zoom (z9–z11) overview of the region, so the
@@ -457,10 +460,10 @@ pixels.
   it once and caches it.
 - **Where it lives:** beside the archive, `…/naip-summer-<YYYYMMDD>-cells.json`, its URL derived from
   `VITE_NAIP_PMTILES_URL` (`.pmtiles` → `-cells.json`, core's `naipIndexUrl`). It names its archive,
-  and the client refuses an index that names another (a mismatched pair never draws). Its SHA-256 is
-  in the manifest.
+  and the client refuses an index that names another (a mismatched pair never draws). Its SHA-256 —
+  of the decoded JSON, not the gzip body (the encoding is transport) — is in the manifest.
 - **Built by** the assembler from the manifest and the shards' per-cell counts (copied from the
-  current build's record for unchanged work tiles); **checked** by verify (§2.5), which refuses to
+  current manifest's `cellCounts` for unchanged work tiles); **checked** by verify (§2.5), which refuses to
   publish an archive with any tile whose cell the index can't date.
 
 **How the map uses it** is §4.2: the cells under the view, their flights, and the credit's month

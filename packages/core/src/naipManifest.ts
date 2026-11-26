@@ -79,14 +79,29 @@ export interface NaipManifestWorkTile {
    * the one in `basedOn`'s manifest: the assembler copies its tiles out of that archive instead.
    */
   retile: boolean;
+  /**
+   * Added by the assembler, before the manifest is published: what each frame supplied each cell in
+   * this work tile, on the z16 grid (§2.2 step 4; the shard's done record's `cellCounts`, cell key →
+   * item id → pixels). Kept so a later `--from-current` build that copies this work tile can date its
+   * cells (§2.7) after the shards are deleted. Absent in the select stage's manifest.
+   */
+  cellCounts?: Record<string, Record<string, number>>;
 }
 
-/** A published object the manifest names, with its integrity. */
+/**
+ * A published object the manifest names, with its integrity. **Which bytes** depends on the object:
+ *
+ * - the archive (`NaipManifest.archive`): the bytes as uploaded — it is stored as-is;
+ * - the date index (`NaipManifest.cellIndex`): the **decoded JSON**, not the gzip body that was
+ *   uploaded. The index is stored `Content-Encoding: gzip`, and the encoding is transport (a CDN may
+ *   re-encode it); the JSON is what every client reads and what verify hashes after fetching it.
+ */
 export interface NaipPublishedObject {
   /** The file name (no key prefix), e.g. `naip-summer-20261212.pmtiles`. */
   name: string;
+  /** Length of the hashed bytes: the archive's as uploaded, the index's decoded JSON. */
   bytes: number;
-  /** Hex SHA-256 of the bytes as uploaded. */
+  /** Hex SHA-256 of those same bytes. */
   sha256: string;
 }
 
