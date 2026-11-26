@@ -221,8 +221,7 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  process.stderr.write(
-    `${e instanceof StageArgsError ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
-  );
+  const refused = e instanceof StageArgsError || e instanceof AssembleRefusal;
+  process.stderr.write(`${refused ? 'refused' : 'failed'}: ${(e as Error).message}\n`);
   process.exit(1);
 });
