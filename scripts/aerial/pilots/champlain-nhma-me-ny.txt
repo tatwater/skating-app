@@ -1,8 +1,8 @@
 # The pilot's cells (B05 §7.4, F-9 ruled (c)): `run-aerial.sh naip-pilot-<YYYYMMDD> --pilot
-# champlain-nhma-me-ny --cells scripts/aerial/pilots/champlain-nhma-me-ny.txt`. 64 quarter-quads;
-# the build cuts every work tile they touch — 27 work tiles, 200 cells in all (the first walk's
-# picks, naip-20261125). Proposed at integration (2026-11-26) from that walk's picks, for the
-# governor to confirm before the pilot runs.
+# champlain-nhma-me-ny --cells scripts/aerial/pilots/champlain-nhma-me-ny.txt`. 65 quarter-quads;
+# the build cuts every work tile they touch — 28 work tiles, 209 cells in all (the first walk's
+# picks, naip-20261125). Proposed at integration (2026-11-26) from that walk's picks; one partial
+# Maine cell added at the pilot (below).
 #
 # Lake Champlain's north end (24): NY 2024 0.6 m | VT 2025 0.3 m on the state line, Québec's edge
 # at 45°N, big water; six of them listed by both states.
@@ -66,6 +66,10 @@
 4407028nw
 4407028se
 4407028sw
+# A partial pick falling through (1, added at the pilot, 2026-11-26: none of the 200 cells cut
+# above has a partial pick with a fallback, which §7.4 must show): a Maine 2023 0.3 m frame with an
+# unflown strip over its 2021 | 2018 0.6 m fallbacks, beside a Maine 2021 pick, at 45.4°N 70.3°W.
+4507038sw
 # A New York join where 2024 meets the 2019 fallback (8), in the Catskills at 41.9°N 74.9°W.
 4107401ne
 4107401nw

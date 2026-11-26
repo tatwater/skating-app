@@ -35,6 +35,7 @@ describe('the viewer’s credit', () => {
 function fakeLibrary() {
   const handlers = new Map<string, (() => void)[]>();
   const calls: string[] = [];
+  const options: Record<string, unknown>[] = [];
   const map: ViewerMap = {
     on(event, fn) {
       handlers.set(event, [...(handlers.get(event) ?? []), fn]);
@@ -57,7 +58,8 @@ function fakeLibrary() {
     },
   };
   const library: ViewerLibrary = {
-    Map: function FakeMap() {
+    Map: function FakeMap(o: Record<string, unknown>) {
+      options.push(o);
       return map;
     } as unknown as ViewerLibrary['Map'],
     addProtocol: (name) => calls.push(`protocol ${name}`),
@@ -65,6 +67,7 @@ function fakeLibrary() {
   return {
     library,
     calls,
+    options,
     fire: (e: string) => {
       for (const f of handlers.get(e) ?? []) f();
     },
@@ -113,6 +116,28 @@ describe('the viewer', () => {
     expect(credit.textContent).toBe('credit 2');
   });
 
+  it('keeps the view in the URL, and opens a link at its view rather than the whole archive', async () => {
+    const env = {
+      fetch: async () => ({ ok: true, status: 200, json: async () => INDEX }),
+      parse: (json: unknown) => json as NaipCellIndex,
+      archive,
+      indexUrl,
+    };
+    const fresh = fakeLibrary();
+    await startViewer(fresh.library, config, { textContent: null }, env);
+    expect(fresh.options[0]?.hash).toBe(true);
+    expect(fresh.calls.some((c) => c.startsWith('fit'))).toBe(true);
+    const linked = fakeLibrary();
+    await startViewer(
+      linked.library,
+      config,
+      { textContent: null },
+      { ...env, startsAtHash: true },
+    );
+    expect(linked.calls.some((c) => c.startsWith('fit'))).toBe(false);
+    expect(linked.calls).toContain('layer naip');
+  });
+
   it('draws nothing when the index fails, and says why', async () => {
     for (const env of [
       { fetch: async () => ({ ok: false, status: 404, json: async () => ({}) }) },
@@ -147,6 +172,7 @@ describe('the viewer page', () => {
       `https://unpkg.com/maplibre-gl@${MAPLIBRE_VERSION}/dist/maplibre-gl.css`,
     );
     expect(html).toContain('<title>Summer &#60;aerial&#62;</title>');
+    expect(html).toContain('startsAtHash: /^#\\d/.test(location.hash)');
     expect(viewerHtml({ ...config, archiveName: '</script>', title: 't' })).not.toContain(
       '"</script>"',
     );

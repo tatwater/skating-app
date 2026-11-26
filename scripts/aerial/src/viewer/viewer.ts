@@ -84,6 +84,11 @@ export async function startViewer(
     archive?: {
       getHeader(): Promise<{ minLon: number; minLat: number; maxLon: number; maxLat: number }>;
     };
+    /**
+     * The page was opened at a view (`#zoom/lat/lng`, MapLibre's hash): keep it rather than fitting
+     * the archive, so a link to one join opens on that join.
+     */
+    startsAtHash?: boolean;
   },
 ): Promise<{ ok: boolean }> {
   const protocol = new Protocol();
@@ -98,6 +103,8 @@ export async function startViewer(
     center: [-72.5, 44],
     zoom: 7,
     maxZoom: 19,
+    // The view in the URL (`#zoom/lat/lng`), so a look at one join is a link anyone can open.
+    hash: true,
   });
   credit.textContent = 'Aerial · NAIP · Loading…';
   const loaded = new Promise<void>((done) => map.on('load', done));
@@ -114,13 +121,15 @@ export async function startViewer(
 
   const header = await (env.archive ?? new PMTiles(config.archiveUrl)).getHeader();
   await loaded;
-  map.fitBounds(
-    [
-      [header.minLon, header.minLat],
-      [header.maxLon, header.maxLat],
-    ],
-    { padding: 20, animate: false },
-  );
+  if (!env.startsAtHash) {
+    map.fitBounds(
+      [
+        [header.minLon, header.minLat],
+        [header.maxLon, header.maxLat],
+      ],
+      { padding: 20, animate: false },
+    );
+  }
   map.addSource('naip', { type: 'raster', url: `pmtiles://${config.archiveUrl}`, tileSize: 512 });
   map.addLayer({ id: 'naip', type: 'raster', source: 'naip' });
   const draw = (): void => {

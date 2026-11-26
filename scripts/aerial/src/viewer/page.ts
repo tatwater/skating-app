@@ -79,7 +79,10 @@ export function viewerHtml(config: {
 <script type="module">
 import * as maplibregl from '${js}';
 import { startViewer } from './viewer.js';
-startViewer(maplibregl, ${json}, document.getElementById('credit'), { fetch: (u) => fetch(u) });
+startViewer(maplibregl, ${json}, document.getElementById('credit'), {
+  fetch: (u) => fetch(u),
+  startsAtHash: /^#\\d/.test(location.hash),
+});
 </script>
 </body>
 </html>
