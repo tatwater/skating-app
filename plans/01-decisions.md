@@ -2705,6 +2705,11 @@ decision is the second step of that two-step, not a replacement for it.
 
 **Related:** [D75](#d75--satellite-imagery-ships-as-a-link-first-the-license-blocker-is-resolved-the-cost-one-isnt-a06c), [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [`phase-A06e`](./phases/A06e-satellite-imagery.md).
 
+> **Tier 1 amended by D316 (2026-11-25, Phase B05).** The summer aerial is not a skater feature,
+> for now and until the founder says otherwise: it is drawn only in the admin console, for staff, to
+> place and check marks against the shore. Tier 2
+> (the winter passes, now our own archive, D148) is unchanged.
+
 ## D85 — Derived geometry stats are measured on the source geometry, not the simplified copy (A06c)
 
 **Decided (2026-07-31; founder asked whether there was a better source for shoreline length — *"maybe
@@ -4760,6 +4765,10 @@ founder wanted**, which is the shape of most good re-scopings.
 was the original scoping's headline pairing with A06d. Accepted explicitly.
 
 **Related:** [D81](#d81--the-map-has-exactly-one-layer-toggle-and-it-is-satellite-a06ba06e), [D84](#d84--satellite-imagery-is-two-tiers-with-different-jobs-a06e), D147, D148, [`phase-A06e`](./phases/A06e-satellite-imagery.md).
+
+> **Amended by D316 (2026-11-25, Phase B05) for the summer tier.** Skaters are offered no summer
+> aerial, clipped to a lake or not — not for now, revisited only on the founder's word; the
+> body-scoped reveal above now governs the winter passes alone.
 
 ---
 
@@ -9401,10 +9410,12 @@ Corpus domain and the aerial was already joining 7a for board 4.3.
 [`phase-B01`](./phases/B01-admin-console.md) *What the build found (B01-7a)*, the register's In30
 and Co15–Co18.
 
-> **Source amended by D314 (2026-11-26, Phase B05, scoped).** The layer's behavior above stands —
-> the rack row, the head map, the dimming, the band. Its source changes, once B05's app PR merges,
-> from `USGSNAIPPlus`'s `exportImage` to our own region-wide NAIP archive, and its date from the
-> identify call to the archive's sidecar.
+> **Source amended by D314, its credit by D318 (2026-11-25, Phase B05).** The layer's behavior above
+> stands — the rack row, the head map, the dimming, the band, staff only (D316). Its source changes,
+> once B05's app PR merges, from `USGSNAIPPlus`'s `exportImage` to our own region-wide NAIP archive;
+> its date from the identify call (*"when the service's identify call answers"*) to the archive's
+> per-cell date index, which always answers (D318). The rack's row keeps the name *Summer aerial*,
+> and the winter pass's row beside it becomes *Winter satellite* (the founder, 2026-11-25).
 
 ## D313 — A lot linked in the console is walked fresh, in the background; B01-6b's placing calls (amends D87, B01)
 
@@ -9440,42 +9451,53 @@ and Co15–Co18.
 
 ## D314 — We own the summer aerial: one region-wide NAIP archive, rebuilt on demand and offered each July (B05)
 
-**Decided (2026-11-26, founder).** In his words: *"I'm convinced – I want to own the imagery. Let's
-build it"*; on its shape, *"What if we got the whole 5-state region (go ahead and get CT/RI while
-you're at it, just to complete the region) in one go, and then render from our own tiles whatever
-each lake needs? Rather than storing separate satellite layers for each of the 25,000 lakes?"* and
-*"I want the user to be able to render the layer seamlessly across state lines as they pan, or if
-they zoom in on a lake that straddles a line"*; on upkeep, *"could we run an every-July cron to
-reassess the available imagery and offer to re-build this layer if it notices a newer suitable pass
-for any of our region?"* and *"This should also become part of a standard machinery pipeline that
-can be called on demand or via a cron!"*
+**Decided (2026-11-25, founder).** In his
+words: *"I'm convinced – I want to own the imagery. Let's build it"*; on its shape, *"What if we got
+the whole 5-state region (go ahead and get CT/RI while you're at it, just to complete the region) in
+one go, and then render from our own tiles whatever each lake needs? Rather than storing separate
+satellite layers for each of the 25,000 lakes?"* and *"I want the user to be able to render the layer
+seamlessly across state lines as they pan, or if they zoom in on a lake that straddles a line"*; on
+upkeep, *"could we run an every-July cron to reassess the available imagery and offer to re-build
+this layer if it notices a newer suitable pass for any of our region?"* and *"This should also become
+part of a standard machinery pipeline that can be called on demand or via a cron!"*
 
 - **One archive of the region** — NY, VT, NH, ME and MA, plus CT and RI (*"better to grab all the
-  data now and we can crop it later"*): one raster PMTiles cut from NAIP's own COGs (Microsoft
-  Planetary Computer, anonymous), frames picked per quarter-quad by D315, with a manifest and a
-  per-cell sidecar that dates every cell. Built on Fly, stored in R2 under a dated immutable key,
-  every stage a run row with scope and heartbeat (D218, D310).
+  data now and we can crop it later"*), each state covered whole: one raster PMTiles cut from NAIP's
+  own COGs (Microsoft Planetary Computer, anonymous), frames picked per quarter-quad by D315, to z18
+  everywhere (D317), with a manifest and a per-cell date index (D318). Built on Fly, stored in R2
+  under a dated immutable key, every stage a run row with scope and heartbeat (D218, D310).
+- **The pipeline is a standard one, callable on demand**: one entry point runs it whole, one stage,
+  or one area; a partial rebuild re-tiles only the cells whose frames changed and copies the rest
+  from the live archive.
+- **Dev only for now.** It is built to dev's key; at the prod cutover, prod points at the same dated
+  object. No prod copy is made.
 - **The console reads it** as one `pmtiles://` raster source in place of `USGSNAIPPlus`'s
-  `exportImage` (D312's behavior kept); the credit comes from the sidecar for the cell under the
-  view's center; the USGS code path is deleted in the same PR.
+  `exportImage` (D312's behavior kept, staff only, D316), its credit dated by D318; the USGS code
+  path is deleted in the same PR.
 - **A July reassessment** in Convex applies the same rule to the live catalog, diffs it against the
-  published manifest and **offers** a rebuild to admins. It never starts a Machine; a rebuild is run
-  on demand by one entry point, whole, by stage, or for the cells that changed.
-- **The maximum zoom is not yet ruled** (the founder's *"I think 18"* reads as z18 everywhere or z18
-  only where the source is 0.3 m): B05's Founder fork F-1.
+  published manifest and **offers** a rebuild. It only offers: it never starts a Machine and never
+  spends; a person runs the rebuild with the one entry point.
+- **Where the offer lands** (the founder: *"I think this belongs in the Machinery pages eventually,
+  where we manage the rest of the imagery runs"*; not an Overview card, not the Inbox; and, on an
+  interim surface, *"Don't worry about the interim, I'll have the Machinery built long before
+  July."*). The check **only stores its result**: its run row, and a durable *newer suitable flight
+  available* record holding the cells, their flight dates, what the live layer was built from, and
+  the command to run — shaped so Machinery's imagery page can draw it. No email, no other surface;
+  the page is owed to B01's Machinery mode.
 
 **Why:** the founder's. A cold view of the USGS service takes 3–45 s and its flight date often never
 arrives (the register's Co15, Co18); which frame we see is the service's choice. Owning the tiles
-costs roughly $50–70 a year and buys about a second for a first view, the choice of frame, and
-independence. **What does not change:** D146 (a skater sees imagery only clipped to one body; the
-archive is not a region-wide skater layer), D147 (free sources only — NAIP is public domain, and
-still a summer photograph that can never show ice, D3).
+costs roughly $70 a year (~$5.80 a month at z18) and buys about a second for a first view, the choice
+of frame, and independence. **What does not change:** D147 (free sources only — NAIP is public
+domain, and still a summer photograph that can never show ice, D3). The archive is console staff's
+alone (D316).
 
-**Related:** D3, D146, D147, D148, D218, D310, D312, D315, [`phase-B05`](./phases/B05-summer-aerial.md).
+**Related:** D3, D84, D146, D147, D148, D218, D310, D312, D315, D316, D317, D318,
+[`phase-B05`](./phases/B05-summer-aerial.md).
 
 ## D315 — The summer aerial's frames are picked per quarter-quad: leaf-on, newest, 0.3 m within two years, clouds struck by review (B05)
 
-**Decided (2026-11-26, founder: *"These are great rules, thanks!"*; the cloud step's mechanics are
+**Decided (2026-11-25, founder: *"These are great rules, thanks!"*; the cloud step's mechanics are
 the governor's design, from the founder's *"Also prioritize minimal cloud cover, if that's even an
 issue."*).** Per NAIP quarter-quad, over every state's frames of it:
 
@@ -9485,18 +9507,97 @@ issue."*).** Per NAIP quarter-quad, over every state's frames of it:
 3. **A 0.3 m frame beats a newer 0.6 m frame when it is at most two years older** (*"I value high
    resolution/quality, but only in combination with recency"*). So NH, MA, CT and RI take 2023 at
    0.3 m over 2025 at 0.6 m (*"Agreed"*).
-4. **Minimal cloud** — NAIP publishes no cloud measure, so frames are scored from their thumbnails
-   and the ones a person confirms as cloud or glare go on a committed exclusion list, struck before
-   step 1 so the cell falls back to its next leaf-on frame. A threshold alone never strikes a frame.
+4. **Minimal cloud** — NAIP publishes no cloud measure, so frames are scored from their thumbnails;
+   the builder pre-screens the high scores on a contact sheet, and **the founder confirms only the
+   frames that would change a pick**. Those confirmed as cloud or glare go on a committed exclusion
+   list, struck before step 1 so the cell falls back to its next leaf-on frame. A threshold alone
+   never strikes a frame.
 
 Cells whose newer flights are all October or later take older summer frames (ME 2018, NY 2019), not
-foliage frames: *"Sure, let's see how it looks and re-address in the future."* Frames coarser than
-0.6 m are not candidates; an item whose quarter-quad lies outside its labeled state is dropped by
-geometry (the catalog's "Maine 2025" items are Massachusetts quarter-quads). Each cell keeps a
-fallback stack — its other leaf-on frames in the rule's order — which shows through wherever the pick
-has no pixels. The rule lives in `packages/core`, so the build and the July check run the same code.
-Open: six cells in Maine's western mountains with no summer frame at 0.6 m or better (B05's Founder fork F-7).
+foliage frames: *"Sure, let's see how it looks and re-address in the future"* (to be revisited once
+he has seen it). **The six cells with no leaf-on frame at 0.6 m or better** (Maine's western
+mountains, north of Rumford) take **the 2 October 2023 frame at 0.3 m** (the founder, 2026-11-25): the
+rule's off-season step, which picks a cell's newest frame at 0.6 m or better whatever its season, and
+which the build refuses to apply to any cell not on the committed list of the six, so a seventh is a
+look, never a silent pick. Frames coarser than 0.6 m are not candidates; an item whose quarter-quad
+lies outside its labeled state is dropped by geometry (the catalog's "Maine 2025" items are
+Massachusetts quarter-quads). Each cell keeps a fallback stack — its other leaf-on frames in the
+rule's order — which shows through wherever the pick has no pixels. The rule lives in
+`packages/core`, so the build and the July check run the same code.
 
 **Why:** the founder's, in his words above.
 
-**Related:** D3, D147, D314, [`phase-B05`](./phases/B05-summer-aerial.md).
+**Related:** D3, D147, D314, D318, [`phase-B05`](./phases/B05-summer-aerial.md).
+
+## D316 — The summer aerial is for console staff only: not offered to skaters (amends D84 and D146, B05)
+
+**Decided (2026-11-25, founder).** *"I don't want summer for skaters at all. This is purely to help
+admins place landmarks on the map properly."* And on the older clipped reveal, a skater's summer
+cutout of one lake: not that either, *"at least not for now (I'm not sure if they currently can or
+not)"*. "Admins" here is console staff — admins and moderators alike, as D312 already reads him
+(*"If I say "for admins" there's a good chance I just don't want the average skater to see it"*).
+
+- **The summer aerial is drawn only in the admin console** — the Body console, the Corpus head maps,
+  the Inbox's maps, the old lake editor while it stands — for anyone who can open them. Not in the
+  skater web app, not on the phone, in no mode, clipped to a lake or unclipped. **Revisited only on
+  the founder's word**; no phase plans it.
+- **They can't today** (checked 2026-11-25 at `11290f1f9`): no skater route, component or toggle on
+  the web or the phone draws a summer aerial. The skater web's reveal went with the old `MapView` in
+  B03-4; `useImageryReveal`'s only callers are the console's aerial and the old lake editor. What
+  is left on the skater side is dormant: the skater map's `imagery-loading` wash layer
+  (`skater/map/mapLayers.ts`, filtered to match nothing, no writer) and comments; B05's app PR
+  deletes the layer with the hook. The phone never had a summer tier.
+- **No skater feature is planned from the archive**, and nothing goes on B04's running list for it.
+- **The archive's URL** is still in the web bundle (the console is a route of the same app), so it is
+  readable by anyone who looks; that is cost exposure on public-domain imagery, not a skater
+  surface (B05 §5.3).
+
+**What this amends.** **D84** made the summer aerial a skater tier: *"Tier 1 — aerial base map.
+USGS/NAIP orthoimagery, ~0.6 m … Answers where's the pull-off, where's the point, is that an island.
+Ships in v1."* **D146** kept imagery for skaters as content: *"satellite is content, revealed one body
+at a time, clipped to that body and its access"*. For the **summer** tier both now read: staff only,
+no skater reveal, for now and until the founder says otherwise. D84's Tier 2 and D146's body-scoped
+reveal stand for the **winter** passes (D148), which skaters still see one body at a time.
+
+**Why:** the founder's. The layer's job is placing and checking marks against the shore (D312); a
+skater's imagery is the winter passes, whose date is the content (D84's honesty point).
+
+**Related:** D3, D84, D146, D148, D312, D314, [`phase-B05`](./phases/B05-summer-aerial.md).
+
+## D317 — The summer aerial goes to z18 everywhere: one archive, one layer (B05)
+
+**Decided (2026-11-25, founder: z18 everywhere, over z17 everywhere with z18 only where the source is
+0.3 m).** Every cell is tiled to z18 (0.43 m a pixel at 44°N), whatever its source's resolution: one
+archive, one raster source, ~387 GB (±30%), ~$5.80 a month in R2. No two-band stacking and no second
+archive by zoom band.
+
+**Why.** At z17 the 0.6 m sources (all of New York, about 40% of Maine) would lose about half of what
+the camera recorded; at z18 they are shown whole, a 1.4× upscale, which is not upscaling *"for no real
+reason"* (the founder's line). The other choice also needed two stacked layers, because MapLibre draws
+a tile missing inside a source's zoom range blank rather than showing the coarser one beneath. z19 is
+finer than every source and stays out; the head maps overzoom z18 instead.
+
+**Related:** D314, [`phase-B05`](./phases/B05-summer-aerial.md) §6.1.
+
+## D318 — The summer aerial always shows the date it was flown, wherever it is drawn (B05)
+
+**Decided (2026-11-25, founder).** *"we should always show the date of the imagery, regardless of
+which tile/region."*
+
+- **Every map that draws the summer aerial shows its flight date** — at least the month and year —
+  for the imagery under the view: the Body console, the Corpus head maps, the Inbox's maps and the old
+  lake editor alike.
+- **When the view spans several flights**, the credit gives their range, earliest to latest
+  (*Jun 2021 – Aug 2023*), so no imagery on screen is misdated by a single cell's date.
+- **The date comes from a per-cell date index** the pipeline builds beside every archive, recording
+  for each cell the flights that actually contribute pixels to it. The build refuses to publish an
+  archive with any tile whose cell the index can't date, and the map never draws the layer before its
+  index has loaded: **an undated aerial is never a shipped state.** Where the view holds no cell (past
+  the coverage) the layer draws nothing, and the credit says so rather than standing there undated.
+
+**Why:** the founder's. It is also D3's and D84's honesty rule in raster form: a photograph's date is
+part of the photograph, and a summer frame from 2019 next to one from 2025 reads as one picture
+unless the date says otherwise. D312's credit dated only the center when the service's identify call
+answered; this dates the whole view, every time.
+
+**Related:** D3, D84, D312, D314, D315, [`phase-B05`](./phases/B05-summer-aerial.md) §2.7, §4.2.

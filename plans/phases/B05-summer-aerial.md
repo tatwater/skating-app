@@ -4,10 +4,15 @@
 console's aerial opens in about a second wherever an operator looks, and seamlessly across state
 lines.*
 
-> **Status:** ⚪ **Scoped 2026-11-26** (design only, no code). Decisions **D314** (we own the summer
-> aerial: one region-wide archive, rebuilt on demand and offered each July) and **D315** (the
-> per-quarter-quad selection rule). Amends **D312**'s source, not its behavior. **D146** and
-> **D147** are unchanged. The design waits on the founder forks in §8, max zoom first.
+> **Status:** 🟡 **In progress 2026-11-25** — the design is ruled and the build starts now, alongside
+> B01-7b. Decisions **D314** (we own the summer aerial: one region-wide archive, rebuilt on demand and
+> offered each July), **D315** (the per-quarter-quad selection rule), **D316** (console staff only:
+> not offered to skaters, for now and until the founder says otherwise; amends **D84** and **D146** for
+> the summer tier), **D317** (z18 everywhere) and **D318** (the aerial always shows the date it was
+> flown). Amends **D312**'s source and credit, not its behavior. **D147** is unchanged. The founder
+> answered all eight forks on 2026-11-25 (§1.2), and two follow-ups the same day (no interim surface
+> for the July offer; no clipped reveal for skaters either), having been told the size (12,000–20,000
+> lines, two PRs) without objecting. One new question is open (§8, F-9). The builder briefs are §10.
 >
 > **The token.** `B05`: the work is launch-era console infrastructure, and the `A` era (enrichment,
 > `A01`–`A10`) is closed in the README's table, so it is not `A06j` even though its family is A06e's
@@ -27,51 +32,87 @@ each grid cell on demand. A cold view takes **3–45 s** (the register's Co15), 
 never arrives because the identify call answers without CORS headers (Co18), and which frame we see
 is USGS's choice, not ours. This phase replaces it with **one raster PMTiles archive of the whole
 region**, built by us from NAIP's own cloud-optimized GeoTIFFs, with **the frames picked by the
-founder's rule**, cell by cell, and a sidecar that dates every cell. The console reads it as one
-`pmtiles://` raster source, the way it already reads the bathymetry and the winter passes.
+founder's rule**, cell by cell, and **a date index that dates every cell** (D318). The console reads
+it as one `pmtiles://` raster source, the way it already reads the bathymetry and the winter passes.
 
-Behind the archive is a pipeline that can be run whole, by stage, or for a few states, and a July
-check that looks for newer summer flights and **offers** a rebuild without spending anything.
+Behind the archive is a pipeline that can be run whole, by stage, or for one area, and a July check
+that looks for newer summer flights and **offers** a rebuild without spending anything.
 
-### §1.2 — The founder's rulings (2026-11-26)
+**It is for console staff only** (D316): admins and moderators placing and checking marks against the
+shore. No skater surface draws it, on the web or the phone, clipped to a lake or not — not for now,
+revisited only on the founder's word. Checked 2026-11-25: no skater can see one today (§4.3).
+
+### §1.2 — The founder's rulings (2026-11-25)
 
 Quoted where they bear; these are the inputs, not this doc's reading of them.
 
-- **Own it.** *"I'm convinced – I want to own the imagery. Let's build it"*.
+- **Own it.** *"I'm convinced – I want to own the imagery. Let's build it"* — said after seeing the
+  cost.
 - **Region, not per lake.** *"What if we got the whole 5-state region (go ahead and get CT/RI while
   you're at it, just to complete the region) in one go, and then render from our own tiles whatever
   each lake needs? Rather than storing separate satellite layers for each of the 25,000 lakes?"* —
   *"I don't care about per-state; I want to cover the region. And I want the user to be able to
   render the layer seamlessly across state lines as they pan, or if they zoom in on a lake that
   straddles a line."* NY, VT, NH, ME and MA are the supported five (*"Yes, NY is in it"*), plus CT
-  and RI: *"Yep, better to grab all the data now and we can crop it later."*
+  and RI: *"Yep, better to grab all the data now and we can crop it later."* **Seven states, each
+  covered whole.**
 - **What a good frame is.** *"I value recency, but not if it shows dead trees and snow/ice. I value
   high resolution/quality, but only in combination with recency."* *"I'd definitely rather this NAIP
   layer be in summer months if possible"*. *"Also prioritize minimal cloud cover, if that's even an
   issue."*
-- **The rule** (*"These are great rules, thanks!"*), per quarter-quad: (1) leaf-on frames only —
-  1 June–30 September, plus 20 May onward south of 43.5°N; (2) among those, the newest; (3) a 0.3 m
-  frame wins over a newer 0.6 m frame when it is at most two years older; (4) prefer minimal cloud
+- **The rule** (*"These are great rules, thanks!"*), per quarter-quad, in order: (1) leaf-on frames
+  only — 1 June–30 September, plus 20 May onward south of 43.5°N; (2) among those, the newest; (3) a
+  0.3 m frame wins over a newer 0.6 m frame when it is at most two years older; (4) minimal cloud
   cover. NH, MA, CT and RI: 2023 at 0.3 m over 2025 at 0.6 m (*"Agreed"*). Cells whose newer flights
   are all October or later take older summer frames (ME 2018, NY 2019), not foliage frames: *"Sure,
-  let's see how it looks and re-address in the future."*
+  let's see how it looks and re-address in the future"* — to be revisited once he has seen it.
 - **Resolution.** *"The higher the resolution the better, assuming it's not just upscaled for no real
-  reason. But I don't necessarily see a reason to go higher-res than 1px = 1sqft"*. Asked to choose a
-  maximum zoom between (a) z17 everywhere plus z18 where the source is 0.3 m, (b) z18 everywhere,
-  (c) z17 everywhere, he answered *"I think 18"* — read here as ambiguous between (a) and (b), and
-  put back to him as Founder fork F-1.
+  reason. But I don't necessarily see a reason to go higher-res than 1px = 1sqft"*.
 - **Upkeep.** *"could we run an every-July cron to reassess the available imagery and offer to
   re-build this layer if it notices a newer suitable pass for any of our region?"* and *"This should
-  also become part of a standard machinery pipeline that can be called on demand or via a cron!"*
-- **Cost, accepted.** The USGS service is free; owning costs roughly $50–70 a year and buys speed
-  (about 1 s for a first view, against 3–45 s), control of which frames, and independence from a
-  service we don't run; and it is a layer the skater app could later use (D146 unchanged: a skater
-  sees only a reveal clipped to one body).
+  also become part of a standard machinery pipeline that can be called on demand or via a cron!"* The
+  check only offers: it never starts a rebuild and never spends. The pipeline is a standard one,
+  callable on demand — all of it, one stage, or one area — with run records carrying scope and
+  heartbeat; a partial rebuild re-tiles only the cells that changed.
+- **Cost, accepted.** The USGS service is free; owning costs about $70 a year and buys speed (about
+  1 s for a first view, against 3–45 s), control of which frames, and independence from a service we
+  don't run.
+
+**The eight forks, ruled (2026-11-25).** The design's §8 asked; he answered every one:
+
+1. **Maximum zoom: z18 everywhere** (F-1 b, D317). One archive, one layer, ~387 GB, ~$5.80 a month.
+   No two-band stacking.
+2. **Where the July offer appears** (F-2): not an Overview card and not the Inbox. *"I think this
+   belongs in the Machinery pages eventually, where we manage the rest of the imagery runs."* And no
+   interim surface: *"Don't worry about the interim, I'll have the Machinery built long before
+   July."* So the check only stores its finding — its run row and a durable *newer suitable flight
+   available* record (the cells, their flight dates, what the live layer was built from, the command
+   to run), shaped so Machinery's imagery page can draw it (§3.3). No email. Machinery's console mode
+   doesn't exist yet (§3.4), so the page is a register row owed to it.
+3. **The pilot area** (F-3 a): Lake Champlain's north end (Vermont 2025 at 0.3 m against New York
+   2024 at 0.6 m, the state line, Québec's edge, big water) plus a strip on the New Hampshire–
+   Massachusetts line across 72°W, ~40 cells.
+4. **Dev only, now** (F-4 a): built to dev's key; at the prod cutover prod points at the same dated
+   object. No prod copy.
+5. **No summer aerial for skaters** (F-5, D316). *"I don't want summer for skaters at all. This is
+   purely to help admins place landmarks on the map properly."* Console staff only — admins and
+   moderators — not the skater web app or the phone; and not the older clipped reveal of one lake
+   either, *"at least not for now (I'm not sure if they currently can or not)"*. They can't (checked,
+   §4.3); it is revisited only on his word. Nothing goes on B04's running list.
+6. **The rack's two rows** (F-6 a): *Winter satellite* (the Imagery tab's winter pass, today
+   *Aerial*) and *Summer aerial* (this layer).
+7. **The six Maine cells north of Rumford** with no summer frame at 0.6 m or better (F-7 a): the
+   **2 October 2023 frame at 0.3 m**. And a new standing requirement: *"we should always show the
+   date of the imagery, regardless of which tile/region."* (D318; the design is §2.7 and §4.2.)
+8. **Cloud and glare review** (F-8 a): the builder pre-screens with a contact sheet; the founder
+   confirms only the frames that would change a pick.
+
+The build proceeds now, alongside B01-7b.
 
 ### §1.3 — Out of scope
 
-- **A skater panning the region in aerial.** D146 stands: imagery for skaters is content clipped to
-  one body. The archive could serve a region-wide view; the product doesn't.
+- **Any summer aerial for skaters** (D316): no region view, no body-clipped reveal, on any client,
+  until the founder says otherwise.
 - **Color normalization in v1.** Flights from different years, states and sensors differ in tone;
   the mosaic shows that as a quilt, most visibly at low zoom (§5.4). Matching them is later work with
   its own trigger.
@@ -80,7 +121,9 @@ Quoted where they bear; these are the inputs, not this doc's reading of them.
 - **Canada.** NAIP is US-only and ends 0–7 km past the border; Québec, New Brunswick and Ontario
   show the basemap.
 - **A hosted runner.** The heavy stages run on Fly, started from the operator's laptop; a console
-  *Rebuild* button that launches them is B01's deferred *hosted ETL runner* decision (§3.4).
+  *Rebuild* button that launches them is B01's deferred *hosted ETL runner* decision (§3.2).
+- **Machinery's imagery page.** The July check's record is shaped for it (§3.3); the page is B01's
+  Machinery mode (§3.4).
 
 ---
 
@@ -113,19 +156,23 @@ listed by two states, and their frames compete):
    April and May 2022 — are all leaf-off), so the two-year window is measured in program years and
    ties break by date.
 4. **A 0.3 m frame within two years of the newest beats it.**
-5. **No leaf-on frame at all.** Six quarter-quads in one north–south strip in Maine's western
-   mountains, at 70.53°W from 44.6°N to 45.0°N (running north from Rumford: `4407028ne`, `4407020se`,
-   `4407020ne`, `4407012ne`, `4407004se`, `4407004ne`), were flown only in October (2018, 2021,
-   2023); their only summer frames are 1 m (July 2015). The founder's October ruling doesn't
-   reach them: Founder fork F-7.
+5. **The off-season step: no leaf-on candidate at all.** Steps 3 and 4 over every candidate,
+   whatever its season. This is the founder's ruling for six quarter-quads in one north–south strip
+   in Maine's western mountains, at 70.53°W from 44.6°N to 45.0°N (running north from Rumford:
+   `4407028ne`, `4407020se`, `4407020ne`, `4407012ne`, `4407004se`, `4407004ne`), flown only in
+   October (2018, 2021, 2023) with summer frames only at 1 m (July 2015): each takes **the 2 October
+   2023 frame at 0.3 m**. The six are a committed list in core (`NAIP_OFF_SEASON_CELLS`), and **the
+   select stage refuses a build in which the step reaches any cell not on it** — a seventh is a look
+   for the founder, never a silent foliage pick. The July check reports such a cell rather than
+   refusing (§3.3).
 
 **The fallback stack.** The pick's alternates, in the order the rule would choose them if the pick
-were struck — every other leaf-on candidate. A frame that doesn't cover its whole cell (a state's
-flight ending at a state line or the border, 134 of the Maine picks per the scouts' thumbnails)
-lets the next one show through (§2.2). Stack depth in the snapshot: 718 cells have one leaf-on
-frame and no fallback; the median cell has three.
+were struck — every other leaf-on candidate (every other candidate, for an off-season cell). A frame
+that doesn't cover its whole cell (a state's flight ending at a state line or the border, 134 of the
+Maine picks per the scouts' thumbnails) lets the next one show through (§2.2). Stack depth in the
+snapshot: 718 cells have one leaf-on frame and no fallback; the median cell has three.
 
-**What the rule picks today** (re-run on the snapshot for this doc, identical to the scouts'
+**What the rule picks today** (re-run on the snapshot for the design, identical to the scouts'
 `picks_T2.json`):
 
 | State (by the pick's label) | Pick | Cells |
@@ -135,7 +182,7 @@ frame and no fallback; the median cell has three.
 | MA | 2023, 0.3 m | 692 |
 | CT | 2023, 0.3 m · 2025, 0.6 m | 385 · 1 |
 | RI | 2023, 0.3 m | 85 |
-| ME | 2023, 0.3 m · 2021, 0.6 m · 2018, 0.6 m | 1,650 · 807 · 258 (+6 October, F-7) |
+| ME | 2023, 0.3 m · 2021, 0.6 m · 2018, 0.6 m · Oct 2023, 0.3 m | 1,650 · 807 · 258 · 6 |
 | NY | 2024 · 2022 · 2021 · 2019, all 0.6 m | 2,474 · 385 · 132 · 791 |
 
 Before the cloud step (§2.1.2), which moves about twenty.
@@ -155,37 +202,37 @@ The catalog has **no cloud property**: NAIP's "≤10% per tile" is an acceptance
 measurement. Step (4) of the rule is therefore its own step, applied as **exclusions before the
 season step**, so a struck frame falls back to the next leaf-on one:
 
-- **Scoring.** The select stage scores each chosen frame from its 200-px catalog thumbnail
-  (neutral-white pixels as a share of valid ones), as the scouts did: of the 9,168 picks, 9,070
-  score under 2%, 44 between 2% and 3%, 54 over 3%.
-- **Review, not a threshold.** Anything over ~3% is a **candidate**, written to a contact sheet;
-  most are false positives (cities, dunes, beaches). A person confirms which are cloud or glare, and
-  only those join `naipExclusions.ts` in core — committed, each with its item id, the reason
-  (`cloud` / `glare`), and who reviewed it when. The real cases the scouts found: 17 Long Island
-  quarter-quads of 2024-07-02 (glare over Great South Bay; they fall back to NY 2022 summer) and 2–3
-  Aroostook quarter-quads of 2023-09-22 (to ME 2021). About 20 picks change.
-- **Who reviews** is Founder fork F-8.
+- **Scoring.** The select stage scores each pick and each fallback that would show (§2.2) from its
+  200-px catalog thumbnail (neutral-white pixels as a share of valid ones), as the scouts did: of the
+  9,168 picks, 9,070 score under 2%, 44 between 2% and 3%, 54 over 3%.
+- **Review, not a threshold** (the founder's ruling, F-8 a). Anything over ~3% is a **candidate**,
+  written to a contact sheet. **The builder pre-screens**: most are false positives (cities, dunes,
+  beaches), set aside and listed. **The founder confirms only the frames that would change a pick** —
+  a likely cloud or glare on a cell's pick, shown beside the frame that would replace it. A likely
+  cloud on a frame that is only a fallback changes no pick; the builder decides it and lists it.
+  Only confirmed frames join `naipExclusions.ts` in core — committed, each with its item id, the
+  reason (`cloud` / `glare`), and who reviewed it when (`founder` or `builder`). The real cases the
+  scouts found: 17 Long Island quarter-quads of 2024-07-02 (glare over Great South Bay; they fall
+  back to NY 2022 summer) and 2–3 Aroostook quarter-quads of 2023-09-22 (to ME 2021). About 20
+  picks change.
 - **New frames** (the July check, §3.3) are scored at the next select stage; until a person has
   reviewed a new pick's score, the offer says it is unscored.
 
 #### §2.1.3 — The manifest
 
-The select stage writes, per build, two files next to the archive (§2.4), both immutable under the
-build's dated key:
-
-- **`…-manifest.json`** — the build's record: the rule's version, the catalog snapshot it read
-  (archived to the private bucket, `naip/inventory/<date>/<state>.jsonl.gz`, about 5 MB), the
-  exclusion list's hash, and per quarter-quad: its key, the states that list it, the pick (item id,
-  acquisition date, gsd, `naip:year`), the fallback stack (ids in order), whether the pick covers its
-  cell (`partial`), its cloud score, and the work tiles it touches. Per work tile (§2.2): its input
-  hash. About 1.5 MB raw.
-- **`…-cells.json`** — what the browser needs for the credit: per quarter-quad, the pick's date and
-  gsd and a `mixed` flag when a fallback shows through. About 100 KB raw.
+The select stage writes the build's record, **`…-manifest.json`**, immutable under the build's dated
+key (§2.4): the rule's version, the catalog snapshot it read (archived to the private bucket,
+`naip/inventory/<date>/<state>.jsonl.gz`, about 5 MB), the exclusion list's hash, and per
+quarter-quad: its key, the states that list it, the pick (item id, acquisition date, gsd,
+`naip:year`), the step that picked it (`leafOn` or `offSeason`), the fallback stack (ids in order),
+whether the pick covers its cell (`partial`), its cloud score, and the work tiles it touches. Per
+work tile (§2.2): its input hash. About 1.5 MB raw. The assembler adds the archive's SHA-256 and the
+date index's (§2.7) before publishing it.
 
 The run's counts say how many cells picked by each step, how many fell back to October, how many
 items each exclusion dropped, and assert the rule's invariants on the whole catalog (every cell has
-a pick; no candidate beats its pick under the rule) — the full-inventory proof that CI's fixture
-can't carry (§7.3).
+a pick; no candidate beats its pick under the rule; the off-season step reached only the committed
+six) — the full-inventory proof that CI's fixture can't carry (§7.3).
 
 ### §2.2 — Tile: the work tiles, the warp stack, the shard
 
@@ -203,22 +250,27 @@ enough that a failure costs minutes, large enough that boot time (seconds) is no
 the raw COGs can't mosaic them. Instead:
 
 1. For each quarter-quad touching the work tile, for each frame in its stack (pick and fallbacks),
-   a **warped VRT** (`gdalwarp -of VRT`): to EPSG:3857 on the archive's pixel grid (`-tap`, the
-   deepest zoom's resolution), cut to **its own cell's outline** (`-cutline`), alpha from the
-   source's nodata, RGB only (NAIP's fourth band is near-infrared), `-r cubic`.
+   a **warped VRT** (`gdalwarp -of VRT`): to EPSG:3857 on the archive's pixel grid (`-tap`, z18's
+   resolution, D317), cut to **its own cell's outline** (`-cutline`), alpha from the source's nodata,
+   RGB only (NAIP's fourth band is near-infrared), `-r cubic`.
 2. One **mosaic VRT** of those, ordered bottom to top: each cell's oldest fallback first, its pick
    last. Since every input is cut to its own cell, neighbors abut exactly and the 300 m overlaps are
    discarded — no frame from one cell paints its neighbor, and within a cell the pick wins wherever it
    has pixels, its fallbacks wherever it doesn't. A state's flight that ends at a state line falls
    through to the other state's frame of the same cell.
 3. `gdal raster tile` over the mosaic, clipped to the work tile: WebP quality 80 (A06e's setting; the
-   scouts measured ~8–21 KB a 256-px land tile, under 1 KB water), `--skip-blank`, the work tile's
-   zooms (z11 to the archive's maximum, F-1).
-4. **Packed into a shard**: the tiles ordered by zoom and then by PMTiles tile id, with a small index
+   scouts measured ~8–21 KB a 256-px land tile, under 1 KB water), `--skip-blank`, z11 to z18.
+4. **What each frame supplied** (for the date index, D318): per cell the work tile touches, the
+   number of pixels each frame of its stack supplies to the mosaic, counted on the z16 grid (about
+   2.4 m a pixel at 44°N) from the frames' alphas in the stack's order — the pick's alpha first, each
+   fallback only where everything above it is empty. Any pixel counts; a frame that supplies none is
+   not in the cell's dates.
+5. **Packed into a shard**: the tiles ordered by zoom and then by PMTiles tile id, with a small index
    (tile id, length, hash), uploaded to the private build prefix
    `naip/build/<campaign>/shards/11/<x>/<y>.{pack,idx.json}` with a done record naming the work
-   tile's input hash, the image digest, and per-stage timings — the manifest-per-frame record the
-   cutter keeps (A06e's lesson: a run records the code that produced it).
+   tile's input hash, the image digest, per-stage timings and step 4's per-cell counts — the
+   manifest-per-frame record the cutter keeps (A06e's lesson: a run records the code that produced
+   it).
 
 **Fallbacks are read only where needed.** A cell whose pick covers it (`partial: false`) contributes
 the pick alone; its fallbacks enter the stack only when the pick is partial or the cell sits on a
@@ -238,12 +290,17 @@ landed, re-spawn the difference, three rounds; whatever is left is reported as f
 with its Machine's last log lines. A failing work tile never blocks assembly of the rest — but an
 incomplete set is never published (§2.5).
 
-**The container** is the existing GDAL image (`ghcr.io/osgeo/gdal:ubuntu-small-3.13.2`, rclone,
-`pmtiles`) with a second entrypoint beside `cut-granule`; every Machine is spawned with A06e's
-non-optional flags (`--rm --restart no --detach`, explicit `--vm-size` and `--vm-memory`, the image
-pinned by digest, the live-Machine cap counted on every live state). Same Fly app
-(`skating-imagery`), whose staged secrets already carry R2 credentials — but see Governor fork G-6 on
-which bucket they reach.
+**The container** is **its own image**, `scripts/aerial/Dockerfile`, built from the same pinned GDAL
+base the winter cutter uses (`ghcr.io/osgeo/gdal:ubuntu-small-3.13.2`, rclone, `pmtiles`) plus Node
+for the assembler (§2.4), with two entrypoints, `cut-aerial` and `assemble-aerial`. *Changed from the
+design's "a second entrypoint beside `cut-granule`" (the briefs' call):* the winter season is live
+and Convex dev's pump spawns the pinned cutter image (`FLY_IMAGE`), so the aerial work never rebuilds
+or re-pins that image, and the winter cutter's files stay outside the aerial builders' territory. It
+is pushed to the same Fly app (`skating-imagery`) under its own label, and every Machine is spawned
+with A06e's non-optional flags (`--rm --restart no --detach`, explicit `--vm-size` and
+`--vm-memory`, the image pinned by digest, the live-Machine cap counted on every live state). The
+app's staged secrets already carry R2 credentials — but see Governor fork G-6 on which bucket they
+reach.
 
 ### §2.3 — Overviews
 
@@ -261,12 +318,13 @@ What can be avoided is re-tiling.
 **The old archive is the shard cache.** A rebuild re-tiles only the work tiles whose input hash
 changed; the assembler copies every other work tile's tiles **out of the current archive** by range
 reads (in a clustered archive each work tile's tiles at a zoom are one contiguous run, because the
-Hilbert order keeps an aligned block's descendants together). Keeping a separate shard cache would
-double storage (~$70 a year) to save work the old archive already holds (Governor fork G-4).
+Hilbert order keeps an aligned block's descendants together), and their per-cell counts out of the
+current date index's build record. Keeping a separate shard cache would double storage (~$70 a year)
+to save work the old archive already holds (Governor fork G-4).
 
 **A streaming writer, not `pmtiles convert`.** `pmtiles convert` wants the whole input as an MBTiles
 on local disk and spools its output too — over a terabyte for an archive this size, past what one
-Fly volume is understood to hold (unverified, §9). The assembler (`assemble-pmtiles.py`) instead:
+Fly volume is understood to hold (unverified, §9). The assembler instead:
 
 1. reads every shard's index (and, for unchanged work tiles, the old archive's directory entries) —
    tens of millions of small entries, a few hundred megabytes;
@@ -275,19 +333,27 @@ Fly volume is understood to hold (unverified, §9). The assembler (`assemble-pmt
 3. streams header, root, metadata, leaf directories and then the tile data, in that order, into
    `rclone rcat` — a multipart upload with 128 MiB parts (64 MiB × the 10,000-part cap is ~625 GiB,
    too close to the high estimate), so no step needs the archive on disk;
-4. hashes the bytes as they pass (SHA-256 into the manifest; a multipart ETag is not a checksum).
+4. hashes the bytes as they pass (SHA-256 into the manifest; a multipart ETag is not a checksum);
+5. writes the **date index** (§2.7) from the manifest and every work tile's per-cell counts.
 
-It uses the protomaps Python package's serialization helpers, not its `Writer`, which spools to local
-disk (unverified names, §9). It runs on one Fly Machine in the Machines' region; R2 has no egress
-charge, but Fly bills outbound transfer (§6.2).
+**It is TypeScript on Node**, in `scripts/aerial`, writing the PMTiles v3 header and varint-encoded
+directories against the spec itself and read back in its tests by the `pmtiles` JS library the web
+uses. *Changed from the design's Python assembler on the protomaps package's helpers (the briefs'
+call):* CI has no Python, the helpers' names were never verified, and D40 wants the round trip in
+CI. It runs on one Fly Machine in the Machines' region; R2 has no egress charge, but Fly bills
+outbound transfer (§6.1).
 
 **Keys** (the bathymetry archive's convention, `dev/<name>-YYYYMMDD.pmtiles`, immutable — the public
 URL is CDN-cached, so a key is never overwritten):
 
 - `dev/naip/naip-summer-<YYYYMMDD>.pmtiles` — the archive
-- `dev/naip/naip-summer-<YYYYMMDD>-cells.json`, `…-manifest.json` — §2.1.3
+- `dev/naip/naip-summer-<YYYYMMDD>-cells.json` — the date index (§2.7)
+- `dev/naip/naip-summer-<YYYYMMDD>-manifest.json` — §2.1.3
+- `dev/naip/pilot/<name>/naip-summer-<YYYYMMDD>{.pmtiles,-cells.json,-manifest.json}` — a pilot's
+  three, never at the production names (§3.1)
 
-Prod has never been initialized; when it is, prod points at the same dated object (Founder fork F-4).
+**Dev only** (the founder's ruling, F-4 a). Prod has never been initialized; at the cutover prod
+points at the same dated object. No prod copy is made.
 
 ### §2.5 — Verify, publish, clean up
 
@@ -299,18 +365,26 @@ Prod has never been initialized; when it is, prod points at the same dated objec
   their shard source; the header and directories read by the same `pmtiles` JS library the web uses.
 - **Coverage.** Per quarter-quad, the share of its outline with alpha at z14; anything under 100%
   listed. Expected: only cells cut by the coast or the Canadian border.
+- **Dates (D318).** Every cell any tile touches has an entry in the date index; every entry names at
+  least one flight; every flight's date is a real day that matches its item id's; the index names
+  this archive, and its hash is the manifest's. Any miss refuses the build: **an undated cell is
+  never published.**
 - **Seams.** For every quarter-quad edge whose two sides differ in flight (year or gsd), a sampled
   tile pair rendered into a contact sheet; and a low-zoom (z9–z11) overview of the region, so the
   quilt is looked at before anyone else sees it.
+- **A viewer page** in the report: MapLibre over the archive's public URL, with the credit drawn by
+  core's own date-range function (§4.2), so a pilot can be looked at before the console's swap exists.
 - **The report** lands in `.scratch/aerial/<campaign>/report/` (gitignored) and its counts in the
   run row.
 
 **Publish** is by hand, the bathymetry way: set `VITE_NAIP_PMTILES_URL` in both local web checkouts
-and on Vercel (Preview and Production), redeploy; set `NAIP_MANIFEST_URL` on Convex dev (§3.3).
+and on Vercel (Preview and Production), redeploy; set `NAIP_MANIFEST_URL` on Convex dev (§3.3). The
+founder or the governor's named executor sets them; no brief displays a value.
 
 **Clean up.** The build prefix (shards, indexes) is deleted once verify passes and the URL is live.
-The previous archive is deleted no sooner than a week after the new one is live on Vercel — never
-by the build itself, and never the newest key (`run-aerial.sh cleanup <old-key>` refuses both).
+The previous archive (and its index and manifest) is deleted no sooner than a week after the new one
+is live on Vercel — never by the build itself, and never the newest key
+(`run-aerial.sh <campaign> --stage cleanup --old <key>` refuses both).
 
 ### §2.6 — The run record (D218, D310)
 
@@ -319,12 +393,12 @@ heartbeat as it reports progress, so Machinery can draw a build whole by its cam
 (`naip-<YYYYMMDD>`). Widen-only additions to `IMPORT_RUN_KINDS` (and `@skating/run-log`'s
 `ImportRunKind`, kept in step by `importRunVocabulary.test.ts`):
 
-| Kind | Stage | Scope (`pass`, `states`, `complete`) | Progress (the heartbeat) |
-| --- | --- | --- | --- |
-| `aerial_select` | §2.1 | `archive`, the seven, `true` (a `--states` run: those, `false`) | per state enumerated |
-| `aerial_tiles` | §2.2 | `archive`, the states its work tiles touch, `true` only for a full build | every 25 work tiles landed |
-| `aerial_assemble` | §2.3–§2.5 (assembly, upload, verify) | `archive`, the seven, `true` | per zoom written, then per verify check |
-| `aerial_reassess` | §3.3 | `survey` (new), the seven, `true` | at start and finish |
+| Kind | Stage | Scope (`pass`, `states`, `complete`) | Progress (the heartbeat) | Lands in |
+| --- | --- | --- | --- | --- |
+| `aerial_select` | §2.1 | `archive`, the seven, `true` (a `--states` run: those, `false`) | per state enumerated | B05-1 |
+| `aerial_tiles` | §2.2 | `archive`, the states its work tiles touch, `true` only for a full build | every 25 work tiles landed | B05-1 |
+| `aerial_assemble` | §2.3–§2.5 (assembly, upload, the index, verify) | `archive`, the seven, `true` | per zoom written, then per verify check | B05-1 |
+| `aerial_reassess` | §3.3 | `survey` (new), the seven, `true` | at start and finish | B05-2 |
 
 **`survey`** is a ninth scope (widen-only): *reads a third-party catalog to learn what changed and
 writes nothing but the finding*. None of the eight fit — `derived` is computed from data already
@@ -332,7 +406,53 @@ held, `archive` acquires data. `states` carries `CT` and `RI`, which `KNOWN_STAT
 the validator takes any string, but anything that renders a run's states by that list must not drop
 them (the build checks).
 
-The widen deploys before the first run that writes those kinds (widen → deploy → use).
+The widen deploys before the first run that writes those kinds (widen → deploy → use): B05-1's three
+with its merge, before the full region run; B05-2's with its own. The pilot writes to a throwaway
+local backend, never dev (G-8 a).
+
+### §2.7 — The date index (D318)
+
+*"we should always show the date of the imagery, regardless of which tile/region."* The pipeline
+ships, beside every archive, an index that dates every cell by the flights that actually supply its
+pixels.
+
+**Format** (`NaipCellIndex` in core, `naipManifest.ts`; JSON, `version: 1`):
+
+```json
+{
+  "version": 1,
+  "archive": "naip-summer-20261212.pmtiles",
+  "flights": [
+    { "date": "2023-06-21", "gsd": 0.3, "state": "VT" },
+    { "date": "2022-07-07", "gsd": 0.6, "state": "NY" }
+  ],
+  "cells": {
+    "4407339ne": [0],
+    "4407336nw": [0, 1]
+  }
+}
+```
+
+- **`flights`** — one entry per distinct (acquisition day, gsd, labeled state): a few hundred for
+  the region. `date` is the item's acquisition day (`YYYY-MM-DD`, from its `datetime`), never a
+  program year.
+- **`cells`** — quarter-quad key → indices into `flights`: the pick's flight first, then any other
+  flight that supplies at least one pixel to that cell (§2.2 step 4), most pixels first. A cell
+  appears only if the archive has tiles in it; a cell with tiles always appears.
+- **Size:** 9,168 cells at ~15 bytes each is ~140 KB raw, ~30–40 KB gzipped (an estimate; the pilot
+  measures it). Uploaded gzip-encoded (`Content-Encoding: gzip`), immutable, so the browser fetches
+  it once and caches it.
+- **Where it lives:** beside the archive, `…/naip-summer-<YYYYMMDD>-cells.json`, its URL derived from
+  `VITE_NAIP_PMTILES_URL` (`.pmtiles` → `-cells.json`, core's `naipIndexUrl`). It names its archive,
+  and the client refuses an index that names another (a mismatched pair never draws). Its SHA-256 is
+  in the manifest.
+- **Built by** the assembler from the manifest and the shards' per-cell counts (copied from the
+  current build's record for unchanged work tiles); **checked** by verify (§2.5), which refuses to
+  publish an archive with any tile whose cell the index can't date.
+
+**How the map uses it** is §4.2: the cells under the view, their flights, and the credit's month
+range. **"Date unknown" is never a shipped state**: the build won't publish one, and the map never
+draws the layer until its index has loaded.
 
 ---
 
@@ -341,13 +461,14 @@ The widen deploys before the first run that writes those kinds (widen → deploy
 ### §3.1 — One entry point
 
 `scripts/aerial/run-aerial.sh` — a new package, `@skating/aerial`, beside `scripts/imagery` (whose
-container and Fly app it reuses), shaped like `run-corpus.sh`: it logs itself with timestamps to
-`.scratch/aerial/run-<campaign>.log`, refuses to be piped, and carries one campaign id across every
-stage.
+Fly app it reuses, with its own image), shaped like `scripts/etl/run-corpus.sh`: it logs itself with
+timestamps to `.scratch/aerial/run-<campaign>.log`, refuses to be piped, and carries one campaign id
+across every stage.
 
 ```text
 run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
               [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>] [--dry-run]
+              [--old <key>]
 ```
 
 - **`all`** runs select → tiles → assemble → verify, stopping at the first refusal.
@@ -357,30 +478,31 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
   then only cells in those states (or listed) whose stack differs from the current archive's are
   re-tiled. **`--from-current`** is the partial rebuild: diff against the current manifest, re-tile
   the changed work tiles, copy the rest from the current archive (§2.4).
-- **`--pilot <name>`** writes under `dev/naip/pilot/…` and never touches the production key names.
+- **`--pilot <name>`** writes under `dev/naip/pilot/<name>/…`, never touches the production key
+  names, and writes its run rows only to a local deployment (it refuses dev and prod).
 
 ### §3.2 — What "on demand" honestly means
 
-- **The heavy stages run on Fly**, spawned from the operator's laptop with `flyctl` and the local
-  `FLY_API_TOKEN`, as A06e's backfills are. The laptop runs the orchestration for the build's
-  wall time (about 9 h for the region on 25 Machines; a pilot minutes), so it must stay awake
-  (`caffeinate`) — but every stage is resumable, so a laptop that sleeps costs a re-run of the
-  reconcile, not the work done.
+- **The heavy stages run on Fly**, spawned from the operator's laptop with `flyctl`, as A06e's
+  backfills are. The laptop runs the orchestration for the build's wall time (about 9 h for the
+  region on 25 Machines; a pilot minutes), so it must stay awake (`caffeinate`) — but every stage is
+  resumable, so a laptop that sleeps costs a re-run of the reconcile, not the work done.
 - **Convex can launch Fly Machines** — the live imagery pump does (`imageryLive.ts`, `lib/fly.ts`,
   `FLY_API_TOKEN` and `FLY_IMAGE` on Convex dev since 2026-10-09). So a console *Rebuild* is
   technically reachable. It is not built here: a nine-hour campaign with its run rows written through
   `RunLogger` (the `convex run` CLI with a deploy key) and a long-lived assembler is B01's deferred
   *hosted ETL runner* decision, not a button. Governor fork G-5 weighs a Fly "conductor" Machine as
   the step between.
-- **So in this phase**, the console's side of "on demand" is D218's: it **shows the exact command**,
-  with the campaign id and flags filled in.
+- **So in this phase**, "on demand" is the command (D218): the July check's record carries the exact
+  command, with the campaign id and flags filled in.
 
 ### §3.3 — The July reassessment
 
 A Convex job, `aerialReassess`, on the recurrence rollover's shape: **a daily tick with a month
-gate** (a no-op outside July, and a no-op again once the year's check succeeded), so a failed
-1 July is retried on 2 July rather than next year. Admins can also run it at any time (a Machinery
-*Trigger*, D218, with nothing to dry-run because it writes only its finding).
+gate** (a no-op outside July, and a no-op again once the year's check succeeded — read from
+`importRuns`' `by_kind_started`), so a failed 1 July is retried on 2 July rather than next year. An
+admin can also run it at any time with `convex run` (a Machinery *Trigger* once that page exists,
+D218, with nothing to dry-run because it writes only its finding).
 
 What one check does, in one action:
 
@@ -388,16 +510,39 @@ What one check does, in one action:
 2. **Enumerates the catalog** — the same ~70 STAC pages the select stage reads, against a deadline
    inside the action limit; items held as compact candidates per quarter-quad (a few MB), not raw
    STAC JSON.
-3. **Applies the core rule** with the committed exclusion list.
-4. **Diffs** picks and stacks against the manifest: per state, the changed cells and the newest
-   leaf-on flight; the count of new picks with no reviewed cloud score.
-5. **Writes one row** to a new table, `aerialReassessments` (the year, when, the manifest compared,
-   `unchanged | changed | failed`, per-state counts, at most 500 changed cell keys — the full diff
-   is recomputed by `--from-current`, so the row never approaches Convex's 8,192-item array cap),
-   and an `importRuns` row (`aerial_reassess`, scope `survey`).
-6. **Offers, never spends**: when `changed` and no offer is open, the offer opens (below) and one
-   email goes to admins through the existing `operatorAlerts.broadcastToStaff` (roles `admin`, at
-   most once per offer). Nothing starts a Machine.
+3. **Applies the core rule** with the committed exclusion list and the committed off-season cells
+   (a cell the off-season step reaches beyond the six is reported in the finding, not refused).
+4. **Diffs** picks and stacks against the manifest: per state, the changed cells, the newest
+   leaf-on flight among their new picks and the oldest date it would replace; the count of new picks
+   with no reviewed cloud score.
+5. **Writes its run row** (`aerial_reassess`, scope `survey`), whose notes and counts carry the
+   finding in words, and — when something changed — **the durable record** (below).
+6. **Offers, never spends**: the offer is the stored record and nothing else — no email, no
+   notification (the founder: no interim surface). Nothing starts a Machine. Until Machinery's page
+   exists, the run row is readable on the old Imports page (`/admin/imports?run=<id>`), which needs
+   nothing from this phase.
+
+**The record: `aerialOffers`** (one table, B05-2's schema; the Machinery imagery page's future read):
+
+- `status`: `open` · `built` (a build whose manifest postdates the offer was published; the next
+  check closes it) · `superseded` (a later check found a different diff and opened a new offer).
+- `openedAt`, `checkRunId` (its `importRuns` row), `closedAt?`, `closedByRunId?`.
+- `builtFrom`: what the live layer was built from — the archive key, the manifest's build date, its
+  rule version and catalog snapshot date.
+- `states`: per state, the changed cells' count, the newest flight among the new picks, the oldest
+  date it replaces.
+- `cells`: at most 500 changed cells (key, the current flight date and gsd, the new one's), and
+  `totalCells`; the full diff is recomputed by `--from-current`, so the row never approaches Convex's
+  8,192-item array cap.
+- `unscored`, `offSeasonBeyondList` (counts), `command` (the exact `run-aerial.sh` line, formatted by
+  core's `aerialRebuildCommand` so the script and the offer agree).
+- Index `by_status_opened`. One open offer at most: an unchanged diff on a later check leaves it
+  open and sends nothing.
+
+**Where it is drawn**: nowhere in the console yet. Machinery's imagery page (B01's Machinery mode,
+§3.4) draws the open offer with its cells, dates, source and command, and *Run now* for the check —
+a register row owed to that mode. The founder expects Machinery built long before the first July
+check; the record waits for it either way.
 
 **Bounded.** No document read scales with the corpus: the manifest and catalog are fetched, not
 stored; the mutations read and write one or two rows. Convex's 1 s limit binds queries and
@@ -405,20 +550,25 @@ mutations, not the action; the action's own limit binds the catalog walk, which 
 deadline and a page count.
 
 **Failure-reporting.** A new `FAILING_JOBS` member, `summerAerial`: the tick is all-or-nothing, so
-like `seasonWatch` it is counted, never parked; a failed check leaves a `failed` row and Machinery's
-health read shows it; the July gate retries daily. A catalog answering short (fewer items for a
-state than the manifest's snapshot held) is a failure, not "unchanged".
+like `seasonWatch` it is counted, never parked; a failed check leaves a failed run row and
+Machinery's health read shows it; the July gate retries daily. A catalog answering short (fewer
+items for a state than the manifest's snapshot held) is a failure, not "unchanged".
 
-**The offer** (where it appears is Founder fork F-2; the recommendation): an **Overview card** for
-admins — *"Newer summer flights are available for NH (771 cells, flown Aug 2027). The aerial can be
-rebuilt for those cells."* — with the command to copy, the unscored count when there is one, and
-*Dismiss until next July*. It is the console's own pattern for a machine finding that waits on a
-person (Overview counts what needs someone; the Inbox is what a *person* filed, §5.2 of B01's
-design). The email links to it. Accepting is running the command; the card closes when a build
-whose manifest postdates the check is published.
-
-**Copy holds to D3**: the card and the email speak of a *summer photograph* and its flight date,
+**Copy holds to D3**: the record and the run row speak of a *summer photograph* and its flight dates,
 never of ice or conditions.
+
+### §3.4 — Machinery, today
+
+Checked against the code at `11290f1f9`: **the console has no Machinery mode.** `CONSOLE_MODES`
+(`apps/web/src/components/admin/shell/consoleNav.ts`) holds Overview, Inbox, Corpus and People;
+there is no `/admin/machinery` route and no `components/admin/machinery*`.
+`packages/convex/convex/machinery.ts` is the Overview's *Machinery* card's read (`overviewJobs`: the
+imagery poll, pump and index, the metric rollups, the last import), not a page. Imagery runs are
+managed on the old `/admin/seasons` page's *Satellite imagery* section and import runs on the old
+`/admin/imports`. The mocks draw a Machinery imagery page (`machinery-imagery-v5.html`: a band of
+crons with *Run now*, the granule ledger) that a *Check for newer summer flights* cron card and an
+offer band would slot into — but building it means building the mode, which is B01's §5.5, not a
+small slot. So the page is a register row owed to Machinery, and B05 stores the record it will read.
 
 ---
 
@@ -428,15 +578,23 @@ never of ice or conditions.
 
 `consoleAerial.ts` keeps its contract with the map and the rack and changes its source:
 
-- **One `pmtiles://` raster source** on the shared protocol handler (`mapCanvas.ts`, refcounted),
-  `url: pmtiles://<VITE_NAIP_PMTILES_URL>`, so MapLibre reads the zoom range and bounds from the
-  archive's header. Tile size per Governor fork G-2.
-- **D312's behavior kept**: the *Summer aerial* rack row on every Body console tab, for any console
-  staffer, remembered per viewer, never reset by a tab; on, without a switch, under Class conflicts'
-  head map; dimmed by mode (`AERIAL_PAINT`); placed by `consoleAerialAnchor` (under any winter pass,
-  else the console's raster band — over the body's fill, under hazard fields and every line).
-- **Added only to the live map** (`liveMap()`, the theme-switch lesson), and re-added with the new
-  mode's paint after a switch.
+- **One `pmtiles://` raster source** on the shared protocol handler (`apps/web/src/lib/mapCanvas.ts`,
+  refcounted), `url: pmtiles://<VITE_NAIP_PMTILES_URL>`, so MapLibre reads the zoom range and bounds
+  from the archive's header. Tile size per Governor fork G-2.
+- **Added only once its date index has loaded** (D318, §4.2), and only to the live map (`liveMap()`,
+  the theme-switch lesson); re-added with the new mode's paint after a switch.
+- **D312's behavior kept**, staff only (D316): the *Summer aerial* rack row on every Body console
+  tab, for any console staffer, remembered per viewer, never reset by a tab; on, without a switch,
+  under Class conflicts' head map; dimmed by mode (`AERIAL_PAINT`); placed by `consoleAerialAnchor`
+  (under any winter pass, else the console's raster band — over the body's fill, under hazard fields
+  and every line).
+- **The rack's names** (the founder, F-6 a): the winter pass's row, today *Aerial*
+  (`BodyMapPane.tsx`), becomes **Winter satellite**; this layer's stays **Summer aerial**.
+- **Every map that draws it** reads the same source and the same credit: the Body console
+  (`useBodyMapCanvas.tsx`, `BodyMapPane.tsx`), the Corpus head maps (`CorpusHeadMap.tsx`), the
+  Inbox's maps (`InboxMap.tsx`, whose `aerial` switch is drawn only where a caller asks for it, In30),
+  the stills in stories and boards (`BodyMap.tsx`), and the old lake editor (`LakeEditorMap.tsx`,
+  `/admin/water/$id`) while it stands.
 - **Overzoom.** The head maps' ceiling of 19 is past the archive's deepest level; MapLibre overzooms
   a raster past its source's `maxzoom` natively, so no code is needed.
 
@@ -444,8 +602,8 @@ never of ice or conditions.
 
 - `loading` from the switch on until the source reports its view's tiles loaded (`sourcedata` for
   this source id with `isSourceLoaded` — never `idle`, which doesn't fire after a late `addSource`).
-- `failed` when the archive's header can't be read (a 404, a CORS refusal, no network): nothing
-  draws; *Try again* drops and re-adds the source.
+- `failed` when the archive's header **or its date index** can't be read (a 404, a CORS refusal, no
+  network, an index naming another archive): nothing draws; *Try again* drops and re-adds both.
 - `partial` when some tiles errored (MapLibre's `error` events for this source); *Try again* reloads
   the source.
 - The *"no timeout, because an abandoned cold render isn't cached"* rule goes: tiles are static.
@@ -453,14 +611,33 @@ never of ice or conditions.
 **Blank URL ⇒ the layer never mounts** (the bathymetry rule): no rack row, and the head map draws
 without it. D312's "never disabled" holds for a row that exists.
 
-### §4.2 — The credit from the manifest
+### §4.2 — The credit: the dates under the view (D318)
 
-The credit reads the quarter-quad under **the view's center** (updated on `moveend`), not the frame's
-box: `quarterQuadAt(lat, lng)` in core gives the key; `…-cells.json`, fetched once a session when the
-aerial first goes on (immutable, so the browser caches it; ~20–30 KB compressed), gives the date and
-gsd. *"Aerial · NAIP Jun 2023"* as today; *"Aerial · NAIP Jun 2023 and earlier"* for a `mixed` cell
-whose pick doesn't cover it (copy for the founder's pass); *"Aerial · NAIP"* where the center has no
-cell (past the coverage). No call to any service — Co18 closes.
+The credit dates **the whole view**, not its center:
+
+1. **Which cells.** Core's `quarterQuadsIn(bounds)` enumerates the 3.75′ grid keys over the map's
+   visible bounds, on load and on every `moveend`. At the console's z8 floor a 1440 × 900 view spans
+   about 78 × 40 cells (~3,100 keys), a cheap loop; zoomed in to a body it is a handful.
+2. **Which flights.** Each key in the index contributes its flights (§2.7); a key absent from the
+   index has no tiles, so nothing of the layer is drawn there.
+3. **What the credit reads** — core's `naipCreditRange(index, keys)`, the earliest and latest
+   flight, as month and year:
+   - one month: *Aerial · NAIP Jun 2023*;
+   - several: *Aerial · NAIP Jun 2021 – Aug 2023* — every photograph on screen was flown between the
+     two, so none is misdated by a single cell's date;
+   - no cell in view (past the coverage, into Canada, out to sea): the layer draws nothing there, and
+     the credit says no photograph covers this view (*Aerial · NAIP · none in view*), never a dateless
+     *Aerial · NAIP*;
+   - while loading, the existing suffix (*· Loading…*).
+
+   The words are drafts for the founder's copy pass. The October cells read their month (*Oct 2023*)
+   like any other.
+4. **No service call.** The index is fetched once a session, before the source is added; Co18 (the
+   identify call refused for CORS) closes with the call deleted.
+
+**Never undated.** The build refuses an archive with an undated cell (§2.5); the map adds the source
+only after the index has loaded and named this archive; an index that fails to load fails the layer
+(nothing draws). So no frame of the summer aerial is ever on screen without its date.
 
 ### §4.3 — The USGS path is deleted
 
@@ -469,34 +646,42 @@ Once tiles ship, nothing draws from `imagery.nationalmap.gov`, and its code goes
 
 - **Web:** `useImageryReveal.ts` and its test; `lib/imageryCache.ts` and `lib/imageryCanvas.ts` and
   their tests; the exportImage and identify halves of `consoleAerial.ts` (`aerialDate`,
-  `creditPoint`, the reveal call, `aerialMasks`); `useImageryReveal.test.ts`'s entry in
-  `src/test/domTests.json`. **The old lake editor** (`LakeEditorMap.tsx`, `/admin/water/$id`) is the
-  hook's only other caller (it draws NAIP unmasked under the editor, A06e §5); it switches to the same
-  archive layer — a few lines — so the hook has no caller left.
+  `creditPoint`, `forgetAerialDates`, the reveal call, `aerialMasks`); `useImageryReveal.test.ts`'s
+  entry in `src/test/domTests.json`. **The old lake editor** (`LakeEditorMap.tsx`, `/admin/water/$id`)
+  is the hook's only other caller (it draws NAIP unmasked under the editor, A06e §5); it switches to
+  the same archive layer and credit — a few lines — so the hook has no caller left.
 - **Core:** `aerialImagery.ts` (`aerialExportUrl`, `aerialIdentifyUrl`, `parseAerialScene`, the
   scene-name parsers and formatters) and `imageryTiles.ts` (the grid-snap), with their tests, once a
-  search shows no other reader (this doc's search found none outside the reveal).
-- **What stays:** the constants and helpers other code imports from `useImageryReveal.ts` —
-  `FREEZE_UP_LAYER_PREFIX` and `insertBeforeLayerId` (the winter passes, `useFreezeUpFrame`,
-  `useFreezeUpSeam`) and `IMAGERY_LOADING_LAYER_ID` (the skater map's layer list) — move to a small
-  module of their own; whatever of `imageryLayers.test.ts` tests a survivor moves with it.
-  `imageryMask.ts` in core stays (the winter passes' mask bake and `landmarks.ts` use it;
-  `AERIAL_MASK_METERS` goes if nothing else reads it).
-- **What the skater reveal keeps: nothing, because it is already gone.** The brief this doc was
-  written from assumed the skater reveal still uses the hook. It doesn't: B03-4 (#98) deleted the old
-  `MapView`, which was its only skater caller; the skater web's imagery is the winter passes alone
-  (`ImageryPane` → `useFreezeUpFrame`), and mobile never had an aerial tier. So deleting the hook
-  changes nothing a skater sees. Whether a body-clipped summer photograph comes back for skaters,
-  from this archive, is Founder fork F-5.
+  search shows no other reader (the design's search found none outside the reveal).
+- **What stays:** the constants and helpers the winter passes import from `useImageryReveal.ts` —
+  `FREEZE_UP_LAYER_PREFIX` and `insertBeforeLayerId` (`useFreezeUpFrame`, `useFreezeUpSeam`) — move
+  to a small module of their own; whatever of `imageryLayers.test.ts` tests a survivor moves with it.
+  **`IMAGERY_LOADING_LAYER_ID` does not survive**: its one reader is the skater map's `imagery-loading`
+  wash layer (`skater/map/mapLayers.ts`, about eight lines and an import), filtered to match nothing
+  and written by nothing since the hook lost its skater caller; it is deleted with the hook (D316). `imageryMask.ts` in core stays (the winter
+  passes' mask bake and `landmarks.ts` use it; `AERIAL_MASK_METERS` goes if nothing else reads it).
+- **What a skater sees: nothing changes** (D316). Checked 2026-11-25 at `11290f1f9`, for the founder's
+  *"I'm not sure if they currently can or not"*: **no skater can see a summer aerial today**, on the
+  web or the phone. On the web, `useImageryReveal`'s only callers are `consoleAerial.ts` and
+  `LakeEditorMap.tsx` (both admin); its skater caller, the old `MapView`, went in B03-4 (#98); no
+  `_skater` route, skater component or toggle reaches NAIP, and the skater web's imagery is the winter
+  passes alone (`ImageryPane` → `useFreezeUpFrame`). What is left is dormant: the wash layer above,
+  and comments that still speak of a skater reveal (`skater/map/useMapSpec.ts:78`,
+  `lib/mapAttribution.ts:10`, `lib/env.ts:53–54`, `skater/map/mapLayers.ts:4`), which W corrects in
+  passing. On the phone there was never a summer tier (`apps/mobile/src/components/MapView.tsx:417`,
+  `FreezeUpFrames.tsx:6`, `ImageryDock.tsx:60` say so; nothing fetches NAIP).
+- **A guard** (`packages/guards`, since it reads the apps' sources): no `nationalmap.gov` anywhere in
+  `apps/` or `packages/`, and the summer aerial's source and credit imported by no file under
+  `apps/web/src/components/skater/` or `apps/mobile/` (D316 held by the build, not by habit).
 
 ### §4.4 — The env var
 
-`VITE_NAIP_PMTILES_URL` — the archive's public URL. Named for the source, not the rack's label
-(which F-6 may change). The sidecar's URL is derived from it (`.pmtiles` → `-cells.json`). Set, as
-the bathymetry archive is: both local web checkouts (`apps/web/.env`), Vercel Preview and
-Production, `apps/web/.env.example` (blank), the web README's table, and
-`05-accounts-and-credentials.md` § 2c. Not EAS: mobile has no console. Convex dev gets
-`NAIP_MANIFEST_URL` (§3.3), registered in § 2a.
+`VITE_NAIP_PMTILES_URL` — the archive's public URL. Named for the source, not the rack's label.
+The date index's URL is derived from it (`.pmtiles` → `-cells.json`). Set, as the bathymetry archive
+is: both local web checkouts (`apps/web/.env`), Vercel Preview and Production,
+`apps/web/.env.example` (blank), the web README's table, and `05-accounts-and-credentials.md` § 2c.
+Not EAS: mobile has no console and never draws it (D316). Convex dev gets `NAIP_MANIFEST_URL`
+(§3.3), registered in § 2a.
 
 ---
 
@@ -505,39 +690,42 @@ Production, `apps/web/.env.example` (blank), the web README's table, and
 ### §5.1 — D3: a summer photograph, with its date
 
 The layer is a photograph flown in summer, two to three years apart per state (D147); it can never
-show ice and nothing may imply it does. The credit names the program and the flight month; the July
-offer speaks of flights and cells. No word anywhere calls it current, live, or satellite "of today".
+show ice and nothing may imply it does. The credit names the program and the flight months under the
+view (D318); the July record speaks of flights and cells. No word anywhere calls it current,
+live, or satellite "of today".
 
 ### §5.2 — D48 takedowns: the lever is display
 
 D48's takedown is a soft-delist of **a water body** (`listed: false`), so the body leaves the map;
 it says nothing about imagery and needs nothing from it. The archive is a public-domain mosaic of the
 region, not tied to any body, so a landowner's request has nothing in it to remove — and the
-console, the only surface drawing it, is staff-only (D312). If a skater reveal returns (F-5), it is
-drawn only for a listed body, so a delisted body gets none. Confirmed against D48's text.
+console, the only surface drawing it, is staff-only (D312, D316). Confirmed against D48's text.
 
 ### §5.3 — The public URL
 
-The archive is public on R2 like the basemap and bathymetry, and its URL is in the web bundle every
-skater downloads, so anyone can read it — NAIP is public domain, so the exposure is cost, not
-license. Cloudflare's edge won't cache an object this large, so every tile is an R2 Class B read:
-10 million free a month, $0.36 per million after. Staff use is far below that. **The trigger**: the
-cost ledger (D219) showing R2 reads past the free tier, or Class B reads not explained by staff
-sessions; the answer then is a Worker in front of the archive caching per tile (the protomaps
-serverless pattern), or a token on the read.
+The archive is public on R2 like the basemap and bathymetry, and its URL is in the web bundle (the
+console is a route of the same app), so anyone can read it — NAIP is public domain, so the exposure
+is cost, not license, and it is not a skater surface (D316). Cloudflare's edge won't cache an object
+this large, so every tile is an R2 Class B read: 10 million free a month, $0.36 per million after.
+Staff use is far below that. **The trigger**: the cost ledger (D219) showing R2 reads past the free
+tier, or Class B reads not explained by staff sessions; the answer then is a Worker in front of the
+archive caching per tile (the protomaps serverless pattern), or a token on the read.
 
 ### §5.4 — Seams and the quilt
 
 Adjacent cells from different flights differ in color and in leaf-out. The cutlines make the seams
 straight and exact (§2.2), but at low zoom the region reads as a patchwork of state flights and
 years. In the console, fenced to one body and usually zoomed in, it is mostly invisible; the verify
-report shows it before anyone else does. Color matching is out of scope (§1.3).
+report shows it before anyone else does, and the credit's range says when a view mixes flights.
+Color matching is out of scope (§1.3).
 
 ### §5.5 — The Maine North Woods and other old cells
 
 Maine 2023 didn't fly 565 quarter-quads in the North Woods; they fall back to ME 2021 (807 cells) or
-ME 2018 (258) at 0.6 m. That is a recency gap, not a hole: every cell has a summer frame except the
-six October-only cells in the western mountains (F-7). The credit's date says how old each is.
+ME 2018 (258) at 0.6 m. That is a recency gap, not a hole. The six October-only cells north of
+Rumford take their 2 October 2023 0.3 m frame, in autumn color (§2.1, the founder's ruling). The
+credit's dates say how old and which month each is. The October-cell fallback rule for Maine and New
+York is to be revisited once the founder has seen it.
 
 ### §5.6 — Coast and border nodata
 
@@ -548,18 +736,19 @@ Canada with a hard edge.
 
 ### §5.7 — Convex's limits
 
-The July action fetches and diffs in memory; its mutations read and write one or two rows; its row
-holds at most 500 keys. No `.paginate()`, no corpus-wide read. The Overview card's query reads one
-row.
+The July action fetches and diffs in memory; its mutations read and write one or two rows; its
+offer holds at most 500 cells. No `.paginate()`, no corpus-wide read.
 
 ### §5.8 — Credentials
 
-What exists (the register, 05 § 1): the Fly app `skating-imagery` with R2 credentials staged,
-`FLY_API_TOKEN` locally and on Convex dev; R2 tokens scoped per bucket; Planetary Computer needs no
-account (anonymous STAC and SAS). **What may be new, a founder task:** if the archive lives in a bucket
-the app's staged R2 token can't write (G-6), a token scoped to that bucket, staged on the app; and
-`NAIP_MANIFEST_URL` on Convex. The founder sets both; no brief displays a value. Every brief that
-touches them carries CLAUDE.md's rule verbatim.
+What exists (the register, 05 § 1): the Fly app `skating-imagery` with R2 credentials staged;
+`flyctl` logged in on this machine (and the app's scoped deploy token, `FLY_API_TOKEN`, where a
+non-interactive spawn needs one); `FLY_API_TOKEN` and `FLY_IMAGE` on Convex dev for the live pump; R2
+tokens scoped per bucket; Planetary Computer needs no account (anonymous STAC and SAS). **What may be
+new, a founder task:** if the archive lives in a bucket the app's staged R2 token can't write (G-6),
+a token scoped to that bucket, staged on the app; and `NAIP_MANIFEST_URL` on Convex. The founder sets
+both; no brief displays a value. Every brief that touches them carries CLAUDE.md's rule verbatim
+(§10.2).
 
 ---
 
@@ -568,54 +757,61 @@ touches them carries CLAUDE.md's rule verbatim.
 ### §6.1 — The archive
 
 From the scouts' measurements (6.59 M z17 tiles over ~324,000 km², WebP q80 at 8–21 KB a 256-px land
-tile), not re-measured here; ±30%:
+tile), not re-measured here; ±30%. **z18 everywhere** (D317):
 
-| | z18 everywhere (F-1 b) | z17 + z18 where 0.3 m (F-1 a) |
-| --- | --- | --- |
-| Archive | ~387 GB | ~273 GB |
-| R2 storage | ~$5.80 / month | ~$4.10 / month |
-| Fly compute, a full build | ~220 machine-hours, ~$4 at `shared-cpu-4x`/2 GB | ~145 machine-hours, ~$2.70 |
-| Wall time on 25 Machines | ~9 h | ~6 h |
-| Pixel at 44°N | 0.43 m (1.4 ft) | 0.86 m where 0.6 m, 0.43 m where 0.3 m |
+| | |
+| --- | --- |
+| Archive | ~387 GB |
+| R2 storage | ~$5.80 / month |
+| Fly compute, a full build | ~220 machine-hours, ~$4 at `shared-cpu-4x`/2 GB |
+| Wall time on 25 Machines | ~9 h |
+| Pixel at 44°N | 0.43 m (1.4 ft) |
+| The date index | ~140 KB raw, ~30–40 KB gzipped |
 
 Plus, per full build: Fly's outbound transfer for the shards (to R2) and the assembled archive (to
-R2), roughly 2× the archive at Fly's North America / Europe rate (about $0.02/GB, unverified: ~$15
-for (b)); R2 operations, pennies. A partial rebuild costs its share.
+R2), roughly 2× the archive at Fly's North America / Europe rate (about $0.02/GB, unverified: ~$15);
+R2 operations, pennies. A partial rebuild costs its share. A full region run is ~$20 all told.
 
 ### §6.2 — The code
 
 Estimated per piece against the nearest measured analogue in this repo, then multiplied. **These are
-design estimates** — written from the design, anchored on analogues, not from briefs; the Corpus
-wave's design estimates ran ~4× low and its briefs ~1.0×, and A06e's cutter grew from 154 lines at
-its first commit to 1,569 hardened.
+design estimates**, re-estimated 2026-11-25 for the rulings — the date index and the per-cell counts
+in, the Overview card, its *Dismiss* and the email out; the Corpus wave's design estimates ran ~4× low and its
+briefs ~1.0×, and A06e's cutter grew from 154 lines at its first commit to 1,569 hardened.
 
 | Piece | Analogue (measured) | Estimate, lines with tests |
 | --- | --- | --- |
-| Core rule (`naipSelection.ts`: candidates, leaf-on, newest, 0.3 m window, envelope, exclusions, stacks, the cell grid, work tiles, input hashes, the diff) and properties | `granuleSelection.ts` 309 + 214, `stacSearch.ts` 139 + 83 | 1,400–1,800 |
+| Core: the rule (candidates, leaf-on, newest, 0.3 m window, off-season step, envelope, exclusions, stacks), the grid (`quarterQuadCell`, `quarterQuadAt`, `quarterQuadsIn`, work tiles), input hashes, the diff, the manifest and date-index types, the credit range, and their properties | `granuleSelection.ts` 309, `stacSearch.ts` 139, with tests | 1,500–1,950 |
 | Select stage (catalog walk, thumbnail scoring, contact sheet, manifest, run row) | `selectGranules.ts` 346, `publishSearchPlan.ts` 81, `bakeMasks.ts` 304 | 900–1,300 |
-| Worker (`cut-aerial.sh`, the stack, tiling, the pack) | `cut-granule.sh` 154 → 1,569; `tiles-to-mbtiles.py` 163 | 700–1,100 |
+| Worker (`cut-aerial.sh`, the stack, tiling, the per-cell counts, the pack) | `cut-granule.sh` 154 → 1,569; `tiles-to-mbtiles.py` 163 | 850–1,350 |
 | Orchestrator (`run-aerial.sh`, spawn, reconcile, retries) | `fan-out.sh` 307, `backfill.sh` 238, `status.sh` 107, `run-corpus.sh` 243 | 700–1,000 |
-| Assembler (streaming PMTiles writer) and its round-trip tests | `tiles-to-mbtiles.py` 163 (simpler) | 700–1,000 |
-| Verify (counts, spot reads, coverage, seams report) | `buildIndex.ts` 129 | 400–600 |
-| Container, Fly, README, run-kind widen | `Dockerfile` 114, imagery README 741 | 500–800 |
-| Convex: the reassessment (action, table, cron, Trigger, email, `FAILING_JOBS`, queries) and tests | `clerkReconcile.ts` 588 + 1,016; `seasonWatchEmails.ts` 267 + 256 | 1,800–2,600 |
-| Web: the source swap, the credit, the lake editor, the Overview card, stories and tests | B01-7a's aerial slice: `consoleAerial.ts` 286 + 212, `AerialCredit` 78 + 88 + 85, `aerialSwitch` 42 + 86 | 1,200–1,800 added; ~3,600 deleted |
-| **Sum** | | **~8,300–12,000 new** |
-| **Honest range** (×1.5–2 for design estimates anchored on analogues) | | **~12,000–20,000 new; ~3,600 deleted** |
+| Assembler (TypeScript streaming PMTiles writer, the date index) and its round-trip tests | `tiles-to-mbtiles.py` 163 (simpler) | 800–1,200 |
+| Verify (counts, spot reads, coverage, dates, seams, the viewer page) and cleanup | `buildIndex.ts` 129 | 500–750 |
+| Container, Fly, README, the run kinds' widen | `Dockerfile` 114, imagery README 741 | 500–800 |
+| **B05-1 sum** | | **~5,750–8,350** |
+| Convex: the July check (action, `aerialOffers`, cron, `FAILING_JOBS`, the widen) and tests | `clerkReconcile.ts` 588 + 1,016; `seasonWatchEmails.ts` 267 + 256 | 1,300–2,000 |
+| Web: the source swap on every map that draws it, the dated credit, the lake editor, the rack's names, the guard, stories and tests | B01-7a's aerial slice: `consoleAerial.ts` 286 + 212, `AerialCredit` 78 + 88 + 85, `aerialSwitch` 42 + 86 | 1,200–1,900 added; ~3,600 deleted |
+| **B05-2 sum** | | **~2,500–3,900** |
+| **Sum** | | **~8,250–12,250 new** (was 8,300–12,000) |
+| **Honest range** (×1.5 at the low end, ×1.6 at the high, as the first estimate's 12,000–20,000 did) | | **~12,500–19,500 new; ~3,600 deleted** — B05-1 ~8,600–13,400; B05-2 ~3,800–6,200 added |
+
+The size the founder was told stands.
 
 ### §6.3 — The PR plan
 
 **Two PRs**, because the web swap can't merge before an archive exists on dev:
 
-1. **B05-1 — the pipeline** (core rule, `scripts/aerial`, the container's second entrypoint, the run
-   kinds' widen in `enums.ts` and `@skating/run-log`): ~7,000–12,000 lines. Over CLAUDE.md's ~5,000,
-   for a reason: the rule, the worker, the assembler and the run record are one review boundary — a
-   reviewer can't judge the warp stack without the manifest or the assembler without the shards'
-   layout. It merges after the pilot (§7.4) and before the full run, so the full run is from main.
-2. **B05-2 — the app side** (the console's swap and the USGS path's deletion, the credit, the lake
-   editor, the July reassessment and its Overview card): ~5,000–8,000 added, ~3,600 deleted. It merges
-   once the full archive is on dev and `VITE_NAIP_PMTILES_URL` points at it; the July job belongs here
-   because it reads a published manifest and offers through the console.
+1. **B05-1 — the pipeline** (core rule, grid and date-index helpers, `scripts/aerial`, its image,
+   the three run kinds' widen in `enums.ts` and `@skating/run-log`): ~8,600–13,400 lines. Over
+   CLAUDE.md's ~5,000, for a reason: the rule, the worker, the assembler, the date index and the run
+   record are one review boundary — a reviewer can't judge the warp stack without the manifest, the
+   assembler without the shards' layout, or the index without the counts the worker takes. It merges
+   after the pilot (§7.4) and before the full run, so the full run is from main.
+2. **B05-2 — the app side** (the console's swap and the USGS path's deletion, the dated credit on
+   every map, the lake editor, the rack's names, the July check and its record): ~3,800–6,200 added,
+   ~3,600 deleted. It starts after the pilot and merges once the full archive is on dev and
+   `VITE_NAIP_PMTILES_URL` points at it; the July job belongs here because it reads a published
+   manifest.
 
 Governor fork G-7 records the alternative (one PR, or three).
 
@@ -625,145 +821,139 @@ Governor fork G-7 records the alternative (one PR, or three).
 
 ### §7.1 — Builders and territories
 
-| Builder | Territory | Owns |
-| --- | --- | --- |
-| **S** (selection) | `packages/core/src/naip*.ts`, `scripts/aerial/src/select*`, `scripts/aerial/src/score*` | the rule, the cell grid, the exclusion list's shape, the manifest and cells schemas, the select stage, the inventory fixture |
-| **T** (tiles) | the rest of `scripts/aerial/**`, the container's entrypoint, `fly.toml` if touched, `IMPORT_RUN_KINDS` and `ImportRunKind` | the worker, orchestrator, assembler, verify, README, the run rows |
-| **C** (Convex, PR 2) | `packages/convex/convex/aerialReassess*.ts`, its schema table, `crons.ts`, `recurringJobs.ts`'s table row, `FAILING_JOBS`, `IMPORT_RUN_SCOPES` (`survey`), the email | the July check and its queries |
-| **W** (web, PR 2) | `apps/web/**`, the core deletions (`aerialImagery.ts`, `imageryTiles.ts`) | the swap, the credit, the lake editor, the deletions, the Overview card |
+The briefs are §10; this is the roster.
+
+| PR | Builder | Territory (in short; §10 names every file) | Waits on |
+| --- | --- | --- | --- |
+| B05-1 | **X** — the seams | the `@skating/aerial` skeleton, core's typed stubs, the three run kinds, the shard and stage contracts | nothing: lands first, alone |
+| B05-1 | **S** — selection | core's `naip*.ts` bodies and the inventory fixture; `scripts/aerial/src/{select,catalog,score}*` | X |
+| B05-1 | **T** — tiles | `scripts/aerial/{cut-aerial.sh,run-aerial.sh,spawn.sh,Dockerfile,fly.toml?,README.md}`, `scripts/aerial/src/tiles*`, the warp proof | X |
+| B05-1 | **P** — pack | `scripts/aerial/src/assemble/`, `verify*`, `cleanup*`, `viewer/` | X |
+| B05-2 | **Y** — the seams | `schema.ts`' `aerialOffers`, `aerial_reassess` and `survey`, `FAILING_JOBS`' `summerAerial`, typed stubs, codegen, `06-data-model.md` | B05-1 merged and the pilot looked at |
+| B05-2 | **K** — the July check | `convex/aerialReassess*.ts`, `lib/aerialReassess*.ts`, `crons.ts`, `recurringJobs.ts`' row | Y |
+| B05-2 | **W** — the web | the console aerial, every map that draws it, the lake editor, the deletions, the guard | Y (types only); the full archive for its last proof |
 
 ### §7.2 — Seams and order
 
-- **Day one, S publishes the types** (`NaipManifest`, `NaipCells`, the work-tile input list) in core;
-  T builds against hand-written manifests for the pilot cells until S's select stage lands.
-- **T ↔ W:** the archive's tile size and zoom range (G-2, F-1), the cells file and the env var.
-- **S ↔ C:** `selectNaipPicks(candidates, exclusions)` and `diffNaipManifests(current, next)` in
-  core; C never re-implements the rule.
-- **C ↔ W:** the reassessment's one query (`aerialReassess.current`) and its row shape.
-- **Order:** S and T in parallel → the local proofs (§7.3) → the pilot (§7.4) with W's swap running
-  locally against the pilot key → B05-1 opens → merge → the full run (the founder's go) → C and W
-  finish → B05-2 opens → merge.
+- **X lands first** (§10.3): the types every builder compiles against, the stage and key contracts
+  `run-aerial.sh` and the stage CLIs share, and the shard's done record that T writes and P reads.
+- **S ↔ T, P:** the manifest (`NaipManifest`) and the work-tile list. T and P build against
+  hand-written manifests for the pilot cells until S's select stage lands.
+- **T ↔ P:** the shard (`pack`, `idx.json`, the done record with its per-cell counts).
+- **S ↔ K:** `selectNaipPicks(candidates, exclusions, offSeason)`, `diffNaipPicks(current, next)` and
+  `aerialRebuildCommand` in core; K never re-implements the rule.
+- **S ↔ W:** `quarterQuadsIn`, `naipIndexUrl`, `parseNaipCellIndex`, `naipCreditRange` in core; W
+  never computes a date itself.
+- **Order:** X → S, T and P in parallel → integration → the local proofs (§7.3) → the pilot (§7.4,
+  gated) → `/code-review xhigh --fix` → B05-1 opens → merge → the widen deployed to dev → the full
+  run (the founder's go) → Y → K and W → B05-2 opens → merge.
 
 ### §7.3 — What is proven how
 
 - **The rule: properties on the real inventory.** `fast-check` over generated candidate sets (a pick
   is leaf-on whenever any candidate is; no leaf-on candidate is newer than the pick unless the pick is
-  0.3 m within two years; an excluded item is never picked or stacked; the stack is every other
-  leaf-on candidate in rule order; the answer doesn't depend on input order) **and** on a committed
-  slice of the real inventory (~2,000–3,000 rows chosen to hold every edge class: the six October
-  cells, the Long Island glare cells, Aroostook, the 319 two-state cells' kind, NY's April and
+  0.3 m within two years; the off-season step runs only where no candidate is leaf-on, and the build
+  refuses it outside the committed six; an excluded item is never picked or stacked; the stack is
+  every other candidate in rule order; the answer doesn't depend on input order) **and** on a
+  committed slice of the real inventory (~2,000–3,000 rows chosen to hold every edge class: the six
+  October cells, the Long Island glare cells, Aroostook, the 319 two-state cells' kind, NY's April and
   October 2021–2024 frames, VT's and NH's January 2019 frames, the mislabeled Maine items, the 72°W
   line). The full 69,207-item catalog is checked by the select stage itself, each run (§2.1.3).
 - **The grid.** `quarterQuadCell(key)` against every catalog footprint in the slice: the nominal cell
-  sits inside the footprint with ~300 m to spare on each side.
-- **The warp stack on real COG windows, locally** (GDAL on the Mac over `/vsicurl/` with a SAS token):
-  a z14 window across the VT/NY line on Champlain and one across 72°W; asserted: alpha 100% inside the
-  union of cells, no pixel painted by a neighbor's frame, a straight feature (a road) continuous
-  across the cutline to a pixel, a partial frame falling through to its fallback.
-- **The assembler:** round-trip from synthetic shards plus an old archive: every tile read back by the
-  `pmtiles` JS reader byte-equal, clustered order checked, `pmtiles verify` clean.
+  sits inside the footprint with ~300 m to spare on each side. `quarterQuadsIn(bounds)`: any point in
+  the bounds has its key in the set (a property).
+- **The credit range** (`naipCreditRange`, a property): for any index and any set of keys, the range
+  is `null` exactly when no key is indexed, and otherwise every flight of every indexed key lies
+  within it, with both ends attained.
+- **The warp stack on real COG windows, locally** (GDAL 3.13.2 on the Mac over `/vsicurl/` with a SAS
+  token): a z14 window across the VT/NY line on Champlain and one across 72°W; asserted: alpha 100%
+  inside the union of cells, no pixel painted by a neighbor's frame, a straight feature (a road)
+  continuous across the cutline to a pixel, a partial frame falling through to its fallback, and the
+  per-cell counts naming exactly the frames that show.
+- **The assembler:** round trip from synthetic shards plus an old archive: every tile read back by the
+  `pmtiles` JS reader byte-equal, clustered order checked, the date index naming every tiled cell,
+  `pmtiles verify` clean on the output.
 - **The Convex job:** `convex-test` under the suite's harness, with the catalog and manifest fetches
-  faked: unchanged, changed, short catalog (`failed`), the July gate, the offer opening once and one
-  email, `FAILING_JOBS` counted.
-- **The web:** the source added only to the live map, re-added on a theme switch, the states'
-  transitions from MapLibre's events, the credit by the view's center, the lake editor on the same
-  layer, no request to `nationalmap.gov` anywhere (a guard-style test over the source).
+  faked: unchanged, changed, short catalog (failed), the July gate, the offer opening once, a later
+  identical diff leaving it untouched, a different one superseding, a newer manifest closing it as
+  `built`, no email or notification sent on any path, `FAILING_JOBS` counted.
+- **The web:** the source added only to the live map and only after its index, re-added on a theme
+  switch, the states' transitions from MapLibre's events, the credit's range as the view moves (one
+  flight, several, none in view), an index for another archive failing the layer, the lake editor on
+  the same layer, the rack's two names, and the guard (§4.3).
 
 ### §7.4 — The pilot, then the region
 
-**A pilot**, built end to end to dev's bucket under `dev/naip/pilot/…` with its run rows, and looked
-at in the console from a local web checkout running B05-2's swap. What it must show: a state line, the
-72°W zone seam, a 0.3 m / 0.6 m join, a partial frame falling through, the Canadian border's edge, and
-the archive loading in about a second. What it measures: seconds per work tile, bytes per tile at
-each zoom (to firm §6.1), source bytes read, outbound transfer, the assembler's throughput. Which area
-is Founder fork F-3.
+**The pilot** (the founder's area, F-3 a): Lake Champlain's north end — the VT/NY line, Vermont 2025
+at 0.3 m against New York 2024 at 0.6 m, Québec's edge, big water (~24 quarter-quads) — plus a strip
+straddling 72°W on the New Hampshire–Massachusetts line near Jaffrey and Winchendon (~16: the UTM zone
+seam and another state line), ~40 cells. Built end to end to dev's bucket under
+`dev/naip/pilot/<name>/…`, its run rows on a throwaway local backend (never dev), and looked at in the
+verify report's viewer page, its credit drawn by core's range. What it must show: a state line, the
+72°W zone seam, a 0.3 m / 0.6 m join, a partial frame falling through, the Canadian border's edge, the
+credit's range across a join, and the archive loading in about a second. What it measures: seconds
+per work tile, bytes per tile at each zoom (to firm §6.1), the date index's size, source bytes read,
+outbound transfer, the assembler's throughput. Pennies of spend, started only on the governor's go.
 
-**The full region run** (~9 h, ~25 Machines, a few terabytes read, ~$20 all told for F-1 b) is **the
-founder's go/no-go**, given the pilot's numbers.
+**The full region run** (~9 h, ~25 Machines, a few terabytes read, ~$20 all told) is **the
+founder's go/no-go**, given the pilot's numbers — never a builder's.
 
 ### §7.5 — Definitions of done
 
-- **B05-1:** every gate green (`pnpm check-types`, lint, the suites); `/code-review xhigh --fix`
-  over the PR's range; the pilot built, verified and looked at by the founder; its numbers in
-  *What the build found (B05)* below; CI green including Convex's codegen-verify step.
-- **The full run:** verify clean (counts, spot reads, coverage limited to coast and border, the seams
-  sheet looked at); the archive and sidecars at their dated keys; the run rows read back.
+- **B05-1:** every gate green (`pnpm check-types`, lint, the suites, `packages/guards`);
+  `/code-review xhigh --fix` over the PR's range; the pilot built, verified and looked at by the
+  founder; its numbers in *What the build found (B05)* below; CI green including Convex's
+  codegen-verify step.
+- **The full run:** verify clean (counts, spot reads, coverage limited to coast and border, every cell
+  dated, the seams sheet looked at); the archive, index and manifest at their dated keys; the run rows
+  read back on dev.
 - **B05-2:** the same gates; the console drawing the full archive on dev in both themes on a Body
-  console tab and Class conflicts' head map; Co15, Co18 and Co19 closed in B01's register; the July
-  job's dry tick on dev reading `unchanged`; no `nationalmap.gov` request in the web app.
+  console tab, Class conflicts' head map and the lake editor, each with its dated credit; Co7's rack
+  names, Co15, Co18 and Co19 closed in B01's register; the July job's dry tick on dev reading
+  unchanged; no `nationalmap.gov` request in the web app.
 
 ---
 
 ## §8 — Forks
 
-Founder forks are marked F, governor forks G. Each stands alone.
+Founder forks are marked F, governor forks G. **All eight founder forks were ruled on 2026-11-25**
+(§1.2); each is kept here with its ruling for the record. The briefs (§10) build on each governor
+fork's recommendation; G-6 is checked at build start.
 
 ### Founder forks
 
-**F-1 — The maximum zoom.** You answered *"I think 18"* to (a) z17 everywhere plus z18 where the
-source is 0.3 m, or (b) z18 everywhere. At 44°N a tile pixel is 0.86 m (2.8 ft) at z17, 0.43 m
-(1.4 ft) at z18, 0.21 m (0.7 ft) at z19. For the 0.3 m sources (VT, NH, MA, CT, RI, and 60% of
-Maine) z18 is the ceiling without upscaling, under both options. The difference is the 0.6 m sources
-(all of New York and about 40% of Maine, about half the region): under (a) they stop at z17, which
-throws away about half of what the camera recorded; under (b) they get z18, a 1.4× upscale that
-shows all of it — so (b) is not upscaling "for no real reason". (a) is ~273 GB (~$4.10/month,
-~145 machine-hours a build); (b) ~387 GB (~$5.80/month, ~220 machine-hours, ~$4 of compute). (a) also
-needs two raster layers stacked in the map, because a tile missing inside a source's zoom range is
-drawn blank rather than letting the coarser one show (checked in this repo's MapLibre 6.19 and
-`pmtiles` 4.5 code); (b) is one source. **Recommendation: (b), z18 everywhere** — all of every
-source's detail, one source, for about $1.70 a month more.
+**F-1 — The maximum zoom. Ruled: (b), z18 everywhere (D317).** The question: (a) z17 everywhere plus
+z18 where the source is 0.3 m, or (b) z18 everywhere. At 44°N a tile pixel is 0.86 m (2.8 ft) at z17,
+0.43 m (1.4 ft) at z18. Under (a) the 0.6 m sources (all of New York and about 40% of Maine) would
+stop at z17 and lose about half of what the camera recorded, and the map would need two stacked
+layers; (b) shows all of it in one source for about $1.70 a month more.
 
-**F-2 — Where the July offer appears.** When the July check finds a newer summer flight for any part
-of the region, it can: (a) open a card on the Overview for admins, with the cells and flight date and
-the command to run, plus one email to admins linking to it; (b) file an Inbox item; (c) send the email
-only. **Recommendation: (a).** The Inbox is for what a person filed; the Overview is where the console
-counts what needs someone, and the email makes sure a July finding isn't missed.
+**F-2 — Where the July offer appears. Ruled: neither the Overview nor the Inbox** — *"I think this
+belongs in the Machinery pages eventually, where we manage the rest of the imagery runs"*, with no
+interim surface: *"Don't worry about the interim, I'll have the Machinery built long before July."*
+Stored data shaped for Machinery's imagery page, nothing else (§3.3). The Overview card and the
+email are out of B05-2.
 
-**F-3 — The pilot area.** Before the ~9 h region run, one small area is built end to end and looked
-at in the console. Options: (a) Lake Champlain's north end where Vermont, New York and Québec meet
-(~24 quarter-quads: the state line, Vermont's 2025 0.3 m against New York's 2024 0.6 m, the Canadian
-edge, big water) **plus** a few cells straddling 72°W on the New Hampshire–Massachusetts line near
-Jaffrey and Winchendon (~16: the UTM zone seam and another state line), ~40 cells, pennies; (b) all of
-Rhode Island (~116 cells: one flight, the coast and its nodata, no zone seam, no mixed resolution);
-(c) both. **Recommendation: (a)** — it puts every hard join in front of you in one look.
+**F-3 — The pilot area. Ruled: (a)** — Champlain's north end plus the NH–MA strip across 72°W, ~40
+cells (§7.4).
 
-**F-4 — Dev only, or dev and prod, now.** Prod has never been initialized. Options: (a) build to
-`dev/` only; at the prod cutover, point prod at the same dated object (no second copy); (b) also
-copy it to a `prod/` key now (another ~$5.80/month for an archive nothing reads). **Recommendation:
-(a).**
+**F-4 — Dev only, or dev and prod, now. Ruled: (a)** — dev only; prod points at the same dated object
+at the cutover.
 
-**F-5 — A summer photograph for skaters.** The skater web app no longer shows NAIP at all: the old
-map that drew the per-lake summer reveal was deleted in B03-4 (#98), and the phone never had one.
-Today a skater sees only the winter satellite passes. The new archive could bring the summer
-photograph back for one lake at a time, clipped to it (D146 unchanged). Options: (a) not in this
-phase — add it to B04's running list; (b) build it in this phase. **Recommendation: (a)** — it needs
-its own design (how a raster is clipped to one body in MapLibre on both clients, what the sheet
-says), and this phase is the console's.
+**F-5 — A summer photograph for skaters. Ruled: no (D316)** — *"I don't want summer for skaters at
+all. This is purely to help admins place landmarks on the map properly"*; and of the clipped reveal of
+one lake, *"at least not for now"*. Neither option the design offered (later via B04, or in this
+phase) stands; nothing goes on B04's running list; revisited only on his word.
 
-**F-6 — What the rack calls the two imagery rows.** The Body console's rack reads *Aerial* (the
-winter Sentinel pass, from the Imagery tab) and *Summer aerial* (this layer), which read as one thing
-twice (the register's Co7). Options: (a) *Winter satellite* and *Summer aerial*; (b) *Satellite pass*
-and *Summer photo*; (c) keep both as they are. **Recommendation: (a)** — it names each by its season
-and its kind (one is a satellite, the other a photograph from a plane), and keeps *Summer aerial*,
-which you named.
+**F-6 — What the rack calls the two imagery rows. Ruled: (a)** — *Winter satellite* and *Summer
+aerial* (Co7's rack half).
 
-**F-7 — The six Maine cells with no summer frame.** Six quarter-quads in a north–south strip in
-Maine's western mountains (70.53°W, 44.6°N–45.0°N, running north from Rumford) were flown only in
-October (2 Oct 2023 at 0.3 m; 7 Oct 2021 and 5 Oct 2018 at 0.6 m); their only summer frames are 1 m,
-from July 2015. Your October ruling (older summer frames over foliage) doesn't reach them, because
-they have no summer frame at 0.6 m or better. Early October there is likely near peak color, so this
-is a real foliage frame, not merely a late one. Options: (a) the 2 October 2023 frame at 0.3 m —
-newest and sharpest, in autumn color; (b) July 2015 at 1 m — summer green, but eight years older,
-over three times coarser, and a visibly blurrier stripe among 0.3 m neighbors. **The
-recommendation: (a)**, with the credit showing its date — but (b) if you'd rather hold the
-no-foliage line without exception; it is six cells either way, and the July check revisits them.
+**F-7 — The six Maine cells with no summer frame. Ruled: (a)** — the 2 October 2023 frame at 0.3 m,
+through the rule's off-season step, held to the committed six (§2.1). With it, a standing
+requirement: the imagery's date is always shown, on every tile and region (D318).
 
-**F-8 — Who reviews the cloud and glare candidates.** NAIP publishes no cloud measure, so the build
-scores each chosen frame from its thumbnail; about 98 score high, mostly cities, dunes and beaches,
-and only about 20 are real (Long Island glare, a few Aroostook clouds). Options: (a) the builder
-pre-screens with a contact sheet and you confirm only the ones that would change a pick; (b) you
-review all of the flagged; (c) the builder decides alone. **Recommendation: (a)** — a few minutes of
-your time on the ~20 that matter.
+**F-8 — Who reviews the cloud and glare candidates. Ruled: (a)** — the builder pre-screens with a
+contact sheet; the founder confirms only the frames that would change a pick (§2.1.2).
 
 ### Governor forks
 
@@ -774,13 +964,13 @@ its own workstreams, decisions and infrastructure, which is a phase by the READM
 **G-2 — Tile size.** (a) 512-px tiles, read by MapLibre at `tileSize: 512`, so the deepest level is
 z17 in tile numbers while its pixels are z18's; (b) 256-px tiles. Same pixels either way. **The
 recommendation: (a)** — a quarter of the tile requests (R2 Class B reads), directory entries and
-WebP headers. F-1 is worded in pixel terms so it doesn't depend on this.
+WebP headers. D317 is worded in pixel terms so it doesn't depend on this.
 
 **G-3 — Assembly.** (a) a streaming PMTiles writer from the shards and the old archive into a
 multipart upload, no local copy; (b) a Fly volume and `pmtiles convert` (needs the MBTiles, a spool
 and the output on disk — over a terabyte, past one volume, unverified); (c) the laptop (a 387 GB
-download and upload, and the disk). **Recommendation: (a)**, proven on the pilot; (b) split by zoom
-band as the fallback if the writer fails its round trip.
+download and upload, and the disk). **Recommendation: (a)**, proven on the pilot, written in
+TypeScript (§2.4); (b) split by zoom band as the fallback if the writer fails its round trip.
 
 **G-4 — The shard cache.** (a) The old archive is the cache: a rebuild re-tiles changed work tiles
 and copies the rest from the live archive; (b) keep every build's shards in R2 (doubles storage,
@@ -797,10 +987,10 @@ to `skating-imagery`, while the basemap and bathymetry are public in `skating-ba
 and the imagery README disagree on where the winter frames live). (a) `skating-imagery` under
 `dev/naip/` if it already serves `VITE_IMAGERY_ARCHIVE_URL` publicly (no new credential); (b)
 `skating-basemap`, with a new token scoped to it staged on the app (a founder task). **The
-recommendation: (a), checked at build start.**
+recommendation: (a), checked at build start** (T's first task, §10.5).
 
 **G-7 — How many PRs.** (a) Two: the pipeline, then the app side (above); (b) one, held until the
-full archive exists (one review, ~17,000–28,000 lines); (c) three, splitting the July check from the
+full archive exists (one review, ~12,500–19,500 lines); (c) three, splitting the July check from the
 web swap. **Recommendation: (a)** — the pipeline must merge before the full run is from main, and the
 app side can't merge before the archive exists.
 
@@ -809,8 +999,23 @@ dev can drop another branch's indexes (the shared-deployment rule). (a) The pilo
 a throwaway local backend and dev gets rows from the full run on; (b) merge the widen alone first.
 **Recommendation: (a).**
 
-**G-9 — Splitting the archive by zoom band.** (a) One archive; (b) two or three by zoom band (only
-forced if F-1 is (a), which makes two by construction). **Recommendation: (a)** unless F-1 goes (a).
+**G-9 — Splitting the archive by zoom band.** (a) One archive; (b) two or three by zoom band.
+**Settled: (a)** by D317 (z18 everywhere is one source).
+
+### New questions the rulings open (2026-11-25)
+
+**F-9 (open) — Should the pilot also show the October and older-summer cells?** You chose the pilot area
+(Champlain's north end plus the NH–MA strip, ~40 cells), and you also said two Maine rulings are to be
+seen before they're final: the older summer frames that fill October-flown cells (*"let's see how it
+looks and re-address in the future"*), and the 2 October 2023 autumn frame for the six cells north of
+Rumford. Neither is in the pilot area, so as planned you'd first see them after the ~9 h region run.
+Options: (a) the pilot as you ruled it, ~40 cells; you see the Maine cells after the full run and any
+change is a partial rebuild of those cells; (b) add a strip north of Rumford — the six October cells
+and their 2023 summer neighbors, plus a few cells where ME 2023 meets ME 2018 (~15 cells, ~55 in
+all), so you see both rulings in the pilot; (c) (b) plus a New York join where 2024 meets the 2019
+fallback (~8 more). The extra cells cost pennies and add a few minutes. **Recommendation: (b)** — it
+puts both of the rulings you wanted to see in front of you before the expensive run, and a New York
+2019 join looks like any other year join.
 
 ---
 
@@ -818,9 +1023,9 @@ forced if F-1 is (a), which makes two by construction). **Recommendation: (a)** 
 
 Relied on from the scouts or from memory, not re-checked for this doc:
 
-- The **sizes**: 6.59 M z17 tiles, ~387 GB / ~273 GB ±30%, 8–21 KB land and <1 KB water tiles,
-  ~220 / ~145 machine-hours, ~9 h on 25 Machines, 9–10 TB of source reads (and this doc's claim that
-  reading fallbacks only where needed cuts that).
+- The **sizes**: 6.59 M z17 tiles, ~387 GB ±30%, 8–21 KB land and <1 KB water tiles, ~220
+  machine-hours, ~9 h on 25 Machines, 9–10 TB of source reads (and this doc's claim that reading
+  fallbacks only where needed cuts that); the date index's ~140 KB.
 - **Planetary Computer**: lossless 4-band COGs, anonymous SAS tokens and their lifetime, blobs in West
   Europe; the STAC's paging behavior from Convex; whether NAIP COGs carry a nodata value or a mask
   (the stack's alpha depends on it; a dark-water pixel must not read as nodata).
@@ -828,19 +1033,356 @@ Relied on from the scouts or from memory, not re-checked for this doc:
   items against 2,754), NAIP ending 0–7 km past the border, the ~300 m quarter-quad overlap, the
   Long Island and Aroostook cloud and glare cases, the 134 partial Maine picks (thumbnail-based).
 - **Infrastructure**: R2's 5 GiB single-PUT cap and 10,000-part multipart limit; Cloudflare not
-  caching an object this size at the edge; R2's free 10 M Class B reads and $0.36/M; Fly's outbound
-  transfer rate and its volume size limit; the Fly Machine's ephemeral disk size; `ams` and `fra`
-  being the right regions for West Europe.
-- **Tools**: `gdal raster tile`'s tile-size option; the protomaps Python package's serialization
-  helpers (names); `pmtiles verify` on a streamed archive; `rclone rcat` with 128 MiB parts.
+  caching an object this size at the edge; R2's free 10 M Class B reads and $0.36/M; R2's public
+  URL serving a `Content-Encoding: gzip` object as such; Fly's outbound transfer rate and its volume
+  size limit; the Fly Machine's ephemeral disk size; `ams` and `fra` being the right regions for West
+  Europe; pushing a second image to `skating-imagery` under its own label without touching the
+  pinned cutter image.
+- **Tools**: `gdal raster tile`'s tile-size option; `pmtiles verify` on a streamed archive;
+  `rclone rcat` with 128 MiB parts.
 - **Which bucket** serves `VITE_IMAGERY_ARCHIVE_URL` publicly (G-6).
+- **The scouts' snapshot** (the inventory, the thumbnails' scores, `picks_T2.json`) lives in another
+  session's scratchpad, which a reboot can clear; S's fixture slice is cut from it, or from a fresh
+  catalog walk if it is gone (§10.4).
 
-Checked for this doc: the inventory's composition by state, year, gsd and month; the mislabeled
+Checked for the design: the inventory's composition by state, year, gsd and month; the mislabeled
 Maine items (744, at 42.x°N, a `me_` prefix); the rule's picks re-run (identical to the scouts'); the
 six October-only cells; the cloud scores' distribution; the 1,769 / 488 / 135 work tiles at
 z11 / z10 / z9; that MapLibre 6.19 draws a missing `pmtiles` raster tile transparent rather than
 falling back to its parent; that Convex already launches Fly Machines; that the skater web no longer
-calls `useImageryReveal`.
+calls `useImageryReveal`. Checked for the rulings (2026-11-25, at `11290f1f9`): that no Machinery
+mode, route or page exists (§3.4); that `InboxMap.tsx`, `CorpusHeadMap.tsx`, `BodyMap.tsx` and
+`LakeEditorMap.tsx` draw or credit the aerial; that the rack's winter row reads *Aerial* in
+`BodyMapPane.tsx`; that `importRuns` has `by_kind_started` and a Convex action can open its own run
+(`standing.ts`); that `/admin/imports` takes `?run=`; that CI runs no Python; that D84 and D146 are
+the decisions the skater ruling amends; and that no skater path on the web or the phone can show a
+summer aerial today (§4.3).
+
+---
+
+## §10 — The builds: briefs
+
+Written 2026-11-25 against `summer-aerial-tiles` rebased on main at `11290f1f9`. The governor's
+harness is B01's (`plans/phases/B01-admin-console.md` §12, as *Briefs (B01-7a)* adapts it): builders
+are subthreads, each in its own copy of the governor's worktree, committing there; their work comes
+back by a file merge; disjoint territories keep the merges clean; builders never push or deploy.
+
+### §10.1 — How these briefs work
+
+- **A brief is pasted as two blocks**: *Every brief begins with this* (§10.2, its placeholders
+  filled) and the builder's own section.
+- **X lands first, alone** (§10.3). S, T and P start when the governor says X is merged, and pull it
+  with `merge_worktrees`.
+- **The phase branch** is `summer-aerial-tiles` (or the governor's cut of it), rebased on main.
+  B05 shares no files with B01-7b's territory except `plans/` and the run-kind lists in
+  `lib/enums.ts` and `scripts/run-log/src/types.ts`; X's hunk there is three lines, merged after
+  whatever 7b has landed.
+- **Decision numbers.** B05 holds D314–D318. B01-7b mints from D319 up.
+- **Disk.** The machine had about 24 GB free on 2026-11-25; each builder's `pnpm install` is about
+  2 GB, and the pilot's local proof windows are small. Four copies fit; the governor checks before
+  starting a fifth.
+- **The scouts' snapshot.** The catalog inventory, thumbnails and picks are in another session's
+  scratchpad (`…/03acff8b-d7f9-4a22-a2da-2ee61a619aa9/scratchpad/naip2/`, about 380 MB, the
+  inventory 12 MB in `inv/`). X copies `inv/` and `picks_T2.json` into the package's gitignored
+  `scripts/aerial/.scratch/scouts/` before anything else, so S's fixture doesn't depend on a
+  directory a reboot can clear. Never copy `tok.json` (a SAS token).
+
+### §10.2 — Every brief begins with this
+
+You are a builder for Phase B05 (the summer aerial as our own region-wide NAIP archive), in the
+`skating-app` monorepo. Read `CLAUDE.md`, then `plans/phases/B05-summer-aerial.md` in full — §2 (the
+pipeline), §2.7 (the date index), §7 (the build model) and §10 (these briefs) are yours; D314–D318 in
+`plans/01-decisions.md` are the rules. The existing winter-imagery pipeline is the pattern, read and
+never edited: `scripts/imagery/` (`cut-granule.sh`, `fan-out.sh`, `backfill.sh`, `status.sh`,
+`tiles-to-mbtiles.py`, `Dockerfile`, `fly.toml`, `README.md`, `src/selectGranules.ts`), core's
+`granuleSelection.ts` and `stacSearch.ts`, `scripts/run-log/` (`RunLogger`), and
+`packages/convex/convex/importRuns.ts`.
+
+You work in your own copy of the governor's worktree, on the phase branch, and commit there. Your
+changes come back to the governor by a file merge. Start with `pnpm install --frozen-lockfile`, once.
+
+The invariants:
+
+```
+- Never display an env file or a variable's value — not `cat`, `echo`, `env`, `printenv`, nor a
+  `grep -v` that keeps values; a transcript is forever, and one such dump rotated five secrets. To
+  learn which variables exist: `grep -o '^[A-Z_][A-Z0-9_]*=' <file>`. To load them:
+  `set -a; source <file> >/dev/null 2>&1; set +a`.
+- Never bare `git stash` / `git stash pop`: the stash stack is shared by every worktree and session,
+  and a pop can land someone else's work. Set work aside with a WIP commit. Commit with explicit
+  paths, never `git add -A` or `git add .`. Trailer:
+  `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
+- `pnpm`, never `npx` (the root devEngines blocks npm, and the error doesn't say so). Run
+  `pnpm install --frozen-lockfile` once in your own copy; never another install, never `pnpm add`.
+  A dependency you need is a seam request.
+- D3: no copy, score, decay curve or classification may say or imply that ice is safe, skateable,
+  or "good to go", or predict it. The summer aerial is a photograph flown in summer; nothing calls it
+  current or live.
+- D316: the summer aerial is console staff's only. Nothing you write reaches a skater surface
+  (`apps/web/src/components/skater/`, `apps/mobile/`).
+- D40: tests land with the feature — Vitest for logic, `fast-check` for the selection rule and every
+  piece of date or grid math, `convex-test` for functions; the goal is 100% coverage, relaxed only
+  where a line genuinely isn't worth a test, and you say which. US spellings in all new text. No
+  decision numbers or section marks in any UI text or email. The repo is public: no real person's
+  name or address in a fixture.
+- Territory: you own <paths>. Edit nothing else. A change you need outside it is a seam request in
+  your report, never an edit. `scripts/imagery/**` is the live winter cutter's: read it, never edit.
+- Targeted tests only: `pnpm --filter <package> exec vitest run <files>`, plus
+  `pnpm --filter <package> check-types` and `pnpm exec biome check <files you touched>`. The full
+  suite is the governor's.
+- Run every gate in the foreground and wait for it inside the turn. Never start a gate, a build, a
+  spawn or a watch in the background and end the turn: a turn that ends with work running reports
+  nothing.
+- No pushes, no deploys, no `convex dev` against dev, no `convex deploy` ever. No cloud spend (no
+  `fly machine run`, no image push, no R2 write) except a step this brief marks as gated, and then
+  only after the governor's explicit go for that step.
+- Before you report: mutation-check the invariants your tests guard (B01 §12.5) and name the
+  mutations; say which lines you left untested and why.
+- Report as your final message, compactly: what landed (one line per commit); the gates you ran and
+  their counts; the mutations run; seam requests; anything you could not verify; branch + HEAD.
+```
+
+### §10.3 — X: the seams (T0, lands first)
+
+**Owns:**
+- **The package skeleton** `scripts/aerial/`: `package.json` (`@skating/aerial`, private, ESM;
+  dependencies `@skating/core`, `@skating/run-log`, `pmtiles` at the web's range `^4.5.0`;
+  devDependencies as `scripts/imagery/package.json`'s plus `fast-check` `^4.10.2`; scripts
+  `check-types`, `test` with coverage, and one per stage CLI), `tsconfig.json`, `vitest.config.ts`
+  (imagery's shape and thresholds, the CLI shells excluded by name), a package `.gitignore`
+  (`.scratch/`); the lockfile, from X's one `pnpm install` (X is the only builder who installs a
+  dependency). Copy the scouts' snapshot into `.scratch/scouts/` (§10.1).
+- **Core's typed stubs**, each exporting its final signature with a body that throws `PLACEHOLDER`,
+  exported from `packages/core/src/index.ts` now so no later builder edits it:
+  - `naipSelection.ts`: `NaipCandidate` (item id, quarter-quad key, labeled state, acquisition date,
+    gsd, `naip:year`, bbox), `NaipExclusion` (item id, `cloud` | `glare`, `reviewedBy: 'founder' |
+    'builder'`, `reviewedOn`), `NaipCellPick` (key, pick, `step: 'leafOn' | 'offSeason'`, stack,
+    states), `NAIP_RULE_VERSION`, `selectNaipPicks(candidates, exclusions, offSeasonCells)`,
+    `diffNaipPicks(current, next)`.
+  - `naipGrid.ts`: `quarterQuadCell(key)`, `quarterQuadAt(lat, lng)`, `quarterQuadsIn(bounds)`,
+    `workTilesOf(key)`, `NAIP_WORK_ZOOM = 11`, `NAIP_MIN_ZOOM = 8`, `NAIP_MAX_ZOOM = 18` (D317).
+  - `naipManifest.ts`: `NaipManifest` (§2.1.3), `NaipCellIndex` and `NAIP_CELL_INDEX_VERSION = 1`
+    (§2.7, the format verbatim), `parseNaipCellIndex(json, archiveName)`, `naipIndexUrl(archiveUrl)`,
+    `naipCreditRange(index, keys)` → `{ from: string; to: string } | null`,
+    `aerialRebuildCommand(campaign, options)`.
+  - `naipExclusions.ts`: `NAIP_EXCLUSIONS: readonly NaipExclusion[] = []` and
+    `NAIP_OFF_SEASON_CELLS` — the six keys of §2.1, final (the founder's ruling).
+- **The run kinds' widen** (three lines each): `aerial_select`, `aerial_tiles`, `aerial_assemble` in
+  `IMPORT_RUN_KINDS` (`packages/convex/convex/lib/enums.ts`, with a comment naming
+  `scripts/aerial`) and in `ImportRunKind` (`scripts/run-log/src/types.ts`), and their rows in
+  `scripts/run-log/README.md`'s table. `pnpm --filter @skating/convex codegen` to confirm
+  `convex/_generated` doesn't change (commit it if it does).
+- **The shared contracts** in `scripts/aerial/src/`: `keys.ts` (the R2 key layout of §2.4 and the
+  build prefix of §2.2 — `archiveKey`, `indexKey`, `manifestKey`, `buildPrefix`, `shardKeys`, each
+  taking an optional pilot name), `stages.ts` (the stage names, the flags of §3.1 and one
+  `parseStageArgs`, the contract `run-aerial.sh` and every stage CLI share), and `shard.ts` (the
+  pack's index entry, the done record with its input hash, image digest, timings and per-cell counts
+  `Record<cellKey, Record<itemId, number>>`). Implemented and tested, not stubs: they are small, and
+  three builders read them.
+
+**Tests owed:** `keys.ts`, `stages.ts` and `shard.ts` at 100%; `importRunVocabulary.test.ts`
+(`packages/guards`) green with the three kinds.
+
+**Gates, in the foreground:** `pnpm --filter @skating/aerial check-types`,
+`pnpm --filter @skating/aerial exec vitest run`, `pnpm --filter @skating/core check-types`,
+`pnpm --filter @skating/guards exec vitest run`, `pnpm --filter @skating/convex check-types`, Biome
+on every file touched.
+
+**Mutation checks:** drop one kind from `ImportRunKind` (the vocabulary guard must fail); make
+`archiveKey` ignore the pilot name (a `keys.ts` test must fail).
+
+**Credentials:** none.
+
+### §10.4 — S: selection
+
+**Owns:** `packages/core/src/naipSelection.ts`, `naipGrid.ts`, `naipManifest.ts` (replacing X's
+stubs), `naipExclusions.ts` (the entries, once reviewed), `naipCatalog.ts` (new: the Planetary
+Computer STAC walk by POST paging and the anonymous SAS token, `fetch` injected — beside
+`stacSearch.ts`, which the live winter poll shares and S does not edit), their tests, and the fixture
+`packages/core/src/fixtures/naipInventory.jsonl`; in `scripts/aerial/src/`: `select.ts` (the stage
+CLI), `catalog*.ts` (the CLI side of the walk and the inventory archive), `score*.ts` (thumbnail
+scoring and the contact sheet), their tests.
+
+**Builds:** the rule of §2.1 exactly — the five steps, the envelope drop (§2.1.1), the exclusions
+before the season step, the off-season step and its refusal outside `NAIP_OFF_SEASON_CELLS`, the
+fallback stacks; the grid; the input hash per work tile (a stable hash of the stack ids, the rule's
+version and the image's inputs); `diffNaipPicks`; the date-index helpers (`parseNaipCellIndex`,
+which refuses another archive's index or an entry with no flight; `naipIndexUrl`;
+`naipCreditRange`); `aerialRebuildCommand`. The select stage: the walk over the seven states, the
+inventory archived to `.scratch/aerial/<campaign>/inventory/` (the private bucket's copy is the full
+run's, by the governor's executor), the scores, the manifest, the run row (`aerial_select`, scope per
+§2.6, heartbeat per state) through `RunLogger`, its counts and the whole-catalog invariants of
+§2.1.3. The scoring step decodes thumbnails with GDAL (`gdal raster info --stats`, or a small helper
+over the GDAL 3.13.2 already on the Mac) rather than a new npm image library; if that is impossible,
+a seam request.
+
+**The cloud pre-screen** (F-8 a): run the scores over the real catalog, sort the high ones into
+false positives (set aside, listed), likely cloud or glare on a pick (a contact sheet showing each
+beside the frame that would replace it, for the founder), and likely cloud on a fallback only
+(decided by S, listed). The founder's contact sheet goes in the report as a path; S commits only
+the entries the governor relays as confirmed, plus its own fallback-only ones marked `builder`.
+
+**The fixture:** ~2,000–3,000 rows cut from the scouts' inventory (`scripts/aerial/.scratch/scouts/`;
+a fresh walk if it is gone), holding every edge class of §7.3, as compact candidates (~400 KB).
+
+**Tests owed:** the properties of §7.3 for the rule (`fast-check`), the grid, `quarterQuadsIn` and
+the credit range; the fixture's known answers (the six off-season picks are the 2 October 2023
+frames; the Long Island and Aroostook strikes fall back as §2.1.2 says; the 744 mislabeled items are
+dropped; the 319 two-state cells compete); `parseNaipCellIndex`'s refusals; the walk's paging, short
+answers and expired-token retry against a fake `fetch`. Core's thresholds stand; the goal is 100% of
+`naip*.ts`.
+
+**Gates, in the foreground:** `pnpm --filter @skating/core exec vitest run src/naip`,
+`pnpm --filter @skating/aerial exec vitest run src/select src/catalog src/score`, both packages'
+`check-types`, Biome on touched files. Then the select stage for real, as a dry run
+(`--dry-run`: the manifest under `.scratch/`, no run row), on the laptop; report its counts against
+§2.1's table.
+
+**Mutation checks:** the two-year window `<=` → `<`; the 20 May clause dropped; the exclusions
+applied after the season step; the off-season refusal removed; the stack's order reversed;
+`quarterQuadsIn` off by one cell at an edge; `naipCreditRange` returning the first key's flight
+only. Each must fail a named test.
+
+**Credentials:** none. The STAC and the SAS token endpoint are anonymous; a SAS token is a short-lived
+credential, so it is never printed, logged or committed.
+
+### §10.5 — T: tiles, the worker and the entry point
+
+**Owns:** `scripts/aerial/cut-aerial.sh` (the worker), `scripts/aerial/run-aerial.sh` (the entry
+point, §3.1), `scripts/aerial/spawn.sh` (spawn, drain, reconcile, retry: `fan-out.sh` and
+`backfill.sh`'s shapes, their caps and warnings carried over), `scripts/aerial/Dockerfile` (§2.2:
+the same pinned GDAL base, rclone, `pmtiles`, Node 26 for P's assembler; entrypoints `cut-aerial`
+and `assemble-aerial`), `scripts/aerial/fly.toml` only if `fly deploy --build-only` needs its own,
+`scripts/aerial/README.md` (the runbook: the six ways to get Fly wrong, carried from the imagery
+README; the stages; the pilot; publish and cleanup), `scripts/aerial/src/tiles*.ts` (the work units
+from the manifest, the input hashes compared, the reconcile by done record), `scripts/aerial/proofs/`
+(the warp proof), their tests.
+
+**First task — G-6, before anything that writes:** find which bucket serves
+`VITE_IMAGERY_ARCHIVE_URL` publicly and whether the Fly app's staged R2 token can write there, **by
+names and hosts only**: compare the URL's host against the buckets' public hosts in a script that
+prints only `matches skating-imagery: yes/no`, never the URL itself; `fly secrets list --app
+skating-imagery` prints names and digests, never values. Report the answer; the governor decides (a
+new token is a founder task).
+
+**Builds:** the warp stack of §2.2 exactly (warped VRTs cut to each cell's own outline on z18's grid,
+RGB only, alpha from nodata, the mosaic ordered pick last, fallbacks only where needed), `gdal raster
+tile` at z11–z18 WebP q80 `--skip-blank` at the tile size G-2 rules (512), **the per-cell counts**
+(§2.2 step 4: on the z16 grid, each frame's pixels in stack order, any pixel counts), the shard per
+`shard.ts`, the done record; SAS refresh per work tile; `run-aerial.sh`'s stages, logging and
+refusals (piped, no campaign, a `--pilot` against a non-local Convex target); the run row
+`aerial_tiles` with a heartbeat every 25 work tiles. The local warp proof (§7.3) as a script over
+real COG windows with GDAL on the Mac.
+
+**Tests owed:** `tiles*.ts` at 100%: the work units from a manifest; a changed stack changes exactly
+its work tiles' input hashes (a property); reconcile counts a done record with a stale hash as
+outstanding and never counts presence (a property); the three retry rounds and the failed list.
+`run-aerial.sh`'s argument refusals through `stages.ts`' tests (X's) plus a shell smoke run with
+`--dry-run`. The warp proof's assertions, run locally, results in the report.
+
+**Gates, in the foreground:** `pnpm --filter @skating/aerial exec vitest run src/tiles`,
+`check-types`, Biome; `shellcheck` on the shell scripts if it is installed (say if not); the warp
+proof; `docker build` of the image **locally only** (no push).
+
+**Mutation checks:** reconcile by presence (a property must fail); the cutline dropped from one
+warped VRT (the proof's "no pixel painted by a neighbor" must fail); the stack's order reversed (the
+proof's "partial frame falls through" must fail); the counts taken before the stack's order (the
+proof's "counts name exactly the frames that show" must fail).
+
+**Gated step (the governor's go, cloud spend):** pushing the image to the Fly registry under its own
+label (`fly deploy --build-only --push --app skating-imagery --dockerfile scripts/aerial/Dockerfile`
+with an image label; never plain `fly deploy`; never re-pin `FLY_IMAGE`) and the pilot's spawns
+(§10.7).
+
+**Credentials:** `flyctl`'s own login on this machine (or the app's scoped `FLY_API_TOKEN`, if the
+governor says to export it); the R2 credentials are the Fly app's staged secrets, read by the
+Machine, never on the laptop. The env-file rule in §10.2 applies verbatim: never display a variable's
+value, a token, or a SAS URL.
+
+### §10.6 — P: pack — assemble, the date index, verify, cleanup
+
+**Owns:** `scripts/aerial/src/assemble/` (the streaming PMTiles v3 writer: header, varint
+directories, leaf splitting, clustered layout, dedupe by hash, copy-from-old by range reads, the
+`rclone rcat` stream with 128 MiB parts, SHA-256 as it passes; and the date-index writer, §2.7),
+`scripts/aerial/src/verify*.ts` (§2.5, every check), `scripts/aerial/src/cleanup*.ts` (§2.5's
+refusals), `scripts/aerial/src/viewer/` (the report's viewer page: MapLibre over the public URL,
+the credit from core's `naipCreditRange`), their tests. How the assembler ships in T's image (a
+bundled `.mjs`, or `tsx`) is P's call, agreed with T by a seam request; the entrypoint script itself
+is T's.
+
+**Builds:** §2.3 and §2.4's assembler, §2.7's index from the manifest and the done records (and, for
+unchanged work tiles, the current build's counts), §2.5's verify, cleanup and the viewer; the run row
+`aerial_assemble`, heartbeat per zoom and per verify check.
+
+**Tests owed:** the round trip of §7.3 (synthetic shards plus a synthetic old archive → the writer →
+every tile read back by the `pmtiles` JS reader byte-equal; clustered order; a deduplicated tile
+addressed twice; an unchanged work tile copied from the old archive by a faked range reader, with its
+counts); the index (every tiled cell has an entry, a property; the pick's flight first; flights
+distinct; it names its archive); every verify refusal by its own test (a missing work tile, a zoom
+gap, a byte mismatch, an undated cell, an index naming another archive, a hash not the manifest's);
+cleanup's two refusals (the newest key, anything live under a week). The goal is 100%; the `rclone`
+and network boundary is the one excluded seam, named in the config.
+
+**Gates, in the foreground:** `pnpm --filter @skating/aerial exec vitest run src/assemble src/verify
+src/cleanup`, `check-types`, Biome; `pmtiles verify` (Homebrew's, on the Mac) on a locally assembled
+synthetic archive.
+
+**Mutation checks:** a varint off by one (the round trip must fail); the clustered flag cleared; the
+index skipping a cell with tiles (verify must refuse); cleanup accepting the newest key.
+
+**Gated step (the governor's go):** the pilot's assembly on Fly and its upload under
+`dev/naip/pilot/<name>/` (§10.7).
+
+**Credentials:** the R2 credentials are the Fly app's staged secrets, read on the Machine; cleanup on
+the laptop uses the gitignored rclone remote the bathymetry scripts use (`scripts/lib/mirror-r2.sh`'s
+pattern), named, never printed. Verify reads only the public URL. The env-file rule in §10.2 applies
+verbatim.
+
+### §10.7 — The pilot (gated, after integration)
+
+Run by one executor the governor names, from the integrated phase branch, only after the governor's
+go:
+
+1. **A throwaway local backend** with the branch's Convex (the widen), per CLAUDE.md — never dev,
+   never prod; `run-aerial.sh --pilot` refuses any other target.
+2. **The image** pushed under its own label (T's gated step); its digest pinned for the run.
+3. **The pilot**: `run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain-nhma --cells <the ~40 cells,
+   or ~55 if the founder takes F-9 (b)> --stage all` → select, tiles, assemble, verify, under
+   `dev/naip/pilot/champlain-nhma/`.
+4. **The look**: the verify report and its viewer page to the founder through the governor (the
+   joins of §7.4, the credit's range across them).
+5. **The numbers** (§7.4's list) into *What the build found (B05)*.
+
+Then `/code-review xhigh --fix` over `main...<branch>`, the gates again, B05-1 opens. **The full
+region run is the founder's go/no-go** on the pilot's numbers, run from main after the merge and the
+widen's deploy, by the executor the governor names — never by a builder.
+
+### §10.8 — B05-2, in brief (after the pilot)
+
+The same invariants (§10.2). Written in full when the pilot is in; the shape now:
+
+- **Y — the seams** (lands first): `schema.ts`' `aerialOffers` (§3.3, index `by_status_opened`);
+  `aerial_reassess` in `IMPORT_RUN_KINDS` and `ImportRunKind`, `survey` in `IMPORT_RUN_SCOPES` and
+  `ImportRunScopePass` (and the run-log README); `summerAerial` in `FAILING_JOBS`; typed stubs of
+  `convex/aerialReassess.ts`; codegen; `plans/06-data-model.md`'s row for the table (the
+  data-model guard requires it).
+- **K — the July check**: `convex/aerialReassess.ts` and `lib/aerialReassess*.ts` (the tick and its
+  July gate, the action, the offer's open, supersede and close — stored only, no email or
+  notification), `crons.ts`' entry, `recurringJobs.ts`' `CRON_OF` row, their
+  `convex-test` cases (§7.3). Credentials: `NAIP_MANIFEST_URL` is set on dev by the founder; K's
+  tests fake it, and K never reads or prints it.
+- **W — the web**: `apps/web/src/components/admin/body/map/` (`consoleAerial.ts`, `AerialCredit.tsx`,
+  `BodyMapPane.tsx`' rack names, `useBodyMapCanvas.tsx`, `BodyMap.tsx`, their stories and tests),
+  `admin/inbox/map/InboxMap.tsx`, `admin/corpus/map/CorpusHeadMap.tsx`, `admin/LakeEditorMap.tsx`, the
+  deletions of §4.3 (web and core's `aerialImagery.ts` and `imageryTiles.ts`), the survivors' new
+  module and its importers (`useFreezeUpFrame.ts`, `useFreezeUpSeam.ts`, `skater/map/mapLayers.ts` —
+  imports only), `src/test/domTests.json`, `apps/web/.env.example`, the web README's table, and the
+  guard `packages/guards/src/summerAerialSurfaces.test.ts` (§4.3). It consumes core's helpers and
+  never computes a date itself. Its last proof is the console on the full archive in both themes.
+  Credentials: `VITE_NAIP_PMTILES_URL` is set by the founder; W reads it only by name.
+- **Size:** ~3,800–6,200 added, ~3,600 deleted (§6.2). If the governor wants the founder's pilot look
+  in the console itself rather than the viewer, W can start right after B05-1's X instead, against
+  the pilot key; the default is after the pilot, as ruled.
 
 ---
 
