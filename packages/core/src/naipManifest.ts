@@ -3,12 +3,22 @@
  * every archive (§2.7, D318), the credit's date range (§4.2), and the one command line the pipeline
  * and the July offer agree on (§3.1, §3.3).
  *
- * PLACEHOLDER (S's): the T0 seam. Every type and constant is final; `parseNaipCellIndex`,
- * `naipIndexUrl`, `naipCreditRange`, `formatNaipCreditRange` and `aerialRebuildCommand` throw until S
- * replaces their bodies.
+ * Also the build's hashes — each work tile's input hash and the exclusion list's — so the select
+ * stage and anything that checks it compute them one way.
+ *
+ * The catalog walk (`naipCatalog.ts`) is exported through here: core's index lists this file, and
+ * the walk sits beside the records it feeds.
  */
 
-import type { NaipPickStep, NaipState } from './naipSelection';
+import { isQuarterQuadKey, NAIP_MAX_ZOOM, NAIP_MIN_ZOOM, NAIP_TILE_SIZE } from './naipGrid';
+import {
+  isNaipState,
+  type NaipExclusion,
+  type NaipPickStep,
+  type NaipState,
+} from './naipSelection';
+
+export * from './naipCatalog';
 
 // ── Names ────────────────────────────────────────────────────────────────────────────────────────
 
@@ -151,17 +161,64 @@ export interface NaipCellIndex {
  * The fetched index, checked: throws on a wrong version, an index naming another archive than
  * `archiveName`, an entry with no flight or an out-of-range one, or a malformed flight. The map
  * fails the layer on a throw (a mismatched pair never draws).
+ *
+ * Returns a fresh copy holding only what the format names, so nothing extra the file carried is
+ * read downstream.
  */
 export function parseNaipCellIndex(json: unknown, archiveName: string): NaipCellIndex {
-  void json;
-  void archiveName;
-  return placeholder('parseNaipCellIndex');
+  const refuse = (why: string): never => {
+    throw new Error(`the summer aerial's date index ${why}`);
+  };
+  if (!isRecord(json)) return refuse('is not an object');
+  if (json.version !== NAIP_CELL_INDEX_VERSION) {
+    return refuse(`is version ${JSON.stringify(json.version)}, not ${NAIP_CELL_INDEX_VERSION}`);
+  }
+  if (json.archive !== archiveName) {
+    return refuse(`names ${JSON.stringify(json.archive)}, not ${archiveName}`);
+  }
+  if (!Array.isArray(json.flights)) return refuse('has no flights');
+  const flights: NaipCellIndexFlight[] = json.flights.map((f: unknown, i: number) => {
+    if (!isRecord(f)) return refuse(`flight ${i} is not an object`);
+    const { date, gsd, state } = f;
+    if (typeof date !== 'string' || !isCalendarDay(date)) {
+      return refuse(`flight ${i} has no real day: ${JSON.stringify(date)}`);
+    }
+    if (typeof gsd !== 'number' || !Number.isFinite(gsd) || gsd <= 0) {
+      return refuse(`flight ${i} has no resolution`);
+    }
+    if (typeof state !== 'string' || !isNaipState(state)) {
+      return refuse(`flight ${i} names no state of the seven: ${JSON.stringify(state)}`);
+    }
+    return { date, gsd, state };
+  });
+  if (!isRecord(json.cells)) return refuse('has no cells');
+  const cells: Record<string, number[]> = {};
+  for (const [key, entry] of Object.entries(json.cells)) {
+    if (!isQuarterQuadKey(key)) return refuse(`has a cell that isn't one: ${JSON.stringify(key)}`);
+    if (!Array.isArray(entry) || entry.length === 0) return refuse(`dates no flight for ${key}`);
+    const seen = new Set<number>();
+    for (const at of entry) {
+      if (typeof at !== 'number' || !Number.isInteger(at) || at < 0 || at >= flights.length) {
+        return refuse(`points ${key} at no flight: ${JSON.stringify(at)}`);
+      }
+      if (seen.has(at)) return refuse(`names flight ${at} twice for ${key}`);
+      seen.add(at);
+    }
+    cells[key] = [...entry];
+  }
+  return { version: NAIP_CELL_INDEX_VERSION, archive: archiveName, flights, cells };
 }
 
 /** The date index's URL beside an archive's: `….pmtiles` → `…-cells.json`. */
 export function naipIndexUrl(archiveUrl: string): string {
-  void archiveUrl;
-  return placeholder('naipIndexUrl');
+  // A query or fragment stays where it was: the suffix belongs to the path.
+  const cut = archiveUrl.search(/[?#]/);
+  const path = cut === -1 ? archiveUrl : archiveUrl.slice(0, cut);
+  const rest = cut === -1 ? '' : archiveUrl.slice(cut);
+  if (!path.endsWith(NAIP_ARCHIVE_SUFFIX) || path.length === NAIP_ARCHIVE_SUFFIX.length) {
+    throw new Error(`not a summer aerial archive URL (no ${NAIP_ARCHIVE_SUFFIX}): ${archiveUrl}`);
+  }
+  return path.slice(0, -NAIP_ARCHIVE_SUFFIX.length) + NAIP_INDEX_SUFFIX + rest;
 }
 
 /** The earliest and latest flight under a view, as `YYYY-MM-DD` days. */
@@ -178,9 +235,26 @@ export function naipCreditRange(
   index: NaipCellIndex,
   keys: Iterable<string>,
 ): NaipCreditRange | null {
-  void index;
-  void keys;
-  return placeholder('naipCreditRange');
+  let from: string | null = null;
+  let to: string | null = null;
+  for (const key of keys) {
+    const entry = Object.hasOwn(index.cells, key) ? index.cells[key] : undefined;
+    if (entry === undefined) continue;
+    for (const at of entry) {
+      const date = (index.flights[at] as NaipCellIndexFlight).date;
+      if (from === null || date < from) from = date;
+      if (to === null || date > to) to = date;
+    }
+  }
+  return from === null || to === null ? null : { from, to };
+}
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+/** `2023-06-21` → `Jun 2023`. */
+function monthYear(day: string): string {
+  if (!isCalendarDay(day)) throw new Error(`not a YYYY-MM-DD day: ${JSON.stringify(day)}`);
+  return `${MONTHS[Number(day.slice(5, 7)) - 1]} ${day.slice(0, 4)}`;
 }
 
 /**
@@ -188,8 +262,160 @@ export function naipCreditRange(
  * The credit's surrounding words (*Aerial · NAIP …*, *none in view*) are the web's.
  */
 export function formatNaipCreditRange(range: NaipCreditRange): string {
-  void range;
-  return placeholder('formatNaipCreditRange');
+  const from = monthYear(range.from);
+  const to = monthYear(range.to);
+  if (range.from > range.to) {
+    throw new Error(`a credit range runs forward: ${range.from} is after ${range.to}`);
+  }
+  return from === to ? from : `${from} – ${to}`;
+}
+
+// ── The build's hashes (§2.1.3) ───────────────────────────────────────────────────────────────────
+
+/**
+ * The tiling's own version: what the worker does to a stack (the warp, the cutlines, the WebP
+ * settings, the per-cell counts). It is part of every work tile's input hash, so bumping it re-tiles
+ * the region under `--from-current`. Bump it whenever `cut-aerial.sh` would draw different pixels
+ * from the same stack.
+ */
+export const NAIP_TILING_VERSION = 1;
+
+/** One cell as a work tile's input hash reads it. */
+export interface NaipHashedCell {
+  key: string;
+  pick: string;
+  stack: readonly string[];
+  partial: boolean;
+}
+
+/**
+ * A work tile's input hash (§2.1.3): hex SHA-256 over everything that decides its pixels — the rule's
+ * version, the tiling's (`NAIP_TILING_VERSION`, the zooms and the tile size), the work tile itself,
+ * and each of its cells' pick, stack (in order) and `partial`. The cells' order doesn't matter;
+ * anything else that changes does. "Landed" is a done record carrying this hash (`shardLanded`).
+ */
+export function naipWorkTileInputHash(
+  workTile: string,
+  cells: readonly NaipHashedCell[],
+  ruleVersion: number,
+): string {
+  if (new Set(cells.map((c) => c.key)).size !== cells.length) {
+    throw new Error(`work tile ${workTile}: a cell is listed twice`);
+  }
+  const sorted = [...cells].sort((a, b) => (a.key < b.key ? -1 : 1));
+  return sha256Hex(
+    JSON.stringify({
+      rule: ruleVersion,
+      tiling: [NAIP_TILING_VERSION, NAIP_MIN_ZOOM, NAIP_MAX_ZOOM, NAIP_TILE_SIZE],
+      workTile,
+      cells: sorted.map((c) => [c.key, c.pick, [...c.stack], c.partial]),
+    }),
+  );
+}
+
+/**
+ * The exclusion list's hash, for the manifest (`exclusionsHash`): hex SHA-256 of the list sorted by
+ * item id, each entry's four fields in a fixed order — so two lists that strike the same frames for
+ * the same reasons hash alike whatever their order in the file.
+ */
+export function naipExclusionsHash(exclusions: readonly NaipExclusion[]): string {
+  // Sorted on the whole row, so even a doubled id (which the list's own test refuses) hashes alike
+  // in any order.
+  const rows = exclusions
+    .map((e) => JSON.stringify([e.itemId, e.reason, e.reviewedBy, e.reviewedOn]))
+    .sort();
+  return sha256Hex(`[${rows.join(',')}]`);
+}
+
+/**
+ * SHA-256 of a string's UTF-8 bytes, as hex (FIPS 180-4). Here rather than `node:crypto` because
+ * core runs in Convex and the browser too, and the July check recomputes what the select stage
+ * wrote; `crypto.subtle` would make every caller async for a few kilobytes.
+ */
+export function sha256Hex(text: string): string {
+  const bytes = new TextEncoder().encode(text);
+  const bitLength = bytes.length * 8;
+  const padded = new Uint8Array(Math.ceil((bytes.length + 9) / 64) * 64);
+  padded.set(bytes);
+  padded[bytes.length] = 0x80;
+  const view = new DataView(padded.buffer);
+  // The length's high word: zero below 512 MB, which a manifest's text never approaches.
+  view.setUint32(padded.length - 8, Math.floor(bitLength / 2 ** 32));
+  view.setUint32(padded.length - 4, bitLength >>> 0);
+
+  const h = [
+    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
+  ];
+  const w = new Uint32Array(64);
+  for (let off = 0; off < padded.length; off += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(off + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const a = w[i - 15] as number;
+      const b = w[i - 2] as number;
+      const s0 = rotr(a, 7) ^ rotr(a, 18) ^ (a >>> 3);
+      const s1 = rotr(b, 17) ^ rotr(b, 19) ^ (b >>> 10);
+      w[i] = ((w[i - 16] as number) + s0 + (w[i - 7] as number) + s1) >>> 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h as [
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+      number,
+    ];
+    for (let i = 0; i < 64; i++) {
+      const t1 =
+        (hh +
+          (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) +
+          ((e & f) ^ (~e & g)) +
+          (K[i] as number) +
+          (w[i] as number)) >>>
+        0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) >>> 0;
+      hh = g;
+      g = f;
+      f = e;
+      e = (d + t1) >>> 0;
+      d = c;
+      c = b;
+      b = a;
+      a = (t1 + t2) >>> 0;
+    }
+    const next = [a, b, c, d, e, f, g, hh];
+    for (let i = 0; i < 8; i++) h[i] = ((h[i] as number) + (next[i] as number)) >>> 0;
+  }
+  return h.map((x) => x.toString(16).padStart(8, '0')).join('');
+}
+
+function rotr(x: number, n: number): number {
+  return (x >>> n) | (x << (32 - n));
+}
+
+const K = [
+  0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4, 0xab1c5ed5,
+  0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe, 0x9bdc06a7, 0xc19bf174,
+  0xe49b69c1, 0xefbe4786, 0x0fc19dc6, 0x240ca1cc, 0x2de92c6f, 0x4a7484aa, 0x5cb0a9dc, 0x76f988da,
+  0x983e5152, 0xa831c66d, 0xb00327c8, 0xbf597fc7, 0xc6e00bf3, 0xd5a79147, 0x06ca6351, 0x14292967,
+  0x27b70a85, 0x2e1b2138, 0x4d2c6dfc, 0x53380d13, 0x650a7354, 0x766a0abb, 0x81c2c92e, 0x92722c85,
+  0xa2bfe8a1, 0xa81a664b, 0xc24b8b70, 0xc76c51a3, 0xd192e819, 0xd6990624, 0xf40e3585, 0x106aa070,
+  0x19a4c116, 0x1e376c08, 0x2748774c, 0x34b0bcb5, 0x391c0cb3, 0x4ed8aa4a, 0x5b9cca4f, 0x682e6ff3,
+  0x748f82ee, 0x78a5636f, 0x84c87814, 0x8cc70208, 0x90befffa, 0xa4506ceb, 0xbef9a3f7, 0xc67178f2,
+];
+
+function isRecord(v: unknown): v is Record<string, unknown> {
+  return typeof v === 'object' && v !== null && !Array.isArray(v);
+}
+
+/** Is `s` a `YYYY-MM-DD` day the calendar has? */
+export function isCalendarDay(s: string): boolean {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!match) return false;
+  const [y, m, d] = [Number(match[1]), Number(match[2]), Number(match[3])];
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 && t.getUTCDate() === d;
 }
 
 // ── The one command (§3.1) ────────────────────────────────────────────────────────────────────────
@@ -215,16 +441,46 @@ export interface AerialRunOptions {
   old?: string;
 }
 
-/**
- * The exact `run-aerial.sh` line for a campaign, as the July offer stores it and as `parseStageArgs`
- * reads it back.
- */
-export function aerialRebuildCommand(campaign: string, options: AerialRunOptions): string {
-  void campaign;
-  void options;
-  return placeholder('aerialRebuildCommand');
+/** Where the entry point lives, from the repository's root. */
+export const AERIAL_ENTRY_POINT = 'scripts/aerial/run-aerial.sh';
+
+const CAMPAIGN = /^naip-(pilot-)?\d{8}$/;
+const PILOT_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** A shell word, single-quoted only when it must be (`'` itself closed, escaped and reopened). */
+function shellWord(word: string): string {
+  if (word === '') return "''";
+  return /^[A-Za-z0-9_@%+=:,./-]+$/.test(word) ? word : `'${word.replaceAll("'", `'\\''`)}'`;
 }
 
-function placeholder(fn: string): never {
-  throw new Error(`PLACEHOLDER (S): naipManifest.${fn} is not built yet`);
+/**
+ * The exact `run-aerial.sh` line for a campaign, as the July offer stores it and as `parseStageArgs`
+ * reads it back: the campaign, then the flags in `AerialRunOptions`' order, each only when set
+ * (`--stage` only when it isn't `all`, the default). Throws on a campaign or pilot name the entry
+ * point would refuse, so an offer never stores a command that can't run.
+ */
+export function aerialRebuildCommand(campaign: string, options: AerialRunOptions): string {
+  if (!CAMPAIGN.test(campaign)) {
+    throw new Error(`campaign ${JSON.stringify(campaign)} is not naip-<YYYYMMDD>`);
+  }
+  if (options.pilot !== undefined && !PILOT_NAME.test(options.pilot)) {
+    throw new Error(`pilot ${JSON.stringify(options.pilot)} is not lowercase words and hyphens`);
+  }
+  if (
+    options.stage !== undefined &&
+    !(AERIAL_STAGES as readonly string[]).includes(options.stage)
+  ) {
+    throw new Error(`unknown stage ${JSON.stringify(options.stage)}`);
+  }
+  const words = [AERIAL_ENTRY_POINT, campaign];
+  if (options.stage !== undefined && options.stage !== 'all') words.push('--stage', options.stage);
+  if (options.states !== undefined && options.states.length > 0) {
+    words.push('--states', [...new Set(options.states)].sort().join(','));
+  }
+  if (options.cells !== undefined) words.push('--cells', options.cells);
+  if (options.fromCurrent === true) words.push('--from-current');
+  if (options.pilot !== undefined) words.push('--pilot', options.pilot);
+  if (options.dryRun === true) words.push('--dry-run');
+  if (options.old !== undefined) words.push('--old', options.old);
+  return words.map(shellWord).join(' ');
 }
