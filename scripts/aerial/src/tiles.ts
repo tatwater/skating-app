@@ -223,7 +223,7 @@ export interface AerialChunk {
  * tile` refuses a tile range outside its mosaic's extent rather than writing nothing (*"Dataset
  * extent not intersecting specified min/max X/Y tile coordinates"*, measured 2026-11-26), and a work
  * tile at a coast, a border or the region's edge has such chunks — the integration's local run cut
- * one with 4 of its 16 chunks touched. A chunk no cell overlaps would draw nothing anyway, so
+ * one whose cells touch 7 of its 16 chunks. A chunk no cell overlaps would draw nothing anyway, so
  * skipping it changes no pixel.
  */
 export interface AerialUnitChunk extends AerialChunk {
