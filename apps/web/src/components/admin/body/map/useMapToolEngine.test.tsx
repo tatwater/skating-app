@@ -38,7 +38,13 @@ const engines = vi.hoisted(() => ({
   ringFails: false,
   ringGate: null as null | Promise<void>,
   point: [] as {
-    options: { point?: unknown; snap?: (p: unknown) => unknown; onPick: (p: unknown) => void };
+    options: {
+      point?: unknown;
+      snap?: (p: unknown) => unknown;
+      color: string;
+      onPick: (p: unknown) => void;
+    };
+    colors: string[];
     destroyed: boolean;
   }[],
   line: [] as {
@@ -52,10 +58,11 @@ const engines = vi.hoisted(() => ({
 
 vi.mock('@/lib/pointDraw', () => ({
   createPointDraw: (_map: unknown, options: (typeof engines.point)[number]['options']) => {
-    const e = { options, destroyed: false };
+    const e = { options, colors: [] as string[], destroyed: false };
     engines.point.push(e);
     return {
       set: () => {},
+      setColor: (c: string) => void e.colors.push(c),
       destroy: () => {
         e.destroyed = true;
       },
@@ -164,11 +171,13 @@ vi.mock('@/lib/polygonDraw', () => ({
 function fakeMap() {
   const sources = new Map<string, { data: unknown }>();
   const layers: string[] = [];
+  const paints = new Map<string, Record<string, unknown>>();
   const moves: unknown[] = [];
   const canvas = { style: { cursor: '' } };
   return {
     sources,
     layers,
+    paints,
     moves,
     canvas,
     getCanvas: () => canvas,
@@ -183,7 +192,15 @@ function fakeMap() {
         : undefined;
     },
     addSource: (id: string, spec: { data: unknown }) => void sources.set(id, { data: spec.data }),
-    addLayer: (spec: { id: string }) => void layers.push(spec.id),
+    addLayer: (spec: { id: string; paint?: Record<string, unknown> }) => {
+      layers.push(spec.id);
+      paints.set(spec.id, { ...spec.paint });
+    },
+    getLayer: (id: string) => (layers.includes(id) ? { id } : undefined),
+    setPaintProperty: (id: string, prop: string, value: unknown) => {
+      const paint = paints.get(id);
+      if (paint) paint[prop] = value;
+    },
     getZoom: () => 11,
     flyTo: (o: unknown) => void moves.push({ fly: o }),
     fitBounds: (b: unknown) => void moves.push({ fit: b }),
@@ -217,12 +234,18 @@ const RING: GeoJSON.Polygon = {
 };
 
 /** The map half, over a fake map the test can swap (a theme switch re-creates the map). */
-function MapHalf({ map }: { map: ReturnType<typeof fakeMap> | null }) {
+function MapHalf({
+  map,
+  palette = PALETTE,
+}: {
+  map: ReturnType<typeof fakeMap> | null;
+  palette?: ReturnType<typeof bodyMapPalette>;
+}) {
   const claim = useMapToolClaim();
   // A new map is a new getter, as `useMapCanvas` hands out.
   const getter = useState(() => new Map<unknown, () => unknown>())[0];
   if (!getter.has(map)) getter.set(map, () => map);
-  useMapToolEngine(getter.get(map) as never, claim, PALETTE);
+  useMapToolEngine(getter.get(map) as never, claim, palette);
   return (
     <div data-testid="bar">{claim === null ? 'none' : `${claim.mode}: ${claim.line ?? ''}`}</div>
   );
@@ -403,6 +426,56 @@ describe('the engine on the map', () => {
       </MapToolProvider>,
     );
     expect(draftFeatures(map)).toHaveLength(0);
+  });
+
+  it('repaints the draft and a point’s mark in place when the inks change under a held tool', () => {
+    // The summer aerial switched on in the light theme: the map's inks go dark without the map
+    // being re-created, so nothing may stay in the old ink — dark lines on the dark ground.
+    const light = bodyMapPalette('light');
+    const map = fakeMap();
+    const claim = base({
+      session: 'p1',
+      draft: RING,
+      engine: { kind: 'point', point: { lat: 0.2, lng: 0.2 }, onPick: () => {} },
+    });
+    const { rerender } = render(
+      <MapToolProvider>
+        <Tab claim={claim} />
+        <MapHalf map={map} palette={light} />
+      </MapToolProvider>,
+    );
+    const line = () => map.paints.get('body-console-tool-draft-line')?.['line-color'];
+    const fill = () => map.paints.get('body-console-tool-draft-fill')?.['fill-color'];
+    const ring = () => map.paints.get('body-console-tool-draft-points')?.['circle-stroke-color'];
+    expect([line(), fill(), ring()]).toEqual([light.lit.line, light.lit.fill, light.lit.line]);
+    expect(engines.point[0]?.options.color).toBe(light.lit.line);
+    rerender(
+      <MapToolProvider>
+        <Tab claim={claim} />
+        <MapHalf map={map} palette={PALETTE} />
+      </MapToolProvider>,
+    );
+    expect([line(), fill(), ring()]).toEqual([
+      PALETTE.lit.line,
+      PALETTE.lit.fill,
+      PALETTE.lit.line,
+    ]);
+    // The same engine, repainted rather than re-attached.
+    expect(engines.point).toHaveLength(1);
+    expect(engines.point[0]?.colors).toEqual([PALETTE.lit.line]);
+    // A map re-created with new inks (a theme switch) gets a fresh engine in them; the old one is
+    // never written to.
+    const next = fakeMap();
+    rerender(
+      <MapToolProvider>
+        <Tab claim={claim} />
+        <MapHalf map={next} palette={light} />
+      </MapToolProvider>,
+    );
+    expect(engines.point).toHaveLength(2);
+    expect(engines.point[0]?.colors).toEqual([PALETTE.lit.line]);
+    expect(engines.point[1]?.options.color).toBe(light.lit.line);
+    expect(next.paints.get('body-console-tool-draft-line')?.['line-color']).toBe(light.lit.line);
   });
 
   it('takes the camera to the session’s focus once, as it starts', () => {

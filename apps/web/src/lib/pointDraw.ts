@@ -48,6 +48,11 @@ export function metersPerPixel(lat: number, zoom: number): number {
 export interface PointDrawControl {
   /** Move the mark without reporting it (the caller's own state changed). */
   set: (point: LatLng | null) => void;
+  /**
+   * Repaint the mark and its ghost in a new ink, in place: the console's inks change without the
+   * map being re-created (the summer aerial switched while the tool is held).
+   */
+  setColor: (color: string) => void;
   destroy: () => void;
 }
 
@@ -67,7 +72,10 @@ const collection = (points: readonly LatLng[]): GeoJSON.FeatureCollection => ({
 });
 
 export function createPointDraw(
-  map: ChordMap & { getZoom?: () => number },
+  map: ChordMap & {
+    getZoom?: () => number;
+    setPaintProperty?: (layer: string, name: string, value: string) => unknown;
+  },
   options: PointDrawOptions,
 ): PointDrawControl {
   const scaleAt = (p: LatLng): PickScale =>
@@ -172,6 +180,15 @@ export function createPointDraw(
     set: (point) => {
       mark = point;
       render();
+    },
+    setColor: (color) => {
+      for (const [layer, name] of [
+        [GHOST, 'circle-color'],
+        [GHOST, 'circle-stroke-color'],
+        [MARK, 'circle-color'],
+      ] as const) {
+        if (map.getLayer(layer)) map.setPaintProperty?.(layer, name, color);
+      }
     },
     destroy: () => {
       if (dragging) map.dragPan.enable();
