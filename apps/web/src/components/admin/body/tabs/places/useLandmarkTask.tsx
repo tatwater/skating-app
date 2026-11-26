@@ -249,7 +249,7 @@ export function useLandmarkTask({
     try {
       const landed = await act(
         async () => {
-          const id = await create({
+          const answer = await create({
             waterBodyId,
             name: d.name.trim(),
             kind: d.kind as NonNullable<LandmarkDraft['kind']>,
@@ -260,12 +260,12 @@ export function useLandmarkTask({
               : {}),
             ...(t.kind === 'proposal' ? { requestId: t.requestId as Id<'waterBodyRequests'> } : {}),
           });
-          savedId = id;
-          return id;
+          savedId = answer.landmarkId;
+          return answer;
         },
-        (id) => ({
-          ...droppedReceipt(d),
-          target: { targetType: 'bodyLandmark', targetId: id },
+        (answer) => ({
+          ...droppedReceipt(d, answer.request),
+          target: { targetType: 'bodyLandmark', targetId: answer.landmarkId },
         }),
       );
       if (!landed || openSession.current !== d.session) return;

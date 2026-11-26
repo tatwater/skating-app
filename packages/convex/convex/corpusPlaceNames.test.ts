@@ -321,13 +321,15 @@ describe('placing a name', () => {
         corpusNameId: row._id,
       }),
     ).rejects.toThrow(/waiting on another lake/);
-    const landmarkId = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: lake,
-      name: 'Apple Island',
-      kind: 'point',
-      point: { lat: 44.6, lng: -73.3 },
-      corpusNameId: row._id,
-    });
+    const landmarkId = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: lake,
+        name: 'Apple Island',
+        kind: 'point',
+        point: { lat: 44.6, lng: -73.3 },
+        corpusNameId: row._id,
+      })
+    ).landmarkId;
     expect(await t.run((ctx) => ctx.db.get(landmarkId))).toMatchObject({
       corpusMessages: 24,
       source: 'corpus',
@@ -353,18 +355,22 @@ describe('placing a name', () => {
     const lake = await seedBody(t, 'Lake Champlain');
     const other = await seedBody(t, 'Lake George');
     const mod = await seedUser(t, 'mod');
-    const isle = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: lake,
-      name: 'Isle La Motte',
-      kind: 'island',
-      point: { lat: 44.9, lng: -73.3 },
-    });
-    const elsewhere = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: other,
-      name: 'Elsewhere Island',
-      kind: 'island',
-      point: { lat: 44.9, lng: -73.3 },
-    });
+    const isle = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: lake,
+        name: 'Isle La Motte',
+        kind: 'island',
+        point: { lat: 44.9, lng: -73.3 },
+      })
+    ).landmarkId;
+    const elsewhere = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: other,
+        name: 'Elsewhere Island',
+        kind: 'island',
+        point: { lat: 44.9, lng: -73.3 },
+      })
+    ).landmarkId;
     await load(t, [
       name('Isle LaMotte', { messages: 4, waterBodyId: lake, aliases: ['Isle of La Motte'] }),
     ]);
@@ -401,13 +407,15 @@ describe('placing a name', () => {
         ],
       },
     });
-    const point = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: lake,
-      name: 'Hawkins Point',
-      kind: 'point',
-      point: { lat: 44.2, lng: -73.3 },
-      aliases: Array.from({ length: 12 }, (_, i) => `Hawkins Spelling ${i}`),
-    });
+    const point = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: lake,
+        name: 'Hawkins Point',
+        kind: 'point',
+        point: { lat: 44.2, lng: -73.3 },
+        aliases: Array.from({ length: 12 }, (_, i) => `Hawkins Spelling ${i}`),
+      })
+    ).landmarkId;
     await load(t, [
       name('Kingsland Bay', { waterBodyId: lake }),
       name('The Hawk', { waterBodyId: lake }),
@@ -467,12 +475,14 @@ describe('placing a name', () => {
       },
     });
     // The other Mud Bay, 70 km up the lake: a reference the bay rule leaves to the landmarks.
-    const far = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: lake,
-      name: 'Mud Cove',
-      kind: 'bay',
-      point: { lat: 44.9, lng: -72.6 },
-    });
+    const far = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: lake,
+        name: 'Mud Cove',
+        kind: 'bay',
+        point: { lat: 44.9, lng: -72.6 },
+      })
+    ).landmarkId;
     await load(t, [name('Mud Bay', { waterBodyId: lake })]);
     const [row] = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))
       .names;
@@ -498,12 +508,14 @@ describe('placing a name', () => {
     const t = harness();
     const lake = await seedBody(t, 'Lake Champlain');
     const mod = await seedUser(t, 'mod');
-    const gone = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: lake,
-      name: 'Old Pier',
-      kind: 'other',
-      point: { lat: 44.9, lng: -73.3 },
-    });
+    const gone = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: lake,
+        name: 'Old Pier',
+        kind: 'other',
+        point: { lat: 44.9, lng: -73.3 },
+      })
+    ).landmarkId;
     await mod.as.mutation(api.landmarks.remove, { landmarkId: gone });
     await load(t, [name('The Old Pier', { waterBodyId: lake })]);
     const [row] = (await mod.as.query(api.corpusPlaceNames.openForBody, { waterBodyId: lake }))

@@ -196,16 +196,20 @@ export const PLACEMENT_ALERTS_UNCHECKED =
  * - it is still the launch that was placed — there, by that name, official and visible;
  * - nobody has linked a lot to it, set its approach or posted a rule on it (the console's own later
  *   writes, audited on the put-in, so they don't overtake the body's row);
- * - no skater has attached a photo of it or filed an access alert on it.
+ * - no skater has attached a photo of it, filed an access alert on it, or filed a report naming it
+ *   as their put-in (founder call, 2026-11-25: a report from it is a use, D313).
  *
- * A report that named the launch as its put-in keeps the id (nothing displays it, and the sheet
- * re-sends only the put-ins the body lists), so it doesn't hold the undo. Past any of these the
- * launch is hidden instead, which keeps its history.
+ * Past any of these the launch is hidden instead, which keeps its history.
  */
 export function placementRefusalOf(
   row: Doc<'putIns'> | null,
   expected: LaunchAsRecorded,
-  hangsOff: { photo: boolean; alerts: readonly { putInId?: Id<'putIns'> | undefined }[] },
+  hangsOff: {
+    photo: boolean;
+    alerts: readonly { putInId?: Id<'putIns'> | undefined }[];
+    /** A skater's report names it as their put-in (founder call, 2026-11-25: that's a use). */
+    report: boolean;
+  },
 ): string | null {
   if (!row) return 'That put-in is already gone.';
   if (
@@ -224,6 +228,7 @@ export function placementRefusalOf(
     return 'That put-in has its own approach or posted rule now, so undo can’t remove it. Hide it instead.';
   }
   if (hangsOff.photo) return 'Someone added a photo of that put-in. Hide it instead.';
+  if (hangsOff.report) return 'A skater’s report names that put-in. Hide it instead.';
   if (hangsOff.alerts.length > PLACEMENT_ALERTS_READ) return PLACEMENT_ALERTS_UNCHECKED;
   if (hangsOff.alerts.some((a) => a.putInId === row._id)) {
     return 'Someone filed an access alert on that put-in. Hide it instead.';
@@ -235,6 +240,14 @@ export function placementRefusalOf(
 export function placementPhoto(ctx: QueryCtx | MutationCtx, putInId: Id<'putIns'>) {
   return ctx.db
     .query('accessPhotos')
+    .withIndex('by_put_in', (q) => q.eq('putInId', putInId))
+    .first();
+}
+
+/** A report naming the launch as its put-in, for {@link placementRefusalOf}: is there one. */
+export function placementReport(ctx: QueryCtx | MutationCtx, putInId: Id<'putIns'>) {
+  return ctx.db
+    .query('reports')
     .withIndex('by_put_in', (q) => q.eq('putInId', putInId))
     .first();
 }
@@ -260,6 +273,7 @@ export async function unplacePutInImpl(
   const row = await ctx.db.get(args.putInId);
   const refused = placementRefusalOf(row, args.expected, {
     photo: (await placementPhoto(ctx, args.putInId)) !== null,
+    report: (await placementReport(ctx, args.putInId)) !== null,
     alerts: row ? await bodyAlerts(ctx, row.waterBodyId).take(PLACEMENT_ALERTS_READ + 1) : [],
   });
   if (refused !== null || !row) throw new ConvexError(refused ?? 'That put-in is already gone.');

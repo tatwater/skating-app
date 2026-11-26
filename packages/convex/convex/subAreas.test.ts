@@ -154,12 +154,14 @@ describe('subAreas.create', () => {
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
 
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      aliases: ['Mallets Bay', "Mallett's Bay"],
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        aliases: ['Mallets Bay', "Mallett's Bay"],
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
 
     const row = await t.run((ctx) => ctx.db.get(id));
     expect(row?.name).toBe('Malletts Bay');
@@ -195,11 +197,13 @@ describe('subAreas.create', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
 
     // ~25% of this draw is west of the shoreline — ordinary tracing, not a mistake.
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Northwest Bay',
-      polygon: rect(-73.55, 44.2, -73.35, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Northwest Bay',
+        polygon: rect(-73.55, 44.2, -73.35, 44.4),
+      })
+    ).subAreaId;
     const row = await t.run((ctx) => ctx.db.get(id));
     // What's stored is the clip, so nothing downstream ever sees the overhang.
     expect(row?.bbox.minLng).toBeCloseTo(-73.5, 6);
@@ -301,11 +305,13 @@ describe('the membership stamp', () => {
     const author = await seedUser(t, 'author');
     const report = await seedReport(t, body, author.id, { lat: 44.38, lng: -73.05 });
 
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await settle(t);
     expect((await t.run((ctx) => ctx.db.get(report)))?.subAreaName).toBe('Malletts Bay');
 
@@ -325,11 +331,13 @@ describe('the membership stamp', () => {
     const author = await seedUser(t, 'author');
     const report = await seedReport(t, body, author.id, { lat: 44.3, lng: -73.1 });
 
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Mallets Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Mallets Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await settle(t);
     await mod.as.mutation(api.subAreas.rename, { subAreaId: id, name: 'Malletts Bay' });
     await settle(t);
@@ -344,11 +352,13 @@ describe('the membership stamp', () => {
     const author = await seedUser(t, 'author');
     const report = await seedReport(t, body, author.id, { lat: 44.3, lng: -73.1 });
 
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await settle(t);
     await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
     await settle(t);
@@ -472,11 +482,13 @@ describe('subAreas.rename', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.subAreas.rename, { subAreaId: id, aliases: ['Inland Sea'] });
 
     const row = await t.run((ctx) => ctx.db.get(id));
@@ -489,12 +501,14 @@ describe('subAreas.rename', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      aliases: ['Mallets Bay', 'mallets bay', '   ', 'Inland Sea'],
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        aliases: ['Mallets Bay', 'mallets bay', '   ', 'Inland Sea'],
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     expect((await t.run((ctx) => ctx.db.get(id)))?.aliases).toEqual(['Mallets Bay', 'Inland Sea']);
   });
 });
@@ -504,11 +518,13 @@ describe('subAreas.remove / restore', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
     await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
     let cells = await t.run((ctx) =>
@@ -542,11 +558,13 @@ describe('subAreas.remove / restore', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
 
     // The lake's eastern shore moves west while the bay is retired, trimming a quarter off it —
@@ -570,11 +588,13 @@ describe('subAreas.remove / restore', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
     // This time the shoreline retreats past the bay entirely.
     await t.run((ctx) =>
@@ -692,11 +712,13 @@ describe('system delists are visible where they get fixed', () => {
       name: 'Malletts Bay',
       polygon: bay,
     });
-    const loserBay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: loser,
-      name: 'Malletts Bay',
-      polygon: bay,
-    });
+    const loserBay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: loser,
+        name: 'Malletts Bay',
+        polygon: bay,
+      })
+    ).subAreaId;
 
     await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
     await settle(t);
@@ -740,11 +762,13 @@ describe('the parent-listing cascade', () => {
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     const admin = await seedUser(t, 'admin', 'admin');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     expect(await cellCount(t, id)).toBeGreaterThan(0);
 
     await admin.as.mutation(api.waterBodies.remove, {
@@ -775,11 +799,13 @@ describe('the parent-listing cascade', () => {
         createdAt: Date.now(),
       }),
     );
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'North Arm',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'North Arm',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.waterBodies.reject, { waterBodyId: body });
     expect(await cellCount(t, id)).toBe(0);
   });
@@ -791,11 +817,13 @@ describe('the parent-listing cascade', () => {
     const survivor = await seedBody(t, 'Lake Champlain');
     const loser = await seedBody(t, 'Champlain Lake');
 
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: loser,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: loser,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     const report = await seedReport(t, loser, author.id, { lat: 44.3, lng: -73.1 });
     await settle(t);
 
@@ -820,11 +848,13 @@ describe('the parent-listing cascade', () => {
       name: 'Malletts Bay',
       polygon: rect(-73.2, 44.2, -73.0, 44.4),
     });
-    const dupe = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: loser,
-      name: 'Malletts Bay',
-      polygon: rect(-73.25, 44.15, -72.95, 44.45),
-    });
+    const dupe = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: loser,
+        name: 'Malletts Bay',
+        polygon: rect(-73.25, 44.15, -72.95, 44.45),
+      })
+    ).subAreaId;
 
     await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
     await settle(t);
@@ -848,16 +878,20 @@ describe('the parent-listing cascade', () => {
       aliases: ['Inland Sea'],
       polygon: rect(-73.2, 44.2, -73.0, 44.4),
     });
-    const apostrophe = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: loser,
-      name: "Mallett's Bay",
-      polygon: rect(-73.25, 44.15, -72.95, 44.45),
-    });
-    const byAlias = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: loser,
-      name: 'inland sea',
-      polygon: rect(-73.4, 44.6, -73.3, 44.7),
-    });
+    const apostrophe = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: loser,
+        name: "Mallett's Bay",
+        polygon: rect(-73.25, 44.15, -72.95, 44.45),
+      })
+    ).subAreaId;
+    const byAlias = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: loser,
+        name: 'inland sea',
+        polygon: rect(-73.4, 44.6, -73.3, 44.7),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
     await settle(t);
     const rows = await t.run((ctx) =>
@@ -914,11 +948,13 @@ describe('the parent-listing cascade', () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const body = await seedCanonicalBody(t);
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
 
     // The refined outline pulls the eastern shore slightly west, trimming a quarter off the bay.
     await reimport(t, rect(-73.5, 44.0, -73.05, 45.0), -73.05);
@@ -932,11 +968,13 @@ describe('the parent-listing cascade', () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const body = await seedCanonicalBody(t);
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
 
     // This outline leaves only a quarter of the bay — past the refusal threshold. An ETL chunk
     // covering thousands of bodies must not throw because one hand-drawn bay stopped fitting.
@@ -958,11 +996,13 @@ describe('sub-area bounty targeting', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     return { t, body, bay, mod };
   }
 
@@ -1077,11 +1117,13 @@ describe('subAreas.listInViewport', () => {
     box: [number, number, number, number],
   ) {
     const mod = t.withIdentity({ subject: 'mod' });
-    return mod.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name,
-      polygon: rect(...box),
-    });
+    return (
+      await mod.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name,
+        polygon: rect(...box),
+      })
+    ).subAreaId;
   }
 
   test('returns the bays in view, and nothing below the render-zoom floor', async () => {
@@ -1283,11 +1325,13 @@ describe('the merged search box', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
     expect(await t.query(api.waterBodies.searchByName, { query: 'Malletts' })).toEqual([]);
     expect(
@@ -1301,11 +1345,13 @@ describe('subAreas.setCuratedBoost', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Little Cove',
-      polygon: rect(-73.2, 44.2, -73.19, 44.21),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Little Cove',
+        polygon: rect(-73.2, 44.2, -73.19, 44.21),
+      })
+    ).subAreaId;
     const before = (await t.run((ctx) => ctx.db.get(id)))?.minVisibleZoom ?? 0;
 
     await mod.as.mutation(api.subAreas.setCuratedBoost, { subAreaId: id, curatedBoost: 1 });
@@ -1341,11 +1387,13 @@ describe('subAreas.listNamedForSeeding (A10 bay-matching addendum)', () => {
       }),
     );
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
 
     const page = await t.query(internal.subAreas.listNamedForSeeding, {});
     expect(page.isDone).toBe(true);
@@ -1364,11 +1412,13 @@ describe('subAreas.listNamedForSeeding (A10 bay-matching addendum)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const delisted = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Retired Cove',
-      polygon: rect(-73.2, 44.2, -73.19, 44.21),
-    });
+    const delisted = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Retired Cove',
+        polygon: rect(-73.2, 44.2, -73.19, 44.21),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.subAreas.remove, { subAreaId: delisted });
 
     await mod.as.mutation(api.subAreas.create, {
@@ -1796,11 +1846,13 @@ describe('the re-derivation (A09)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     const before = await t.run((ctx) => ctx.db.get(id));
     expect(before?.subAreaKey).toMatch(/^sa_[0-9a-f-]{36}$/);
     expect(before?.fetchProfileM).toHaveLength(16);
@@ -1820,11 +1872,13 @@ describe('the re-derivation (A09)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     const derivedAt = Date.now() - 1000;
     await t.run((ctx) =>
       ctx.db.patch(id, {
@@ -1858,11 +1912,13 @@ describe('the re-derivation (A09)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     await t.run((ctx) => ctx.db.patch(id, { maxDepthM: 18, maxDepthSource: 'state_agency' }));
     await mod.as.mutation(api.subAreas.remove, { subAreaId: id });
     await mod.as.mutation(api.subAreas.restore, { subAreaId: id });
@@ -1875,11 +1931,13 @@ describe('the re-derivation (A09)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const keyed = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Keyed',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
+    const keyed = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Keyed',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
     const legacy = await t.run((ctx) =>
       ctx.db.insert('waterBodySubAreas', {
         waterBodyId: body,
@@ -1914,16 +1972,20 @@ describe('the two-bay skate and the reportSubAreas join (A09 / D175)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const west = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'West Bay',
-      polygon: rect(-73.5, 44.2, -73.3, 44.6),
-    });
-    const east = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'East Bay',
-      polygon: rect(-72.8, 44.2, -72.5, 44.6),
-    });
+    const west = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'West Bay',
+        polygon: rect(-73.5, 44.2, -73.3, 44.6),
+      })
+    ).subAreaId;
+    const east = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'East Bay',
+        polygon: rect(-72.8, 44.2, -72.5, 44.6),
+      })
+    ).subAreaId;
     await settle(t);
     const author = await seedUser(t, 'author');
     return { t, body, mod, west, east, author };
@@ -2103,11 +2165,13 @@ describe('the wider re-stamp (A09)', () => {
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     const author = await seedUser(t, 'author');
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'West Bay',
-      polygon: rect(-73.5, 44.2, -73.3, 44.6),
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'West Bay',
+        polygon: rect(-73.5, 44.2, -73.3, 44.6),
+      })
+    ).subAreaId;
     await settle(t);
 
     // A launch on the lake's west shore, a track that runs the width of the bay-to-be, a feature
@@ -2176,16 +2240,20 @@ describe('the stamps at write (A09)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const west = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'West Bay',
-      polygon: rect(-73.5, 44.2, -73.3, 44.6),
-    });
-    const east = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'East Bay',
-      polygon: rect(-72.8, 44.2, -72.5, 44.6),
-    });
+    const west = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'West Bay',
+        polygon: rect(-73.5, 44.2, -73.3, 44.6),
+      })
+    ).subAreaId;
+    const east = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'East Bay',
+        polygon: rect(-72.8, 44.2, -72.5, 44.6),
+      })
+    ).subAreaId;
     await settle(t);
     return { t, body, mod, west, east };
   }
@@ -2258,11 +2326,13 @@ describe('the bay view reads (A09)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const west = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'West Bay',
-      polygon: rect(-73.5, 44.2, -73.3, 44.6),
-    });
+    const west = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'West Bay',
+        polygon: rect(-73.5, 44.2, -73.3, 44.6),
+      })
+    ).subAreaId;
     await settle(t);
     return { t, body, mod, west };
   }
@@ -2316,11 +2386,13 @@ describe('the bay view reads (A09)', () => {
 
   test('bounties narrow to the bay plus the lake-wide asks a bay report can answer', async () => {
     const { t, body, west, mod } = await setup();
-    const east = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'East Bay',
-      polygon: rect(-72.8, 44.2, -72.5, 44.6),
-    });
+    const east = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'East Bay',
+        polygon: rect(-72.8, 44.2, -72.5, 44.6),
+      })
+    ).subAreaId;
     await settle(t);
     const a = await seedUser(t, 'a');
     const b = await seedUser(t, 'b');
@@ -2444,11 +2516,13 @@ describe('restampAllParents — the one-off for rows that predate A09', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'West Bay',
-      polygon: rect(-73.5, 44.2, -73.3, 44.6),
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'West Bay',
+        polygon: rect(-73.5, 44.2, -73.3, 44.6),
+      })
+    ).subAreaId;
     await mod.as.mutation(api.subAreas.create, {
       waterBodyId: body,
       name: 'East Bay',
@@ -2476,11 +2550,13 @@ describe('the depth lane’s two ends (A09 PR 2)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'West Bay',
-      polygon: rect(-73.5, 44.2, -73.3, 44.6),
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'West Bay',
+        polygon: rect(-73.5, 44.2, -73.3, 44.6),
+      })
+    ).subAreaId;
     await settle(t);
     const exported = await t.query(internal.subAreas.exportForDepths, {});
     expect(exported.map((b) => b.subAreaId)).toEqual([bay]);
@@ -2679,12 +2755,14 @@ describe('sub-areas by chord (D201)', () => {
     const unrelated = await bayRequest(t, two.id, body, 'Other Bay');
     vi.advanceTimersByTime(1_000);
 
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Corner Bay',
-      polygon: rect(-73.45, 44.05, -73.35, 44.15),
-      requestId,
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        polygon: rect(-73.45, 44.05, -73.35, 44.15),
+        requestId,
+      })
+    ).subAreaId;
 
     const rows = await t.run((ctx) =>
       Promise.all([requestId, sibling, unrelated].map((r) => ctx.db.get(r))),
@@ -2750,6 +2828,34 @@ describe('sub-areas by chord (D201)', () => {
     expect(plain.request).toBeUndefined();
   });
 
+  test('a bay drawn by shape says what happened to the ask too, as the chord does', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const one = await seedUser(t, 'one');
+    const decided = await bayRequest(t, one.id, body, 'Corner Bay');
+    await t.run((ctx) =>
+      ctx.db.patch(decided, { status: 'declined', decidedAt: Date.now(), decidedByUserId: mod.id }),
+    );
+    const late = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      polygon: rect(-73.45, 44.05, -73.35, 44.15),
+      requestId: decided,
+    });
+    expect(late.request).toBe('already_decided');
+    expect(await t.run((ctx) => ctx.db.get(late.subAreaId))).not.toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(decided)))?.status).toBe('declined');
+    const open = await bayRequest(t, one.id, body, 'Other Bay');
+    const answered = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Other Bay',
+      polygon: rect(-73.5, 44.8, -73.4, 44.9),
+      requestId: open,
+    });
+    expect(answered.request).toBe('approved');
+  });
+
   test('a new bay is refused when another already answers to its name or an alias', async () => {
     const t = harness();
     const body = await seedCanonicalBody(t);
@@ -2801,12 +2907,14 @@ describe('sub-areas by chord (D201)', () => {
       },
     });
     // ~3 km east of the bay, past the shore as it stands: another place, until the shore moves.
-    const landmark = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Corner Bay',
-      kind: 'bay',
-      point: { lat: 44.02, lng: -72.46 },
-    });
+    const landmark = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        kind: 'bay',
+        point: { lat: 44.02, lng: -72.46 },
+      })
+    ).landmarkId;
     // The east shore moves out to -72.45 — a routine re-fit (D215): the mouth re-snaps and the bay
     // grows over the label.
     const result = await reimportEast(-72.45);
@@ -2828,12 +2936,14 @@ describe('sub-areas by chord (D201)', () => {
         sagittaM: 0,
       },
     });
-    const landmark = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Corner Bay',
-      kind: 'bay',
-      point: { lat: 44.02, lng: -72.42 },
-    });
+    const landmark = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        kind: 'bay',
+        point: { lat: 44.02, lng: -72.42 },
+      })
+    ).landmarkId;
     // Out to -72.4: the corner would grow by half — a jump. The old outline still fits, so it stays,
     // and the label it never reached stays with it.
     const result = await t.mutation(internal.waterBodies.importCanonical, {
@@ -2995,11 +3105,13 @@ describe('sub-areas by chord (D201)', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Corner Bay',
-      polygon: rect(-73.5, 44.0, -73.4, 44.1),
-    });
+    const id = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Corner Bay',
+        polygon: rect(-73.5, 44.0, -73.4, 44.1),
+      })
+    ).subAreaId;
     expect((await t.run((ctx) => ctx.db.get(id)))?.mouth).toBeUndefined();
 
     await mod.as.mutation(api.subAreas.updateChord, { subAreaId: id, mouth: CORNER });

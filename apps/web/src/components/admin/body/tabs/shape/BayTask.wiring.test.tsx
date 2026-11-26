@@ -140,7 +140,7 @@ beforeEach(() => {
   mocks.writes = [];
   mocks.answer = {
     [getFunctionName(api.subAreas.createFromChord)]: () => ({ subAreaId: 'bay-new' }),
-    [getFunctionName(api.subAreas.create)]: () => 'bay-new',
+    [getFunctionName(api.subAreas.create)]: () => ({ subAreaId: 'bay-new' }),
   };
   mocks.announce.mockClear();
   mocks.navigate.mockClear();
@@ -346,6 +346,45 @@ describe('the bay task — arrivals', () => {
     expect(sent(api.subAreas.createFromChord)[0]?.args).toMatchObject({ requestId: 'rq2' });
     await waitFor(() =>
       expect(mocks.push).toHaveBeenCalledWith('/admin/inbox?lane=places&item=rq2'),
+    );
+  });
+
+  it('an ask answered elsewhere while the bay was traced: the receipt says it keeps that answer', async () => {
+    mocks.search = { task: 'rq1' };
+    mocks.answer[getFunctionName(api.subAreas.create)] = () => ({
+      subAreaId: 'bay-new',
+      request: 'already_decided',
+    });
+    set(api.corpusRequests.openBayRequestsForBody, {
+      bays: [
+        {
+          requestId: 'rq1',
+          requestIds: ['rq1'],
+          name: 'Shaker cove',
+          aliases: [],
+          coord: { lat: 43.632, lng: -72.157 },
+          notes: [],
+          askers: 1,
+          createdAt: 1,
+        },
+      ],
+      more: false,
+    });
+    const user = userEvent.setup();
+    render(<Mounted />);
+    const box = await screen.findByRole('group', { name: 'Bay request · from the Inbox' });
+    await user.click(within(box).getByRole('button', { name: 'Freehand' }));
+    traceRing();
+    await user.click(within(box).getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(sent(api.subAreas.create)).toHaveLength(1));
+    expect(sent(api.subAreas.create)[0]?.args).toMatchObject({ requestId: 'rq1' });
+    await waitFor(() =>
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'That ask was already closed, so this didn’t answer it.',
+          target: { targetType: 'waterBodySubArea', targetId: 'bay-new' },
+        }),
+      ),
     );
   });
 

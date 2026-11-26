@@ -1,5 +1,7 @@
 import type { LandmarkKind, LatLng } from '@skating/core';
 
+import { ASK_ALREADY_CLOSED } from '../../consoleWords';
+
 /**
  * **A landmark being dropped** (B01-6b): the one piece of state the Places tab holds while the map
  * places a new landmark — what it answers, the fields, and the point as it stands. Pure but for the
@@ -118,7 +120,11 @@ export function dropNote(draft: LandmarkDraft): string | null {
 }
 
 /** The receipt's words once the drop lands: its title, and what else it did. */
-export function droppedReceipt(draft: LandmarkDraft): { title: string; description?: string } {
+export function droppedReceipt(
+  draft: LandmarkDraft,
+  /** What the save did to the ask it answers (`landmarks.create`'s `request`). */
+  request?: 'approved' | 'already_decided',
+): { title: string; description?: string } {
   const name = draft.name.trim();
   switch (draft.target.kind) {
     case 'new':
@@ -128,7 +134,10 @@ export function droppedReceipt(draft: LandmarkDraft): { title: string; descripti
     case 'proposal':
       return {
         title: `Added · ${name}`,
-        description: 'The skaters who asked for it are answered.',
+        description:
+          request === 'already_decided'
+            ? ASK_ALREADY_CLOSED
+            : 'The skaters who asked for it are answered.',
       };
   }
 }

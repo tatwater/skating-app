@@ -506,13 +506,15 @@ describe('a moderator answering proposals', () => {
       proposals: [row],
     } = await mod.as.query(api.corpusRequests.openLandmarkRequestsForBody, { waterBodyId: lake });
     if (!row) throw new Error('no queue row');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: lake,
-      name: row.name,
-      kind: 'other',
-      point: row.coord,
-      requestId: row.requestId,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: lake,
+        name: row.name,
+        kind: 'other',
+        point: row.coord,
+        requestId: row.requestId,
+      })
+    ).landmarkId;
     expect((await t.run((ctx) => ctx.db.get(id)))?.source).toBe('proposal');
     const rows = await requests(t);
     expect(rows.map((r) => [r.status, r.landmarkId])).toEqual([

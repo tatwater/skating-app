@@ -47,6 +47,7 @@ import {
   PLACEMENT_ALERTS_UNCHECKED,
   placementPhoto,
   placementRefusalOf,
+  placementReport,
   placePutInImpl,
   promotePutInImpl,
   SUPPRESSION_ROWS_READ,
@@ -925,15 +926,23 @@ const undoPutIn: UndoHandler = {
   // overtakes this body's row: the launch is read as it stands, by the write's own checks. A launch
   // row is bounded at its writers (`ROW_MAX.launch`, B01-3h), so the body's hidden launches the
   // suppression rule reads can be reserved: the launch and up to `SUPPRESSION_ROWS_READ` of them.
-  // A placement's removal reads the launch, whether a photo of it exists, and the body's alerts to
-  // one past `PLACEMENT_ALERTS_READ`; placing it again reads the body, for its outline.
+  // A placement's removal reads the launch, whether a photo of it exists, whether a report names it,
+  // and the body's alerts to one past `PLACEMENT_ALERTS_READ`; placing it again reads the body, for
+  // its outline. The report is booked at a whole report's bound (Convex reads a row to learn it
+  // exists), so a page that has already spent most of its budget says to check this undo on the
+  // put-in's own page sooner than before. Accepted: that message is the budget's ordinary answer, and
+  // stamping the launch from every report writer to save the read would cost more than it saves.
   refusalCost: (_scope, row) => {
     const direction = directionOf(row);
     if (direction === 'placed') {
       return {
-        bytes: ROW_MAX.launch + ROW_MAX.small + ROW_MAX.accessAlert * (PLACEMENT_ALERTS_READ + 1),
-        reads: 3,
-        docs: 2 + PLACEMENT_ALERTS_READ + 1,
+        bytes:
+          ROW_MAX.launch +
+          ROW_MAX.small +
+          ROW_MAX.report +
+          ROW_MAX.accessAlert * (PLACEMENT_ALERTS_READ + 1),
+        reads: 4,
+        docs: 3 + PLACEMENT_ALERTS_READ + 1,
       };
     }
     if (direction === 'unplaced') return { bytes: ROW_MAX.waterBody, reads: 1 };
@@ -957,6 +966,10 @@ const undoPutIn: UndoHandler = {
         const one = await placementPhoto(ctx, m.putInId);
         return one ? [one] : [];
       });
+      const report = await read.take('report', 1, async () => {
+        const one = await placementReport(ctx, m.putInId);
+        return one ? [one] : [];
+      });
       // One past the bound, so a body with more alerts than the check reads is refused, not decided
       // on a window.
       const alerts = launch
@@ -965,7 +978,11 @@ const undoPutIn: UndoHandler = {
           )
         : [];
       if (alerts.length > PLACEMENT_ALERTS_READ) return PLACEMENT_ALERTS_UNCHECKED;
-      return placementRefusalOf(launch, recorded, { photo: photo.length > 0, alerts });
+      return placementRefusalOf(launch, recorded, {
+        photo: photo.length > 0,
+        alerts,
+        report: report.length > 0,
+      });
     }
     if (direction === 'unplaced') {
       // Placed again as `setOfficial` places: refused where that would be — the body gone, or its

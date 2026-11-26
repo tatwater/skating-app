@@ -126,7 +126,7 @@ beforeEach(() => {
   mocks.search = { tab: 'places' };
   mocks.denied = new Set();
   mocks.writes = [];
-  mocks.answer = { [getFunctionName(api.landmarks.create)]: () => 'lm-new' };
+  mocks.answer = { [getFunctionName(api.landmarks.create)]: () => ({ landmarkId: 'lm-new' }) };
   mocks.announce.mockClear();
   mocks.navigate.mockClear();
   mocks.push.mockClear();
@@ -350,6 +350,27 @@ describe('placing what was asked', () => {
       point: SPOT,
     });
     expect(mocks.push).not.toHaveBeenCalled();
+  });
+
+  it('a proposal answered elsewhere while it was placed: the receipt says it keeps that answer', async () => {
+    mocks.answer[getFunctionName(api.landmarks.create)] = () => ({
+      landmarkId: 'lm-new',
+      request: 'already_decided',
+    });
+    const user = userEvent.setup();
+    render(<Mounted />);
+    await user.click(await screen.findByRole('button', { name: 'Add' }));
+    await chooseKind(user, 'Point');
+    pick(SPOT);
+    await user.click(within(card()).getByRole('button', { name: /Add to the map/ }));
+    await waitFor(() =>
+      expect(mocks.announce).toHaveBeenCalledWith(
+        expect.objectContaining({
+          description: 'That ask was already closed, so this didn’t answer it.',
+          target: { targetType: 'bodyLandmark', targetId: 'lm-new' },
+        }),
+      ),
+    );
   });
 
   it('each is offered only with the capability its ask is decided under', async () => {

@@ -190,7 +190,7 @@ describe('undo: a put-in placed by hand (D313)', () => {
     expect((await offer(t, mod.id, row)).state).toBe('available');
   });
 
-  test('refused once a skater attached a photo, filed an alert, or an import moved it', async () => {
+  test('refused once a skater attached a photo, filed an alert or a report, or an import moved it', async () => {
     const photo = await placed();
     await photo.t.run(async (ctx) => {
       const storageId = await ctx.storage.store(new Blob(['x']));
@@ -234,6 +234,34 @@ describe('undo: a put-in placed by hand (D313)', () => {
       alert.mod.as.mutation(api.undo.run, { actionId: alert.row._id, reason: 'r' }),
     ).rejects.toThrow('Someone filed an access alert on that put-in. Hide it instead.');
 
+    // A skater's report filed from it is a use too (founder call, 2026-11-25), on the offer and
+    // on the write.
+    const reported = await placed();
+    await reported.t.run((ctx) =>
+      ctx.db.insert('reports', {
+        authorId: reported.mod.id,
+        waterBodyId: reported.waterBodyId,
+        putInId: reported.putInId,
+        point: { lat: 0.5, lng: 0 },
+        skateEndTime: Date.now(),
+        reportTime: Date.now(),
+        source: 'native' as const,
+        iceTypes: [{ type: 'black_ice' as const }],
+        surfaceTags: [],
+        photoIds: [],
+        moderationStatus: 'visible' as const,
+        hazardIdsCreated: [],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      }),
+    );
+    expect(await offer(reported.t, reported.mod.id, reported.row)).toMatchObject({
+      why: 'A skater’s report names that put-in. Hide it instead.',
+    });
+    await expect(
+      reported.mod.as.mutation(api.undo.run, { actionId: reported.row._id, reason: 'r' }),
+    ).rejects.toThrow('A skater’s report names that put-in. Hide it instead.');
+
     const moved = await placed();
     await moved.t.run((ctx) => ctx.db.patch(moved.putInId, { name: 'Ramp Road' }));
     expect(await offer(moved.t, moved.mod.id, moved.row)).toMatchObject({
@@ -275,21 +303,27 @@ describe('undo: a put-in placed by hand (D313)', () => {
       coord: { lat: 1, lng: 2 },
     } as Doc<'putIns'>;
     const recorded = { coord: { lat: 1, lng: 2 }, name: null };
-    expect(placementRefusalOf(null, recorded, { photo: false, alerts: [] })).toBe(
+    expect(placementRefusalOf(null, recorded, { photo: false, alerts: [], report: false })).toBe(
       'That put-in is already gone.',
     );
     const many = Array.from({ length: PLACEMENT_ALERTS_READ + 1 }, () => ({}));
-    expect(placementRefusalOf(launch, recorded, { photo: false, alerts: many })).toBe(
-      PLACEMENT_ALERTS_UNCHECKED,
-    );
+    expect(
+      placementRefusalOf(launch, recorded, { photo: false, alerts: many, report: false }),
+    ).toBe(PLACEMENT_ALERTS_UNCHECKED);
     const other = [{ putInId: 'p2' as Id<'putIns'> }];
-    expect(placementRefusalOf(launch, recorded, { photo: false, alerts: other })).toBeNull();
+    expect(
+      placementRefusalOf(launch, recorded, { photo: false, alerts: other, report: false }),
+    ).toBeNull();
     expect(
       placementRefusalOf({ ...launch, approachKindOverride: 'hike_in' }, recorded, {
         photo: false,
         alerts: [],
+        report: false,
       }),
     ).toMatch(/own approach or posted rule/);
+    expect(placementRefusalOf(launch, recorded, { photo: false, alerts: [], report: true })).toBe(
+      'A skater’s report names that put-in. Hide it instead.',
+    );
   });
 });
 
