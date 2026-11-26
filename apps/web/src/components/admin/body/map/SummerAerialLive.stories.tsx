@@ -16,9 +16,9 @@ import type { BodyMapMode } from './bodyMapPalette';
  * a test (`!test`): the stories that run as tests draw the still, whose stand-in takes the
  * photograph's place. Here the real MapLibre canvas fetches the real NAIP cells from the USGS
  * service (grid-snapped, so a second look is the CDN's), unmasked, in full color and lightly dimmed,
- * under the dark map's inks in either theme (`mapInks`), with the shore and the marks over it and the credit's month asked of the service.
- * The basemap's own tiles answer only a local dev address, so under the photograph the land is the
- * map's ground. `ConsoleOff` and `ConsoleOffLight` are the same view without it, to set beside.
+ * under the dark map's inks in either theme (`mapInks`), with the shore and the marks over it and
+ * the credit's month asked of the service. The basemap's own tiles answer only a local dev address,
+ * so under the photograph the land is the map's ground. `ConsoleOff` and `ConsoleOffLight` are the same view without it, to set beside.
  */
 const meta = {
   title: 'Admin/Body/Summer aerial (live)',

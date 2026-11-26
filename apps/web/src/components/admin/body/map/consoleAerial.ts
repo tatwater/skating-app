@@ -59,9 +59,10 @@ import { rasterAnchor } from './glLayers';
  *   side, 4.3:1 on the land side.
  * - **The quieter `fg2`** (bays, dividers, tracks): 1.3–1.7:1 against that twentieth, 3.6:1 at the
  *   median beside the shore.
- * - **The words, against the ground in their own boxes (median, worst tenth):** the credit 3.0–3.6:1
- *   and 2.4–2.6:1 (two renders, its words over different ground), the scale 3.1:1 and 2.1:1, the scene's labels 3.4:1 and 1.6:1, the graticule's
- *   1.8:1 and 1.5:1 — all under the 4.5:1 text wants.
+ * - **The words, against the ground in their own boxes (median, worst tenth):** the scene's labels
+ *   3.4:1 and 1.6:1, the graticule's 1.8:1 and 1.5:1 — under the 4.5:1 text wants. Bare, the
+ *   credit read 3.0–3.6:1 and 2.4–2.6:1 and the scale 3.1:1 and 2.1:1, so both sit on an opaque
+ *   plate while the photograph is on: `fg2` on `panel`, 8.0:1 in both themes, whatever the ground.
  *
  * If that proves too little to place marks by, the fallback is the photograph at full strength and
  * the lines edged.

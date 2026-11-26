@@ -314,8 +314,8 @@ describe('useMapCanvas', () => {
 
   /**
    * The hang after a theme switch (every flip in headless Chromium, and seen by the founder in a
-   * real browser): MapLibre fires `load` from a rendered frame once the style and every source are in. A
-   * source whose metadata fails (an archive the browser refuses) is marked loaded with an `error`
+   * real browser): MapLibre fires `load` from a rendered frame once the style and every source are
+   * in. A source whose metadata fails (an archive the browser refuses) is marked loaded with an `error`
    * and **no** data event, so nothing asks for another frame: when that failure is the last thing
    * the style waits on and lands after the last frame, `load` never fires — the map sits drawn but
    * never live, so the console's layers and chrome never arrive. One frame asked for on an error

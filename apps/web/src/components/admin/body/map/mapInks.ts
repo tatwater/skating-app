@@ -10,11 +10,11 @@ import type { BodyMapMode } from './bodyMapPalette';
  * - **What follows the inks:** the MapLibre half (the shore and outlines, bay lines and every scene
  *   line, the hazard fields, a tool's drafting lines) through {@link mapInkMode}; and what the
  *   browser draws on the map (the graticule and its labels, the scene's labels, dimension lines,
- *   a still's drawing) through {@link mapInkStyle}. The photograph
- *   has one paint, for light inks (`AERIAL_PAINT`).
+ *   a still's drawing, an embed's caption) through {@link mapInkStyle}. The photograph has one
+ *   paint, for light inks (`AERIAL_PAINT`).
  * - **What keeps the page's theme:** chrome on its own plate — the layer rack, the key along the
- *   foot, the zoom pair, an embed's legend plate and caption, the marks, the hover plate, a tool's
- *   mode bar, *Try again*, and the credit and the scale, each on a plate over the photograph.
+ *   foot, the zoom pair, an embed's legend plate, the marks, the hover plate, a tool's mode bar,
+ *   *Try again*, and the credit and the scale, each on a plate over the photograph.
  * - **From the switch, not from the photograph's arrival.** While it is on, a ground of the dark
  *   map's earth lies under the console's layers (`useBodyMapCanvas`), so while a cell is loading,
  *   or didn't come, the light inks land on dark ground — never on the light theme's basemap — and

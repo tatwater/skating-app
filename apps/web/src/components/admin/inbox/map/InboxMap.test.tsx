@@ -119,6 +119,19 @@ describe('the embed', () => {
     }
   });
 
+  it('draws the caption as words on the map: the dark map’s ink over the summer aerial, never the plate’s', () => {
+    const fg2 = () =>
+      document
+        .querySelector<HTMLElement>('[data-slot="inbox-map-caption"]')
+        ?.style.getPropertyValue('--fg2');
+    const { rerender } = render(<InboxMapStill view={admitScene(ADMIT)} width={420} />);
+    expect(fg2()).toBe('');
+    rerender(<InboxMapStill view={admitScene(ADMIT)} width={420} aerial />);
+    expect(fg2()).toBe(adminToken('dark', 'fg2'));
+    // The legend beside it is chrome on its own plate, in the page's theme.
+    expect(document.querySelector('[data-map-legend]')?.closest('[style*="--fg2"]')).toBeNull();
+  });
+
   it('view only, on a phone: no zoom pair, and the map takes no pointer', () => {
     const { container } = render(
       <InboxMapStill view={reportPointScene(REPORT_POINT)} width={328} viewOnly />,

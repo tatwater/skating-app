@@ -265,7 +265,8 @@ export const AerialInks: Story = {
       [must(dark), 'dark'],
       [must(light), 'light'],
     ] as const) {
-      for (const name of ['body-map-still', 'map-graticule']) {
+      // The caption is words on the map, not on a plate: light on the photograph in both themes.
+      for (const name of ['body-map-still', 'map-graticule', 'inbox-map-caption']) {
         const el = must(q.querySelector<HTMLElement>(`[data-slot="${name}"]`));
         await expect(token(el)).toEqual(as(adminToken('dark', 'fg2')));
       }
