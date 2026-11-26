@@ -187,7 +187,7 @@ snapshot: 718 cells have one leaf-on frame and no fallback; the median cell has 
 | ME | 2023, 0.3 m · 2021, 0.6 m · 2018, 0.6 m · Oct 2023, 0.3 m | 1,650 · 807 · 258 · 6 |
 | NY | 2024 · 2022 · 2021 · 2019, all 0.6 m | 2,474 · 385 · 132 · 791 |
 
-Before the cloud step (§2.1.2), which moves about twenty.
+Before the cloud step (§2.1.2), which moved two Maine cells from 2023 to 2021 (the founder's review).
 
 #### §2.1.1 — The mislabeled Maine 2025 items
 
@@ -213,10 +213,20 @@ season step**, so a struck frame falls back to the next leaf-on one:
   a likely cloud or glare on a cell's pick, shown beside the frame that would replace it. A likely
   cloud on a frame that is only a fallback changes no pick; the builder decides it and lists it.
   Only confirmed frames join `naipExclusions.ts` in core — committed, each with its item id, the
-  reason (`cloud` / `glare`), and who reviewed it when (`founder` or `builder`). The real cases the
-  scouts found: 17 Long Island quarter-quads of 2024-07-02 (glare over Great South Bay; they fall
-  back to NY 2022 summer) and 2–3 Aroostook quarter-quads of 2023-09-22 (to ME 2021). About 20
-  picks change.
+  reason (`cloud` / `glare`), and who reviewed it when (`founder` or `builder`).
+- **The first review (the founder, 2026-11-25)**, of the first walk's sheet (`naip-20261125`: 60
+  picks over 3%, 25 the pre-screen thought real, 35 false positives). **Two frames struck:** the
+  Aroostook picks of 2023-09-22 at `4606741se` and `4606741ne` (cumulus and shadow), which fall back
+  to their clear 2021-08-31 0.6 m frames; nothing else moves. **Kept, on purpose:** the 23 Long
+  Island and New York City picks with real glare or small cumulus (19 of 2024-07-02 and 2 of
+  2024-09-13 with glare on the bays, 2 with cumulus over Queens and the East River) — *glare and
+  cloud there don't matter, because nobody skates that water* — plus the borderline sea glint off
+  `4106917sw` and the 35 false positives. The kept ones are recorded beside the list and in the
+  sheet's review file as `kept`, so a later review doesn't raise them again. **Open:** `4606741sw`,
+  the third Aroostook cell of that day, scored 2.3% (under the threshold), is a question for the
+  founder. *(This replaces the design's expectation that the scouts' ~17 Long Island cells would be
+  struck and fall to NY 2022; had they been, 5 of the 22 New York strikes would have fallen to 2019,
+  not 2022.)*
 - **New frames** (the July check, §3.3) are scored at the next select stage; until a person has
   reviewed a new pick's score, the offer says it is unscored.
 
@@ -232,9 +242,12 @@ its key, the states that list it, the pick (an item id in that table), the step 
 (`leafOn` or `offSeason`), the fallback stack (ids in order), whether the pick covers its cell
 (`partial`), its cloud score, and the work tiles it touches. Per work tile (§2.2): its input hash,
 its cells, and whether this build cuts it (`retile`; `false` only for a `--from-current` work tile
-whose hash is unchanged, which the assembler copies). About 1.5–3 MB raw. The assembler adds the
-archive's and the date index's name, size and SHA-256 (§2.7) before publishing it. The types are
-`NaipManifest` in core's `naipManifest.ts`.
+whose hash is unchanged, which the assembler copies). About 1.5–3 MB raw. The assembler adds, before
+publishing it, the archive's and the date index's name, size and SHA-256 (§2.7) — the archive's over
+its bytes as uploaded, the index's over its **decoded JSON**, since the index is stored gzip-encoded
+and a CDN may re-encode it — and each work tile's per-cell counts (`cellCounts`, §2.2 step 4), so a
+later `--from-current` build that copies a work tile can still date it once the shards are deleted.
+The types are `NaipManifest` in core's `naipManifest.ts`.
 
 The run's counts say how many cells picked by each step, how many fell back to October, how many
 items each exclusion dropped, and assert the rule's invariants on the whole catalog (every cell has
@@ -332,7 +345,7 @@ What can be avoided is re-tiling.
 changed; the assembler copies every other work tile's tiles **out of the current archive** by range
 reads (in a clustered archive each work tile's tiles at a zoom are one contiguous run, because the
 Hilbert order keeps an aligned block's descendants together), and their per-cell counts out of the
-current date index's build record. Keeping a separate shard cache would double storage (~$70 a year)
+current manifest's work tiles (`cellCounts`, which the assembler writes there for this reason). Keeping a separate shard cache would double storage (~$70 a year)
 to save work the old archive already holds (Governor fork G-4).
 
 **A streaming writer, not `pmtiles convert`.** `pmtiles convert` wants the whole input as an MBTiles
@@ -380,7 +393,7 @@ points at the same dated object. No prod copy is made.
   listed. Expected: only cells cut by the coast or the Canadian border.
 - **Dates (D318).** Every cell any tile touches has an entry in the date index; every entry names at
   least one flight; every flight's date is a real day that matches its item id's; the index names
-  this archive, and its hash is the manifest's. Any miss refuses the build: **an undated cell is
+  this archive, and the SHA-256 of its decoded JSON is the manifest's. Any miss refuses the build: **an undated cell is
   never published.**
 - **Seams.** For every quarter-quad edge whose two sides differ in flight (year or gsd), a sampled
   tile pair rendered into a contact sheet; and a low-zoom (z9–z11) overview of the region, so the
@@ -457,10 +470,10 @@ pixels.
   it once and caches it.
 - **Where it lives:** beside the archive, `…/naip-summer-<YYYYMMDD>-cells.json`, its URL derived from
   `VITE_NAIP_PMTILES_URL` (`.pmtiles` → `-cells.json`, core's `naipIndexUrl`). It names its archive,
-  and the client refuses an index that names another (a mismatched pair never draws). Its SHA-256 is
-  in the manifest.
+  and the client refuses an index that names another (a mismatched pair never draws). Its SHA-256 —
+  of the decoded JSON, not the gzip body (the encoding is transport) — is in the manifest.
 - **Built by** the assembler from the manifest and the shards' per-cell counts (copied from the
-  current build's record for unchanged work tiles); **checked** by verify (§2.5), which refuses to
+  current manifest's `cellCounts` for unchanged work tiles); **checked** by verify (§2.5), which refuses to
   publish an archive with any tile whose cell the index can't date.
 
 **How the map uses it** is §4.2: the cells under the view, their flights, and the credit's month
