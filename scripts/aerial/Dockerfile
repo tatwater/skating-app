@@ -24,20 +24,41 @@
 # and numpy, which `aerial-counts.py` uses (the winter cutter probed them on a Machine, 2026-08-24).
 FROM ghcr.io/osgeo/gdal:ubuntu-small-3.13.2
 
-# rclone moves every byte to and from R2; jq reads the unit and the STAC answers; curl fetches the
-# STAC items and the SAS token; libatomic1 is the one library Node's binary needs that this base
-# lacks (measured: `node: error while loading shared libraries: libatomic.so.1`).
+# jq reads the unit and the STAC answers; curl fetches the STAC items and the SAS token; libatomic1
+# is the one library Node's binary needs that this base lacks (measured: `node: error while loading
+# shared libraries: libatomic.so.1`).
 RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
       curl \
       jq \
       libatomic1 \
-      rclone \
  && rm -rf /var/lib/apt/lists/*
+
+# rclone moves every byte to and from R2 — rclone's own release, pinned and checksummed, **not
+# Ubuntu's**. The base's apt rclone is 1.60.1, and against R2 every upload's first attempt answers
+# `501 NotImplemented` (the pilot, 2026-11-26: every `copyto` of every work tile, then "Attempt 2/3
+# succeeded"); `rcat` reads stdin once and can't retry, so the assembler's first write — and with it
+# the archive's streamed upload — failed outright. 1.74.4 is the laptop's, which P's stream proof and
+# the pilot's probe of `rcat` into the bucket both passed with. The hashes are rclone's SHA256SUMS.
+ARG TARGETARCH=amd64
+ARG RCLONE_VERSION=1.74.4
+ARG RCLONE_SHA256_AMD64=a9da2eaa70428c6dcc5acbb0b7eac0faec4c61643e0b468d9fe09ddf79b7e929
+ARG RCLONE_SHA256_ARM64=db39280cd0b680ef2ab2e9800882936358c33b959622512e6898ebbeaf0b7aea
+RUN set -eux; \
+    case "${TARGETARCH}" in \
+      amd64) RC_SHA="${RCLONE_SHA256_AMD64}" ;; \
+      arm64) RC_SHA="${RCLONE_SHA256_ARM64}" ;; \
+      *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
+    esac; \
+    deb="rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.deb"; \
+    curl -fsSL -o "/tmp/${deb}" "https://downloads.rclone.org/v${RCLONE_VERSION}/${deb}"; \
+    echo "${RC_SHA}  /tmp/${deb}" | sha256sum -c -; \
+    dpkg -i "/tmp/${deb}"; \
+    rm "/tmp/${deb}"; \
+    rclone version
 
 # pmtiles, for reading an archive back on a Machine (the winter cutter's pinned version).
 ARG PMTILES_VERSION=1.31.2
-ARG TARGETARCH=amd64
 RUN set -eux; \
     case "${TARGETARCH}" in \
       amd64) PM_ARCH=x86_64 ;; \

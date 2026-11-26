@@ -287,6 +287,21 @@ describe('cut-aerial.sh', () => {
   });
 });
 
+// ── The image ────────────────────────────────────────────────────────────────────────────────────
+
+describe('the Dockerfile', () => {
+  test('rclone is a pinned, checksummed release, never Ubuntu’s', () => {
+    // Ubuntu 24.04's rclone 1.60.1 answers 501 on every upload's first attempt to R2, and `rcat`
+    // can't retry: the pilot's assembler failed on its first write (2026-11-26).
+    const docker = readFileSync(join(PKG, 'Dockerfile'), 'utf8');
+    const apt = /apt-get install[^\n]*(?:\\\n[^\n]*)*/.exec(docker)?.[0] ?? '';
+    expect(apt).not.toMatch(/\brclone\b/);
+    expect(docker).toMatch(/^ARG RCLONE_VERSION=\d+\.\d+\.\d+$/m);
+    expect(docker).toMatch(/^ARG RCLONE_SHA256_AMD64=[0-9a-f]{64}$/m);
+    expect(docker).toContain('sha256sum -c -');
+  });
+});
+
 // ── spawn.sh ─────────────────────────────────────────────────────────────────────────────────────
 
 /** A `fly` that records each call and answers `machine list` from a queue of listings. */
