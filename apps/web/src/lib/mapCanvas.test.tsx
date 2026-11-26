@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 class FakeMap {
   static instances: FakeMap[] = [];
   options: Record<string, unknown>;
-  handlers = new Map<string, () => void>();
+  handlers = new Map<string, (e?: unknown) => void>();
   controls: unknown[] = [];
   removed = false;
   /** MapLibre takes a style write only between `load` and `remove`; `liveMap` is what enforces it. */
@@ -36,8 +36,13 @@ class FakeMap {
     this.options = options;
     FakeMap.instances.push(this);
   }
-  on(event: string, handler: () => void) {
+  on(event: string, handler: (e?: unknown) => void) {
     this.handlers.set(event, handler);
+  }
+  /** Frames asked for: MapLibre renders (and so fires `load`) only on a frame. */
+  repaints = 0;
+  triggerRepaint() {
+    this.repaints++;
   }
   addControl(control: unknown) {
     this.controls.push(control);
@@ -305,6 +310,32 @@ describe('useMapCanvas', () => {
 
     FakeMap.instances[1]?.load();
     expect(seen.at(-1)).toBe(FakeMap.instances[1]); // re-applied once it can take a write
+  });
+
+  /**
+   * The hang after a theme switch (every flip in headless Chromium, and seen by the founder in a
+   * real browser): MapLibre fires `load` from a rendered frame once the style and every source are in. A
+   * source whose metadata fails (an archive the browser refuses) is marked loaded with an `error`
+   * and **no** data event, so nothing asks for another frame: when that failure is the last thing
+   * the style waits on and lands after the last frame, `load` never fires — the map sits drawn but
+   * never live, so the console's layers and chrome never arrive. One frame asked for on an error
+   * before `load` lets the map see it is loaded.
+   */
+  it('asks for a frame when a source fails before load, so load still comes', () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    render(<Host tick={0} />);
+    const map = FakeMap.instances[0] as FakeMap;
+    const error = new Error('Failed to fetch');
+    map.handlers.get('error')?.({ type: 'error', error });
+    expect(map.repaints).toBe(1);
+    // Listening takes MapLibre's own logging away, so the shell logs it as MapLibre would.
+    expect(logged).toHaveBeenCalledWith(error);
+    // Once loaded the frames are MapLibre's own business again.
+    map.load();
+    map.handlers.get('error')?.({ type: 'error', error });
+    expect(map.repaints).toBe(1);
+    expect(logged).toHaveBeenCalledTimes(2);
+    logged.mockRestore();
   });
 
   it('tears the map down on unmount and releases the pmtiles protocol', () => {

@@ -16243,6 +16243,18 @@ guideline, as one PR (D300, amended).
 - **The Google Maps row (D312).** The interior point, the box's middle without one (never
   `centroid` or `representativePoint`, which sit on the shore of a curved lake), at the zoom that
   frames the whole body; its line reads *"The interior point, the whole lake · Staff only"*.
+- **After the merge (2026-11-26): the founder's rulings on the summer aerial** (D312, amended) —
+  full color lightly dimmed, the dark map's inks over it in both themes over a dark ground, the
+  credit and the scale on plates — and **the theme-switch hang**. The founder had seen a map hang
+  after a theme switch in a real browser; headless Chromium hung on every flip of a looped probe
+  (80 of 80, aerial on and off; 0 of 200 after the fix). The
+  re-created map's style and sources were all in, yet `load` never fired and no frame was pending:
+  a source whose metadata fails (the archive's fetch refused) is marked loaded with an `error` and
+  no data event, so when that failure lands after the map's last frame nothing asks for another,
+  and `load` — fired from a frame — never comes. The shared shell (`lib/mapCanvas.ts`, so the skater
+  map, the lake editor and the console alike) now asks for one frame on an error before `load`,
+  and logs the error as MapLibre would have. Toggling the summer aerial no longer re-creates the
+  map at all (the basemap stays the page's).
 
 ##### The load proof
 
