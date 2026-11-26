@@ -69,7 +69,8 @@ export function viewerHtml(config: {
 <style>
   html, body { margin: 0; height: 100%; font: 13px/1.4 system-ui, sans-serif; background: #d9dee2; }
   #map { height: 100%; }
-  #credit { position: absolute; right: 8px; bottom: 8px; padding: 4px 8px; border-radius: 4px;
+  /* Bottom left: MapLibre's attribution control sits bottom right and covered the date (the pilot). */
+  #credit { position: absolute; left: 8px; bottom: 8px; padding: 4px 8px; border-radius: 4px;
     background: rgba(255, 255, 255, 0.9); color: #1d2327; }
 </style>
 </head>

@@ -26,6 +26,10 @@ all apply here — each costs money silently. The six that bite this directory:
 4. **`fly machine run` ignores `fly.toml`'s `[[vm]]` block, and `--vm-size` sets CPUs, not memory.**
    `spawn.sh` passes both: `shared-cpu-4x` with 2048 MB for a work tile, 4096 MB for the assembler
    (its region layout measured ~1.4 GB RSS, ~2 GB with buffers).
+   ⚠ **A `shared-cpu-4x` throttles a work tile** (the pilot, 2026-11-26): its burst balance drained in
+   about three minutes and it ran at ~0.44 of a core after. The pilot's tiles ran on
+   `FLY_VM_SIZE=performance-4x` with `FLY_VM_MEMORY=8192` (performance sizes need 2 GB a CPU): 256 s a
+   work tile, no throttling, under 0.6 GB used. Which size the full run takes is the founder's go.
 5. **No comment between backslash-continuations** — it ends the command and drops every argument
    after it, silently (twenty winter Machines once ran with no granule).
 6. **The live-Machine cap is shared with the winter pump.** `spawn.sh` counts every live Machine on
@@ -141,11 +145,16 @@ names; `set -a; source <file> >/dev/null 2>&1; set +a` loads them):
 ```bash
 scripts/aerial/bundle.sh                       # the two bundles → scripts/aerial/.scratch/image/
 fly deploy . --config scripts/aerial/fly.toml --dockerfile scripts/aerial/Dockerfile \
+  --ignorefile scripts/aerial/Dockerfile.dockerignore --remote-only \
   --build-only --push --image-label "aerial-$(date +%Y%m%d)"
-fly auth docker
-docker buildx imagetools inspect "registry.fly.io/skating-imagery:aerial-$(date +%Y%m%d)" \
-  --format '{{.Manifest.Digest}}'              # → AERIAL_IMAGE=registry.fly.io/skating-imagery@<digest>
 ```
+
+`--ignorefile` names the context's allow-list outright (the pilot's context was 324 kB), and
+`--remote-only` keeps the build on Fly's builder — never a local Docker. The digest to pin is in the
+build's own output (`pushing manifest for registry.fly.io/skating-imagery:aerial-<date>@sha256:…`);
+the registry confirms it without Docker: a `HEAD` of `/v2/skating-imagery/manifests/aerial-<date>`
+on `registry.fly.io` with the flyctl token answers `docker-content-digest`. Pin it as
+`AERIAL_IMAGE=registry.fly.io/skating-imagery@sha256:<digest>`.
 
 **2. The pilot** (§7.4, `champlain-nhma-me-ny`, ~63 cells), from the integrated branch:
 

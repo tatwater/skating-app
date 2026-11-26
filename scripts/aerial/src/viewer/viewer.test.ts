@@ -173,6 +173,8 @@ describe('the viewer page', () => {
     );
     expect(html).toContain('<title>Summer &#60;aerial&#62;</title>');
     expect(html).toContain('startsAtHash: /^#\\d/.test(location.hash)');
+    // The date is never under MapLibre's attribution, which sits bottom right.
+    expect(html).toMatch(/#credit \{[^}]*left: 8px; bottom: 8px/);
     expect(viewerHtml({ ...config, archiveName: '</script>', title: 't' })).not.toContain(
       '"</script>"',
     );

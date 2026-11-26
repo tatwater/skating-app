@@ -845,17 +845,29 @@ The design's figures were the scouts' (6.59 M z17 tiles over ~324,000 km², WebP
 256-px land tile), ±30%. T's warp proof measured real 512-px tiles on three windows (§9, *What the
 build found*), and the integration checked T's arithmetic (2026-11-26). **z18 everywhere** (D317):
 
-| | Design | T, measured | Integration's figure |
-| --- | --- | --- | --- |
-| Archive | ~387 GB | 375–700 GB, ~525 GB central | **380–700 GB, ~550 GB central** |
-| R2 storage | ~$5.80 / month | ~$8 / month | **~$8.30 / month** ($5.70–$10.50) |
-| Fly compute, a full build | ~220 machine-hours, ~$4 | ~410 machine-hours, ~$7.60 | **~400 machine-hours** (320–540), ~$7–10 — unless shared CPUs throttle (below) |
-| Wall time on 25 Machines | ~9 h | ~16 h | **~16 h** (13–22) |
-| Fly outbound transfer | ~2× the archive, ~$15 | ~1 TB, ~$21 | **~1.1 TB, ~$22** (0.75–1.4 TB) |
-| A fully covered work tile's shard | ~220 MB | 235–440 MB | **235–440 MB** |
-| Pixel at 44°N | 0.43 m (1.4 ft) | | |
-| The date index | ~140 KB raw, ~30–40 KB gzipped | | not re-measured (the integration's one-tile run: 169 B for 3 cells) |
-| The manifest | 1.5–3 MB raw | | **~6–7 MB raw** for the region: the integration's pilot manifest, which records every cell and frame, was 5.4 MB before any work tile's counts |
+| | Design | T, measured | Integration's figure | **The pilot, measured, re-extrapolated** (2026-11-26) |
+| --- | --- | --- | --- | --- |
+| Archive | ~387 GB | 375–700 GB, ~525 GB central | 380–700 GB, ~550 GB central | **~260 GB (220–300)** — 28 work tiles, 4.08 GB, 26.6 KB a tile over every zoom |
+| R2 storage | ~$5.80 / month | ~$8 / month | ~$8.30 / month ($5.70–$10.50) | **~$3.90 / month** ($3.30–$4.50), ~$47 a year |
+| Fly compute, a full build | ~220 machine-hours, ~$4 | ~410 machine-hours, ~$7.60 | ~400 machine-hours (320–540), ~$7–10 — unless shared CPUs throttle (below) | **They throttle.** On `performance-4x`: 256 s a work tile (178–356), ~125 machine-hours (87–175), **~$23** ($16–32) at Fly's published performance rate |
+| Wall time on 25 Machines | ~9 h | ~16 h | ~16 h (13–22) | **~5 h of tiles** (3.5–7.5) + ~1.5 h assembly + verify: **~7–9 h** |
+| Fly outbound transfer | ~2× the archive, ~$15 | ~1 TB, ~$21 | ~1.1 TB, ~$22 (0.75–1.4 TB) | **~520 GB, ~$10** (440–600 GB) |
+| A fully covered work tile's shard | ~220 MB | 235–440 MB | 235–440 MB | **176–202 MB on land**, 62–75 MB on Champlain's open water |
+| Source read from Azure | 9–10 TB (whole stacks) | 2–9 GB a work tile | | **0.86 GB a work tile** (0.35–2.5; the border tiles read most): **~1.5 TB** (1–2.5), inbound, free |
+| Pixel at 44°N | 0.43 m (1.4 ft) | | | |
+| The date index | ~140 KB raw, ~30–40 KB gzipped | | not re-measured (the integration's one-tile run: 169 B for 3 cells) | 4,297 B raw, **808 B gzipped** for 209 cells and 17 flights (P's region proof: 26 KB gzipped) |
+| The manifest | 1.5–3 MB raw | | ~6–7 MB raw for the region: the integration's pilot manifest, which records every cell and frame, was 5.4 MB before any work tile's counts | **5.41 MB** published with its 28 work tiles' counts |
+| A full run, all told | ~$20 | | ~$30–40 | **~$37** ($28–48): ~$23 compute, ~$10 transfer, ~$4 the first month |
+
+**What the pilot changed (2026-11-26).** The tiles are about half the size T's windows suggested at the
+deepest zoom — a tile-zoom-17 512-px tile averaged **21 KB** (land 25–27 KB, Champlain's water 10 KB),
+the shallower ones 36–87 KB; per tile zoom over all 28 shards: z11 49.7, z12 57.8, z13 67.7, z14 72.2,
+z15 61.7, z16 36.4, z17 21.0 KB — so the region is ~260 GB, not ~550. The extrapolation: 1,764 work tiles at the design's 91% fill is ~1,605
+fully covered ones × 140–185 MB a shard (the pilot's mixed mean 146 MB; its land 176–202 MB). And a
+`shared-cpu-4x` **does** throttle: its burst balance (19,342) drained in about three minutes, after
+which the Machine ran at ~0.44 of a core with 28% steal; on `performance-4x` no tile throttled at all
+(throttle counter 0), used 318 CPU-seconds a tile on average (227–400: ~1.2 cores of 4 busy), and peaked
+under 0.6 GB of its 8 GB. Read with §6.1's older columns as history.
 
 **Why the archive moved.** The design's 387 GB is the deepest level alone: 6.59 M 512-px tiles at
 tile zoom 17 (the same footprint as a 256-px z17 tile) × ~59 KB, which is 14.7 KB a 256-px quarter —
@@ -1159,7 +1171,9 @@ Relied on from the scouts or from memory, not re-checked for this doc — **as o
   (and the claim that reading fallbacks only where needed cuts that: the proof's windows read
   135–321 MB a z14 window, which at 64 a work tile is 9–20 GB a tile from the laptop — T estimates
   2–9 GB a tile, as a Machine reads only what shows); seconds per work tile on a Machine, and whether
-  shared CPUs throttle under a sustained tile (§6.1). **Measured:** the date index of the real region
+  shared CPUs throttle under a sustained tile (§6.1). **Measured by the pilot (2026-11-26):** 0.86 GB read a work tile (0.35–2.5),
+  ~1.5 TB for the region; 256 s a work tile on `performance-4x`; and **shared CPUs throttle** — a
+  `shared-cpu-4x` drained its burst in ~3 minutes and ran at ~0.44 of a core after (§6.1). **Measured:** the date index of the real region
   (P's index proof over the scouts' picks, 2026-11-26): 9,168 cells, 141 flights, 168 KB raw,
   **26 KB gzipped**, 18 bytes a cell; the assembler's memory for a region-sized layout (P's scale
   proof, 8.7 M tiles): **1.39 GB peak RSS**, inside the assembler's 4,096 MB.
@@ -1175,18 +1189,21 @@ Relied on from the scouts or from memory, not re-checked for this doc — **as o
   region-wide). **Answered:** the cloud and glare cases (§2.1.2, the founder's review).
 - **Infrastructure**: R2's 5 GiB single-PUT cap and 10,000-part multipart limit; Cloudflare not
   caching an object this size at the edge; R2's free 10 M Class B reads and $0.36/M; **R2's public
-  URL serving a `Content-Encoding: gzip` object as such** (the integration's local run proved the
-  client side against a stand-in host that does; R2 itself is the pilot's to show); Fly's outbound
+  URL serving a `Content-Encoding: gzip` object as such** — answered by the pilot (2026-11-26): it
+  does, and decodes it for a client that doesn't accept gzip; Fly's outbound
   transfer rate; the Fly Machine's ephemeral disk size (a work tile's scratch is its shard plus
   small intermediates, a few hundred MB); `ams` being the right region for West Europe; **the
-  bucket's location**, which decides the assembler's region (§2.4: `iad` by default); pushing a
-  second image to `skating-imagery` under its own label without touching the pinned cutter image (the
-  image was built locally, never pushed).
+  bucket's location** — answered by the pilot: `ENAM` (S3 `GetBucketLocation`), so the assembler
+  stays in `iad`; pushing a second image to `skating-imagery` under its own label without touching
+  the pinned cutter image — answered: `aerial-20261126`, by Fly's remote builder, the app's Machines,
+  config and secrets untouched; the Machine's root disk — answered: 8.35 GB, a work tile's scratch
+  under 0.5 GB of it.
 - **Tools.** **Answered:** `gdal raster tile --tile-size 512` (T's proof); `pmtiles verify` clean on a
   streamed archive and `rclone rcat` in 128 MiB parts (P's stream proof, re-run at integration: a
   1.8 GB archive in 15 parts through real `rclone` into a local S3 server, byte-equal, verify clean,
-  92 MB/s, 832 MB peak RSS). Not answered: the same against R2 itself, and the assembler's
-  throughput on a Machine (at the local 92 MB/s, a 550 GB archive streams in under two hours).
+  92 MB/s, 832 MB peak RSS). **Answered by the pilot (2026-11-26):** against R2 itself, a 4.08 GB archive
+  in 31 parts, byte-equal from the public URL, at 47.5 MB/s on a Machine in `iad` (~1.5 h for ~260 GB) —
+  once the image's rclone was 1.74.4, not Ubuntu's 1.60.1, which can't `rcat` to R2.
 - **Which bucket** serves `VITE_IMAGERY_ARCHIVE_URL` publicly (G-6). **Answered** (T, 2026-11-25, by
   hosts and names only): `skating-imagery`, from its own public host at the bucket's root; the
   register had it as `skating-basemap` and is corrected (`05` § 1).
@@ -1569,7 +1586,8 @@ go:
    the governor to confirm): 64 cells — Champlain's north end 24, the NH–MA strip 16, the Maine strip
    16 (the six October cells, their September 2023 neighbors, one ME 2018 cell), a Catskills NY
    2024/2019 join 8 — which touch **27 work tiles, 200 cells cut in all** (the dry runs of select and
-   tiles over the first walk say so). At §6.1's figures: ~6 machine-hours (~$0.15), 6–12 GB of shards,
+   tiles over the first walk say so). *Built (2026-11-26) with one more: a partial Maine cell, `4507038sw` —
+   65 cells, 28 work tiles, 209 cut (What the build found, the pilot).* At §6.1's figures: ~6 machine-hours (~$0.15), 6–12 GB of shards,
    an archive of ~8–15 GB, ~20 GB out of Fly (~$0.40), well under an hour on 25 Machines.
 4. **The look**: the verify report and its viewer page to the founder through the governor (the
    joins of §7.4, the credit's range across them).
@@ -1734,3 +1752,62 @@ The same invariants (§10.2). Written in full when the pilot is in; the shape no
 - **The cost**: ~$8 a month to keep (~$100 a year, against the ~$70 the founder accepted) and
   ~$30–40 a full build (against ~$20), because the design's 387 GB left out the pyramid above the
   deepest level (§6.1).
+
+**The pilot (2026-11-26).** `naip-pilot-20261126`, `champlain-nhma-me-ny`: built on Fly and R2 end to
+end, verified, and looked at. Every key under `naip/build/pilot/champlain-nhma-me-ny/` and
+`dev/naip/pilot/champlain-nhma-me-ny/`; its run rows on a throwaway local backend; no Machine left.
+
+- **The list grew by one cell**, `4507038sw` (65 cells, 28 work tiles, 209 cells cut): none of the 200
+  cells the proposed list cut had a partial pick with a fallback, which §7.4 must show. It shows: a
+  Maine 2023 0.3 m strip over its 2021 0.6 m fallback, dated `2023-09-30, 2021-09-04`.
+- **Five defects, each fixed with a test** (commits on the branch):
+  - **A pilot uploaded the catalog snapshot outside its prefixes** (`naip/inventory/<day>/`, shared with
+    the full build) — found before anything ran; a pilot now archives nothing, and `selectUploads`
+    refuses a pilot manifest that asks to.
+  - **Every chunk failed on a 4-CPU Machine**: under 8 threads `gdal raster tile` runs a thread pool
+    over `GDALGetThreadSafeDataset()`, which can't clone a VRT mosaic of warped VRTs ("Source dataset
+    cannot be cloned"); the laptop, with more cores, spawned instead and passed. Reproduced locally by
+    forcing the pool. Every tiler run is now `--parallel-method spawn`, byte-identical to a
+    single-threaded run (89 real tiles compared); the fingerprint is re-recorded under tiling version 1.
+  - **Ubuntu's rclone 1.60.1 can't `rcat` to R2**: every upload's first attempt answered `501
+    NotImplemented` (the work tiles' `copyto` retried past it, "Attempt 2/3 succeeded"; `rcat` reads
+    stdin once and failed the assembler outright). The image installs rclone 1.74.4 from rclone's own
+    `.deb`, checked against its SHA256SUMS — and no build argument may start with `RCLONE_`, which
+    rclone reads as a flag (`RCLONE_VERSION` became `--version` and failed the build).
+  - **An opaque top tile broke the overviews**: GDAL's WebP writer drops the alpha of a tile with no
+    transparent pixel, and the parent VRT asked every child for band 4 ("Illegal band #"). Each child's
+    alpha is read from its WebP header; an opaque one gets a constant 255.
+  - **Two progress writes raced**: the assembler's concurrent index readers reported 25 and 28 at once,
+    two `rcat`s to one key, and rclone 1.74's post-upload check failed the assembly ("corrupted on
+    transfer"). The progress hook is serialized.
+  - Smaller: a pilot's `aerial_assemble` rows claimed `complete: true` (now only a build's); the
+    viewer's date credit sat under MapLibre's attribution (now bottom left), and the viewer keeps its
+    view in the URL (`#zoom/lat/lng`), so each join is a link.
+- **Measured** (§6.1's last column): 28 work tiles in **9 minutes** wall on `performance-4x` in `ams`
+  (256 s a tile, 178–356; tiling 213 s of it, counting 37 s), 318 CPU-seconds a tile, 24 GB read from
+  Azure, 4.08 GB of shards (62–202 MB each), scratch under 0.5 GB above the image on an 8.35 GB root;
+  the assembler in `iad` on `shared-cpu-4x`, 97 s, writing 4.08 GB at **47.5 MB/s** with **349 MB**
+  peak RSS (P's region proof: 1.39 GB); 149,698 tiles, 37 leaf directories, 30 overview tiles.
+- **R2, checked from the laptop**: the index served `Content-Encoding: gzip`, `Content-Type:
+  application/json`, `Cache-Control: public, max-age=31536000, immutable`, 808 bytes — and decoded for
+  a client that doesn't accept gzip; CORS answers `https://skating-app-eight.vercel.app` and
+  `http://localhost:3000` (preflight for `range` too) and nobody else; the archive answers ranges with
+  206 at its head and mid-file, and exposes `ETag` (`…-31`, the 31 parts of a 128 MiB multipart); the
+  whole archive streamed from the public URL hashed to the manifest's SHA-256, byte for byte.
+- **The look** (`report/shots/`): the joins register — roads cross Champlain's NY 2024 | VT 2025 edge,
+  the NY 2024 | 2019 edge and the Maine edges without a visible offset — and **72°W is invisible**, at
+  z16 and z12. What shows is **season and flight, not geometry**: a hard tone step at every join of two
+  flights (VT's August 2025 land beside NY's July 2024; NY's 16 September 2024, already browning,
+  beside its green 17 September 2019), and over open water a patchwork of tone between quarter-quads
+  of one flight. No holes, no black edges, no cloud in the pilot's cells. The photograph stops at a
+  straight edge at the last quarter-quads, 45.0625°N, about 7 km into Québec.
+- **Maine's September is autumn.** The six October cells look like their "summer" neighbors, because
+  those neighbors were flown on 27 September 2023 and are in full color too; what stands out is the
+  **ME 2018 cells, flown in July and bright green** among them. And one 2018 cell (`4407012se`) holds
+  an orange strip with a ragged edge on its west side: most likely USDA's own seamline within the
+  quarter-quad, a part flown on another (autumn) day — which the date index can't see, since an item
+  carries one date. Unverified; for the founder's eye with §5.5's revisit.
+- **A first view in about a second**: headless Chromium on the laptop, a cold context each time, three
+  places at z15 — MapLibre idle at 906, 906 and 1,072 ms after navigation; the first archive range at
+  350–415 ms, the last answered by 760–930 ms (13–16 ranges).
+
