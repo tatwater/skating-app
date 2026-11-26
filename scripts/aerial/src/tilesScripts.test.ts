@@ -296,9 +296,11 @@ describe('the Dockerfile', () => {
     const docker = readFileSync(join(PKG, 'Dockerfile'), 'utf8');
     const apt = /apt-get install[^\n]*(?:\\\n[^\n]*)*/.exec(docker)?.[0] ?? '';
     expect(apt).not.toMatch(/\brclone\b/);
-    expect(docker).toMatch(/^ARG RCLONE_VERSION=\d+\.\d+\.\d+$/m);
-    expect(docker).toMatch(/^ARG RCLONE_SHA256_AMD64=[0-9a-f]{64}$/m);
+    expect(docker).toMatch(/^ARG DEB_RCLONE_RELEASE=\d+\.\d+\.\d+$/m);
+    expect(docker).toMatch(/^ARG DEB_RCLONE_SHA256_AMD64=[0-9a-f]{64}$/m);
     expect(docker).toContain('sha256sum -c -');
+    // rclone reads any RCLONE_* environment variable as a flag, a build argument's included.
+    expect(docker).not.toMatch(/^ARG RCLONE_/m);
   });
 });
 

@@ -40,18 +40,20 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # succeeded"); `rcat` reads stdin once and can't retry, so the assembler's first write — and with it
 # the archive's streamed upload — failed outright. 1.74.4 is the laptop's, which P's stream proof and
 # the pilot's probe of `rcat` into the bucket both passed with. The hashes are rclone's SHA256SUMS.
+# ⚠ No build argument may start with `RCLONE_`: a RUN sees it as an environment variable, and rclone
+# reads every `RCLONE_<FLAG>` as a flag (`RCLONE_VERSION=1.74.4` is `--version=1.74.4`, refused).
 ARG TARGETARCH=amd64
-ARG RCLONE_VERSION=1.74.4
-ARG RCLONE_SHA256_AMD64=a9da2eaa70428c6dcc5acbb0b7eac0faec4c61643e0b468d9fe09ddf79b7e929
-ARG RCLONE_SHA256_ARM64=db39280cd0b680ef2ab2e9800882936358c33b959622512e6898ebbeaf0b7aea
+ARG DEB_RCLONE_RELEASE=1.74.4
+ARG DEB_RCLONE_SHA256_AMD64=a9da2eaa70428c6dcc5acbb0b7eac0faec4c61643e0b468d9fe09ddf79b7e929
+ARG DEB_RCLONE_SHA256_ARM64=db39280cd0b680ef2ab2e9800882936358c33b959622512e6898ebbeaf0b7aea
 RUN set -eux; \
     case "${TARGETARCH}" in \
-      amd64) RC_SHA="${RCLONE_SHA256_AMD64}" ;; \
-      arm64) RC_SHA="${RCLONE_SHA256_ARM64}" ;; \
+      amd64) RC_SHA="${DEB_RCLONE_SHA256_AMD64}" ;; \
+      arm64) RC_SHA="${DEB_RCLONE_SHA256_ARM64}" ;; \
       *) echo "unsupported TARGETARCH=${TARGETARCH}" >&2; exit 1 ;; \
     esac; \
-    deb="rclone-v${RCLONE_VERSION}-linux-${TARGETARCH}.deb"; \
-    curl -fsSL -o "/tmp/${deb}" "https://downloads.rclone.org/v${RCLONE_VERSION}/${deb}"; \
+    deb="rclone-v${DEB_RCLONE_RELEASE}-linux-${TARGETARCH}.deb"; \
+    curl -fsSL -o "/tmp/${deb}" "https://downloads.rclone.org/v${DEB_RCLONE_RELEASE}/${deb}"; \
     echo "${RC_SHA}  /tmp/${deb}" | sha256sum -c -; \
     dpkg -i "/tmp/${deb}"; \
     rm "/tmp/${deb}"; \
