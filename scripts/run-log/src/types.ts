@@ -72,7 +72,14 @@ export type ImportRunKind =
    * `scripts/etl retire-absorbed` — the merge's absorbed rows folded into their survivors (D136).
    * Logged as `canonical_water` before B01-7a, which made it read as a campaign's load.
    */
-  | 'absorbed_retire';
+  | 'absorbed_retire'
+  // `scripts/aerial` (B05) — the summer aerial's NAIP archive, one kind per stage of a build.
+  /** `select` — the frame rule over the whole catalog, and the build's manifest. */
+  | 'aerial_select'
+  /** `tiles` — the work tiles cut on Fly, each a shard with its done record. */
+  | 'aerial_tiles'
+  /** `assemble` — the archive and its date index written from the shards, then verified. */
+  | 'aerial_assemble';
 
 /**
  * What a run set out to cover (D218): one member of `IMPORT_RUN_SCOPES`

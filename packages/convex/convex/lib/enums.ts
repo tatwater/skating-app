@@ -692,6 +692,12 @@ export const IMPORT_RUN_KINDS = [
   // as a campaign's load (the Overview's last campaign). Its own kind because it folds rows away
   // rather than loading them, the same reason `dedup_resolve` is not the load.
   'absorbed_retire',
+  // scripts/aerial (B05) — the summer aerial's region-wide NAIP archive, a row per stage of a build,
+  // grouped by its campaign (`naip-<YYYYMMDD>`): the frame rule and manifest, the work tiles cut on
+  // Fly, and the archive's assembly with its date index and verify. None writes a body.
+  'aerial_select',
+  'aerial_tiles',
+  'aerial_assemble',
 ] as const;
 
 /**

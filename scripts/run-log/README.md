@@ -60,6 +60,15 @@ it stored. Under `run-corpus.sh` each carries the campaign id; run by hand, pass
 | `floor_prune` | `pnpm --filter @skating/etl prune-floor` — dry or applied, a row either way |
 | `absorbed_retire` | `pnpm --filter @skating/etl retire-absorbed` (was `canonical_water` before B01-7a) |
 
+And every stage of a **summer aerial build** (`scripts/aerial/run-aerial.sh`, B05), each carrying the
+build's campaign id (`naip-<YYYYMMDD>`; a pilot's rows go to a local deployment only):
+
+| kind | command |
+| --- | --- |
+| `aerial_select` | `run-aerial.sh <campaign> --stage select` — the frame rule and the manifest |
+| `aerial_tiles` | `run-aerial.sh <campaign> --stage tiles` — the work tiles, cut on Fly |
+| `aerial_assemble` | `run-aerial.sh <campaign> --stage assemble` (and `verify`) — the archive and its date index |
+
 ## Scope and heartbeat (D218)
 
 **`scope` is what a run set out to cover**, stated once at `start` through `RunLogger`'s `scope`
