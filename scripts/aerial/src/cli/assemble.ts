@@ -25,12 +25,18 @@ import type { NaipManifest } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import {
   type AssembleDeps,
+  type AssembleProgress,
   AssembleRefusal,
   assemble,
   assemblyKeys,
   planAssembly,
 } from '../assemble/assemble';
-import { ASSEMBLE_SCOPE, assemblyCounts, followAssembly } from '../assemble/orchestrate';
+import {
+  ASSEMBLE_SCOPE,
+  assemblyCounts,
+  followAssembly,
+  oneAtATime,
+} from '../assemble/orchestrate';
 import { gdalRenderer } from '../assemble/overviews';
 import { fileStore, fileUploads, httpStore, type ObjectStore } from '../assemble/stores';
 import { type RcloneTarget, rcatSink, rcloneRun, serveHttp } from '../assemble/upload';
@@ -85,6 +91,10 @@ async function onMachine(campaign: string, pilot?: string): Promise<void> {
     await sink.write(new TextEncoder().encode(JSON.stringify(value)));
     await sink.end();
   };
+  // Concurrent index readers can report at once; two rcats to one key race (`oneAtATime`).
+  const progress = oneAtATime((event: AssembleProgress) =>
+    putJson(keys.progress, { at: new Date().toISOString(), event }),
+  );
   try {
     const store = httpStore(server.baseUrl);
     const manifest = await readManifest(store, campaign, pilot);
@@ -93,7 +103,7 @@ async function onMachine(campaign: string, pilot?: string): Promise<void> {
       upload: (key, o) => rcatSink(target, key, o),
       renderer: gdalRenderer(),
       memory: peakMemory(),
-      progress: (event) => putJson(keys.progress, { at: new Date().toISOString(), event }),
+      progress,
     });
     process.stdout.write(`${JSON.stringify(assemblyCounts(record))}\n`);
   } catch (e) {

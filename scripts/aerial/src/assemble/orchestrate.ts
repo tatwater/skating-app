@@ -9,6 +9,21 @@
 import { NAIP_STATES } from '@skating/core';
 import type { AssembleProgress, AssemblyRecord } from './assemble';
 
+/**
+ * **One write at a time, in order** — for the progress object the Machine rewrites under one key.
+ * The assembler's index readers run concurrently and two can report at once (25 of 28, then 28),
+ * and two `rclone rcat`s to the same key race: each checks the object it wrote and finds the other's
+ * ("corrupted on transfer", the pilot's assembler, 2026-11-26). Each call waits for the one before
+ * it; a failed write fails every later one, as an unserialized failure would have.
+ */
+export function oneAtATime<A>(write: (arg: A) => Promise<void>): (arg: A) => Promise<void> {
+  let last: Promise<void> = Promise.resolve();
+  return (arg) => {
+    last = last.then(() => write(arg));
+    return last;
+  };
+}
+
 /** The assembler's run scope: the archive, the seven states, the whole region. */
 export const ASSEMBLE_SCOPE = {
   pass: 'archive' as const,

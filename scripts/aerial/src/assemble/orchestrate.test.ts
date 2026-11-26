@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssemblyRecord } from './assemble';
-import { assemblyCounts, beat, followAssembly } from './orchestrate';
+import { assemblyCounts, beat, followAssembly, oneAtATime } from './orchestrate';
 
 const record = {
   archive: { bytes: 100 },
@@ -96,5 +96,26 @@ describe('the run row around the Machine', () => {
     await expect(follow({ progress: [null], record: [null], done: [false] })).rejects.toThrow(
       'no progress from the assembler',
     );
+  });
+});
+
+describe('oneAtATime', () => {
+  it('never lets two writes overlap, keeps their order, and fails every write after a failure', async () => {
+    const log: string[] = [];
+    let open = 0;
+    const write = oneAtATime(async (n: number) => {
+      open++;
+      expect(open).toBe(1);
+      log.push(`start ${n}`);
+      await new Promise((r) => setTimeout(r, n === 1 ? 20 : 1));
+      log.push(`end ${n}`);
+      open--;
+      if (n === 3) throw new Error('rcat failed');
+    });
+    await Promise.all([write(1), write(2)]);
+    expect(log).toEqual(['start 1', 'end 1', 'start 2', 'end 2']);
+    await expect(write(3)).rejects.toThrow('rcat failed');
+    await expect(write(4)).rejects.toThrow('rcat failed');
+    expect(log).not.toContain('start 4');
   });
 });
