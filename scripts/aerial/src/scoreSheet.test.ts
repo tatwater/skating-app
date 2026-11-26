@@ -129,6 +129,16 @@ describe('writeContactSheet', () => {
     const html = readFileSync(path, 'utf8');
     expect(html).toContain('Likely cloud or glare: confirm to strike (1)');
     expect(html).toContain('Set aside as false positives (1)');
+    expect(html).not.toContain('Reviewed and kept');
+    const kept = readFileSync(
+      writeContactSheet(join(dir, 'kept'), thumbs, c, {
+        campaign: 'naip-20261125',
+        prescreen: { [glare.itemId]: { verdict: 'kept', note: 'Nobody skates that water.' } },
+      }),
+      'utf8',
+    );
+    expect(kept).toContain('Reviewed and kept (1)');
+    expect(kept).toContain('Nobody skates that water.');
     expect(html).not.toContain('Not yet pre-screened');
     expect(html).toContain('Sun glare over Great South Bay &lt;bright&gt;');
     expect(html).toContain('striking the pick leaves the cell without a summer frame');

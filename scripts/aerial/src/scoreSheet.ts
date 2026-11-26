@@ -8,10 +8,13 @@
  * - **On a fallback that shows** (under a partial pick) — striking it changes no pick; the builder
  *   decides and lists it.
  *
- * The builder's pre-screen (`prescreen.json` beside the sheet, written by hand after looking:
- * `{ "<itemId>": { "verdict": "likely" | "falsePositive", "note": "…" } }`) sorts the pick
- * candidates into likely cloud or glare, set-aside false positives (cities, dunes, beaches) and not
- * yet looked at. Nothing here strikes anything: `NAIP_EXCLUSIONS` changes only by a reviewed commit.
+ * The review file (`prescreen.json` beside the sheet, written by hand:
+ * `{ "<itemId>": { "verdict": "likely" | "kept" | "falsePositive", "note": "…" } }`) sorts the pick
+ * candidates: likely cloud or glare awaiting the founder; real cloud or glare the founder reviewed
+ * and chose to keep (`kept`, with why, so a later review doesn't raise it again); set-aside false
+ * positives (cities, dunes, beaches); and not yet looked at. A frame the founder struck is no longer
+ * a pick, so it leaves the sheet. Nothing here strikes anything: `NAIP_EXCLUSIONS` changes only by a
+ * reviewed commit.
  */
 
 import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -46,7 +49,7 @@ export interface FallbackCandidate {
   depth: number;
 }
 
-export type PrescreenVerdict = 'likely' | 'falsePositive';
+export type PrescreenVerdict = 'likely' | 'kept' | 'falsePositive';
 export type Prescreen = Record<string, { verdict: PrescreenVerdict; note: string }>;
 
 export interface CloudCandidates {
@@ -178,6 +181,7 @@ table { border-collapse: collapse; } td, th { padding: 2px 10px 2px 0; text-alig
 <p>Campaign <code>${esc(options.campaign)}</code>. Every pick whose catalog thumbnail is over ${(threshold * 100).toFixed(0)}% neutral white, beside the frame that would show instead if it were struck. A score is only a prompt: white roofs, beaches and dunes score too. Nothing is struck until it is confirmed and committed.</p>
 ${sectionOf('Likely cloud or glare: confirm to strike', 'The pre-screen thinks these are real. Striking one changes the pick to the frame on its right.', group('likely'))}
 ${sectionOf('Not yet pre-screened', 'Over the threshold and not looked at yet.', group(undefined))}
+${sectionOf('Reviewed and kept', 'Real cloud or glare the founder looked at and chose to keep; the note says why. Not to be raised again.', group('kept'))}
 ${sectionOf('Set aside as false positives', 'Over the threshold, but the white is ground: cities, beaches, dunes, quarries.', group('falsePositive'))}
 <h2>Fallbacks that show, over the threshold (${candidates.fallbacks.length})</h2>
 <p>Each shows only under a partial pick, so striking one changes no pick; the builder decides these.</p>

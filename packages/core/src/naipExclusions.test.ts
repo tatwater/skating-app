@@ -17,6 +17,13 @@ describe('the committed lists', () => {
     for (const key of NAIP_OFF_SEASON_CELLS) expect(key).toMatch(/^\d{7}(ne|nw|se|sw)$/);
   });
 
+  test("the founder's first review struck the two Aroostook cumulus frames and nothing else", () => {
+    expect(NAIP_EXCLUSIONS.map((e) => [e.itemId, e.reason, e.reviewedBy, e.reviewedOn])).toEqual([
+      ['me_m_4606741_se_19_030_20230922_20240103', 'cloud', 'founder', '2026-11-25'],
+      ['me_m_4606741_ne_19_030_20230922_20240103', 'cloud', 'founder', '2026-11-25'],
+    ]);
+  });
+
   test('every exclusion is reviewed, with a reason and a day', () => {
     for (const ex of NAIP_EXCLUSIONS) {
       expect(['cloud', 'glare']).toContain(ex.reason);

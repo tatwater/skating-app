@@ -187,7 +187,7 @@ snapshot: 718 cells have one leaf-on frame and no fallback; the median cell has 
 | ME | 2023, 0.3 m · 2021, 0.6 m · 2018, 0.6 m · Oct 2023, 0.3 m | 1,650 · 807 · 258 · 6 |
 | NY | 2024 · 2022 · 2021 · 2019, all 0.6 m | 2,474 · 385 · 132 · 791 |
 
-Before the cloud step (§2.1.2), which moves about twenty.
+Before the cloud step (§2.1.2), which moved two Maine cells from 2023 to 2021 (the founder's review).
 
 #### §2.1.1 — The mislabeled Maine 2025 items
 
@@ -213,10 +213,20 @@ season step**, so a struck frame falls back to the next leaf-on one:
   a likely cloud or glare on a cell's pick, shown beside the frame that would replace it. A likely
   cloud on a frame that is only a fallback changes no pick; the builder decides it and lists it.
   Only confirmed frames join `naipExclusions.ts` in core — committed, each with its item id, the
-  reason (`cloud` / `glare`), and who reviewed it when (`founder` or `builder`). The real cases the
-  scouts found: 17 Long Island quarter-quads of 2024-07-02 (glare over Great South Bay; they fall
-  back to NY 2022 summer) and 2–3 Aroostook quarter-quads of 2023-09-22 (to ME 2021). About 20
-  picks change.
+  reason (`cloud` / `glare`), and who reviewed it when (`founder` or `builder`).
+- **The first review (the founder, 2026-11-25)**, of the first walk's sheet (`naip-20261125`: 60
+  picks over 3%, 25 the pre-screen thought real, 35 false positives). **Two frames struck:** the
+  Aroostook picks of 2023-09-22 at `4606741se` and `4606741ne` (cumulus and shadow), which fall back
+  to their clear 2021-08-31 0.6 m frames; nothing else moves. **Kept, on purpose:** the 23 Long
+  Island and New York City picks with real glare or small cumulus (19 of 2024-07-02 and 2 of
+  2024-09-13 with glare on the bays, 2 with cumulus over Queens and the East River) — *glare and
+  cloud there don't matter, because nobody skates that water* — plus the borderline sea glint off
+  `4106917sw` and the 35 false positives. The kept ones are recorded beside the list and in the
+  sheet's review file as `kept`, so a later review doesn't raise them again. **Open:** `4606741sw`,
+  the third Aroostook cell of that day, scored 2.3% (under the threshold), is a question for the
+  founder. *(This replaces the design's expectation that the scouts' ~17 Long Island cells would be
+  struck and fall to NY 2022; had they been, 5 of the 22 New York strikes would have fallen to 2019,
+  not 2022.)*
 - **New frames** (the July check, §3.3) are scored at the next select stage; until a person has
   reviewed a new pick's score, the offer says it is unscored.
 

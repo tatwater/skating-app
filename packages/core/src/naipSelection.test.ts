@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
-import { NAIP_OFF_SEASON_CELLS } from './naipExclusions';
+import { NAIP_EXCLUSIONS, NAIP_OFF_SEASON_CELLS } from './naipExclusions';
 import { quarterQuadCell } from './naipGrid';
 import type { NaipManifest } from './naipManifest';
 import {
@@ -565,6 +565,20 @@ describe('the fixture: a slice of the real catalog', () => {
       const now = after.picks.find((q) => q.key === key) as NaipCellPick;
       expect([now.pick.state, now.pick.year]).toEqual(['ME', 2021]);
     }
+  });
+
+  test("the committed exclusions move exactly the two Aroostook cells, to Maine's 31 August 2021", () => {
+    const after = selectNaipPicks(candidates, NAIP_EXCLUSIONS, NAIP_OFF_SEASON_CELLS);
+    expect(after.dropped.excluded).toBe(2);
+    expect(after.offSeasonBeyondList).toEqual([]);
+    expect(after.picks.map((p) => p.key)).toEqual(selection.picks.map((p) => p.key));
+    const moved = after.picks.filter((p, i) => p.pick.itemId !== selection.picks[i]?.pick.itemId);
+    expect(moved.map((p) => [p.key, p.pick.acquired, p.pick.gsd, p.step])).toEqual([
+      ['4606741ne', '2021-08-31', 0.6, 'leafOn'],
+      ['4606741se', '2021-08-31', 0.6, 'leafOn'],
+    ]);
+    // The third cell of that day is the founder's open question, not struck.
+    expect(after.picks.find((p) => p.key === '4606741sw')?.pick.acquired).toBe('2023-09-22');
   });
 
   test('New Hampshire, Massachusetts, Connecticut and Rhode Island take 2023 at 0.3 m over 2025 at 0.6 m', () => {
