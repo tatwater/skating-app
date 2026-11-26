@@ -30,24 +30,38 @@ import { rasterAnchor } from './glLayers';
  *   marks draw on it. Under any winter pass already up (Imagery's), never over it.
  * - **No zoom floor.** The console's camera is fenced to one body, so its widest view still wants
  *   the photograph; the grid steps down a level rather than asking for more cells.
- * - **Dimmed toward the ground** ({@link AERIAL_PAINT}): the console's inks are grays, so the dark
- *   mode darkens the photograph and the light mode lifts it, each a step toward gray, and the shore,
- *   the bays and the marks keep their contrast over it.
+ * - **Full color, lightly dimmed** ({@link AERIAL_PAINT}): the layer is there to place and check
+ *   marks against the real ground, so the photograph has to read as one. The dark mode takes the
+ *   top off its brightest pixels and the light mode lifts its darkest, a short step toward the
+ *   mode's ground; the marks keep their plates, and the shore holds best where it meets the land.
  *
  * NAIP is a summer photograph on a two-to-three-year cycle. It can never show ice, and nothing here
  * says it does: its credit names the program and the month it was flown.
  */
 
 /**
- * The photograph's paint by mode — MapLibre's raster adjustments, toward the console's ground: in
- * the dark, its brightest pixel under half (so `fg1`'s shore stays the brightest line); in the
- * light, its darkest lifted past half (so the dark inks read). Both a step toward gray. Measured on
- * the painted pixels of Mascoma and Groton (NAIP June 2023): the shore's `fg1` holds at least 5:1
- * against the brightest (dark) or darkest (light) twentieth of the photograph.
+ * The photograph's paint by mode — MapLibre's raster adjustments: full color (no saturation
+ * change), its brightness clamped a quarter as far as the gray paint it replaced (founder,
+ * 2026-11-25: that read as "super faded out"). In the dark its brightest pixel is 0.85 of full; in
+ * the light its darkest is lifted to 0.15.
+ *
+ * What that costs the inks, measured on Mascoma and Groton (NAIP June 2023; MapLibre's raster math
+ * over the cells the live map fetched, and the rendered console at 1440 × 900):
+ *
+ * - **The shore's `fg1` against the photograph as a whole:** 2.1–3.0:1 against its brightest (dark)
+ *   or darkest (light) twentieth, 3.9–5.0:1 against its median. The gray paint held 6.8–8.0:1 at
+ *   that twentieth.
+ * - **Beside Mascoma's shore:** in the dark, 6.2:1 at the median and 3.4:1 at the worst tenth. In
+ *   the light, 4.5:1 on the land side but 2.1:1 on the water side — a dark line on dark water — so
+ *   there the line reads as the land's edge.
+ * - **The quieter `fg2`** (bays, dividers, tracks) falls to 1.2–1.7:1 against that twentieth.
+ *
+ * If that proves too little to place marks by, the fallback is the photograph at full strength and
+ * the lines edged.
  */
 export const AERIAL_PAINT: Readonly<Record<BodyMapMode, Readonly<Record<string, number>>>> = {
-  dark: { 'raster-brightness-max': 0.42, 'raster-saturation': -0.4 },
-  light: { 'raster-brightness-min': 0.58, 'raster-saturation': -0.4 },
+  dark: { 'raster-brightness-max': 0.85, 'raster-saturation': 0 },
+  light: { 'raster-brightness-min': 0.15, 'raster-saturation': 0 },
 };
 
 /**

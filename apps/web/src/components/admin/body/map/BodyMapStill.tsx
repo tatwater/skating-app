@@ -24,7 +24,10 @@ function dashOf(spec: StrokeSpec): string | undefined {
 /**
  * The summer aerial's stand-in for a still: a story can't fetch the photograph, so a fixed field of
  * patches in the map's own quiet lifts stands where it would be — over the fills, under every line,
- * the band the live map puts it in — so the inks can be read over a busy ground.
+ * the band the live map puts it in — so the inks can be read over a busy ground. It stands for
+ * where the photograph goes, not how it looks: the real one is in full color and only lightly
+ * dimmed (`AERIAL_PAINT`), so the inks hold less contrast over it than over this; the
+ * `Summer aerial (live)` stories draw it.
  */
 function AerialStandIn({ width, height }: { width: number; height: number }) {
   // A fixed field (a small linear-congruential walk), so a still is the same on every render.
