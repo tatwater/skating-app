@@ -1,0 +1,77 @@
+# The pilot's cells (B05 §7.4, F-9 ruled (c)): `run-aerial.sh naip-pilot-<YYYYMMDD> --pilot
+# champlain-nhma-me-ny --cells scripts/aerial/pilots/champlain-nhma-me-ny.txt`. 64 quarter-quads;
+# the build cuts every work tile they touch — 27 work tiles, 200 cells in all (the first walk's
+# picks, naip-20261125). Proposed at integration (2026-11-26) from that walk's picks, for the
+# governor to confirm before the pilot runs.
+#
+# Lake Champlain's north end (24): NY 2024 0.6 m | VT 2025 0.3 m on the state line, Québec's edge
+# at 45°N, big water; six of them listed by both states.
+4407305ne
+4407305nw
+4407305se
+4407305sw
+4407306ne
+4407306nw
+4407306se
+4407306sw
+4407307ne
+4407307nw
+4407307se
+4407307sw
+4407313ne
+4407313nw
+4407313se
+4407313sw
+4407314ne
+4407314nw
+4407314se
+4407314sw
+4407315ne
+4407315nw
+4407315se
+4407315sw
+# The NH–MA strip across 72°W near Jaffrey and Winchendon (16): the UTM 18 | 19 seam, NH 2023 |
+# MA 2023 at 0.3 m on the state line.
+4207216ne
+4207216nw
+4207216se
+4207216sw
+4207224ne
+4207224nw
+4207224se
+4207224sw
+4207109ne
+4207109nw
+4207109se
+4207109sw
+4207117ne
+4207117nw
+4207117se
+4207117sw
+# The Maine strip north of Rumford (16): the six October cells of NAIP_OFF_SEASON_CELLS (2 October
+# 2023, 0.3 m) beside their September 2023 summer neighbors, and one ME 2018 0.6 m cell among them.
+4407004ne
+4407004nw
+4407004se
+4407004sw
+4407012ne
+4407012nw
+4407012se
+4407012sw
+4407020ne
+4407020nw
+4407020se
+4407020sw
+4407028ne
+4407028nw
+4407028se
+4407028sw
+# A New York join where 2024 meets the 2019 fallback (8), in the Catskills at 41.9°N 74.9°W.
+4107401ne
+4107401nw
+4107401se
+4107401sw
+4107402ne
+4107402nw
+4107402se
+4107402sw

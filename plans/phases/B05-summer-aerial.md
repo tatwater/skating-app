@@ -1563,9 +1563,14 @@ go:
 1. **A throwaway local backend** with the branch's Convex (the widen), per CLAUDE.md — never dev,
    never prod; `run-aerial.sh --pilot` refuses any other target.
 2. **The image** pushed under its own label (T's gated step); its digest pinned for the run.
-3. **The pilot**: `run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain-nhma-me-ny --cells <the ~63
-   cells of F-9 (c), §7.4> --stage all` → select, tiles, assemble, verify, under
-   `dev/naip/pilot/champlain-nhma-me-ny/`.
+3. **The pilot**: `run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain-nhma-me-ny --cells
+   scripts/aerial/pilots/champlain-nhma-me-ny.txt --stage all` → select, tiles, assemble, verify,
+   under `dev/naip/pilot/champlain-nhma-me-ny/`. *The list* (proposed at integration, 2026-11-26, for
+   the governor to confirm): 64 cells — Champlain's north end 24, the NH–MA strip 16, the Maine strip
+   16 (the six October cells, their September 2023 neighbors, one ME 2018 cell), a Catskills NY
+   2024/2019 join 8 — which touch **27 work tiles, 200 cells cut in all** (the dry runs of select and
+   tiles over the first walk say so). At §6.1's figures: ~6 machine-hours (~$0.15), 6–12 GB of shards,
+   an archive of ~8–15 GB, ~20 GB out of Fly (~$0.40), well under an hour on 25 Machines.
 4. **The look**: the verify report and its viewer page to the founder through the governor (the
    joins of §7.4, the credit's range across them).
 5. **The numbers** (§7.4's list) into *What the build found (B05)*.

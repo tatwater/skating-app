@@ -151,7 +151,7 @@ docker buildx imagetools inspect "registry.fly.io/skating-imagery:aerial-$(date 
 
 ```bash
 caffeinate -i scripts/aerial/run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain-nhma-me-ny \
-  --cells <the pilot's cell list> > /dev/null 2>&1; echo $?
+  --cells scripts/aerial/pilots/champlain-nhma-me-ny.txt > /dev/null 2>&1; echo $?
 ```
 
 **3. The full region** — the founder's go, from main after the merge and the run kinds' widen are
