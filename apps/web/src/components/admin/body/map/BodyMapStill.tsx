@@ -9,6 +9,7 @@ import {
   tokenVar,
 } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
+import { mapInkStyle } from './mapInks';
 
 /**
  * The console map's outlines and lines drawn as SVG over the map's land, from the same scene and
@@ -24,7 +25,11 @@ function dashOf(spec: StrokeSpec): string | undefined {
 /**
  * The summer aerial's stand-in for a still: a story can't fetch the photograph, so a fixed field of
  * patches in the map's own quiet lifts stands where it would be — over the fills, under every line,
- * the band the live map puts it in — so the inks can be read over a busy ground.
+ * the band the live map puts it in — so the inks can be read over a busy ground. It stands for
+ * where the photograph goes, not how it looks: the real one is in full color and only lightly
+ * dimmed (`AERIAL_PAINT`), so the inks hold less contrast over it than over this; the
+ * `Summer aerial (live)` stories draw it. With it on, the whole still takes the dark map's inks in
+ * either theme, as the live map does (`mapInks`): its earth, fills, lines and the stand-in itself.
  */
 function AerialStandIn({ width, height }: { width: number; height: number }) {
   // A fixed field (a small linear-congruential walk), so a still is the same on every render.
@@ -87,6 +92,7 @@ export function BodyMapStill({
       width={surface.width}
       height={surface.height}
       className="absolute top-0 left-0 block bg-map-earth"
+      style={mapInkStyle(aerial)}
     >
       {/* Fills first, then every line — MapLibre's order, so the body's water never covers a bay. */}
       {drawn.outlines.features.map((f) => {

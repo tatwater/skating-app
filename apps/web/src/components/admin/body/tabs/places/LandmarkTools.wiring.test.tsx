@@ -76,6 +76,8 @@ vi.mock('../../map/useBodyMapCanvas', () => ({
     atMinZoom: false,
     atMaxZoom: false,
     liveMap: () => null,
+    // The map's ink mode (`mapInks`): what a tool's palette is built from.
+    inks: 'dark' as const,
   }),
 }));
 vi.mock('../../map/useMapToolEngine', () => ({

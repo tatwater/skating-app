@@ -38,8 +38,14 @@ class FakeMap implements ChordMap {
   addSource(id: string, spec: { data: GeoJSON.FeatureCollection }) {
     this.sources.set(id, spec.data);
   }
-  addLayer(spec: { id: string }) {
+  paints = new Map<string, Record<string, unknown>>();
+  addLayer(spec: { id: string; paint?: Record<string, unknown> }) {
     this.layers.push(spec.id);
+    this.paints.set(spec.id, { ...spec.paint });
+  }
+  setPaintProperty(id: string, name: string, value: string) {
+    const paint = this.paints.get(id);
+    if (paint) paint[name] = value;
   }
   getSource(id: string) {
     return this.sources.has(id)
@@ -163,6 +169,24 @@ describe('the point tool', () => {
     expect(coords(map, 'point-tool-ghost')).toEqual([[-73.1, 0]]);
     map.fire('click', P(44.5, -73.1));
     expect(onPick).toHaveBeenCalledWith(P(0, -73.1), {});
+  });
+
+  it('setColor repaints the mark and its ghost in place, and writes nothing once it is gone', () => {
+    const map = new FakeMap();
+    const control = createPointDraw(map, { color: '#0af', onPick: vi.fn() });
+    control.setColor('#fa0');
+    expect(map.paints.get('point-tool-mark')).toMatchObject({
+      'circle-color': '#fa0',
+      'circle-stroke-color': '#ffffff',
+    });
+    expect(map.paints.get('point-tool-ghost')).toMatchObject({
+      'circle-color': '#fa0',
+      'circle-stroke-color': '#fa0',
+    });
+    control.destroy();
+    const written = vi.spyOn(map, 'setPaintProperty');
+    control.setColor('#0af');
+    expect(written).not.toHaveBeenCalled();
   });
 
   it('set moves the mark without reporting; destroy detaches everything and the cursor', () => {

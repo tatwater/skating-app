@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useRef } from 'react';
 
 import { Button } from '@/components/kit/button';
+import { Plate } from '@/components/kit/plate';
 import { AERIAL_LOAD_WORDS } from '../consoleWords';
 import { type AerialLoadView, aerialCreditLine } from './consoleAerial';
 
@@ -16,7 +17,9 @@ import { type AerialLoadView, aerialCreditLine } from './consoleAerial';
  * as `RetryNote` draws it, *Trying again…* (`aria-disabled`, still focusable) until the answer
  * lands. When the photograph recovers and the button goes, focus that was on it stays on the
  * credit rather than dropping to the page. On one line wherever it fits; on a phone's narrow
- * embed it wraps rather than running off the map.
+ * embed it wraps rather than running off the map. The words sit on their own plate (the kit's map
+ * plate, opaque), so they read whatever the photograph under them — chrome in the page's theme,
+ * like *Try again* beside it (founder, 2026-11-26: the imagery date stays readable everywhere).
  *
  * ⚠ Whether the button held focus is read **as its ref is detached** — while it is still on the
  * page — never from its `blur`. Chromium blurs a focused node as it is removed and jsdom doesn't,
@@ -45,19 +48,21 @@ export function AerialCredit({ credit, state }: { credit: string; state: AerialL
     }
   }, [offered]);
   return (
-    <span className="flex min-w-0 items-end gap-(--space-2) ps-(--space-2_5)">
-      <span
-        ref={words}
-        id={id}
-        role="status"
-        aria-live="polite"
-        tabIndex={-1}
-        data-slot="body-map-aerial-credit"
-        data-state={load}
-        className="pb-(--space-1) text-kick leading-none font-medium tracking-kick text-balance text-fg2 uppercase outline-none"
-      >
-        {aerialCreditLine(credit, load)}
-      </span>
+    <span className="flex min-w-0 items-center gap-(--space-2) ps-(--space-2_5)">
+      <Plate variant="plate" data-map-plate="credit" className="min-w-0">
+        <span
+          ref={words}
+          id={id}
+          role="status"
+          aria-live="polite"
+          tabIndex={-1}
+          data-slot="body-map-aerial-credit"
+          data-state={load}
+          className="text-kick leading-none font-medium tracking-kick text-balance text-fg2 uppercase outline-none"
+        >
+          {aerialCreditLine(credit, load)}
+        </span>
+      </Plate>
       {offered && (
         <Button
           ref={setButton}

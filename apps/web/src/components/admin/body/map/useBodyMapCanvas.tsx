@@ -8,10 +8,18 @@ import { MAP_CONTAINER_CLASS, useMapCanvas } from '@/lib/mapCanvas';
 import type { BBoxLike, MapSurface, Padding } from '@/lib/mapSurface';
 import { DEMO_PMTILES_URL, MAP_FLAVORS } from '@/lib/waterMap';
 import { frameInRealBox, MAX_ZOOM } from './bodyMapFraming';
-import { type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
+import { adminToken, type BodyMapMode, bodyMapPalette } from './bodyMapPalette';
 import type { DrawnScene } from './bodyScene';
 import { type AerialLoadView, useAerialCredit, useConsoleAerial } from './consoleAerial';
-import { DOT_SOURCE, glLayers, LINE_SOURCE, OUTLINE_SOURCE, rasterAnchor } from './glLayers';
+import {
+  DOT_SOURCE,
+  glLayerIds,
+  glLayers,
+  LINE_SOURCE,
+  OUTLINE_SOURCE,
+  rasterAnchor,
+} from './glLayers';
+import { mapInkMode } from './mapInks';
 
 /**
  * The console map's own MapLibre instance (B03's recorded call: the skater map and the console map
@@ -56,6 +64,11 @@ export interface BodyMapCanvas {
   aerialLoad: AerialLoadView | null;
   /** The live map, or `null` while it is down: what a tool attaches to (`useMapToolEngine`). */
   liveMap: () => maplibregl.Map | null;
+  /**
+   * The mode the map draws its own inks in (`mapInkMode`): the page's, or the dark map's while the
+   * summer aerial is on — what a tool's drafting lines take too.
+   */
+  inks: BodyMapMode;
 }
 
 /** A box `factor` of its own size larger on each side: how far the camera may wander. */
@@ -78,6 +91,7 @@ export function useBodyMapCanvas({
   maxZoom = MAX_ZOOM,
 }: {
   bbox: BBoxLike;
+  /** The page's mode; the map's own inks follow it unless the summer aerial is on (`mapInks`). */
   mode: BodyMapMode;
   drawn: DrawnScene;
   /** The room the chrome takes when the camera frames `bbox`: the console's rack, dock and key. */
@@ -93,8 +107,12 @@ export function useBodyMapCanvas({
   /** The camera's ceiling: the console's {@link MAX_ZOOM} unless a caller goes closer. */
   maxZoom?: number;
 }): BodyMapCanvas {
+  // The basemap follows the page (a change of it re-creates the map); everything the console draws on
+  // it follows the ink mode — over the summer aerial, the dark map's in either theme — and is
+  // repainted in place, as is the ground the photograph lies on (`useAerialGround`).
+  const inks = mapInkMode(mode, aerial);
   const flavor = mode === 'light' ? MAP_FLAVORS.light : MAP_FLAVORS.dark;
-  const palette = useMemo(() => bodyMapPalette(mode), [mode]);
+  const palette = useMemo(() => bodyMapPalette(inks), [inks]);
   const paletteRef = useRef(palette);
   paletteRef.current = palette;
   const drawnRef = useRef(drawn);
@@ -193,7 +211,8 @@ export function useBodyMapCanvas({
   }, [palette, liveMap]);
 
   useRaster(liveMap, drawn.raster);
-  const aerialLoad = useConsoleAerial({ liveMap, on: aerial, bbox, mode });
+  useAerialGround(liveMap, aerial);
+  const aerialLoad = useConsoleAerial({ liveMap, on: aerial, bbox });
   const aerialCredit = useAerialCredit(aerial, bbox);
 
   const surface = useLiveSurface(liveMap);
@@ -212,6 +231,7 @@ export function useBodyMapCanvas({
     aerialCredit,
     aerialLoad,
     liveMap,
+    inks,
   };
 }
 
@@ -234,6 +254,43 @@ function useRaster(liveMap: () => maplibregl.Map | null, raster: DrawnScene['ras
     season: raster?.season ?? null,
     anchor: consoleRasterAnchor,
   });
+}
+
+/** The summer aerial's ground: the dark map's earth, laid under the console's own layers. */
+export const AERIAL_GROUND_LAYER = 'body-console-aerial-ground';
+
+/**
+ * **The ground under the summer aerial**, while it is on: the dark map's earth over the whole
+ * basemap, under the console's fills (and so under the photograph, the fields and every line). The
+ * inks over the photograph are light in either theme (`mapInks`), so wherever a cell is still
+ * loading or didn't come they land on this dark ground, never on the light theme's basemap — and
+ * the toggle repaints in place, without re-creating the map. The basemap's own roads and labels
+ * already lie under the photograph; this covers them where it hasn't arrived.
+ */
+function useAerialGround(liveMap: () => maplibregl.Map | null, on: boolean): void {
+  useEffect(() => {
+    const map = liveMap();
+    if (!map || !on) return;
+    const ours = new Set(glLayerIds());
+    const under = map.getLayersOrder().find((id) => ours.has(id));
+    // Never without the console's layers to go under: on top of the style it would cover them all.
+    if (under !== undefined && !map.getLayer(AERIAL_GROUND_LAYER)) {
+      map.addLayer(
+        {
+          id: AERIAL_GROUND_LAYER,
+          type: 'background',
+          paint: { 'background-color': adminToken('dark', 'map-earth') },
+        },
+        under,
+      );
+    }
+    return () => {
+      // A map taken down with its style (a theme switch) has nothing to remove: write only to the
+      // live one.
+      if (liveMap() === map && map.getLayer(AERIAL_GROUND_LAYER))
+        map.removeLayer(AERIAL_GROUND_LAYER);
+    };
+  }, [liveMap, on]);
 }
 
 /**

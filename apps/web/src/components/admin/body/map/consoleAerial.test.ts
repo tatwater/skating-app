@@ -48,14 +48,18 @@ describe('where the summer aerial goes', () => {
 });
 
 describe('the photograph’s paint', () => {
-  it('darkens it in the dark and lifts it in the light, both a step toward gray', () => {
-    expect(AERIAL_PAINT.dark['raster-brightness-max']).toBeLessThan(0.5);
-    expect(AERIAL_PAINT.dark['raster-brightness-min']).toBeUndefined();
-    expect(AERIAL_PAINT.light['raster-brightness-min']).toBeGreaterThan(0.5);
-    expect(AERIAL_PAINT.light['raster-brightness-max']).toBeUndefined();
-    for (const mode of ['dark', 'light'] as const) {
-      expect(AERIAL_PAINT[mode]['raster-saturation']).toBeLessThan(0);
-    }
+  it('keeps it in full color', () => {
+    expect(AERIAL_PAINT['raster-saturation']).toBe(0);
+  });
+
+  it('dims it lightly, under light inks: the top off its brightest, its shadows left dark', () => {
+    const top = AERIAL_PAINT['raster-brightness-max'] as number;
+    // A short step — a quarter of the gray paint's 0.42 — never untouched, never gray.
+    expect(top).toBeGreaterThanOrEqual(0.8);
+    expect(top).toBeLessThan(1);
+    // The inks over it are light in both themes: lifting its shadows would gray the ground under
+    // them, so its darkest stays where it was.
+    expect(AERIAL_PAINT['raster-brightness-min']).toBeUndefined();
   });
 });
 

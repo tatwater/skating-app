@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useRef, useState } from 'react';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 import type { ReadFailure } from '@/components/admin/reads/consoleReads';
-import { computedColor, sameColor } from '@/components/kit/measure';
+import { computedColor, contrastBetween, resolvePx, sameColor } from '@/components/kit/measure';
 import { RetryNote } from '@/components/kit/retry-note';
 import {
   expectControlsInside,
@@ -13,6 +13,7 @@ import {
 } from '@/components/kit/storyKit';
 import { fitCamera } from '@/lib/mapSurface';
 import { frameInRealBox, MAX_ZOOM } from '../map/bodyMapFraming';
+import { adminToken } from '../map/bodyMapPalette';
 import { FIT_PADDING } from '../map/useBodyMapCanvas';
 import type { MergeFlowProps } from '../tabs/shape/MergeFlow';
 import {
@@ -187,11 +188,87 @@ export const SummerAerialOff: Story = {
   },
 };
 
-/** The same, light. */
+/**
+ * The same, light: a photograph is dark ground whatever the theme, so the map's own inks — the
+ * still's drawing, the graticule, the scene's labels, the scale, the credit's words — are the dark
+ * map's, while the chrome on its plates (the rack, the zoom pair, the key, the marks) keeps the
+ * light theme. Turned off, the light inks come straight back.
+ */
 export const SummerAerialLight: Story = {
   args: { aerial: true },
   globals: { surface: 'admin', mode: 'light' },
+  play: async ({ canvasElement }) => {
+    // The `--fg2` an element resolves (an SVG's too), and a token's hex, both as computed colors.
+    const token = (el: Element) =>
+      computedColor(canvasElement, getComputedStyle(el).getPropertyValue('--fg2'));
+    const as = (hex: string) => sameColor(computedColor(canvasElement, hex));
+    const onMap = () => [
+      slot(canvasElement, 'body-map-still'),
+      slot(canvasElement, 'map-graticule'),
+      slot(canvasElement, 'body-map-label'),
+    ];
+    for (const el of onMap()) await expect(token(el)).toEqual(as(adminToken('dark', 'fg2')));
+    // The scene's quiet labels draw in the dark map's ink, light on the photograph.
+    await expect(getComputedStyle(slot(canvasElement, 'body-map-label')).color).toEqual(
+      as(adminToken('dark', 'fg3')),
+    );
+    for (const el of [
+      slot(canvasElement, 'map-layer-rack'),
+      slot(canvasElement, 'map-key'),
+      slot(canvasElement, 'body-map-point'),
+      must(canvasElement.querySelector('[data-map-zoom]')),
+      slot(canvasElement, 'body-map-aerial-credit'),
+      slot(canvasElement, 'map-scale'),
+    ]) {
+      await expect(token(el)).toEqual(as(adminToken('light', 'fg2')));
+    }
+    await expectPlatesRead(canvasElement);
+    await userEvent.click(within(canvasElement).getByRole('switch', { name: 'Summer aerial' }));
+    for (const el of onMap()) await expect(token(el)).toEqual(as(adminToken('light', 'fg2')));
+  },
 };
+
+/**
+ * The credit and the scale each on an opaque plate over the photograph: their words hold AA (4.5:1)
+ * on it whatever the ground — measured over black and over white.
+ */
+async function expectPlatesRead(root: HTMLElement) {
+  for (const [plate, words] of [
+    ['credit', '[data-slot="body-map-aerial-credit"]'],
+    ['scale', '[data-slot="map-scale-label"]'],
+  ] as const) {
+    const box = must(root.querySelector<HTMLElement>(`[data-map-plate="${plate}"]`));
+    const ink = getComputedStyle(must(box.querySelector<HTMLElement>(words))).color;
+    const ground = getComputedStyle(box).backgroundColor;
+    for (const under of ['#000000', '#ffffff']) {
+      await expect(contrastBetween(box, [ink], [under, ground])).toBeGreaterThanOrEqual(4.5);
+    }
+  }
+}
+
+/**
+ * The credit's plate, *Try again* and the scale's plate along the dock, in each state: on one row,
+ * none over another, the zoom pair or the graticule's labels, and all inside the map.
+ */
+async function expectDockClear(root: HTMLElement) {
+  const map = slot(root, 'body-map').getBoundingClientRect();
+  const boxes = [
+    ...root.querySelectorAll<HTMLElement>(
+      '[data-map-plate], [data-slot="body-map-aerial-retry"], [data-map-zoom]',
+    ),
+  ].map((el) => el.getBoundingClientRect());
+  const labels = slots(root, 'map-graticule-label').map((el) => el.getBoundingClientRect());
+  const mode = root.querySelector('[data-slot="map-mode-bar"]')?.getBoundingClientRect();
+  const apart = (a: DOMRect, b: DOMRect) =>
+    a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+  for (const [i, a] of boxes.entries()) {
+    await expect(a.left).toBeGreaterThanOrEqual(map.left);
+    await expect(a.right).toBeLessThanOrEqual(map.right + 0.5);
+    for (const b of boxes.slice(i + 1)) await expect(apart(a, b)).toBe(true);
+    for (const l of labels) await expect(apart(a, l)).toBe(true);
+    if (mode !== undefined) await expect(apart(a, mode)).toBe(true);
+  }
+}
 
 /**
  * The summer aerial on its way (a cold first view can take the service tens of seconds): the
@@ -207,6 +284,7 @@ export const SummerAerialLoading: Story = {
     await expect(canvasElement.querySelector('[data-slot="body-map-aerial-retry"]')).toBeNull();
     // Still: no animation runs on the words, so reduced motion has nothing to stop.
     await expect(credit.getAnimations()).toHaveLength(0);
+    await expectDockClear(canvasElement);
   },
 };
 
@@ -226,10 +304,13 @@ export const SummerAerialFailed: Story = {
     await expect(retry.getBoundingClientRect().right).toBeLessThan(
       zoom.getBoundingClientRect().left,
     );
+    await expectDockClear(canvasElement);
     await userEvent.click(retry);
     await expect(retry).toHaveTextContent('Trying again…');
     await expect(retry).toHaveAttribute('aria-disabled', 'true');
     await expect(retry).not.toBeDisabled();
+    await expectDockClear(canvasElement);
+    await expectPlatesRead(canvasElement);
   },
 };
 
@@ -241,7 +322,32 @@ export const SummerAerialPartial: Story = {
       'Aerial · NAIP Jun 2023 · Part of it didn’t load',
     );
     await expect(within(canvasElement).getByRole('button', { name: 'Try again' })).toBeVisible();
+    await expectDockClear(canvasElement);
+    await expectPlatesRead(canvasElement);
   },
+};
+
+/**
+ * The longest credit (*Part of it didn't load*, with *Try again*) at the narrowest the console
+ * keeps its columns (an 1,100 px page, the inspector at its 380): the plates, the button and the
+ * zoom pair on the dock's row, clear of each other and of the graticule's labels.
+ */
+export const SummerAerialNarrowest: Story = {
+  args: { aerial: true, aerialLoad: 'partial', className: 'h-[56.25rem] w-[68.75rem]' },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'body-map-aerial-credit')).toBeVisible();
+    await expectDockClear(canvasElement);
+    // The scale's label keeps to one line; the credit is what wraps.
+    const label = must(canvasElement.querySelector<HTMLElement>('[data-slot="map-scale-label"]'));
+    await expect(label.getClientRects()).toHaveLength(1);
+    await expect(label.getBoundingClientRect().height).toBeLessThan(resolvePx(label, '2em'));
+  },
+};
+
+/** The same, light. */
+export const SummerAerialNarrowestLight: Story = {
+  ...SummerAerialNarrowest,
+  globals: { surface: 'admin', mode: 'light' },
 };
 
 /** The same, light. */

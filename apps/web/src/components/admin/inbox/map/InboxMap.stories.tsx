@@ -1,9 +1,10 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor } from 'storybook/test';
 
-import { computedColor, sameColor } from '@/components/kit/measure';
+import { computedColor, contrastBetween, sameColor } from '@/components/kit/measure';
 import { must } from '@/components/kit/storyKit';
 import { ThemePair } from '../../../../../.storybook/theme';
+import { adminToken } from '../../body/map/bodyMapPalette';
 import { InboxMapStill } from './InboxMap';
 import {
   ACCESS,
@@ -243,6 +244,58 @@ export const Narrow: Story = {
 };
 
 /**
+ * The summer aerial under an embed, in both modes: the map's own inks (the still, the graticule) are
+ * the dark map's in either theme — a photograph is dark ground — and the plates (the legend, the
+ * credit, the scale) keep their quad's.
+ */
+export const AerialInks: Story = {
+  args: { view: admitScene(ADMIT), width: 420, height: 250, aerial: true },
+  render: (args) => (
+    <ThemePair surface="admin" columns="one">
+      {() => <InboxMapStill {...args} className="border border-line" />}
+    </ThemePair>
+  ),
+  play: async ({ canvasElement }) => {
+    const [dark, light] = quads(canvasElement);
+    // The `--fg2` an element resolves (an SVG's too), and a token's hex, both as computed colors.
+    const token = (el: Element) =>
+      computedColor(canvasElement, getComputedStyle(el).getPropertyValue('--fg2'));
+    const as = (hex: string) => sameColor(computedColor(canvasElement, hex));
+    for (const [q, mode] of [
+      [must(dark), 'dark'],
+      [must(light), 'light'],
+    ] as const) {
+      // The caption is words on the map, not on a plate: light on the photograph in both themes.
+      for (const name of ['body-map-still', 'map-graticule', 'inbox-map-caption']) {
+        const el = must(q.querySelector<HTMLElement>(`[data-slot="${name}"]`));
+        await expect(token(el)).toEqual(as(adminToken('dark', 'fg2')));
+      }
+      // The legend plate, and the credit and the scale on theirs, keep the quad's theme.
+      for (const sel of [
+        '[data-slot="body-map-plate"]',
+        '[data-map-plate="credit"]',
+        '[data-map-plate="scale"]',
+      ]) {
+        const plate = must(q.querySelector<HTMLElement>(sel));
+        await expect(token(plate)).toEqual(as(adminToken(mode, 'fg2')));
+      }
+      // Their words hold AA on the plate whatever the ground: measured over black and white.
+      for (const [plate, words] of [
+        ['credit', '[data-slot="body-map-aerial-credit"]'],
+        ['scale', '[data-slot="map-scale-label"]'],
+      ] as const) {
+        const box = must(q.querySelector<HTMLElement>(`[data-map-plate="${plate}"]`));
+        const ink = getComputedStyle(must(box.querySelector<HTMLElement>(words))).color;
+        const ground = getComputedStyle(box).backgroundColor;
+        for (const under of ['#000000', '#ffffff']) {
+          await expect(contrastBetween(box, [ink], [under, ground])).toBeGreaterThanOrEqual(4.5);
+        }
+      }
+    }
+  },
+};
+
+/**
  * The summer aerial (the Corpus head map's) partly in on a phone's view-only embed: the credit
  * wraps rather than running off the map, and *Try again* stays inside it, still pressable.
  */
@@ -273,7 +326,19 @@ export const NarrowAerialPartial: Story = {
     const retry = must(
       canvasElement.querySelector<HTMLElement>('[data-slot="body-map-aerial-retry"]'),
     );
-    for (const el of [credit, retry]) {
+    // The plates, and the zoom pair where it shows (a view-only embed hides it).
+    const plates = [
+      ...canvasElement.querySelectorAll<HTMLElement>('[data-map-plate], [data-map-zoom]'),
+    ].filter((el) => el.getBoundingClientRect().width > 0);
+    // The credit's plate, the button and the scale's plate never sit over one another.
+    const boxes = [...plates, retry].map((el) => el.getBoundingClientRect());
+    for (const [i, a] of boxes.entries())
+      for (const b of boxes.slice(i + 1)) {
+        const apart =
+          a.right <= b.left || b.right <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+        await expect(apart).toBe(true);
+      }
+    for (const el of [credit, retry, ...plates]) {
       const r = el.getBoundingClientRect();
       // The dock's own inset from the map's edge, the left one included once it wraps.
       await expect(r.left).toBeGreaterThanOrEqual(box.left + 8);
