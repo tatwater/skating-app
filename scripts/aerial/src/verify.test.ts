@@ -120,6 +120,14 @@ describe('verify passes a good build', () => {
 });
 
 describe('verify refuses', () => {
+  it('a landed work tile whose shard index is gone', async () => {
+    const keys = shardKeys(CAMPAIGN, WORK[0] as (typeof WORK)[number], PILOT);
+    await rm(join(root, keys.index));
+    const { out, all } = await problemsOf();
+    expect(out.ok).toBe(false);
+    expect(all).toContain('work tile 11/603/731 has no index');
+  });
+
   it('a missing work tile (its done record gone)', async () => {
     const keys = shardKeys(CAMPAIGN, WORK[1] as (typeof WORK)[number], PILOT);
     await rm(join(root, keys.done));
@@ -336,6 +344,12 @@ describe('the report', () => {
     expect(a).toEqual(sampleIds(ids, 50));
     expect(a.length).toBeLessThanOrEqual(50);
     expect(sampleIds(Float64Array.of(3, 1), 5)).toEqual([3, 1]);
+    // A zoom with fewer tiles than its share is taken whole; the deep one is drawn from.
+    const shallow = [1, 2, 3, 4]; // tile zoom 1's four tiles
+    const deep = Array.from({ length: 400 }, (_, i) => 1_000_000 + i);
+    const mixed = sampleIds(Float64Array.from([...shallow, ...deep]), 40);
+    expect(mixed.slice(0, 4)).toEqual(shallow);
+    expect(mixed.length).toBeLessThanOrEqual(40);
   });
 
   it('writes the checks, coverage, seams and quilt, and names public URLs', async () => {
