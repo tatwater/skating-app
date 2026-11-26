@@ -18,7 +18,7 @@ import { parseNaipCellIndex, quarterQuadAt, quarterQuadCell, quarterQuadsIn } fr
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { PMTiles } from 'pmtiles';
 import { storeSource } from '../assemble/archiveRead';
-import { ASSEMBLE_SCOPE } from '../assemble/orchestrate';
+import { assembleScope } from '../assemble/orchestrate';
 import { runProcess } from '../assemble/process';
 import { httpStore } from '../assemble/stores';
 import { serveHttp } from '../assemble/upload';
@@ -49,7 +49,7 @@ async function main(): Promise<number> {
         label: `verify ${campaign}${pilot ? ` (pilot ${pilot})` : ''}`,
         campaignId: campaign,
         target: deployment,
-        scope: ASSEMBLE_SCOPE,
+        scope: assembleScope(args.pilot),
         call: convexRun,
       });
   logger?.start();

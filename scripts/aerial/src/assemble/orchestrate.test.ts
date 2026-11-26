@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssemblyRecord } from './assemble';
-import { assemblyCounts, beat, followAssembly, oneAtATime } from './orchestrate';
+import { assembleScope, assemblyCounts, beat, followAssembly, oneAtATime } from './orchestrate';
 
 const record = {
   archive: { bytes: 100 },
@@ -117,5 +117,16 @@ describe('oneAtATime', () => {
     await expect(write(3)).rejects.toThrow('rcat failed');
     await expect(write(4)).rejects.toThrow('rcat failed');
     expect(log).not.toContain('start 4');
+  });
+});
+
+describe('assembleScope', () => {
+  it('is the whole region for a build, and never complete for a pilot', () => {
+    expect(assembleScope(null)).toEqual({
+      pass: 'archive',
+      states: ['NY', 'VT', 'NH', 'ME', 'MA', 'CT', 'RI'],
+      complete: true,
+    });
+    expect(assembleScope('champlain-nhma-me-ny').complete).toBe(false);
   });
 });

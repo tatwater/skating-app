@@ -31,12 +31,7 @@ import {
   assemblyKeys,
   planAssembly,
 } from '../assemble/assemble';
-import {
-  ASSEMBLE_SCOPE,
-  assemblyCounts,
-  followAssembly,
-  oneAtATime,
-} from '../assemble/orchestrate';
+import { assembleScope, assemblyCounts, followAssembly, oneAtATime } from '../assemble/orchestrate';
 import { gdalRenderer } from '../assemble/overviews';
 import { fileStore, fileUploads, httpStore, type ObjectStore } from '../assemble/stores';
 import { type RcloneTarget, rcatSink, rcloneRun, serveHttp } from '../assemble/upload';
@@ -168,7 +163,7 @@ async function fromLaptop(
     label: `assemble ${campaign}${pilot ? ` (pilot ${pilot})` : ''}`,
     campaignId: campaign,
     target: deployment,
-    scope: ASSEMBLE_SCOPE,
+    scope: assembleScope(pilot ?? null),
     call: convexRun,
   });
   logger.start();

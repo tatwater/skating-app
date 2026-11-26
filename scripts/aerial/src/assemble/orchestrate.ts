@@ -24,12 +24,18 @@ export function oneAtATime<A>(write: (arg: A) => Promise<void>): (arg: A) => Pro
   };
 }
 
-/** The assembler's run scope: the archive, the seven states, the whole region. */
-export const ASSEMBLE_SCOPE = {
-  pass: 'archive' as const,
-  states: [...NAIP_STATES],
-  complete: true,
-};
+/**
+ * The assembler's run scope (and verify's): the archive, the seven states, and the whole region —
+ * except a pilot's, which builds a few dozen cells and must not read as a complete build (its rows
+ * did, until the pilot, 2026-11-26).
+ */
+export function assembleScope(pilot: string | null): {
+  pass: 'archive';
+  states: (typeof NAIP_STATES)[number][];
+  complete: boolean;
+} {
+  return { pass: 'archive', states: [...NAIP_STATES], complete: pilot === null };
+}
 
 /** The record as named counts for the run row (numbers only: rows carry counts, never lists). */
 export function assemblyCounts(record: AssemblyRecord): Record<string, number> {
