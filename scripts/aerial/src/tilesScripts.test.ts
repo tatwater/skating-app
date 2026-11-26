@@ -273,6 +273,10 @@ describe('cut-aerial.sh', () => {
     expect(above).toContain('--min-x 1212 --max-x 1213 --min-y 1472 --max-y 1473');
     const top = tiles.find((c) => c.includes('--min-zoom 11 --max-zoom 11')) as string;
     expect(top).toContain('--min-x 606 --max-x 606 --min-y 736 --max-y 736');
+    // Every tiler run spawns: under 8 threads the tiler's own choice is a thread pool, which can't
+    // clone the mosaic of warped VRTs and failed every chunk on a 4-CPU Machine (the pilot).
+    expect(tiles.length).toBeGreaterThan(2);
+    for (const t of tiles) expect(t).toContain('--parallel-method spawn');
   });
 
   test('set -euo pipefail', () => {

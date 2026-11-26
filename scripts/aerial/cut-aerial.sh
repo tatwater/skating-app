@@ -172,6 +172,14 @@ export GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR GDAL_HTTP_MULTIPLEX=YES GDAL_HTTP_
   GDAL_HTTP_MAX_RETRY="${GDAL_HTTP_MAX_RETRY:-5}" GDAL_HTTP_RETRY_DELAY="${GDAL_HTTP_RETRY_DELAY:-2}" \
   VSI_CACHE=TRUE VSI_CACHE_SIZE="${VSI_CACHE_SIZE:-268435456}"
 
+# **Every tiler run is `--parallel-method spawn`.** Left to choose, `gdal raster tile` spawns only at
+# 8 threads or more and otherwise runs a thread pool over `GDALGetThreadSafeDataset()`, which can't
+# clone a VRT mosaic of warped VRTs ("Source dataset cannot be cloned") — so on a 4-CPU Machine every
+# chunk of 200+ tiles failed (the pilot's first Machine, 2026-11-26) while the laptop, with more
+# cores, spawned and passed. Spawned children reopen the mosaic by name, the SAS token in their
+# environment, and draw byte-identical tiles to a single-threaded run (measured).
+TILER_PARALLEL=(--parallel-method spawn)
+
 # --- 1. The SAS token ---------------------------------------------------------------------------------
 SAS_EXPIRES=0
 sas_fetch() {
@@ -275,7 +283,7 @@ tile_chunk() {
   gdal_read gdal raster tile -q --format WEBP --co "QUALITY=$QUALITY" --tile-size "$TILE_SIZE" \
     --min-zoom "$zmin" --max-zoom "$zmax" --min-x "$minx" --max-x "$maxx" --min-y "$miny" --max-y "$maxy" \
     --skip-blank --webviewer none --resampling "$RESAMPLING" --overview-resampling "$OVERVIEW_RESAMPLING" \
-    --convention xyz "$W/mosaic.vrt" "$W/tiles"
+    "${TILER_PARALLEL[@]}" --convention xyz "$W/mosaic.vrt" "$W/tiles"
 }
 # The zooms above the chunks, from the chunks' top tiles placed by their bounds — local files only.
 tile_overview() {
@@ -301,7 +309,7 @@ tile_overview() {
       --min-zoom $(( zmin + 1 )) --max-zoom "$zmax" --skip-blank --webviewer none \
       --min-x $(( WX * span )) --max-x $(( WX * span + span - 1 )) --min-y $(( WY * span )) --max-y $(( WY * span + span - 1 )) \
       --resampling "$OVERVIEW_RESAMPLING" --overview-resampling "$OVERVIEW_RESAMPLING" \
-      --convention xyz "$W/overview.vrt" "$W/tiles" || return 1
+      "${TILER_PARALLEL[@]}" --convention xyz "$W/overview.vrt" "$W/tiles" || return 1
   fi
   top_tile "$W/overview.vrt" "$zmin"
 }
@@ -314,7 +322,7 @@ top_tile() {
     --min-zoom "$z" --max-zoom "$z" --webviewer none \
     --min-x "$WX" --max-x "$WX" --min-y "$WY" --max-y "$WY" \
     --resampling "$OVERVIEW_RESAMPLING" --overview-resampling "$OVERVIEW_RESAMPLING" \
-    --convention xyz "$src" "$W/tiles"
+    "${TILER_PARALLEL[@]}" --convention xyz "$src" "$W/tiles"
 }
 if (( ${#LAYERS[@]} > 0 )); then
   step mosaic gdalbuildvrt -q -input_file_list "$W/mosaic.txt" "$W/mosaic.vrt" || die "the mosaic failed"
