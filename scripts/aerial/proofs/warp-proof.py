@@ -289,8 +289,8 @@ def main(argv):
             half = 128 * res
             ymin, ymax = unit["bounds"][1], unit["bounds"][3]
             strips = []
-            for c, f in ((west, fw), (east, fe)):
-                src = layer_src(wdir, c, f)
+            for f in (fw, fe):
+                src = layer_src(wdir, cells, f)
                 out = gdal.Warp("", src, format="MEM", dstSRS="EPSG:3857",
                                 outputBounds=[join_x - half, ymin, join_x + half, ymax],
                                 xRes=res, yRes=res, resampleAlg="cubic", srcBands=[1, 2, 3],
@@ -365,17 +365,19 @@ def main(argv):
     return 0
 
 
-def layer_src(wdir, cell, frame):
-    """The /vsiaz/ path of a cell's frame, read back from the worker's counts VRT for it
+def layer_src(wdir, cells, frame):
+    """The /vsiaz/ path of a frame, read back from the worker's counts VRT for it
     (`count/<cell>/<rank + 1>.vrt`) — the item id doesn't spell the COG's name (a reprocessed
     frame's id carries a second date its file doesn't)."""
     import re
-    rank = cell["frames"].index(frame)
-    text = open(os.path.join(wdir, "count", cell["key"], f"{rank + 1}.vrt")).read()
-    m = re.search(r"<SourceDataset[^>]*>([^<]+)</SourceDataset>", text)
-    if not m:
-        raise SystemExit(f"no source in the counts VRT for {frame}")
-    return m.group(1)
+    for cell in cells.values():
+        if frame in cell["frames"]:
+            rank = cell["frames"].index(frame)
+            text = open(os.path.join(wdir, "count", cell["key"], f"{rank + 1}.vrt")).read()
+            m = re.search(r"<SourceDataset[^>]*>([^<]+)</SourceDataset>", text)
+            if m:
+                return m.group(1)
+    raise SystemExit(f"no counts VRT names {frame}")
 
 
 if __name__ == "__main__":

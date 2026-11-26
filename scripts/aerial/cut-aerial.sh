@@ -337,8 +337,8 @@ timings_json() {
   printf '%s\n' "$json" > "$W/timings.json"
 }
 timings_json
-AERIAL_IMAGE="$AERIAL_IMAGE" $AERIAL_PACK pack --unit "$UNIT" --tiles "$W/tiles" --counts "$W/counts" \
-  --timings "$W/timings.json" --out "$W/shard" >&2 || die "packing failed"
+$AERIAL_PACK pack --unit "$UNIT" --tiles "$W/tiles" --counts "$W/counts" \
+  --timings "$W/timings.json" --out "$W/shard" --image "$AERIAL_IMAGE" >&2 || die "packing failed"
 # Each stats file holds one or more `Network statistics:` JSON blocks (a spawned tiler's children
 # print their own); the top-level GET total of each is what that process fetched.
 SOURCE_BYTES="$(for f in "$W"/stats/*.txt; do [[ -s "$f" ]] && awk '/^Network statistics:/ { on = 1; next } on' "$f"; done \

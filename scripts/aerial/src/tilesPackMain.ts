@@ -7,7 +7,8 @@
  * tilesPackMain.ts layers --unit <unit.json> --counts <dir>
  *     the mosaic's sources, bottom to top, one `<cellKey>\t<itemId>\t<rank>` a line
  * tilesPackMain.ts pack --unit <unit.json> --tiles <dir> --counts <dir> --timings <file> --out <dir>
- *     <out>/shard.pack, shard.idx.json, shard.done.json (AERIAL_IMAGE names the image)
+ *                       --image <ref@sha256:…>
+ *     <out>/shard.pack, shard.idx.json, shard.done.json
  * tilesPackMain.ts unit --spec <spec.json>
  *     a work unit from explicit outlines (the local proof's windows), on stdout
  * ```
@@ -33,14 +34,12 @@ import {
 export interface MainIo {
   out: (line: string) => void;
   err: (line: string) => void;
-  env: Record<string, string | undefined>;
   now: () => Date;
 }
 
 const defaultIo: MainIo = {
   out: (l) => process.stdout.write(`${l}\n`),
   err: (l) => process.stderr.write(`${l}\n`),
-  env: process.env,
   now: () => new Date(),
 };
 
@@ -95,9 +94,8 @@ export function main(argv: readonly string[], io: MainIo = defaultIo): number {
       return 0;
     }
     if (command === 'pack') {
-      const f = flags(rest, ['unit', 'tiles', 'counts', 'timings', 'out']);
-      const image = io.env.AERIAL_IMAGE;
-      if (image === undefined || image === '') throw new UsageError('AERIAL_IMAGE is unset');
+      const f = flags(rest, ['unit', 'tiles', 'counts', 'timings', 'out', 'image']);
+      const image = f.get('image') as string;
       const unit = readUnit(f.get('unit') as string);
       const out = f.get('out') as string;
       const shard = writeShard(unit, listTiles(f.get('tiles') as string), join(out, 'shard.pack'));

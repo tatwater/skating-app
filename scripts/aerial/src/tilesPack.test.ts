@@ -199,7 +199,7 @@ describe('buildDone and bytesByZoom', () => {
 });
 
 describe('tilesPackMain', () => {
-  function io(env: Record<string, string | undefined> = {}) {
+  function io() {
     const out: string[] = [];
     const err: string[] = [];
     return {
@@ -208,7 +208,6 @@ describe('tilesPackMain', () => {
       io: {
         out: (l: string) => out.push(l),
         err: (l: string) => err.push(l),
-        env,
         now: () => new Date('2026-12-12T00:00:00Z'),
       },
     };
@@ -241,11 +240,10 @@ describe('tilesPackMain', () => {
 
   test('pack writes the pack, the index and the done record, and says what it packed', () => {
     const s = setup();
-    const r = io({ AERIAL_IMAGE: IMAGE });
+    const r = io();
     const args = ['pack', '--unit', s.unitPath, '--tiles', s.tilesDir, '--counts', s.countsDir];
-    expect(
-      main([...args, '--timings', join(s.d, 'timings.json'), '--out', join(s.d, 'out')], r.io),
-    ).toBe(0);
+    const rest = ['--timings', join(s.d, 'timings.json'), '--out', join(s.d, 'out')];
+    expect(main([...args, ...rest, '--image', IMAGE], r.io)).toBe(0);
     const done = JSON.parse(readFileSync(join(s.d, 'out', 'shard.done.json'), 'utf8'));
     expect(done).toMatchObject({
       tiles: 4,
@@ -261,16 +259,19 @@ describe('tilesPackMain', () => {
     expect(r.out.some((l) => l.startsWith('  z17: 2 tiles'))).toBe(true);
   });
 
-  test('pack refuses without AERIAL_IMAGE (64), and fails (1) on a bad shard', () => {
+  test('pack refuses without --image (64), an unpinned image or a bad shard (1)', () => {
     const s = setup();
     const args = ['pack', '--unit', s.unitPath, '--tiles', s.tilesDir, '--counts', s.countsDir];
     const full = [...args, '--timings', join(s.d, 'timings.json'), '--out', join(s.d, 'out')];
     const r = io();
     expect(main(full, r.io)).toBe(64);
-    expect(r.err[0]).toMatch(/AERIAL_IMAGE is unset/);
+    expect(r.err[0]).toMatch(/--image is required/);
+    const r1 = io();
+    expect(main([...full, '--image', 'registry.fly.io/x:latest'], r1.io)).toBe(1);
+    expect(r1.err[0]).toMatch(/digest/);
     rmSync(join(s.tilesDir, '11'), { recursive: true });
-    const r2 = io({ AERIAL_IMAGE: IMAGE });
-    expect(main(full, r2.io)).toBe(1);
+    const r2 = io();
+    expect(main([...full, '--image', IMAGE], r2.io)).toBe(1);
     expect(r2.err[0]).toMatch(/own top tile/);
   });
 

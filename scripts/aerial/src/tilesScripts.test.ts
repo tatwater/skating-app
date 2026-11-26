@@ -18,6 +18,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
@@ -26,7 +27,8 @@ import { afterEach, describe, expect, test } from 'vitest';
 import { buildWorkUnit } from './tiles';
 
 const PKG = fileURLToPath(new URL('..', import.meta.url));
-const TSX = join(PKG, '..', '..', 'node_modules', '.bin', 'tsx');
+/** `tsx`, a devDependency of this package, run by the current Node. */
+const TSX = `${process.execPath} ${createRequire(import.meta.url).resolve('tsx/cli')}`;
 const IMAGE = `registry.fly.io/skating-imagery@sha256:${'d'.repeat(64)}`;
 const STAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{4} /;
 
@@ -420,7 +422,7 @@ function runAerial(
   bin(
     b,
     'pnpm',
-    `if [ "$1" = "--silent" ] && [ "$2" = "exec" ]; then shift 2; exec "$TSX_REAL" "\${@:2}"; fi
+    `if [ "$1" = "--silent" ] && [ "$2" = "exec" ]; then shift 2; exec $TSX_REAL "\${@:2}"; fi
 echo "$*" >> "$CALLS"
 echo "ran $3"
 if [ -n "\${FAIL_ON:-}" ] && [ "$3" = "$FAIL_ON" ]; then echo "boom: $3 failed" >&2; printf 'last words' >&2; exit 3; fi
@@ -502,5 +504,62 @@ describe('run-aerial.sh', () => {
 
   test('no campaign is a usage error', () => {
     expect(runAerial([]).status).toBe(64);
+  });
+});
+
+// ── assemble-aerial.sh ───────────────────────────────────────────────────────────────────────────
+
+describe('assemble-aerial.sh', () => {
+  function assembleAerial(env: Record<string, string>) {
+    const dir = tmp();
+    const b = join(dir, 'bin');
+    mkdirSync(b);
+    bin(b, 'rclone', 'exit 0\n');
+    bin(b, 'gdal_translate', 'exit 0\n');
+    // Stands in for the bundled assembler: says what it was handed.
+    bin(
+      b,
+      'node',
+      'echo "node $*"; echo "config=$RCLONE_CONFIG"; stat -f %Lp "$RCLONE_CONFIG" 2>/dev/null || stat -c %a "$RCLONE_CONFIG"; head -1 "$RCLONE_CONFIG"\n',
+    );
+    const res = spawnSync(
+      'bash',
+      [join(PKG, 'assemble-aerial.sh'), 'naip-pilot-20261125', '--pilot', 'champlain-nhma-me-ny'],
+      {
+        encoding: 'utf8',
+        env: { PATH: `${b}:/usr/bin:/bin`, AERIAL_WORKDIR: join(dir, 'data'), ...env },
+      },
+    );
+    return { ...res, dir };
+  }
+  const SECRETS = {
+    R2_ACCESS_KEY_ID: 'id',
+    R2_SECRET_ACCESS_KEY: 'secret',
+    R2_ENDPOINT: 'https://r2.example',
+    R2_BUCKET: 'bucket',
+  };
+
+  test('writes the r2 remote (owner-only), exports it, and hands the arguments to the assembler', () => {
+    const run = assembleAerial(SECRETS);
+    expect(run.status).toBe(0);
+    expect(run.stdout.split('\n')).toEqual([
+      'node /app/dist/assemble.mjs naip-pilot-20261125 --pilot champlain-nhma-me-ny',
+      `config=${join(run.dir, 'data', 'rclone.conf')}`,
+      '600',
+      '[r2]',
+      '',
+    ]);
+    expect(run.stdout + run.stderr).not.toContain('secret');
+  });
+
+  test('refuses a missing secret by name, before anything runs', () => {
+    for (const name of Object.keys(SECRETS)) {
+      const env: Record<string, string> = { ...SECRETS };
+      delete env[name];
+      const run = assembleAerial(env);
+      expect(run.status).toBe(1);
+      expect(run.stderr).toContain(`missing required secret: ${name}`);
+      expect(run.stdout).toBe('');
+    }
   });
 });

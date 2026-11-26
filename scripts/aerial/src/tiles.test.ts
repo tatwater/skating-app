@@ -446,6 +446,9 @@ describe('tilesScope', () => {
     expect(tilesScope({ ...m, basedOn: { archive: 'a', manifest: 'b' } }, units).complete).toBe(
       false,
     );
+    // A unit naming a cell the manifest doesn't hold adds no state.
+    const first = units[0]?.cells[0] as AerialWorkUnit['cells'][number];
+    expect(tilesScope(m, [{ cells: [{ ...first, key: '4507264sw' }] }]).states).toEqual([]);
   });
 });
 

@@ -1,0 +1,17 @@
+# Fly config for the summer aerial's image (B05 §2.2) — only so `fly deploy --build-only --push`
+# can build `scripts/aerial/Dockerfile` without touching the winter cutter's `scripts/imagery/fly.toml`.
+#
+# ⚠ Read scripts/imagery/README.md's "Seven ways to get this wrong" first. This app has no services,
+# no public IP and no always-on Machine; **never plain `fly deploy`** (it would create one). The
+# image is built and pushed under its own label and every Machine is spawned by `spawn.sh` with
+# `--rm --restart no --detach` and explicit `--vm-size`/`--vm-memory` (`fly machine run` ignores a
+# `[[vm]]` block, so there is none here).
+
+app = 'skating-imagery'
+
+# The work tiles read Planetary Computer's COGs in Azure West Europe; `spawn.sh` passes `--region`
+# on every Machine (ams for the tiles, iad for the assembler), so this is only `fly deploy`'s default.
+primary_region = 'ams'
+
+[build]
+  dockerfile = 'Dockerfile'
