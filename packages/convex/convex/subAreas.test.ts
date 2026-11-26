@@ -4,6 +4,7 @@ import type { Polygon } from 'geojson';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
+import { fileMember, requestSource } from './lib/inboxItems';
 import schema from './schema';
 import { footprintMoved } from './waterBodies';
 
@@ -2904,6 +2905,65 @@ describe('sub-areas by chord (D201)', () => {
     expect(saved.request).toBe('already_decided');
     expect(await t.run((ctx) => ctx.db.get(saved.subAreaId))).not.toBeNull();
     expect((await t.run((ctx) => ctx.db.get(own)))?.status).toBe('open');
+  });
+
+  test('an ask closed with the saver’s own ask among the others waiting keeps the bay, and answers none of them', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const ann = await seedUser(t, 'ann');
+    const ben = await seedUser(t, 'ben');
+    const held = await bayRequest(t, ann.id, body, 'Corner Bay');
+    const theirs = await bayRequest(t, ben.id, body, 'Corner Bay');
+    // Deciding ben's would close the saver's own with it (D289): refused, so nobody is answered —
+    // and the bay, drawn for an ask that closed, still stands rather than rolling back.
+    const own = await bayRequest(t, mod.id, body, 'Corner Bay');
+    // Filed into the Inbox as the app files them, so the rule sees whose each is.
+    await t.run(async (ctx) => {
+      for (const id of [held, theirs, own]) await fileMember(ctx, requestSource(id));
+    });
+    await ann.as.mutation(api.corpusRequests.retract, { requestId: held });
+    const saved = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId: held,
+    });
+    expect(saved.request).toBe('already_decided');
+    expect(await t.run((ctx) => ctx.db.get(saved.subAreaId))).not.toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(theirs)))?.status).toBe('open');
+    expect((await t.run((ctx) => ctx.db.get(own)))?.status).toBe('open');
+  });
+
+  test('an ask closed with only a script’s ask waiting answers it, though the saver filed it', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const ann = await seedUser(t, 'ann');
+    const held = await bayRequest(t, ann.id, body, 'Corner Bay');
+    // A script's ask carries its runner as requester, and nobody asked (D289): a decision closes it.
+    const seeded = await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'name_bay' as const,
+        status: 'open' as const,
+        requesterId: mod.id,
+        origin: 'seed' as const,
+        coord: CORNER.side,
+        waterBodyId: body,
+        name: 'Corner Bay',
+        nameKey: requestNameKey('Corner Bay'),
+        createdAt: Date.now(),
+      }),
+    );
+    await ann.as.mutation(api.corpusRequests.retract, { requestId: held });
+    const saved = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId: held,
+    });
+    expect(saved.request).toBe('answered_others');
+    expect((await t.run((ctx) => ctx.db.get(seeded)))?.status).toBe('approved');
   });
 
   test('a new bay is refused when another already answers to its name or an alias', async () => {

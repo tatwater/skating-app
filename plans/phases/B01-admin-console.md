@@ -13128,7 +13128,11 @@ default holds).
 **An ask closed while its shape was drawn (founder, 2026-11-25):** a bay or landmark saved for an
 ask that closed meanwhile still answers the others asking for the same place. Taking an ask back
 closes only that one, so the asks grouped with it were left open. The save now decides the first of
-them the saver didn't file, which closes the rest with it, and says `answered_others`. Every
+them the saver didn't file (a script's ask counts as nobody's), which closes the rest with it, and
+says `answered_others` — the asks a decision on the closed one would have closed, so a landmark
+placed off the skaters' spot still answers them. A decision the rule refuses (the saver's own ask
+among them, D289) answers none, and the shape stands as `already_decided` rather than rolling
+back. Every
 receipt, the old editor's banners included, now words itself from what the server returned rather
 than from what the card last saw.
 

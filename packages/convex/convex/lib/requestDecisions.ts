@@ -935,10 +935,7 @@ export async function approveNamedBayRequest(
   // for the same bay are answered in its place ({@link heirOf}).
   if (request.status !== 'open') {
     const { rows } = await openSiblings(ctx, request, HEIR_SCAN, undefined, { subArea: bay });
-    const heir = heirOf(rows, actor);
-    if (!heir) return 'already_decided';
-    await decide(ctx, heir, 'approved', actor._id, Date.now(), undefined, undefined, subAreaId);
-    return 'answered_others';
+    return answerInStead(ctx, heirOf(rows, actor), actor, { subArea: bay, subAreaId });
   }
   await decide(ctx, request, 'approved', actor._id, Date.now(), undefined, undefined, subAreaId);
   return 'approved';
@@ -966,7 +963,50 @@ function heirOf(
   rows: readonly Doc<'waterBodyRequests'>[],
   actor: Doc<'profiles'>,
 ): Doc<'waterBodyRequests'> | null {
-  return rows.find((r) => r.requesterId !== actor._id) ?? null;
+  // A script's ask is nobody's own, whoever ran it — the drain closes it as any (`closeSiblingPage`).
+  return rows.find((r) => r.requesterId !== actor._id || r.origin === 'seed') ?? null;
+}
+
+/**
+ * Decide `heir` with the shape saved for the closed ask, or nothing. The decision's own rule runs
+ * first ({@link assertMayDecide}): one it refuses — the saver's own ask among the heir's group (D289),
+ * a check that couldn't finish — leaves the group open for someone else, and the shape stands, as it
+ * did before the heir existed, rather than rolling back over asks it wasn't saved for. The rule's
+ * check writes nothing a refusal must undo: at most it files the heir's item, as the backfill would.
+ */
+async function answerInStead(
+  ctx: MutationCtx,
+  heir: Doc<'waterBodyRequests'> | null,
+  actor: Doc<'profiles'>,
+  answer: DecisionAnswer & {
+    subAreaId?: Id<'waterBodySubAreas'>;
+    landmarkId?: Id<'bodyLandmarks'>;
+  },
+): Promise<SavedAskOutcome> {
+  if (!heir) return 'already_decided';
+  const now = Date.now();
+  try {
+    await assertMayDecide(ctx, heir, actor._id, 'approved', {
+      subArea: answer.subArea ?? null,
+      landmark: answer.landmark ?? null,
+      asOf: now,
+    });
+  } catch (err) {
+    if (err instanceof ConvexError) return 'already_decided';
+    throw err;
+  }
+  await decide(
+    ctx,
+    heir,
+    'approved',
+    actor._id,
+    now,
+    undefined,
+    undefined,
+    answer.subAreaId,
+    answer.landmarkId,
+  );
+  return 'answered_others';
 }
 
 // ── Landmarks (D202) ───────────────────────────────────────────────────────────────────────────
@@ -1177,8 +1217,10 @@ export async function approveNamedLandmarkRequest(
     );
   }
   // Closed while it was being placed: the landmark stands, the ask keeps how it closed, and the
-  // others asking for this place are answered in its place ({@link heirOf}). Their lake's open
-  // landmark asks are read by a bounded take, never paged: the decision pages them once itself.
+  // others asking for this place are answered in its place ({@link heirOf}) — the asks a decision on
+  // it would have closed ({@link closesWith}: the same place as it, or one the landmark answers).
+  // Their lake's open landmark asks are read by a bounded take, never paged: the decision pages them
+  // once itself.
   if (request.status !== 'open') {
     const waiting = await ctx.db
       .query('waterBodyRequests')
@@ -1187,22 +1229,10 @@ export async function approveNamedLandmarkRequest(
       )
       .take(QUEUE_CAP);
     const heir = heirOf(
-      waiting.filter((r) => landmarkAnswersAsk(landmark, landmarkAskOf(r))),
+      waiting.filter((r) => closesWith(request, r, { landmark }, Number.POSITIVE_INFINITY)),
       actor,
     );
-    if (!heir) return 'already_decided';
-    await decide(
-      ctx,
-      heir,
-      'approved',
-      actor._id,
-      Date.now(),
-      undefined,
-      undefined,
-      undefined,
-      landmarkId,
-    );
-    return 'answered_others';
+    return answerInStead(ctx, heir, actor, { landmark, landmarkId });
   }
   await decide(
     ctx,

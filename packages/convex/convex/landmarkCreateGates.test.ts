@@ -261,4 +261,76 @@ describe('landmarks.create, placing an ask', () => {
     }
     expect((await t.run((ctx) => ctx.db.get(elsewhere)))?.status).toBe('open');
   });
+
+  test('a landmark placed off the asks’ spot still answers the others asking for that place', async () => {
+    const { t, as, body, request } = await seed();
+    const ben = await t.run((ctx) => ctx.db.insert('profiles', profile('ben', 'member')));
+    // Grouped with the closed ask, as an open decision on it would have closed it.
+    const other = await t.run((ctx) =>
+      ctx.db.insert('waterBodyRequests', {
+        kind: 'name_landmark',
+        status: 'open',
+        requesterId: ben,
+        coord: { lat: 44.4001, lng: -73.1 },
+        waterBodyId: body,
+        name: 'Long Point',
+        createdAt: NOW,
+      }),
+    );
+    vi.advanceTimersByTime(1_000);
+    await t.withIdentity({ subject: 'skater' }).mutation(api.corpusRequests.retract, {
+      requestId: request,
+    });
+    // Some 1.7 km north of where the skaters marked it: past the radius a landmark answers within.
+    const answer = await as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Long Point',
+      kind: 'point',
+      point: { lat: 44.415, lng: -73.1 },
+      requestId: request,
+    });
+    expect(answer.request).toBe('answered_others');
+    expect((await t.run((ctx) => ctx.db.get(other)))?.status).toBe('approved');
+  });
+
+  test('an ask closed with the saver’s own among those waiting keeps the landmark, and answers none', async () => {
+    const { t, as, body, request } = await seed();
+    const ben = await t.run((ctx) => ctx.db.insert('profiles', profile('ben', 'member')));
+    const mod = await t.run(
+      async (ctx) =>
+        (await ctx.db
+          .query('profiles')
+          .filter((q) => q.eq(q.field('clerkUserId'), 'mod'))
+          .first()) as { _id: Id<'profiles'> },
+    );
+    const ask = (requesterId: Id<'profiles'>) =>
+      t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_landmark',
+          status: 'open',
+          requesterId,
+          coord: { lat: 44.4001, lng: -73.1 },
+          waterBodyId: body,
+          name: 'Long Point',
+          createdAt: NOW,
+        }),
+      );
+    const theirs = await ask(ben);
+    const own = await ask(mod._id);
+    vi.advanceTimersByTime(1_000);
+    await t.withIdentity({ subject: 'skater' }).mutation(api.corpusRequests.retract, {
+      requestId: request,
+    });
+    const answer = await as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Long Point',
+      kind: 'point',
+      point: { lat: 44.4, lng: -73.1 },
+      requestId: request,
+    });
+    expect(answer.request).toBe('already_decided');
+    expect(await landmarkCount(t)).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(theirs)))?.status).toBe('open');
+    expect((await t.run((ctx) => ctx.db.get(own)))?.status).toBe('open');
+  });
 });
