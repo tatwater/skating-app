@@ -10,6 +10,11 @@
  * columns halves to its own color at alpha 128, not to a color darkened by the empty pixels), so a
  * coast or a border flight's edge doesn't grow a dark fringe at low zoom. A parent with no child is
  * never rendered, as `--skip-blank` writes no empty tile.
+ *
+ * **An opaque child has no alpha band.** GDAL's WebP writer drops the alpha of a tile with no
+ * transparent pixel, so a fully covered work tile's top tile reads as three bands, and a VRT that
+ * asked it for a fourth failed the build ("Illegal band #", the pilot's assembler, 2026-11-26). Each
+ * child's alpha is read from its WebP header (`webpHasAlpha`); an opaque one supplies a constant 255.
  */
 
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
@@ -78,22 +83,47 @@ export async function buildOverviews(
 
 const BANDS = ['Red', 'Green', 'Blue', 'Alpha'] as const;
 
-/** The 1024 × 1024 four-band VRT over the children's files (named `child-<dx><dy>.webp`). */
+const fourcc = (b: Uint8Array, at: number): string =>
+  String.fromCharCode(...b.subarray(at, at + 4));
+
+/**
+ * Does this WebP carry an alpha channel — will GDAL read it as four bands? From the RIFF header, as
+ * libwebp's `WebPGetFeatures` decides it: an extended file (`VP8X`) by its alpha flag, a lossless one
+ * (`VP8L`) by its `alpha_is_used` bit, a simple lossy one (`VP8 `) never. Throws on anything else.
+ */
+export function webpHasAlpha(bytes: Uint8Array): boolean {
+  if (bytes.length < 30 || fourcc(bytes, 0) !== 'RIFF' || fourcc(bytes, 8) !== 'WEBP') {
+    throw new Error('not a WebP file');
+  }
+  const chunk = fourcc(bytes, 12);
+  if (chunk === 'VP8X') return ((bytes[20] as number) & 0x10) !== 0;
+  if (chunk === 'VP8L') return (((bytes[24] as number) >> 4) & 1) === 1;
+  if (chunk === 'VP8 ') return false;
+  throw new Error(`a WebP whose first chunk is ${JSON.stringify(chunk)}`);
+}
+
+/**
+ * The 1024 × 1024 four-band VRT over the children's files (named `child-<dx><dy>.webp`). A child
+ * without alpha (`alpha: false`) fills its quadrant's alpha with 255 — a source band scaled by 0 and
+ * offset by 255 — rather than asking its file for a band it hasn't got.
+ */
 export function parentVrt(
-  children: readonly Pick<OverviewChild, 'dx' | 'dy'>[],
+  children: readonly (Pick<OverviewChild, 'dx' | 'dy'> & { alpha?: boolean })[],
   tile = 512,
 ): string {
   const size = tile * 2;
   const bands = BANDS.map((interp, b) => {
     const sources = children
-      .map(
-        (c) =>
-          `    <SimpleSource><SourceFilename relativeToVRT="1">child-${c.dx}${c.dy}.webp</SourceFilename>` +
-          `<SourceBand>${b + 1}</SourceBand>` +
+      .map((c) => {
+        const file = `<SourceFilename relativeToVRT="1">child-${c.dx}${c.dy}.webp</SourceFilename>`;
+        const rects =
           `<SrcRect xOff="0" yOff="0" xSize="${tile}" ySize="${tile}"/>` +
-          `<DstRect xOff="${c.dx * tile}" yOff="${c.dy * tile}" xSize="${tile}" ySize="${tile}"/>` +
-          '</SimpleSource>',
-      )
+          `<DstRect xOff="${c.dx * tile}" yOff="${c.dy * tile}" xSize="${tile}" ySize="${tile}"/>`;
+        return b === 3 && c.alpha === false
+          ? `    <ComplexSource>${file}<SourceBand>1</SourceBand>${rects}` +
+              '<ScaleOffset>255</ScaleOffset><ScaleRatio>0</ScaleRatio></ComplexSource>'
+          : `    <SimpleSource>${file}<SourceBand>${b + 1}</SourceBand>${rects}</SimpleSource>`;
+      })
       .join('\n');
     return (
       `  <VRTRasterBand dataType="Byte" band="${b + 1}"><ColorInterp>${interp}</ColorInterp>\n` +
@@ -133,7 +163,10 @@ export function gdalRenderer(
       const dir = await mkdtemp(join(options.scratch ?? tmpdir(), 'naip-overview-'));
       try {
         for (const c of children) await writeFile(join(dir, `child-${c.dx}${c.dy}.webp`), c.bytes);
-        await writeFile(join(dir, 'parent.vrt'), parentVrt(children));
+        await writeFile(
+          join(dir, 'parent.vrt'),
+          parentVrt(children.map((c) => ({ dx: c.dx, dy: c.dy, alpha: webpHasAlpha(c.bytes) }))),
+        );
         await mustRun(run, 'gdal_translate', parentTranslateArgs(quality), { cwd: dir });
         return new Uint8Array(await readFile(join(dir, 'parent.webp')));
       } finally {

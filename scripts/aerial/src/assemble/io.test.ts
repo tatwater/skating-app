@@ -6,7 +6,13 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { tileIdToZxy, zxyToTileId } from 'pmtiles';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { buildOverviews, gdalRenderer, parentTranslateArgs, parentVrt } from './overviews';
+import {
+  buildOverviews,
+  gdalRenderer,
+  parentTranslateArgs,
+  parentVrt,
+  webpHasAlpha,
+} from './overviews';
 import { mustRun, runProcess } from './process';
 import { fileSink, fileStore, hashingSink, httpStore, memorySink, sha256Hex } from './stores';
 
@@ -219,6 +225,39 @@ describe('overviews', () => {
     ]);
   });
 
+  /** A WebP's first 30 bytes: RIFF, WEBP, the first chunk's fourcc, and the header bits read. */
+  const webp = (chunk: string, byte20 = 0, byte24 = 0): Uint8Array => {
+    const b = new Uint8Array(30);
+    b.set(new TextEncoder().encode(`RIFF\0\0\0\0WEBP${chunk}`), 0);
+    b[20] = byte20;
+    b[24] = byte24;
+    return b;
+  };
+
+  it('reads whether a WebP has alpha from its header, as libwebp does', () => {
+    expect(webpHasAlpha(webp('VP8X', 0x10))).toBe(true);
+    expect(webpHasAlpha(webp('VP8X', 0x20))).toBe(false);
+    expect(webpHasAlpha(webp('VP8L', 0, 0x10))).toBe(true);
+    expect(webpHasAlpha(webp('VP8L', 0, 0xef))).toBe(false);
+    expect(webpHasAlpha(webp('VP8 ', 0xff, 0xff))).toBe(false);
+    expect(() => webpHasAlpha(webp('ALPH'))).toThrow('"ALPH"');
+    expect(() => webpHasAlpha(Uint8Array.of(9))).toThrow('not a WebP');
+  });
+
+  it('gives an opaque child a constant alpha rather than a band it hasn’t got', () => {
+    const vrt = parentVrt([
+      { dx: 0, dy: 0, alpha: true },
+      { dx: 1, dy: 1, alpha: false },
+    ]);
+    const alpha = vrt.slice(vrt.indexOf('<ColorInterp>Alpha</ColorInterp>'));
+    expect(alpha).toContain('child-00.webp</SourceFilename><SourceBand>4</SourceBand>');
+    expect(alpha).toContain(
+      '<ComplexSource><SourceFilename relativeToVRT="1">child-11.webp</SourceFilename><SourceBand>1</SourceBand>',
+    );
+    expect(alpha).toContain('<ScaleOffset>255</ScaleOffset><ScaleRatio>0</ScaleRatio>');
+    expect(vrt.match(/<SourceBand>4<\/SourceBand>/g)).toHaveLength(1);
+  });
+
   it('runs gdal_translate in a scratch directory it removes, and refuses an empty parent', async () => {
     const seen: string[] = [];
     const renderer = gdalRenderer({
@@ -229,7 +268,7 @@ describe('overviews', () => {
         return { code: 0, stdout: '', stderr: '' };
       },
     });
-    expect(await renderer.render([{ dx: 0, dy: 1, bytes: Uint8Array.of(9) }])).toEqual(
+    expect(await renderer.render([{ dx: 0, dy: 1, bytes: webp('VP8 ') }])).toEqual(
       Uint8Array.of(7, 7),
     );
     expect(seen[0]).toBe('gdal_translate');
@@ -285,5 +324,35 @@ describe('overviews', () => {
     expect(b).toBeLessThan(45);
     // The missing quadrants are transparent.
     expect(at(400, 400)[3]).toBe(0);
+
+    // An opaque child: GDAL writes it with no alpha band, and the parent still renders (the pilot).
+    const solid = Buffer.alloc(512 * 512 * 4);
+    for (let i = 0; i < 512 * 512; i++) solid.set([30, 120, 60, 255], i * 4);
+    await writeFile(join(work, 'c.raw'), solid);
+    await mustRun(
+      runProcess,
+      'gdal_translate',
+      ['-q', '-of', 'WEBP', '-co', 'QUALITY=90', 'c.raw', 's.webp'],
+      { cwd: work },
+    );
+    const opaque = new Uint8Array(await readFile(join(work, 's.webp')));
+    expect(webpHasAlpha(opaque)).toBe(false);
+    const mixed = await gdalRenderer({ scratch: work }).render([
+      { dx: 0, dy: 0, bytes: child },
+      { dx: 1, dy: 1, bytes: opaque },
+    ]);
+    await writeFile(join(work, 'm.webp'), mixed);
+    await mustRun(
+      runProcess,
+      'gdal_translate',
+      ['-q', '-of', 'ENVI', '-co', 'INTERLEAVE=BIP', 'm.webp', 'm.raw'],
+      { cwd: work },
+    );
+    const mx = await readFile(join(work, 'm.raw'));
+    const [mr, mg, mb, ma] = [...mx.subarray((400 * 512 + 400) * 4, (400 * 512 + 400) * 4 + 4)];
+    expect(ma).toBe(255);
+    expect(Math.abs((mr as number) - 30)).toBeLessThan(12);
+    expect(Math.abs((mg as number) - 120)).toBeLessThan(12);
+    expect(Math.abs((mb as number) - 60)).toBeLessThan(12);
   });
 });
