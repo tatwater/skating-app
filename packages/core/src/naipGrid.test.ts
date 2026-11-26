@@ -202,6 +202,14 @@ describe('the states and the region', () => {
     expect(quarterQuadInState('4207003nw', 'NY')).toBe(false);
   });
 
+  test("a state's own flight just past its envelope is kept by the margin", () => {
+    // Vermont flies 4407361sw on Champlain's New York shore, whose east edge is 0.25′ west of
+    // Vermont's 73°26′W: the catalog's furthest real reach past an envelope.
+    const cell = quarterQuadCell('4407361sw');
+    expect(NAIP_STATE_ENVELOPES.VT.minLng - cell.maxLng).toBeCloseTo(0.25 / 60, 6);
+    expect(quarterQuadInState('4407361sw', 'VT')).toBe(true);
+  });
+
   test('the region holds every envelope, out to whole cells', () => {
     for (const env of Object.values(NAIP_STATE_ENVELOPES)) {
       expect(env.minLat - NAIP_ENVELOPE_MARGIN).toBeGreaterThanOrEqual(NAIP_REGION.minLat);

@@ -25,8 +25,10 @@ const CELL: Record<string, string> = {
   ct: '4107201ne',
   ri: '4107152ne',
 };
+type Answer = { ok: boolean; status: number; statusText: string; json(): Promise<unknown> };
+
 function stateCatalog() {
-  return vi.fn(async (_url: string, init?: { body?: string }) => {
+  return vi.fn(async (_url: string, init?: { body?: string }): Promise<Answer> => {
     const body = JSON.parse(init?.body ?? '{}') as { query: { 'naip:state': { eq: string } } };
     const st = body.query['naip:state'].eq;
     const key = CELL[st] as string;
