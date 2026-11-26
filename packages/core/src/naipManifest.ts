@@ -123,7 +123,10 @@ export interface NaipManifest {
     items: number;
     /** Items read per labeled state. */
     perState: Partial<Record<NaipState, number>>;
-    /** Where the snapshot is archived (`inventoryKey`'s prefix), or `null` when it wasn't (a dry run). */
+    /**
+     * Where the snapshot is archived (`inventoryKey`'s prefix), or `null` when it wasn't (a dry run,
+     * or a pilot, which writes nothing outside its own prefixes).
+     */
     archivedAt: string | null;
   };
   /** Hex SHA-256 of the exclusion list the rule ran with. */

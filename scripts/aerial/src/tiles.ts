@@ -557,7 +557,9 @@ export interface Upload {
  * the catalog snapshot to the campaign's scratch and records where the snapshot belongs
  * (`catalog.archivedAt`) without uploading; the assembler and verify read the manifest from
  * `buildManifestKey`. The snapshot goes to `inventoryKey`, one file per state the walk read — only
- * when `archivedAt` says it should, and refused when `archivedAt` names another day's prefix.
+ * when `archivedAt` says it should, and refused when `archivedAt` names another day's prefix. A
+ * pilot's manifest that asks for an archive is refused outright: `naip/inventory/` is outside every
+ * pilot prefix, and a pilot writes nothing outside its own.
  */
 export function selectUploads(manifest: NaipManifest, scratch: string = AERIAL_SCRATCH): Upload[] {
   const pilot = manifest.pilot ?? undefined;
@@ -567,6 +569,11 @@ export function selectUploads(manifest: NaipManifest, scratch: string = AERIAL_S
   ];
   const { archivedAt, walkedOn, perState } = manifest.catalog;
   if (archivedAt === null) return uploads;
+  if (pilot !== undefined) {
+    throw new Error(
+      `pilot ${pilot}'s manifest asks to archive the catalog at ${archivedAt}, outside its prefixes`,
+    );
+  }
   const states = (Object.keys(perState) as NaipState[]).sort();
   if (states.length === 0) throw new Error('the manifest archives a catalog that read no state');
   for (const state of states) {

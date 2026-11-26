@@ -192,6 +192,8 @@ describe('runSelect', () => {
       d.deps,
     );
     expect(out.manifest.pilot).toBe('rumford');
+    // A pilot writes nothing outside its own prefixes, so it never archives the shared snapshot.
+    expect(out.manifest.catalog.archivedAt).toBeNull();
     expect(out.manifest.workTiles.map((w) => w.key)).toEqual(
       workTilesOf('4407028ne').map(workTileKey),
     );

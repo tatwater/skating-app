@@ -543,6 +543,20 @@ describe('selectUploads', () => {
     ]);
   });
 
+  test('refuses a pilot’s manifest that would archive the catalog outside its prefixes', () => {
+    const m = manifest({
+      campaign: 'naip-pilot-20261212',
+      pilot: 'champlain',
+      catalog: {
+        walkedOn: '2026-12-12',
+        items: 1,
+        perState: { VT: 1 },
+        archivedAt: 'naip/inventory/2026-12-12/',
+      },
+    });
+    expect(() => selectUploads(m, '/s')).toThrow(/outside its prefixes/);
+  });
+
   test('refuses an archive that names another day, or no state', () => {
     const at = (archivedAt: string, perState: NaipManifest['catalog']['perState'] = { VT: 1 }) =>
       manifest({ catalog: { walkedOn: '2026-12-12', items: 1, perState, archivedAt } });
@@ -565,7 +579,10 @@ describe('the tiling fingerprint', () => {
     // Re-recorded under 1 at integration (2026-11-26), deliberately: the overview zooms and the
     // work tile's own tile gained the window's bounds, which stops a tile outside the work tile being
     // written (the packer refused it) and changes no pixel inside it; and no archive had been built.
-    1: 'd6021484c204d95e1cd63aba5a02f34ac16170da227b923bdc6d06bda341b1bc',
+    // Re-recorded under 1 at the pilot (2026-11-26), deliberately: every tiler run gained
+    // `--parallel-method spawn` (the thread pool can't clone the mosaic), which draws tiles
+    // byte-identical to a single-threaded run (measured on 89 real tiles); no archive had been built.
+    1: 'd6b25433e0b8fd5f5225740004750f94d7052a041ec20f7653e7e2c371a42139',
   };
 
   /** The worker's GDAL invocations (with their continuation lines) and the counts helper's code. */

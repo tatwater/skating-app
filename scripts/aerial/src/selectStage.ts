@@ -179,8 +179,11 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
         items: candidates.length,
         perState,
         // The select stage keeps the snapshot beside the campaign; its upload to the private
-        // bucket (`inventoryKey`) is the run's executor's, and a dry run never uploads.
-        archivedAt: args.dryRun ? null : `naip/inventory/${snapshot.walkedOn}/`,
+        // bucket (`inventoryKey`) is the run's executor's, and a dry run never uploads. Nor does
+        // a pilot: `naip/inventory/` is shared with the full build and outside every pilot
+        // prefix, and a pilot writes nothing outside its own (found at the pilot, 2026-11-26).
+        archivedAt:
+          args.dryRun || args.pilot !== null ? null : `naip/inventory/${snapshot.walkedOn}/`,
       },
       selection,
       exclusions,
