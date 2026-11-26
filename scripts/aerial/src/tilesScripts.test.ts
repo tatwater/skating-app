@@ -333,6 +333,8 @@ function spawnSh(args: string[], opts: { lists?: string[]; env?: Record<string, 
         LISTS: lists,
         AERIAL_IMAGE: IMAGE,
         POLL_SECONDS: '0',
+        // Never the operator's real scripts/aerial/.env.local (which would win over these).
+        AERIAL_ENV_FILE: join(dir, 'no-env-file'),
         ...opts.env,
       },
     },
@@ -436,7 +438,7 @@ describe('spawn.sh assemble', () => {
 
 function runAerial(
   args: string[],
-  opts: { failOn?: string; deployment?: string; pipe?: boolean } = {},
+  opts: { failOn?: string; deployment?: string; pipe?: boolean; envFile?: string } = {},
 ) {
   const dir = tmp();
   const b = join(dir, 'bin');
@@ -466,6 +468,8 @@ if [ -n "\${FAIL_ON:-}" ] && [ "$3" = "$FAIL_ON" ]; then echo "boom: $3 failed" 
       TSX_REAL: TSX,
       PWD: dir,
       AERIAL_SCRATCH_DIR: join(dir, 'scratch'),
+      // Never the operator's real scripts/aerial/.env.local: a test reads only what it writes.
+      AERIAL_ENV_FILE: opts.envFile ?? join(dir, 'no-env-file'),
       CONVEX_DEPLOYMENT: opts.deployment ?? 'dev:quick-fox-123',
       ...(opts.failOn !== undefined && { FAIL_ON: opts.failOn }),
     },
@@ -527,6 +531,16 @@ describe('run-aerial.sh', () => {
 
   test('no campaign is a usage error', () => {
     expect(runAerial([]).status).toBe(64);
+  });
+
+  test('loads scripts/aerial/.env.local before the target check, and never prints it', () => {
+    const env = join(tmp(), 'env.local');
+    writeFileSync(env, 'CONVEX_DEPLOYMENT=local:local-skating\nR2_BUCKET=bucket-from-file\n');
+    const pilot = ['naip-pilot-20261125', '--pilot', 'champlain-nhma-me-ny', '--stage=tiles'];
+    const run = runAerial(pilot, { envFile: env });
+    expect(run.status).toBe(0);
+    expect(run.calls).toHaveLength(1);
+    expect(`${run.out}\n${run.log.join('\n')}`).not.toContain('bucket-from-file');
   });
 });
 

@@ -48,7 +48,7 @@ describe('parsePpm', () => {
     });
   });
 
-  test('reads a grey P5 as RGB', () => {
+  test('reads a gray P5 as RGB', () => {
     const bytes = new Uint8Array([...Buffer.from('P5\n2 1\n255\n', 'latin1'), 7, 9]);
     expect(parsePpm(bytes).rgb).toEqual(new Uint8Array([7, 7, 7, 9, 9, 9]));
   });
@@ -70,7 +70,7 @@ describe('scorePixels', () => {
         [0, 0, 0], // past the frame's edge
         [8, 8, 3], // still black (JPEG's blur)
         [250, 250, 250], // cloud
-        [200, 190, 215], // grey-white glare (spread 25)
+        [200, 190, 215], // gray-white glare (spread 25)
         [240, 230, 160], // pale sand: not neutral
         [189, 200, 200], // just under bright
         [60, 90, 40], // forest

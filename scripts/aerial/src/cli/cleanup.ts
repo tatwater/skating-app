@@ -23,7 +23,7 @@ async function main(): Promise<void> {
   const args = parseStageArgs(process.argv.slice(2), 'cleanup');
   const bucket = process.env.R2_BUCKET;
   if (!bucket) throw new Error('R2_BUCKET is not set');
-  const target = { remote: process.env.R2_REMOTE ?? 'r2', bucket };
+  const target = { remote: process.env.R2_REMOTE || 'r2', bucket };
   const prefix = publishPrefix(args.campaign, args.pilot ?? undefined);
   const listing = (await rcloneList(target, prefix))
     .filter((o) => !o.IsDir)

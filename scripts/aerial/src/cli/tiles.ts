@@ -81,7 +81,7 @@ async function main(): Promise<void> {
 
   const deployment = resolveDeployment();
   checkRunTarget(args.pilot, deployment);
-  const remote = process.env.R2_REMOTE ?? 'r2';
+  const remote = process.env.R2_REMOTE || 'r2';
   const bucket = need('R2_BUCKET');
   need('AERIAL_IMAGE');
 

@@ -40,7 +40,7 @@ const SOURCES: Source[] = [
   // Convex functions and the shared libs under them: `process.env.NAME`.
   { dir: 'packages/convex/convex', pattern: PROCESS_ENV, ext: /\.tsx?$/ },
   // Pipelines: the same, in each package's src/ (READMEs and shell wrappers are prose, not reads).
-  { dir: 'scripts', pattern: PROCESS_ENV, ext: /\/src\/[^/]+\.tsx?$/ },
+  { dir: 'scripts', pattern: PROCESS_ENV, ext: /\/src\/.+\.tsx?$/ },
   // Mobile: Metro inlines `process.env.EXPO_PUBLIC_*`; app.config.ts reads build-time vars.
   { dir: 'apps/mobile/src', pattern: PROCESS_ENV, ext: /\.tsx?$/ },
   { dir: 'apps/mobile/app', pattern: PROCESS_ENV, ext: /\.tsx?$/ },

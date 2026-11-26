@@ -39,11 +39,11 @@ export const FULL_COVERAGE = 0.999;
 const NODATA_MAX = 8;
 /** Neutral white: every band at least this bright… */
 const WHITE_MIN = 190;
-/** …and the bands within this of each other (grey-white, not a pale field or a yellow roof). */
+/** …and the bands within this of each other (gray-white, not a pale field or a yellow roof). */
 const WHITE_SPREAD = 30;
 
 /**
- * A binary netpbm image (P6 color, or P5 grey — a grey JPEG decodes to one — maxval 255), read as RGB.
+ * A binary netpbm image (P6 color, or P5 gray — a gray JPEG decodes to one — maxval 255), read as RGB.
  * Throws on anything else.
  */
 export function parsePpm(bytes: Uint8Array): { width: number; height: number; rgb: Uint8Array } {

@@ -35,7 +35,8 @@ if (( BASH_VERSINFO[0] < 4 )); then
 fi
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-[[ -f "$HERE/.env.local" ]] && { set -a; . "$HERE/.env.local" >/dev/null 2>&1; set +a; }
+ENV_FILE="${AERIAL_ENV_FILE:-$HERE/.env.local}"
+[[ -f "$ENV_FILE" ]] && { set -a; . "$ENV_FILE" >/dev/null 2>&1; set +a; }
 
 APP="${FLY_APP:-skating-imagery}"
 REGION="${FLY_REGION:-ams}"

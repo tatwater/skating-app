@@ -30,6 +30,12 @@
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# The gitignored `scripts/aerial/.env.local` (the README's list: `AERIAL_IMAGE`, `R2_BUCKET`,
+# `R2_REMOTE`, a pilot's `CONVEX_DEPLOYMENT`), loaded before anything reads it — the run rows'
+# target check included — and never echoed. `spawn.sh` loads the same file the same way, so a value
+# there wins over the shell's in both. `AERIAL_ENV_FILE` points elsewhere (the tests).
+ENV_FILE="${AERIAL_ENV_FILE:-$HERE/.env.local}"
+if [[ -f "$ENV_FILE" ]]; then set -a; source "$ENV_FILE" >/dev/null 2>&1; set +a; fi
 USAGE="usage: run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all] [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>] [--dry-run] [--old <key>]"
 
 # A FIFO (`| tee`) or a socket (how most process runners wire stdout): either way the status a

@@ -54,7 +54,7 @@ async function main(): Promise<number> {
       });
   logger?.start();
   const server = await serveHttp(
-    { remote: process.env.R2_REMOTE ?? 'r2', bucket: need('R2_BUCKET') },
+    { remote: process.env.R2_REMOTE || 'r2', bucket: need('R2_BUCKET') },
     8789,
   );
   try {

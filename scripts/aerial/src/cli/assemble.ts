@@ -136,7 +136,7 @@ async function fromLaptop(
   pilot: string | undefined,
   dryRun: boolean,
 ): Promise<void> {
-  const target: RcloneTarget = { remote: process.env.R2_REMOTE ?? 'r2', bucket: need('R2_BUCKET') };
+  const target: RcloneTarget = { remote: process.env.R2_REMOTE || 'r2', bucket: need('R2_BUCKET') };
   if (dryRun) {
     const server = await serveHttp(target, 8788);
     try {
