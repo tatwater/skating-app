@@ -220,6 +220,8 @@ log "resolved ${#SRC[@]} frames"
 
 # warp <cell> <itemId> <extent field> <res> <resampling> <out.vrt> — the frame on exactly the cell's
 # pixels (the unit's extent), which is the cut: no cutline (see `tiles.ts`' `pixelExtent`).
+# ⚠ Any change to these arguments (or the tiler's below) that draws different pixels from the same
+# stack bumps NAIP_TILING_VERSION in core — see the header; `tiles.test.ts` holds the fingerprint.
 warp() {
   local cell="$1" id="$2" field="$3" res="$4" resampling="$5" out="$6" te srcbands=()
   read -r -a te < <(jq -r --arg k "$cell" \
