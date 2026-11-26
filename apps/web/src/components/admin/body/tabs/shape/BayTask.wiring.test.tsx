@@ -349,44 +349,53 @@ describe('the bay task — arrivals', () => {
     );
   });
 
-  it('an ask answered elsewhere while the bay was traced: the receipt says it keeps that answer', async () => {
-    mocks.search = { task: 'rq1' };
-    mocks.answer[getFunctionName(api.subAreas.create)] = () => ({
-      subAreaId: 'bay-new',
-      request: 'already_decided',
-    });
-    set(api.corpusRequests.openBayRequestsForBody, {
-      bays: [
-        {
-          requestId: 'rq1',
-          requestIds: ['rq1'],
-          name: 'Shaker cove',
-          aliases: [],
-          coord: { lat: 43.632, lng: -72.157 },
-          notes: [],
-          askers: 1,
-          createdAt: 1,
-        },
-      ],
-      more: false,
-    });
-    const user = userEvent.setup();
-    render(<Mounted />);
-    const box = await screen.findByRole('group', { name: 'Bay request · from the Inbox' });
-    await user.click(within(box).getByRole('button', { name: 'Freehand' }));
-    traceRing();
-    await user.click(within(box).getByRole('button', { name: /Save/ }));
-    await waitFor(() => expect(sent(api.subAreas.create)).toHaveLength(1));
-    expect(sent(api.subAreas.create)[0]?.args).toMatchObject({ requestId: 'rq1' });
-    await waitFor(() =>
-      expect(mocks.announce).toHaveBeenCalledWith(
-        expect.objectContaining({
-          description: 'That ask was already closed, so this didn’t answer it.',
-          target: { targetType: 'waterBodySubArea', targetId: 'bay-new' },
-        }),
-      ),
-    );
-  });
+  it.each([
+    ['already_decided', 'That ask was already closed, so this didn’t answer it.'],
+    [
+      'answered_others',
+      'That ask was already closed, but this answered the others who asked for it.',
+    ],
+  ])(
+    'an ask closed while the bay was traced (%s): the receipt says what the save did',
+    async (request, said) => {
+      mocks.search = { task: 'rq1' };
+      mocks.answer[getFunctionName(api.subAreas.create)] = () => ({
+        subAreaId: 'bay-new',
+        request,
+      });
+      set(api.corpusRequests.openBayRequestsForBody, {
+        bays: [
+          {
+            requestId: 'rq1',
+            requestIds: ['rq1'],
+            name: 'Shaker cove',
+            aliases: [],
+            coord: { lat: 43.632, lng: -72.157 },
+            notes: [],
+            askers: 1,
+            createdAt: 1,
+          },
+        ],
+        more: false,
+      });
+      const user = userEvent.setup();
+      render(<Mounted />);
+      const box = await screen.findByRole('group', { name: 'Bay request · from the Inbox' });
+      await user.click(within(box).getByRole('button', { name: 'Freehand' }));
+      traceRing();
+      await user.click(within(box).getByRole('button', { name: /Save/ }));
+      await waitFor(() => expect(sent(api.subAreas.create)).toHaveLength(1));
+      expect(sent(api.subAreas.create)[0]?.args).toMatchObject({ requestId: 'rq1' });
+      await waitFor(() =>
+        expect(mocks.announce).toHaveBeenCalledWith(
+          expect.objectContaining({
+            description: said,
+            target: { targetType: 'waterBodySubArea', targetId: 'bay-new' },
+          }),
+        ),
+      );
+    },
+  );
 
   it('an ask that is no longer open says so, and arms nothing', async () => {
     mocks.search = { task: 'rq9' };

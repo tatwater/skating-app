@@ -2856,6 +2856,56 @@ describe('sub-areas by chord (D201)', () => {
     expect(answered.request).toBe('approved');
   });
 
+  test('an ask taken back while its bay was drawn leaves the others asking for it answered', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const ann = await seedUser(t, 'ann');
+    const ben = await seedUser(t, 'ben');
+    const cara = await seedUser(t, 'cara');
+    const held = await bayRequest(t, ann.id, body, 'Corner Bay');
+    const others = [
+      await bayRequest(t, ben.id, body, 'Corner Bay'),
+      await bayRequest(t, cara.id, body, 'Corner Bay'),
+    ];
+    vi.advanceTimersByTime(1_000);
+    // The ask the card held, taken back by its skater while the moderator drew.
+    await ann.as.mutation(api.corpusRequests.retract, { requestId: held });
+    const saved = await mod.as.mutation(api.subAreas.createFromChord, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      mouth: CORNER,
+      requestId: held,
+    });
+    expect(saved.request).toBe('answered_others');
+    expect((await t.run((ctx) => ctx.db.get(held)))?.status).toBe('retracted');
+    for (const id of others) {
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.status).toBe('approved');
+      expect(row?.decidedByUserId).toBe(mod.id);
+    }
+  });
+
+  test('an ask closed with nobody else waiting, or only the saver’s own ask, answers nothing', async () => {
+    const t = harness();
+    const body = await seedCanonicalBody(t);
+    const mod = await seedUser(t, 'mod', 'moderator');
+    const ann = await seedUser(t, 'ann');
+    const held = await bayRequest(t, ann.id, body, 'Corner Bay');
+    // The saver's own ask for the same bay is never theirs to decide (D289): it waits for someone else.
+    const own = await bayRequest(t, mod.id, body, 'Corner Bay');
+    await ann.as.mutation(api.corpusRequests.retract, { requestId: held });
+    const saved = await mod.as.mutation(api.subAreas.create, {
+      waterBodyId: body,
+      name: 'Corner Bay',
+      polygon: rect(-73.45, 44.05, -73.35, 44.15),
+      requestId: held,
+    });
+    expect(saved.request).toBe('already_decided');
+    expect(await t.run((ctx) => ctx.db.get(saved.subAreaId))).not.toBeNull();
+    expect((await t.run((ctx) => ctx.db.get(own)))?.status).toBe('open');
+  });
+
   test('a new bay is refused when another already answers to its name or an alias', async () => {
     const t = harness();
     const body = await seedCanonicalBody(t);

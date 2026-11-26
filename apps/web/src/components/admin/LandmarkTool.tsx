@@ -17,6 +17,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { ToolCard } from './adminUi';
+import { askClosedLine } from './body/consoleWords';
 import { DismissPlaceNameDialog } from './DismissPlaceNameDialog';
 import { GoogleMapsLink, PossibleDuplicate } from './PossibleDuplicate';
 import { ReasonDialog } from './ReasonDialog';
@@ -192,18 +193,19 @@ export function LandmarkTool({
   };
 
   /**
-   * A write, held (`busy`) while in flight; landed, its outcome on the banner. A refusal is the net's
-   * toast (D268); `rethrow` hands it on to a dialog, which stays open over what was typed.
+   * A write, held (`busy`) while in flight; landed, its outcome on the banner — worded from what the
+   * write returned when `ok` is a function. A refusal is the net's toast (D268); `rethrow` hands it
+   * on to a dialog, which stays open over what was typed.
    */
-  const run = async (
-    write: () => Promise<unknown>,
-    ok: string,
+  const run = async <T,>(
+    write: () => Promise<T>,
+    ok: string | ((result: T) => string),
     { rethrow = false }: { rethrow?: boolean } = {},
   ) => {
     setBusy(true);
     try {
-      await write();
-      onResult({ tone: 'ok', text: ok });
+      const result = await write();
+      onResult({ tone: 'ok', text: typeof ok === 'function' ? ok(result) : ok });
       return true;
     } catch (err) {
       if (rethrow) throw err;
@@ -714,11 +716,16 @@ export function LandmarkTool({
                           : {}),
                         ...(placingName ? { corpusNameId: placingName } : {}),
                       }),
-                    answering && !answeringClosed
-                      ? `Added “${name.trim()}” and answered the skaters who named it.`
-                      : placingName
-                        ? `Placed “${name.trim()}”.`
-                        : `Added “${name.trim()}”.`,
+                    // What the server did with the ask, not what this card last saw: one closed
+                    // since keeps how it closed, and the others asking may be answered instead.
+                    ({ request }) =>
+                      request === 'approved'
+                        ? `Added “${name.trim()}” and answered the skaters who named it.`
+                        : request !== undefined
+                          ? `Added “${name.trim()}”. ${askClosedLine(request)}`
+                          : placingName
+                            ? `Placed “${name.trim()}”.`
+                            : `Added “${name.trim()}”.`,
                   );
                   if (saved) reset();
                 }}

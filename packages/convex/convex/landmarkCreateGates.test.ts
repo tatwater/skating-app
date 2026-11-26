@@ -2,6 +2,7 @@ import type { Capability } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
+import type { Id } from './_generated/dataModel';
 import schema from './schema';
 
 /**
@@ -221,5 +222,43 @@ describe('landmarks.create, placing an ask', () => {
         point: { lat: 44.6, lng: -72.9 },
       }),
     ).toEqual({ landmarkId: expect.any(String) });
+  });
+  test('an ask taken back while it was placed leaves the others asking for that place answered', async () => {
+    const { t, as, body, request } = await seed();
+    const ask = (requesterId: Id<'profiles'>, lat: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_landmark',
+          status: 'open',
+          requesterId,
+          coord: { lat, lng: -73.1 },
+          waterBodyId: body,
+          name: 'Long Point',
+          createdAt: NOW,
+        }),
+      );
+    const ben = await t.run((ctx) => ctx.db.insert('profiles', profile('ben', 'member')));
+    const others = [await ask(ben, 44.4001)];
+    // Another Long Point across the lake is another place, and stays waiting.
+    const elsewhere = await ask(ben, 44.9);
+    vi.advanceTimersByTime(1_000);
+    await t.withIdentity({ subject: 'skater' }).mutation(api.corpusRequests.retract, {
+      requestId: request,
+    });
+    const answer = await as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Long Point',
+      kind: 'point',
+      point: { lat: 44.4, lng: -73.1 },
+      requestId: request,
+    });
+    expect(answer.request).toBe('answered_others');
+    expect((await t.run((ctx) => ctx.db.get(request)))?.status).toBe('retracted');
+    for (const id of others) {
+      const row = await t.run((ctx) => ctx.db.get(id));
+      expect(row?.status).toBe('approved');
+      expect(row?.landmarkId).toBe(answer.landmarkId);
+    }
+    expect((await t.run((ctx) => ctx.db.get(elsewhere)))?.status).toBe('open');
   });
 });

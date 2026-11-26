@@ -33,6 +33,7 @@ import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AdminEmpty, AdminPageHeader, ToolCard } from '../components/admin/adminUi';
 import { BayRequestQueue, type BayRequestRow } from '../components/admin/BayRequestQueue';
+import { askClosedLine } from '../components/admin/body/consoleWords';
 import { LakeEditorMap } from '../components/admin/LakeEditorMap';
 import { type EditorLandmark, LandmarkTool } from '../components/admin/LandmarkTool';
 import { PostedAccessTool } from '../components/admin/PostedAccessEditor';
@@ -1121,8 +1122,8 @@ function SubAreaTool({
           text:
             saved.request === 'approved'
               ? `Drew “${name.trim()}” and answered the ask.`
-              : saved.request === 'already_decided'
-                ? `Drew “${name.trim()}”. The ask had already been answered elsewhere, and keeps that answer.`
+              : saved.request !== undefined
+                ? `Drew “${name.trim()}”. ${askClosedLine(saved.request)}`
                 : `Drew “${name.trim()}”.`,
         });
         setName('');

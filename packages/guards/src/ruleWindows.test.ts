@@ -111,6 +111,8 @@ const WINDOW_EXCEPTIONS: Record<string, string> = {
     '(c) one verdict minted a row (`recordVerdict` once a `setContentStatus`), so two read is past it',
   'lib/requestDecisions.ts#openSiblings':
     '(c) the drain’s page: what one page leaves, the next reads (a cursor, or the range again), to REQUEST_SIBLINGS_MAX; past it the rest stay open, shown — inboxReopenRule.test.ts, corpusRequests.test.ts',
+  'lib/requestDecisions.ts#approveNamedLandmarkRequest':
+    '(c) only once the ask it was saved for has closed, to find another waiting on the same place: the decision on that one pages the rest itself (a second page here would throw), and one past QUEUE_CAP is left open, shown with its one-click approve, as before the heir existed — landmarkCreateGates.test.ts',
   'lib/requestDecisions.ts#ownAsks':
     '(b) while pending, an ask at a time, `unchecked` past OWN_ASKS_READ or the budget — the decision refuses on `unchecked` (ALONGSIDE_UNCHECKED)',
   'lib/undoHandlersBody.ts#undoPutIn':
