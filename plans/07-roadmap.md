@@ -978,7 +978,7 @@ aerial on any lake and it is there in a second, with the months it was flown.*
 - ⚪ **Color matching across flights** — the low-zoom quilt is accepted in v1 → the plan's §1.3
 - ⚪ **A console *Rebuild* that launches the build** — Convex can start Fly Machines, but the build's orchestration stays on the laptop until B01's hosted-runner decision → the plan's §3.2
 - ⚪ **Machinery's imagery page drawing the July check's offer** — B05 stores the record (`aerialOffers`); the page is B01's Machinery mode → the deferred register's *Machinery: the summer aerial's offer*
-- ❓ **The October-cell fallbacks in Maine and New York** — older summer frames fill cells flown only in October; the founder revisits them once he has seen them → the plan's §5.5, §8 F-9
+- ❓ **The October-cell fallbacks in Maine and New York** — older summer frames fill cells flown only in October; the founder revisits them once he has seen them, in the pilot (F-9 c) → the plan's §5.5, §8 F-9
 
 #### Ruled out
 - **A summer aerial for skaters, region-wide or clipped to one lake** — D316: console staff only, not for now, revisited only on the founder's word
@@ -987,7 +987,7 @@ aerial on any lake and it is there in a second, with the months it was flown.*
 - **A prod copy** — prod points at dev's dated object at the cutover
 
 #### Owed
-- The founder's answer to the plan's §8 F-9 (the pilot's area), then the pilot and his go for the full region run (~9 h on Fly, ~$20)
+- The pilot (F-9 ruled (c), 2026-11-25: Champlain's north end, the NH–MA strip, the Maine cells north of Rumford and a New York 2024/2019 join, ~63 cells), then the founder's go for the full region run (~9 h on Fly, ~$20)
 - G-6, which bucket serves the archive publicly, checked at build start; a bucket-scoped R2 token on the Fly app if it is a new one (a founder task)
 - `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, and `NAIP_MANIFEST_URL` on Convex dev, once the archive exists
 - The widen's deploy to dev (`convex dev --once` from main) after B05-1 merges, before the full run writes its rows

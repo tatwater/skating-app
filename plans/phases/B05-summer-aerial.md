@@ -12,7 +12,8 @@ lines.*
 > flown). Amends **D312**'s source and credit, not its behavior. **D147** is unchanged. The founder
 > answered all eight forks on 2026-11-25 (§1.2), and two follow-ups the same day (no interim surface
 > for the July offer; no clipped reveal for skaters either), having been told the size (12,000–20,000
-> lines, two PRs) without objecting. One new question is open (§8, F-9). The builder briefs are §10.
+> lines, two PRs) without objecting. The one question the rulings opened (§8, F-9) he answered the
+> same day: (c), the pilot grows to ~63 cells. The builder briefs are §10.
 >
 > **The token.** `B05`: the work is launch-era console infrastructure, and the `A` era (enrichment,
 > `A01`–`A10`) is closed in the README's table, so it is not `A06j` even though its family is A06e's
@@ -91,7 +92,8 @@ Quoted where they bear; these are the inputs, not this doc's reading of them.
    doesn't exist yet (§3.4), so the page is a register row owed to it.
 3. **The pilot area** (F-3 a): Lake Champlain's north end (Vermont 2025 at 0.3 m against New York
    2024 at 0.6 m, the state line, Québec's edge, big water) plus a strip on the New Hampshire–
-   Massachusetts line across 72°W, ~40 cells.
+   Massachusetts line across 72°W, ~40 cells. Widened by F-9 (c) to ~63 (§7.4): plus the Maine strip
+   north of Rumford and a New York 2024/2019 join.
 4. **Dev only, now** (F-4 a): built to dev's key; at the prod cutover prod points at the same dated
    object. No prod copy.
 5. **No summer aerial for skaters** (F-5, D316). *"I don't want summer for skaters at all. This is
@@ -222,12 +224,17 @@ season step**, so a struck frame falls back to the next leaf-on one:
 
 The select stage writes the build's record, **`…-manifest.json`**, immutable under the build's dated
 key (§2.4): the rule's version, the catalog snapshot it read (archived to the private bucket,
-`naip/inventory/<date>/<state>.jsonl.gz`, about 5 MB), the exclusion list's hash, and per
-quarter-quad: its key, the states that list it, the pick (item id, acquisition date, gsd,
-`naip:year`), the step that picked it (`leafOn` or `offSeason`), the fallback stack (ids in order),
-whether the pick covers its cell (`partial`), its cloud score, and the work tiles it touches. Per
-work tile (§2.2): its input hash. About 1.5 MB raw. The assembler adds the archive's SHA-256 and the
-date index's (§2.7) before publishing it.
+`naip/inventory/<date>/<state>.jsonl.gz`, about 5 MB), the exclusion list's hash, the off-season
+list it ran with, the build it diffs against (`basedOn`, `--from-current`), and **one table of
+frames** by item id (acquisition date, gsd, `naip:year`, labeled state) holding every pick and every
+fallback, so the date index can date a fallback that shows without parsing its id. Per quarter-quad:
+its key, the states that list it, the pick (an item id in that table), the step that picked it
+(`leafOn` or `offSeason`), the fallback stack (ids in order), whether the pick covers its cell
+(`partial`), its cloud score, and the work tiles it touches. Per work tile (§2.2): its input hash,
+its cells, and whether this build cuts it (`retile`; `false` only for a `--from-current` work tile
+whose hash is unchanged, which the assembler copies). About 1.5–3 MB raw. The assembler adds the
+archive's and the date index's name, size and SHA-256 (§2.7) before publishing it. The types are
+`NaipManifest` in core's `naipManifest.ts`.
 
 The run's counts say how many cells picked by each step, how many fell back to October, how many
 items each exclusion dropped, and assert the rule's invariants on the whole catalog (every cell has
@@ -259,7 +266,11 @@ the raw COGs can't mosaic them. Instead:
    has pixels, its fallbacks wherever it doesn't. A state's flight that ends at a state line falls
    through to the other state's frame of the same cell.
 3. `gdal raster tile` over the mosaic, clipped to the work tile: WebP quality 80 (A06e's setting; the
-   scouts measured ~8–21 KB a 256-px land tile, under 1 KB water), `--skip-blank`, z11 to z18.
+   scouts measured ~8–21 KB a 256-px land tile, under 1 KB water), `--skip-blank`, pixel zooms z12
+   to z18. *Zooms in this doc are pixel zooms* (a 256-px tile's number at that resolution, D317's
+   terms). At G-2's 512-px tiles a tile's number is one less (core's `naipTileZoom`): a shard holds
+   tile zooms 11–17 (the work tile's own 512-px tile down to the deepest level), the archive's header
+   reads 7–17, and the work tile is the same z11 slippy cell either way.
 4. **What each frame supplied** (for the date index, D318): per cell the work tile touches, the
    number of pixels each frame of its stack supplies to the mosaic, counted on the z16 grid (about
    2.4 m a pixel at 44°N) from the frames' alphas in the stack's order — the pick's alpha first, each
@@ -267,7 +278,8 @@ the raw COGs can't mosaic them. Instead:
    not in the cell's dates.
 5. **Packed into a shard**: the tiles ordered by zoom and then by PMTiles tile id, with a small index
    (tile id, length, hash), uploaded to the private build prefix
-   `naip/build/<campaign>/shards/11/<x>/<y>.{pack,idx.json}` with a done record naming the work
+   `naip/build/<campaign>/shards/11/<x>/<y>.{pack,idx.json}` (a pilot's under
+   `naip/build/pilot/<name>/<campaign>/`) with a done record, `….done.json`, naming the work
    tile's input hash, the image digest, per-stage timings and step 4's per-cell counts — the
    manifest-per-frame record the cutter keeps (A06e's lesson: a run records the code that produced
    it).
@@ -304,7 +316,8 @@ reach.
 
 ### §2.3 — Overviews
 
-Zooms below the work tiles (z8–z10) are built from the shards' z11 tiles by the assembler (each
+Zooms below the work tiles (pixel zooms z8–z11, tile zooms 7–10 at 512 px, §2.2 step 3) are built
+from the shards' tile-zoom-11 tiles by the assembler (each
 level a quarter of the one above — a few hundred tiles in all). The floor is z8: the console
 is fenced to one body, and the widest body (Champlain) frames at about z9. Below z8 the aerial draws
 nothing and the basemap shows.
@@ -374,8 +387,8 @@ points at the same dated object. No prod copy is made.
   quilt is looked at before anyone else sees it.
 - **A viewer page** in the report: MapLibre over the archive's public URL, with the credit drawn by
   core's own date-range function (§4.2), so a pilot can be looked at before the console's swap exists.
-- **The report** lands in `.scratch/aerial/<campaign>/report/` (gitignored) and its counts in the
-  run row.
+- **The report** lands in `scripts/aerial/.scratch/<campaign>/report/` (gitignored; `keys.ts`'
+  `scratchPaths`) and its counts in the run row.
 
 **Publish** is by hand, the bathymetry way: set `VITE_NAIP_PMTILES_URL` in both local web checkouts
 and on Vercel (Preview and Production), redeploy; set `NAIP_MANIFEST_URL` on Convex dev (§3.3). The
@@ -462,8 +475,9 @@ draws the layer until its index has loaded.
 
 `scripts/aerial/run-aerial.sh` — a new package, `@skating/aerial`, beside `scripts/imagery` (whose
 Fly app it reuses, with its own image), shaped like `scripts/etl/run-corpus.sh`: it logs itself with
-timestamps to `.scratch/aerial/run-<campaign>.log`, refuses to be piped, and carries one campaign id
-across every stage.
+timestamps to `scripts/aerial/.scratch/run-<campaign>.log`, refuses to be piped, and carries one
+campaign id across every stage. Every stage CLI (`src/cli/<stage>.ts`) reads the same arguments
+through `stages.ts`' `parseStageArgs`, which takes `--flag value` and `--flag=value` alike.
 
 ```text
 run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
@@ -477,9 +491,15 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
   always applied to the whole catalog (a cell's pick can come from a neighboring state's flight), and
   then only cells in those states (or listed) whose stack differs from the current archive's are
   re-tiled. **`--from-current`** is the partial rebuild: diff against the current manifest, re-tile
-  the changed work tiles, copy the rest from the current archive (§2.4).
+  the changed work tiles, copy the rest from the current archive (§2.4). `--states` and `--cells`
+  together are refused (one narrowing at a time); `--cells` lists one key a line, `#` comments
+  allowed.
 - **`--pilot <name>`** writes under `dev/naip/pilot/<name>/…`, never touches the production key
-  names, and writes its run rows only to a local deployment (it refuses dev and prod).
+  names, and writes its run rows only to a local deployment (it refuses dev and prod). The flag and
+  the campaign go together: `--pilot` needs a `naip-pilot-<YYYYMMDD>` campaign and a pilot campaign
+  needs `--pilot`, so no key can put a pilot at the production names.
+- **`--old <key>`** belongs to `--stage cleanup` alone, which requires it and takes nothing else but
+  `--pilot` and `--dry-run`.
 
 ### §3.2 — What "on demand" honestly means
 
@@ -884,13 +904,19 @@ The briefs are §10; this is the roster.
 
 ### §7.4 — The pilot, then the region
 
-**The pilot** (the founder's area, F-3 a): Lake Champlain's north end — the VT/NY line, Vermont 2025
-at 0.3 m against New York 2024 at 0.6 m, Québec's edge, big water (~24 quarter-quads) — plus a strip
-straddling 72°W on the New Hampshire–Massachusetts line near Jaffrey and Winchendon (~16: the UTM zone
-seam and another state line), ~40 cells. Built end to end to dev's bucket under
-`dev/naip/pilot/<name>/…`, its run rows on a throwaway local backend (never dev), and looked at in the
-verify report's viewer page, its credit drawn by core's range. What it must show: a state line, the
+**The pilot** (the founder's area, F-3 a, widened by F-9 c): Lake Champlain's north end — the VT/NY
+line, Vermont 2025 at 0.3 m against New York 2024 at 0.6 m, Québec's edge, big water (~24
+quarter-quads) — plus a strip straddling 72°W on the New Hampshire–Massachusetts line near Jaffrey and
+Winchendon (~16: the UTM zone seam and another state line); plus a strip north of Rumford (~15: the six
+October cells of `NAIP_OFF_SEASON_CELLS`, their 2023 summer neighbors, and a few cells where ME 2023
+meets the ME 2018 fallback); plus a New York join where 2024 meets the 2019 fallback (~8). **~63
+cells** in all, the pilot named `champlain-nhma-me-ny`. Built end to end to dev's bucket under
+`dev/naip/pilot/champlain-nhma-me-ny/…`, its run rows on a throwaway local backend (never dev), and
+looked at in the verify report's viewer page, its credit drawn by core's range. What it must show: a
+state line, the
 72°W zone seam, a 0.3 m / 0.6 m join, a partial frame falling through, the Canadian border's edge, the
+six October cells in autumn color beside their summer neighbors, the ME 2023/2018 and NY 2024/2019
+year joins (the two Maine rulings the founder wanted to see before they are final, §5.5), the
 credit's range across a join, and the archive loading in about a second. What it measures: seconds
 per work tile, bytes per tile at each zoom (to firm §6.1), the date index's size, source bytes read,
 outbound transfer, the assembler's throughput. Pennies of spend, started only on the governor's go.
@@ -935,7 +961,7 @@ Stored data shaped for Machinery's imagery page, nothing else (§3.3). The Overv
 email are out of B05-2.
 
 **F-3 — The pilot area. Ruled: (a)** — Champlain's north end plus the NH–MA strip across 72°W, ~40
-cells (§7.4).
+cells (§7.4); widened by F-9 (c) to ~63.
 
 **F-4 — Dev only, or dev and prod, now. Ruled: (a)** — dev only; prod points at the same dated object
 at the cutover.
@@ -1002,9 +1028,9 @@ a throwaway local backend and dev gets rows from the full run on; (b) merge the 
 **G-9 — Splitting the archive by zoom band.** (a) One archive; (b) two or three by zoom band.
 **Settled: (a)** by D317 (z18 everywhere is one source).
 
-### New questions the rulings open (2026-11-25)
+### New questions the rulings opened (2026-11-25)
 
-**F-9 (open) — Should the pilot also show the October and older-summer cells?** You chose the pilot area
+**F-9 — Should the pilot also show the October and older-summer cells?** You chose the pilot area
 (Champlain's north end plus the NH–MA strip, ~40 cells), and you also said two Maine rulings are to be
 seen before they're final: the older summer frames that fill October-flown cells (*"let's see how it
 looks and re-address in the future"*), and the 2 October 2023 autumn frame for the six cells north of
@@ -1016,6 +1042,10 @@ all), so you see both rulings in the pilot; (c) (b) plus a New York join where 2
 fallback (~8 more). The extra cells cost pennies and add a few minutes. **Recommendation: (b)** — it
 puts both of the rulings you wanted to see in front of you before the expensive run, and a New York
 2019 join looks like any other year join.
+
+**Ruled: (c)** (the founder, 2026-11-25, through the governor) — the pilot is Champlain's north end,
+the NH–MA strip, the Maine strip north of Rumford (the six October cells, their 2023 summer neighbors,
+a few ME 2023/2018 cells) and a New York 2024/2019 join: ~63 cells (§7.4, §10.7).
 
 ---
 
@@ -1041,9 +1071,11 @@ Relied on from the scouts or from memory, not re-checked for this doc:
 - **Tools**: `gdal raster tile`'s tile-size option; `pmtiles verify` on a streamed archive;
   `rclone rcat` with 128 MiB parts.
 - **Which bucket** serves `VITE_IMAGERY_ARCHIVE_URL` publicly (G-6).
-- **The scouts' snapshot** (the inventory, the thumbnails' scores, `picks_T2.json`) lives in another
-  session's scratchpad, which a reboot can clear; S's fixture slice is cut from it, or from a fresh
-  catalog walk if it is gone (§10.4).
+- **The scouts' snapshot** (the inventory, the thumbnails' scores, `picks_T2.json`) was in another
+  session's scratchpad, which a reboot can clear; X copied the inventory, the picks and the scores
+  (13 MB, the thumbnails left behind) to the gitignored `scripts/aerial/.scratch/scouts/` on
+  2026-11-25 (§10.3). S's fixture slice is cut from that copy, or from a fresh catalog walk if it is
+  gone (§10.4).
 
 Checked for the design: the inventory's composition by state, year, gsd and month; the mislabeled
 Maine items (744, at 42.x°N, a `me_` prefix); the rule's picks re-run (identical to the scouts'); the
@@ -1085,7 +1117,9 @@ back by a file merge; disjoint territories keep the merges clean; builders never
   scratchpad (`…/03acff8b-d7f9-4a22-a2da-2ee61a619aa9/scratchpad/naip2/`, about 380 MB, the
   inventory 12 MB in `inv/`). X copies `inv/` and `picks_T2.json` into the package's gitignored
   `scripts/aerial/.scratch/scouts/` before anything else, so S's fixture doesn't depend on a
-  directory a reboot can clear. Never copy `tok.json` (a SAS token).
+  directory a reboot can clear. Never copy `tok.json` (a SAS token). *Done 2026-11-25:* `inv/`
+  (seven `<st>.jsonl`, 69,207 rows, and their walk logs), `picks_T2.json` and `cloudall.json` (the
+  scouts' per-pick thumbnail scores, 0.4 MB), 13 MB in all; the 380 MB of thumbnails stayed behind.
 
 ### §10.2 — Every brief begins with this
 
@@ -1157,14 +1191,17 @@ The invariants:
   - `naipSelection.ts`: `NaipCandidate` (item id, quarter-quad key, labeled state, acquisition date,
     gsd, `naip:year`, bbox), `NaipExclusion` (item id, `cloud` | `glare`, `reviewedBy: 'founder' |
     'builder'`, `reviewedOn`), `NaipCellPick` (key, pick, `step: 'leafOn' | 'offSeason'`, stack,
-    states), `NAIP_RULE_VERSION`, `selectNaipPicks(candidates, exclusions, offSeasonCells)`,
-    `diffNaipPicks(current, next)`.
+    states), `NAIP_RULE_VERSION`, `selectNaipPicks(candidates, exclusions, offSeasonCells)` →
+    `NaipSelection`, `diffNaipPicks(current: NaipManifest, next)` → `NaipPickDiff`.
   - `naipGrid.ts`: `quarterQuadCell(key)`, `quarterQuadAt(lat, lng)`, `quarterQuadsIn(bounds)`,
-    `workTilesOf(key)`, `NAIP_WORK_ZOOM = 11`, `NAIP_MIN_ZOOM = 8`, `NAIP_MAX_ZOOM = 18` (D317).
+    `workTilesOf(key)`, `NAIP_WORK_ZOOM = 11`, `NAIP_MIN_ZOOM = 8`, `NAIP_MAX_ZOOM = 18` (D317,
+    pixel zooms), `NAIP_TILE_SIZE = 512`, `naipTileZoom`, `WorkTile`, `workTileKey`,
+    `parseWorkTileKey`.
   - `naipManifest.ts`: `NaipManifest` (§2.1.3), `NaipCellIndex` and `NAIP_CELL_INDEX_VERSION = 1`
     (§2.7, the format verbatim), `parseNaipCellIndex(json, archiveName)`, `naipIndexUrl(archiveUrl)`,
-    `naipCreditRange(index, keys)` → `{ from: string; to: string } | null`,
-    `aerialRebuildCommand(campaign, options)`.
+    `naipCreditRange(index, keys)` → `{ from: string; to: string } | null` (`YYYY-MM-DD` days),
+    `formatNaipCreditRange(range)`, `AERIAL_STAGES`, `AerialRunOptions`,
+    `aerialRebuildCommand(campaign, options: AerialRunOptions)`.
   - `naipExclusions.ts`: `NAIP_EXCLUSIONS: readonly NaipExclusion[] = []` and
     `NAIP_OFF_SEASON_CELLS` — the six keys of §2.1, final (the founder's ruling).
 - **The run kinds' widen** (three lines each): `aerial_select`, `aerial_tiles`, `aerial_assemble` in
@@ -1193,14 +1230,74 @@ on every file touched.
 
 **Credentials:** none.
 
+**As built (X, 2026-11-25).** The files are the contract; this is the map, and where it differs
+from the snippets above, the files win. Core (all exported through `index.ts` already; S adds any
+further export in its own files with no `index.ts` edit, since every line there is `export *`):
+
+- `naipSelection.ts` — **built:** `NAIP_RULE_VERSION = 1`, `NAIP_STATES` (the seven) and
+  `NaipState`, `isNaipState`. **Types:** `NaipCandidate { itemId, key, state: NaipState, acquired:
+  'YYYY-MM-DD', gsd, year, bbox: [w, s, e, n] }`; `NaipExclusion { itemId, reason:
+  NaipExclusionReason, reviewedBy, reviewedOn }`; `NaipPickStep`; `NaipCellPick { key, pick, step,
+  stack (the fallbacks, pick excluded, next choice first), states }`. **Stubs:**
+  `selectNaipPicks(candidates, exclusions, offSeasonCells): NaipSelection` — *returns* `{ picks,
+  dropped: { coarse, outsideState, excluded }, offSeasonBeyondList }` rather than refusing, so the
+  select stage refuses on a non-empty `offSeasonBeyondList` and the July check reports it;
+  `diffNaipPicks(current: NaipManifest, next: readonly NaipCellPick[]): NaipPickDiff` (`cells:
+  NaipCellChange[]` with `from`/`to` `NaipFrameRef | null` and `stackOnly`; `states:
+  NaipStateChange[]` with `cells`, `newest`, `oldestReplaced`).
+- `naipGrid.ts` — **built:** `NAIP_WORK_ZOOM = 11`, `NAIP_MIN_ZOOM = 8`, `NAIP_MAX_ZOOM = 18` (pixel
+  zooms, §2.2 step 3), `NAIP_TILE_SIZE = 512` (G-2), `naipTileZoom(pixelZoom)` (pixel zoom → the
+  archive's 512-px tile number), `WorkTile { z, x, y }`, `workTileKey(tile)` → `11/<x>/<y>`,
+  `parseWorkTileKey(key)`. **Stubs:** `quarterQuadCell(key): BBox` (core's `BBox`, `minLat`…),
+  `quarterQuadAt(lat, lng): string`, `quarterQuadsIn(bounds: BBox): string[]`,
+  `workTilesOf(key): WorkTile[]`.
+- `naipManifest.ts` — **built:** `NAIP_ARCHIVE_SUFFIX`, `NAIP_INDEX_SUFFIX`, `NAIP_MANIFEST_SUFFIX`
+  (`keys.ts` and `naipIndexUrl` share them), `NAIP_MANIFEST_VERSION = 1`, `NAIP_CELL_INDEX_VERSION =
+  1`, `AERIAL_STAGES` and `AerialStage`, `AerialRunOptions` (the flags of §3.1 as optional fields).
+  **Types:** `NaipManifest` (§2.1.3 as amended: `frames` by item id, `basedOn`, per work tile
+  `retile`, `archive?`/`cellIndex?` as `NaipPublishedObject { name, bytes, sha256 }`),
+  `NaipManifestCell`, `NaipManifestWorkTile`, `NaipManifestFrame`, `NaipCellIndex` and
+  `NaipCellIndexFlight` (§2.7 verbatim). **Stubs:** `parseNaipCellIndex(json, archiveName)` (throws
+  on a refusal), `naipIndexUrl(archiveUrl)`, `naipCreditRange(index, keys: Iterable<string>):
+  NaipCreditRange | null` with `from`/`to` as `YYYY-MM-DD` days, **`formatNaipCreditRange(range)`**
+  (new: `Jun 2023` / `Jun 2021 – Aug 2023`, so W never formats a date itself), and
+  `aerialRebuildCommand(campaign, options: AerialRunOptions)`.
+- `naipExclusions.ts` — final: `NAIP_EXCLUSIONS = []`, `NAIP_OFF_SEASON_CELLS` (the six, checked
+  against the scouts' inventory: each has a `…_030_20231002_…` frame).
+
+`scripts/aerial/src/` (built, 100% covered):
+
+- `keys.ts` — `parseCampaign(id)` (`naip-<YYYYMMDD>` / `naip-pilot-<YYYYMMDD>`, a real day),
+  `isPilotName`, `archiveName` / `indexName` / `manifestName(campaign)`, `publishPrefix`,
+  `archiveKey`, `indexKey`, `manifestKey`, `buildPrefix` (a pilot's is
+  `naip/build/pilot/<name>/<campaign>/`), `buildManifestKey` (the select stage's manifest before
+  publish), `shardKeys(campaign, tile: WorkTile, pilot?)` → `{ pack, index, done }`
+  (`….pack`, `….idx.json`, `….done.json`), `parseArchiveKey(key)` (cleanup's `--old`),
+  `inventoryKey(walkedOn, state)`, `AERIAL_SCRATCH` and `scratchPaths(campaign, root?)` →
+  `{ dir, manifest, inventory, report, log }`. Every key function takes `(campaign, pilot?)` and
+  **throws on a pilot campaign without its name or a name on a production campaign**.
+- `stages.ts` — `parseStageArgs(argv, forStage?)` → `StageArgs` (every field present: `null` /
+  `false` when absent), throwing `StageArgsError`; a stage CLI passes its own stage as `forStage`.
+  `AERIAL_USAGE`, `ALL_STAGES`, `stagesToRun(stage)`, `stageArgsToOptions(args)` (→ core's
+  `AerialRunOptions`, for `aerialRebuildCommand`), `parseCellList(text)` (the `--cells` file).
+- `shard.ts` — `SHARD_TILE_ZOOMS` (`{ min: 11, max: 17 }`, tile zooms), `ShardIndexEntry { tileId,
+  offset, length, sha256 }` (the brief's three plus the offset), `ShardIndex { version, workTile,
+  entries }`, `ShardCellCounts`, `ShardDone { version, campaign, workTile, inputHash, image (pinned
+  `…@sha256:…`), tiles, bytes, packSha256, timings: Record<step, ms>, cellCounts, finishedAt }`,
+  `checkShardIndex(json, packBytes?)`, `parseShardDone(json)`, `tileInWorkTile(tileId, tile)`,
+  `shardLanded(done | null, { campaign, workTile, inputHash })`.
+- The stage CLIs are `src/cli/<stage>.ts` (`select`, `tiles`, `assemble`, `verify`, `cleanup`), each
+  a `pnpm --filter @skating/aerial <stage>` script and excluded from coverage by name, as is P's one
+  process boundary, `src/assemble/upload.ts` (the `rclone rcat` stream).
+
 ### §10.4 — S: selection
 
 **Owns:** `packages/core/src/naipSelection.ts`, `naipGrid.ts`, `naipManifest.ts` (replacing X's
 stubs), `naipExclusions.ts` (the entries, once reviewed), `naipCatalog.ts` (new: the Planetary
 Computer STAC walk by POST paging and the anonymous SAS token, `fetch` injected — beside
 `stacSearch.ts`, which the live winter poll shares and S does not edit), their tests, and the fixture
-`packages/core/src/fixtures/naipInventory.jsonl`; in `scripts/aerial/src/`: `select.ts` (the stage
-CLI), `catalog*.ts` (the CLI side of the walk and the inventory archive), `score*.ts` (thumbnail
+`packages/core/src/fixtures/naipInventory.jsonl`; in `scripts/aerial/src/`: `cli/select.ts` (the
+stage CLI, `parseStageArgs(argv, 'select')`), `catalog*.ts` (the CLI side of the walk and the inventory archive), `score*.ts` (thumbnail
 scoring and the contact sheet), their tests.
 
 **Builds:** the rule of §2.1 exactly — the five steps, the envelope drop (§2.1.1), the exclusions
@@ -1209,7 +1306,7 @@ fallback stacks; the grid; the input hash per work tile (a stable hash of the st
 version and the image's inputs); `diffNaipPicks`; the date-index helpers (`parseNaipCellIndex`,
 which refuses another archive's index or an entry with no flight; `naipIndexUrl`;
 `naipCreditRange`); `aerialRebuildCommand`. The select stage: the walk over the seven states, the
-inventory archived to `.scratch/aerial/<campaign>/inventory/` (the private bucket's copy is the full
+inventory archived to `scripts/aerial/.scratch/<campaign>/inventory/` (the private bucket's copy is the full
 run's, by the governor's executor), the scores, the manifest, the run row (`aerial_select`, scope per
 §2.6, heartbeat per state) through `RunLogger`, its counts and the whole-catalog invariants of
 §2.1.3. The scoring step decodes thumbnails with GDAL (`gdal raster info --stats`, or a small helper
@@ -1255,8 +1352,9 @@ the same pinned GDAL base, rclone, `pmtiles`, Node 26 for P's assembler; entrypo
 and `assemble-aerial`), `scripts/aerial/fly.toml` only if `fly deploy --build-only` needs its own,
 `scripts/aerial/README.md` (the runbook: the six ways to get Fly wrong, carried from the imagery
 README; the stages; the pilot; publish and cleanup), `scripts/aerial/src/tiles*.ts` (the work units
-from the manifest, the input hashes compared, the reconcile by done record), `scripts/aerial/proofs/`
-(the warp proof), their tests.
+from the manifest, the input hashes compared, the reconcile by done record — `shard.ts`'
+`shardLanded`, never presence), `scripts/aerial/src/cli/tiles.ts` (the stage CLI),
+`scripts/aerial/proofs/` (the warp proof), their tests.
 
 **First task — G-6, before anything that writes:** find which bucket serves
 `VITE_IMAGERY_ARCHIVE_URL` publicly and whether the Fly app's staged R2 token can write there, **by
@@ -1306,7 +1404,9 @@ directories, leaf splitting, clustered layout, dedupe by hash, copy-from-old by 
 `rclone rcat` stream with 128 MiB parts, SHA-256 as it passes; and the date-index writer, §2.7),
 `scripts/aerial/src/verify*.ts` (§2.5, every check), `scripts/aerial/src/cleanup*.ts` (§2.5's
 refusals), `scripts/aerial/src/viewer/` (the report's viewer page: MapLibre over the public URL,
-the credit from core's `naipCreditRange`), their tests. How the assembler ships in T's image (a
+the credit from core's `naipCreditRange`), the stage CLIs `scripts/aerial/src/cli/{assemble,verify,
+cleanup}.ts`, their tests. The `rclone rcat` boundary lives in `src/assemble/upload.ts`, the one
+file X's `vitest.config.ts` already excludes for it. How the assembler ships in T's image (a
 bundled `.mjs`, or `tsx`) is P's call, agreed with T by a seam request; the entrypoint script itself
 is T's.
 
@@ -1346,9 +1446,9 @@ go:
 1. **A throwaway local backend** with the branch's Convex (the widen), per CLAUDE.md — never dev,
    never prod; `run-aerial.sh --pilot` refuses any other target.
 2. **The image** pushed under its own label (T's gated step); its digest pinned for the run.
-3. **The pilot**: `run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain-nhma --cells <the ~40 cells,
-   or ~55 if the founder takes F-9 (b)> --stage all` → select, tiles, assemble, verify, under
-   `dev/naip/pilot/champlain-nhma/`.
+3. **The pilot**: `run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain-nhma-me-ny --cells <the ~63
+   cells of F-9 (c), §7.4> --stage all` → select, tiles, assemble, verify, under
+   `dev/naip/pilot/champlain-nhma-me-ny/`.
 4. **The look**: the verify report and its viewer page to the founder through the governor (the
    joins of §7.4, the credit's range across them).
 5. **The numbers** (§7.4's list) into *What the build found (B05)*.
@@ -1388,4 +1488,20 @@ The same invariants (§10.2). Written in full when the pilot is in; the shape no
 
 ## What the build found (B05)
 
-*Empty until the build starts.*
+**T0, the seams (X, 2026-11-25).**
+
+- **The scouts' inventory rows** carry `id`, `dt`, `gsd`, `y` (a string), `c` (center) and `bbox` —
+  **no `naip:state`**; the labeled state is the id's prefix (`vt_m_…`) or the per-state query the
+  walk made. S's compact candidate decodes it either way.
+- **Item ids can carry a second date**, the processing day: `me_m_4407028_ne_19_030_20231002_20240103`
+  was flown 2 October 2023. Verify's *"every flight's date … matches its item id's"* (§2.5) reads the
+  **first** date; a parser that takes the last would misdate every reprocessed frame.
+- **The six off-season cells** each hold a `…_030_20231002_…` frame (0.3 m) and 0.6 m October frames
+  of 2018 and 2021, with summer frames only at 1 m (2011, 2013, 2015) — as §2.1 says.
+- **Zooms.** At G-2's 512-px tiles, the doc's pixel zooms and the archive's tile numbers differ by
+  one (§2.2 step 3): shards hold tile zooms 11–17, the assembler builds 7–10. Core's
+  `naipTileZoom` and `shard.ts`' `SHARD_TILE_ZOOMS` hold that in one place.
+- **Codegen.** `pnpm --filter @skating/convex codegen` is the offline stand-in, whose output differs
+  from the CLI's by template; after the widen it produced the same module set as the committed
+  `_generated`, which was restored unchanged. The widen adds validator members only, so nothing in
+  `_generated` moves; CI's `convex dev --once` step is the real check.
