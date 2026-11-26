@@ -8,7 +8,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { isFailed, loaded, read, useConsoleReads } from '@/components/admin/reads/consoleReads';
 import { sayRefusal } from '@/components/admin/said';
 import type { BBoxLike } from '@/lib/mapSurface';
-import { ASK_ALREADY_CLOSED } from '../../consoleWords';
+import { askClosedLine } from '../../consoleWords';
 import { returnPathOf, validateBodySearch } from '../../frame/bodySearch';
 import { type MapToolClaim, useClaimMapTool } from '../../frame/mapTool';
 import { heldEngine, useTaskDraft } from '../../frame/taskDraft';
@@ -282,10 +282,8 @@ export function useBayTask({
                 (answer) => ({
                   title,
                   target: subArea(answer.subAreaId),
-                  ...(answer.request === 'already_decided'
-                    ? {
-                        description: ASK_ALREADY_CLOSED,
-                      }
+                  ...(askClosedLine(answer.request)
+                    ? { description: askClosedLine(answer.request) }
                     : {}),
                 }),
               )
@@ -299,8 +297,8 @@ export function useBayTask({
                 (answer) => ({
                   title,
                   target: subArea(answer.subAreaId),
-                  ...(answer.request === 'already_decided'
-                    ? { description: ASK_ALREADY_CLOSED }
+                  ...(askClosedLine(answer.request)
+                    ? { description: askClosedLine(answer.request) }
                     : {}),
                 }),
               );

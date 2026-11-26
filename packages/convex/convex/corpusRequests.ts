@@ -816,7 +816,8 @@ export const decline = mutation({
 export const closeSiblings = internalMutation({
   args: decisionArgs,
   handler: async (ctx, decision) => {
-    const request = await ctx.db.get(decision.requestId);
+    // The group's question: the primary's own, or the closed ask a save answered in its stead.
+    const request = await ctx.db.get(decision.groupOfRequestId ?? decision.requestId);
     if (!request) return;
     // The same act, in another transaction: written under the undo and `via` its first page had.
     await asContinuationOf(ctx, { undoOf: decision.undoOf, via: decision.via }, () =>
