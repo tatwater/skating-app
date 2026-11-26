@@ -8,6 +8,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { isFailed, loaded, read, useConsoleReads } from '@/components/admin/reads/consoleReads';
 import { sayRefusal } from '@/components/admin/said';
 import type { BBoxLike } from '@/lib/mapSurface';
+import { ASK_ALREADY_CLOSED } from '../../consoleWords';
 import { returnPathOf, validateBodySearch } from '../../frame/bodySearch';
 import { type MapToolClaim, useClaimMapTool } from '../../frame/mapTool';
 import { heldEngine, useTaskDraft } from '../../frame/taskDraft';
@@ -283,18 +284,25 @@ export function useBayTask({
                   target: subArea(answer.subAreaId),
                   ...(answer.request === 'already_decided'
                     ? {
-                        description: 'The ask was answered elsewhere first, and keeps that answer.',
+                        description: ASK_ALREADY_CLOSED,
                       }
                     : {}),
                 }),
               )
             : await act(
                 async () => {
-                  const id = await create({ ...common, polygon: d.shape as never });
-                  savedId = id;
-                  return id;
+                  const answer = await create({ ...common, polygon: d.shape as never });
+                  savedId = answer.subAreaId;
+                  return answer;
                 },
-                (id) => ({ title, target: subArea(id) }),
+                // As the chord's: an ask decided elsewhere meanwhile keeps its answer, and says so.
+                (answer) => ({
+                  title,
+                  target: subArea(answer.subAreaId),
+                  ...(answer.request === 'already_decided'
+                    ? { description: ASK_ALREADY_CLOSED }
+                    : {}),
+                }),
               );
       } else if (t.kind === 'redraw') {
         savedId = t.subAreaId;

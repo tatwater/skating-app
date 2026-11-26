@@ -2977,7 +2977,11 @@ export default defineSchema({
     .index('by_created_at', ['createdAt'])
     .index('by_idempotency_key', ['idempotencyKey']) // offline-flush dedup (Phase 02a §6.2/D30)
     // The Post's Reports, in the Post's own `reportIds` order (A10). `eq()` only — see `postId`.
-    .index('by_post', ['postId']),
+    .index('by_post', ['postId'])
+    // Whether any report names a put-in: a put-in placed by hand is removed by its undo only while
+    // nothing hangs off it, and a report filed from it counts (B01-6b, D313). `eq()` only: the
+    // field is optional, and an index on it is not sparse.
+    .index('by_put_in', ['putInId']),
 
   /**
    * **A Post: the narrative, the photo set, the ordering, and one or more Reports** (A10 / D186).

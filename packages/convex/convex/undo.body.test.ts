@@ -598,12 +598,14 @@ describe('undo: sub-areas (D226)', () => {
     const author = await seedUser(t, 'author');
     const lake = await seedBody(t);
     const report = await seedReport(t, lake, author.id, { lat: 44.38, lng: -73.05 });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: lake,
-      name: 'Malletts Bay',
-      aliases: ['Mallets Bay'],
-      polygon: BAY,
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: lake,
+        name: 'Malletts Bay',
+        aliases: ['Mallets Bay'],
+        polygon: BAY,
+      })
+    ).subAreaId;
     await settle(t);
     return { mod, lake, report, bay };
   }
@@ -740,13 +742,15 @@ describe('undo: landmarks (D226)', () => {
   async function seedLandmark(t: T) {
     const mod = await seedUser(t, 'mod', 'moderator');
     const lake = await seedBody(t);
-    const landmark = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: lake,
-      name: 'Gull Island',
-      kind: 'island',
-      point: { lat: 44.6, lng: -73.1 },
-      aliases: ['Gull Rock'],
-    });
+    const landmark = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: lake,
+        name: 'Gull Island',
+        kind: 'island',
+        point: { lat: 44.6, lng: -73.1 },
+        aliases: ['Gull Rock'],
+      })
+    ).landmarkId;
     return { mod, lake, landmark };
   }
   const landmarkRow = (t: T, id: Id<'bodyLandmarks'>) => t.run((ctx) => ctx.db.get(id));
@@ -833,9 +837,11 @@ describe('undo: a landmark restore undoes to the retirement it cleared', () => {
     const loser = await seedBody(t, 'Champlain (dup)');
     // The survivor's twin was removed by a person, so the merge folds the moved label into that
     // removal — and a restore of the folded row isn't refused as a duplicate of a live twin.
-    const twin = await mod.as.mutation(api.landmarks.create, { waterBodyId: survivor, ...GULL });
+    const twin = (await mod.as.mutation(api.landmarks.create, { waterBodyId: survivor, ...GULL }))
+      .landmarkId;
     await mod.as.mutation(api.landmarks.remove, { landmarkId: twin, reason: 'a buoy' });
-    const moved = await mod.as.mutation(api.landmarks.create, { waterBodyId: loser, ...GULL });
+    const moved = (await mod.as.mutation(api.landmarks.create, { waterBodyId: loser, ...GULL }))
+      .landmarkId;
     await mod.as.mutation(api.waterBodies.merge, { survivorId: survivor, loserId: loser });
 
     const fold = await newestOn(t, 'bodyLandmark', moved);
@@ -900,7 +906,8 @@ describe('undo: a landmark restore undoes to the retirement it cleared', () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const lake = await seedBody(t);
-    const id = await mod.as.mutation(api.landmarks.create, { waterBodyId: lake, ...GULL });
+    const id = (await mod.as.mutation(api.landmarks.create, { waterBodyId: lake, ...GULL }))
+      .landmarkId;
     await mod.as.mutation(api.landmarks.remove, { landmarkId: id, reason: 'a buoy' });
     // Removed a while ago, so a re-removal stamped "now" can't pass for the original.
     await t.run((ctx) => ctx.db.patch(id, { removedAt: Date.now() - 3_600_000 }));
@@ -920,7 +927,8 @@ describe('undo: a landmark restore undoes to the retirement it cleared', () => {
     const t = harness();
     const mod = await seedUser(t, 'mod', 'moderator');
     const lake = await seedBody(t);
-    const id = await mod.as.mutation(api.landmarks.create, { waterBodyId: lake, ...GULL });
+    const id = (await mod.as.mutation(api.landmarks.create, { waterBodyId: lake, ...GULL }))
+      .landmarkId;
     const legacy = await legacyRow(t, mod.id, 'restore', 'bodyLandmark', id);
     await expect(mod.as.mutation(api.undo.run, { actionId: legacy, reason: 'x' })).rejects.toThrow(
       /before undo existed/i,
@@ -939,17 +947,21 @@ describe('a body merge records its change set (D226)', () => {
     const survivor = await seedBody(t, 'Lake Champlain');
     const loser = await seedBody(t, 'Champlain (dup)');
     const reportId = await seedReport(t, loser, fan.id, { lat: 44.5, lng: -73.0 });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: loser,
-      name: 'Malletts Bay',
-      polygon: rect(-73.2, 44.2, -73.0, 44.4),
-    });
-    const landmark = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: loser,
-      name: 'Gull Island',
-      kind: 'island',
-      point: { lat: 44.6, lng: -73.1 },
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: loser,
+        name: 'Malletts Bay',
+        polygon: rect(-73.2, 44.2, -73.0, 44.4),
+      })
+    ).subAreaId;
+    const landmark = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: loser,
+        name: 'Gull Island',
+        kind: 'island',
+        point: { lat: 44.6, lng: -73.1 },
+      })
+    ).landmarkId;
     const { dupFav, soloFav } = await t.run(async (ctx) => {
       const now = Date.now();
       await ctx.db.insert('waterBodyFavorites', {

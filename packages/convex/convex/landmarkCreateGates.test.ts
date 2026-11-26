@@ -186,15 +186,40 @@ describe('landmarks.create, placing an ask', () => {
       point: { lat: 44.5, lng: -73.0 },
       corpusNameId: placeName,
     });
-    await as.mutation(api.landmarks.create, {
+    const answer = await as.mutation(api.landmarks.create, {
       waterBodyId: body,
       name: 'Long Point',
       kind: 'point',
       point: { lat: 44.4, lng: -73.1 },
       requestId: request,
     });
+    expect(answer.request).toBe('approved');
     expect(await landmarkCount(t)).toBe(2);
     expect((await t.run((ctx) => ctx.db.get(placeName)))?.status).toBe('placed');
     expect((await t.run((ctx) => ctx.db.get(request)))?.status).toBe('approved');
+  });
+
+  test('an ask decided elsewhere meanwhile keeps its answer, and the create says so', async () => {
+    const { t, as, body, request } = await seed();
+    await t.run((ctx) => ctx.db.patch(request, { status: 'declined' }));
+    const answer = await as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Long Point',
+      kind: 'point',
+      point: { lat: 44.4, lng: -73.1 },
+      requestId: request,
+    });
+    expect(answer).toEqual({ landmarkId: expect.any(String), request: 'already_decided' });
+    expect(await landmarkCount(t)).toBe(1);
+    expect((await t.run((ctx) => ctx.db.get(request)))?.status).toBe('declined');
+    // With no ask behind it, there's no outcome to say.
+    expect(
+      await as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Fishing Rock',
+        kind: 'point',
+        point: { lat: 44.6, lng: -72.9 },
+      }),
+    ).toEqual({ landmarkId: expect.any(String) });
   });
 });

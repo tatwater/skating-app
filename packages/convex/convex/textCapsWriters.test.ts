@@ -154,11 +154,13 @@ describe('a moderator’s name or URL past its cap is refused, plainly', () => {
     const t = harness();
     const mod = await admin(t);
     const id = await body(t);
-    const bayId = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: id,
-      name: 'North Arm',
-      polygon: SQUARE,
-    });
+    const bayId = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: id,
+        name: 'North Arm',
+        polygon: SQUARE,
+      })
+    ).subAreaId;
     // Written before the caps.
     const stored = long(MAX_PLACE_NAME_CHARS + 50);
     await t.run((ctx) => ctx.db.patch(bayId, { name: stored }));
@@ -343,11 +345,13 @@ describe('no writer of free text produces audit metadata past its bound', () => 
     const t = harness();
     const mod = await admin(t);
     const id = await body(t, 'way/1', '');
-    const bayId = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: id,
-      name: 'North Arm',
-      polygon: SQUARE,
-    });
+    const bayId = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: id,
+        name: 'North Arm',
+        polygon: SQUARE,
+      })
+    ).subAreaId;
     const writes = fc.oneof(
       fc
         .array(text(MAX_MODERATOR_ALIAS_CHARS), { maxLength: MAX_MODERATOR_ALIASES + 2 })

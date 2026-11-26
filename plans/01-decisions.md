@@ -9412,6 +9412,8 @@ and Co15–Co18.
   ~2,000, so the reason doesn't reach it. A link's undo restores only which lot, and re-walks.
 - **Placing has an undo, every one (D226).** A put-in placed by hand is removed by its undo. A lot
   placed by hand is deleted with its lake links by its undo, refused once a put-in links to it.
+  *After the merge (founder, 2026-11-25):* a skater's report naming the put-in counts as a use, so
+  its undo is refused as a photo or an access alert of it refuses it (`reports.by_put_in`).
 - **A known feature is drawn as any of its three shapes**: a polygon, a point with a radius, a line
   with a width, and each is redrawn the same way. `bodyFeatures.create` checks the shape as
   `updateShape` does (on the lake, under the position cap).

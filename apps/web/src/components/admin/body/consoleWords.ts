@@ -133,3 +133,12 @@ export const AERIAL_LOAD_WORDS = {
   retry: 'Try again',
   retrying: 'Trying again…',
 } as const;
+
+// ── An ask decided meanwhile (B01-6b follow-up) ──────────────────────────────────────────────────
+
+/**
+ * A bay or landmark saved for a skater's ask that was closed while it was being drawn: decided by
+ * someone else, or retracted by the skater. The shape is saved and the ask keeps how it was closed,
+ * so the receipt mustn't say this save answered it, nor that anyone did.
+ */
+export const ASK_ALREADY_CLOSED = 'That ask was already closed, so this didn’t answer it.';

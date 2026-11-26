@@ -251,13 +251,15 @@ describe('landmarks.importBatch', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const held = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Gull Rock',
-      kind: 'other',
-      point: { lat: 44.3, lng: -73.2 },
-      aliases: ['the gull'],
-    });
+    const held = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Gull Rock',
+        kind: 'other',
+        point: { lat: 44.3, lng: -73.2 },
+        aliases: ['the gull'],
+      })
+    ).landmarkId;
     const run = (aliases: string[]) =>
       importFor(t, {
         waterBodyId: body,
@@ -306,18 +308,22 @@ describe('landmarks.importBatch', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const kept = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Bird Poop Rock',
-      kind: 'other',
-      point: { lat: 44.3, lng: -73.2 },
-    });
-    const gone = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Old Pier',
-      kind: 'other',
-      point: { lat: 44.2, lng: -73.1 },
-    });
+    const kept = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Bird Poop Rock',
+        kind: 'other',
+        point: { lat: 44.3, lng: -73.2 },
+      })
+    ).landmarkId;
+    const gone = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Old Pier',
+        kind: 'other',
+        point: { lat: 44.2, lng: -73.1 },
+      })
+    ).landmarkId;
     await mod.as.mutation(api.landmarks.remove, { landmarkId: gone });
 
     const counts = await importFor(t, {
@@ -504,13 +510,15 @@ describe('a moderator’s hand', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: '  Bird   Poop Rock ',
-      kind: 'other',
-      point: { lat: 44.3, lng: -73.2 },
-      aliases: ['bird poop rock', 'the poop rock'],
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: '  Bird   Poop Rock ',
+        kind: 'other',
+        point: { lat: 44.3, lng: -73.2 },
+        aliases: ['bird poop rock', 'the poop rock'],
+      })
+    ).landmarkId;
     let row = await t.run((ctx) => ctx.db.get(id));
     // Whitespace collapsed; the alias that only re-spells the name dropped.
     expect(row).toMatchObject({
@@ -583,7 +591,7 @@ describe('a moderator’s hand', () => {
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     const args = { waterBodyId: body, name: 'Gull Rock', kind: 'island' as const, point: ISLAND };
-    const first = await mod.as.mutation(api.landmarks.create, args);
+    const first = (await mod.as.mutation(api.landmarks.create, args)).landmarkId;
     await mod.as.mutation(api.landmarks.remove, { landmarkId: first });
     await mod.as.mutation(api.landmarks.create, args);
     await expect(mod.as.mutation(api.landmarks.restore, { landmarkId: first })).rejects.toThrow(
@@ -597,19 +605,23 @@ describe('landmarks and bays', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Gull Island',
-      kind: 'island',
-      point: ISLAND,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Gull Island',
+        kind: 'island',
+        point: ISLAND,
+      })
+    ).landmarkId;
     expect((await t.run((ctx) => ctx.db.get(id)))?.subAreaId).toBeUndefined();
 
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Northeast Bay',
-      polygon: { type: 'Polygon', coordinates: [rect(-72.9, 44.6, -72.5, 45.0)] },
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Northeast Bay',
+        polygon: { type: 'Polygon', coordinates: [rect(-72.9, 44.6, -72.5, 45.0)] },
+      })
+    ).subAreaId;
     await settle(t);
     expect((await t.run((ctx) => ctx.db.get(id)))?.subAreaId).toBe(bay);
   });
@@ -618,25 +630,31 @@ describe('landmarks and bays', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Kingsland Bay',
-      kind: 'bay',
-      point: { lat: 44.03, lng: -73.47 },
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Kingsland Bay',
+        kind: 'bay',
+        point: { lat: 44.03, lng: -73.47 },
+      })
+    ).landmarkId;
     // The same name at the far end of the lake is another place, and stays.
-    const far = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Kingsland Bay',
-      kind: 'bay',
-      point: { lat: 44.9, lng: -72.6 },
-    });
-    const other = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Gull Island',
-      kind: 'island',
-      point: ISLAND,
-    });
+    const far = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Kingsland Bay',
+        kind: 'bay',
+        point: { lat: 44.9, lng: -72.6 },
+      })
+    ).landmarkId;
+    const other = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Gull Island',
+        kind: 'island',
+        point: ISLAND,
+      })
+    ).landmarkId;
     await mod.as.mutation(api.subAreas.createFromChord, {
       waterBodyId: body,
       name: 'Kingsland Bay',
@@ -660,17 +678,21 @@ describe('landmarks and bays', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Mud Bay',
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
-    });
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Kingsland Bay',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Mud Bay',
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+      })
+    ).subAreaId;
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Kingsland Bay',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
     await mod.as.mutation(api.subAreas.rename, { subAreaId: bay, name: 'Kingsland Bay' });
     expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
     await expect(
@@ -682,12 +704,14 @@ describe('landmarks and bays', () => {
       }),
     ).rejects.toThrow(/is a bay on this lake/);
     // The same name across the lake is another place — the one rule the retirement also reads.
-    const far = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'kingsland bay',
-      kind: 'other',
-      point: { lat: 44.9, lng: -72.6 },
-    });
+    const far = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'kingsland bay',
+        kind: 'other',
+        point: { lat: 44.9, lng: -72.6 },
+      })
+    ).landmarkId;
     await mod.as.mutation(api.landmarks.update, { landmarkId: far, kind: 'bay' });
   });
 
@@ -695,18 +719,22 @@ describe('landmarks and bays', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Kingsland Bay',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Kingsland Bay',
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
-      promoteLandmarkId: id,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Kingsland Bay',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Kingsland Bay',
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+        promoteLandmarkId: id,
+      })
+    ).subAreaId;
     expect((await t.run((ctx) => ctx.db.get(id)))?.removedAt).toBeDefined();
     const audits = await t.run((ctx) =>
       ctx.db
@@ -741,18 +769,22 @@ describe('landmarks and bays', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Shaker Cove',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Shaker Cove',
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
-      promoteLandmarkId: id,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Shaker Cove',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Shaker Cove',
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+        promoteLandmarkId: id,
+      })
+    ).subAreaId;
     vi.advanceTimersByTime(1_000);
     await mod.as.mutation(api.undo.run, { actionId: await createRow(t, bay) });
     expect((await t.run((ctx) => ctx.db.get(bay)))?.removedAt).toBeDefined();
@@ -773,18 +805,22 @@ describe('landmarks and bays', () => {
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     // Drawn under another name, so nothing but the promotion ties the two.
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Shaker Cove',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Shaker Bay',
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
-      promoteLandmarkId: id,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Shaker Cove',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Shaker Bay',
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+        promoteLandmarkId: id,
+      })
+    ).subAreaId;
     const newestOnBay = async () => {
       const rows = await t.run((ctx) =>
         ctx.db
@@ -819,18 +855,22 @@ describe('landmarks and bays', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Shaker Cove',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Shaker Bay',
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
-      promoteLandmarkId: id,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Shaker Cove',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Shaker Bay',
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+        promoteLandmarkId: id,
+      })
+    ).subAreaId;
     vi.advanceTimersByTime(1_000);
     await mod.as.mutation(api.undo.run, { actionId: await createRow(t, bay) });
     vi.advanceTimersByTime(1_000);
@@ -843,24 +883,30 @@ describe('landmarks and bays', () => {
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
     // Both on the bay's water and named by it: the insert retires them by name, no promotion asked.
-    const named = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Mud Bay',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
-    const alias = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Muddy Bay',
-      kind: 'bay',
-      point: { lat: 44.25, lng: -73.25 },
-    });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Mud Bay',
-      aliases: ['Muddy Bay'],
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
-    });
+    const named = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Mud Bay',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
+    const alias = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Muddy Bay',
+        kind: 'bay',
+        point: { lat: 44.25, lng: -73.25 },
+      })
+    ).landmarkId;
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Mud Bay',
+        aliases: ['Muddy Bay'],
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+      })
+    ).subAreaId;
     expect((await t.run((ctx) => ctx.db.get(named)))?.removedAt).toBeDefined();
     // A person removes "Muddy Bay" outright since: its newest row is no longer the bay's.
     vi.advanceTimersByTime(1_000);
@@ -884,18 +930,22 @@ describe('landmarks and bays', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Gull Cove',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Gull Cove',
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
-      promoteLandmarkId: id,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Gull Cove',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Gull Cove',
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.2, 44.3)] },
+        promoteLandmarkId: id,
+      })
+    ).subAreaId;
     // A second bay over the same water comes to answer to the landmark's name too (patched in: the
     // create refuses a name a live bay holds).
     vi.advanceTimersByTime(1_000);
@@ -919,12 +969,14 @@ describe('landmarks and bays', () => {
     const body = await seedBody(t);
     const other = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: other,
-      name: 'Kingsland Bay',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: other,
+        name: 'Kingsland Bay',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
     await expect(
       mod.as.mutation(api.subAreas.create, {
         waterBodyId: body,
@@ -1015,12 +1067,14 @@ describe('a run that stops placing a landmark (catalog drops)', () => {
     const butler = rows.find((r) => r.name === 'Butler Island')?._id as Id<'bodyLandmarks'>;
     await mod.as.mutation(api.landmarks.update, { landmarkId: gull, aliases: ['Gull Isle'] });
     await mod.as.mutation(api.landmarks.remove, { landmarkId: butler });
-    const handMade = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Sea Caves',
-      kind: 'other',
-      point: { lat: 44.3, lng: -73.1 },
-    });
+    const handMade = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Sea Caves',
+        kind: 'other',
+        point: { lat: 44.3, lng: -73.1 },
+      })
+    ).landmarkId;
 
     const empty = await importFor(t, {
       waterBodyId: body,
@@ -1133,12 +1187,14 @@ describe('what a drop must not do (self-review)', () => {
     const mod = await seedUser(t, 'mod', 'moderator');
     await importFor(t, { waterBodyId: body, landmarks: [A, B], dryRun: false });
     await importFor(t, { waterBodyId: body, landmarks: [A], complete: true, dryRun: false });
-    const handMade = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Butler Island',
-      kind: 'island',
-      point: { lat: 44.5001, lng: -73.2 },
-    });
+    const handMade = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Butler Island',
+        kind: 'island',
+        point: { lat: 44.5001, lng: -73.2 },
+      })
+    ).landmarkId;
     const counts = await importFor(t, {
       waterBodyId: body,
       landmarks: [A, B],
@@ -1240,13 +1296,15 @@ describe('a bay and a landmark’s aliases', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Ferris Bay',
-      aliases: ['Kingsland Bay'],
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Ferris Bay',
+        aliases: ['Kingsland Bay'],
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
     await mod.as.mutation(api.subAreas.create, {
       waterBodyId: body,
       name: 'Kingsland Bay',
@@ -1736,12 +1794,14 @@ describe('a merge never overrides a moderator’s call (Greptile, third round)',
     const survivor = await seedBody(t);
     const loser = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: survivor,
-      name: 'Gull Island',
-      kind: 'other',
-      point: ISLAND,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: survivor,
+        name: 'Gull Island',
+        kind: 'other',
+        point: ISLAND,
+      })
+    ).landmarkId;
     await importFor(t, {
       waterBodyId: loser,
       landmarks: [imported('Gull Island', ISLAND, { externalIds: ['osm:way/1'], areaSqM: 42_000 })],
@@ -1812,12 +1872,14 @@ describe('the review of the third round', () => {
         point: ISLAND,
       }),
     ).rejects.toThrow(/not on the map/);
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Bird Poop Rock',
-      kind: 'other',
-      point: ISLAND,
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Bird Poop Rock',
+        kind: 'other',
+        point: ISLAND,
+      })
+    ).landmarkId;
     await mod.as.mutation(api.landmarks.remove, { landmarkId: id });
     await t.run((ctx) => ctx.db.patch(id, { waterBodyId: merged }));
     await expect(mod.as.mutation(api.landmarks.restore, { landmarkId: id })).rejects.toThrow(
@@ -1829,18 +1891,22 @@ describe('the review of the third round', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const bay = await mod.as.mutation(api.subAreas.create, {
-      waterBodyId: body,
-      name: 'Kingsland Bay',
-      polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.35, 44.15)] },
-    });
+    const bay = (
+      await mod.as.mutation(api.subAreas.create, {
+        waterBodyId: body,
+        name: 'Kingsland Bay',
+        polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.35, 44.15)] },
+      })
+    ).subAreaId;
     // 7 km east of the bay: another place, until the bay is drawn over it.
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Kingsland Bay',
-      kind: 'bay',
-      point: { lat: 44.125, lng: -73.27 },
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Kingsland Bay',
+        kind: 'bay',
+        point: { lat: 44.125, lng: -73.27 },
+      })
+    ).landmarkId;
     await mod.as.mutation(api.subAreas.redraw, {
       subAreaId: bay,
       polygon: { type: 'Polygon', coordinates: [rect(-73.4, 44.1, -73.25, 44.15)] },
@@ -1852,12 +1918,14 @@ describe('the review of the third round', () => {
     const t = harness();
     const body = await seedBody(t);
     const mod = await seedUser(t, 'mod', 'moderator');
-    const id = await mod.as.mutation(api.landmarks.create, {
-      waterBodyId: body,
-      name: 'Mud Bay',
-      kind: 'bay',
-      point: { lat: 44.2, lng: -73.3 },
-    });
+    const id = (
+      await mod.as.mutation(api.landmarks.create, {
+        waterBodyId: body,
+        name: 'Mud Bay',
+        kind: 'bay',
+        point: { lat: 44.2, lng: -73.3 },
+      })
+    ).landmarkId;
     await t.mutation(internal.subAreas.importSeed, {
       actorUserId: mod.id,
       seed: [

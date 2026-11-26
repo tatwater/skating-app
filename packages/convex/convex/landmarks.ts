@@ -933,9 +933,10 @@ export const create = mutation({
       kind: args.kind,
     });
     await refreshBodyNames(ctx, body._id);
-    if (args.requestId !== undefined) {
-      await approveNamedLandmarkRequest(ctx, args.requestId, args.waterBodyId, actor, id);
-    }
+    const request =
+      args.requestId === undefined
+        ? undefined
+        : await approveNamedLandmarkRequest(ctx, args.requestId, args.waterBodyId, actor, id);
     if (args.corpusNameId !== undefined) {
       await placeCorpusName(
         ctx,
@@ -946,7 +947,9 @@ export const create = mutation({
       // The name left the body's open asks after the audit row's refresh: the library reads it again.
       await refreshBodyLibrary(ctx, args.waterBodyId);
     }
-    return id;
+    // What happened to the ask, as a bay's create says it: one decided elsewhere meanwhile keeps the
+    // answer it got. (An emailed name placed meanwhile is refused instead: it can't be placed twice.)
+    return { landmarkId: id, ...(request !== undefined ? { request } : {}) };
   },
 });
 

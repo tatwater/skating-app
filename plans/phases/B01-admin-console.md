@@ -13085,9 +13085,10 @@ The Hazards tab's own comment says *Add a feature* and *Edit shape* have no writ
   and the bay's undo still lands. Each restore names the bay, so re-doing the bay (undoing its
   removal) retires them again, and undoing that brings them back. The request it answered still
   isn't reopened.
-- **Owed, small:** a bay traced or pasted for an ask someone decided meanwhile doesn't say the ask
-  kept its other answer — `subAreas.create` returns only the id, where `createFromChord` returns the
-  ask's outcome too. Widening `create`'s return touches the old editor's callers; left for 6b.
+- **Done after 6b:** a bay traced or pasted for an ask someone decided meanwhile now says the ask
+  kept its other answer. `subAreas.create` returns `{ subAreaId, request? }` as `createFromChord`
+  does, and `landmarks.create` returns `{ landmarkId, request? }`, so a landmark placed for a
+  proposal says it too. The old editor only checks that the save succeeded, so it's unchanged.
 - **Owed:** the look pass on the boards no board draws (the redraw, the mouth, the paste, the lit
   bay's tools); a device-free check against dev of the chord and freehand on a real body.
 
@@ -13118,6 +13119,11 @@ founder's answers, recorded as D313:
   put-in's spot shows snapped while hovering; placing an emailed name or a proposal is gated on the
   server as the tab gates it; a landmark's undo doesn't reopen its ask; removing a landmark is in;
   an Inbox landmark ask opens Places and returns to the Inbox after the save.
+
+**After the merge (founder, 2026-11-25):** undoing a placed put-in or lot keeps asking a reason; a
+skater's report naming a put-in counts as a use, so its undo is refused (`reports.by_put_in`); the
+280-character cap on a known feature's note stays (the founder was ambivalent, so the build's
+default holds).
 
 The frame's contract gains two engines — a **point** (`lib/pointDraw.ts`: click to place, drag the
 mark, an optional edge snap shown as a ghost) and a **line** (`createLineDraw`, terra-draw's line

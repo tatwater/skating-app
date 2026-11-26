@@ -1084,16 +1084,19 @@ export const create = mutation({
         ...(args.requestId !== undefined ? { requestId: args.requestId } : {}),
       },
     );
-    if (args.requestId !== undefined) {
-      await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
-    }
+    const request =
+      args.requestId === undefined
+        ? undefined
+        : await approveNamedBayRequest(ctx, args.requestId, args.waterBodyId, actor, subAreaId);
     if (args.promoteLandmarkId !== undefined) {
       await retireAsPromoted(ctx, actor._id, args.promoteLandmarkId, args.waterBodyId, subAreaId);
     }
     // A new bay claims reports and hazards that already sit inside it, so the label appears on the
     // history too rather than only on what's filed from now on.
     await scheduleRestamp(ctx, args.waterBodyId);
-    return subAreaId;
+    // What happened to the ask, as `createFromChord` says it: an ask decided elsewhere while this bay
+    // was being drawn keeps the answer it got, so the receipt mustn't say this one answered it.
+    return { subAreaId, ...(request !== undefined ? { request } : {}) };
   },
 });
 
