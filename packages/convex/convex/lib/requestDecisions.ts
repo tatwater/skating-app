@@ -259,6 +259,12 @@ export const decisionArgs = {
    * pages. Set by `decide` once the primary is closed.
    */
   actionId: v.optional(v.id('moderationActions')),
+  /**
+   * The ask whose question the group is, when it isn't the primary's own: a bay or landmark saved for
+   * an ask that closed meanwhile decides a waiting one in its stead (`answerInStead`), and the asks
+   * it closes are the closed ask's group, measured from its spot on every page — not the heir's.
+   */
+  groupOfRequestId: v.optional(v.id('waterBodyRequests')),
   /** Siblings the drain's earlier pages read (closed, or left to their own filer): to its cap. */
   closedSoFar: v.optional(v.number()),
   /** The audit context the decision's first page wrote under, carried to its later pages. */
@@ -281,6 +287,8 @@ export type Decision = AuditContext & {
   bodyActionId?: Id<'moderationActions'>;
   /** The primary request's decision row, which closes every sibling's Inbox member (`decisionArgs`). */
   actionId?: Id<'moderationActions'>;
+  /** The ask whose question the group is, when it isn't the primary's own (`decisionArgs`). */
+  groupOfRequestId?: Id<'waterBodyRequests'>;
   /** Siblings the drain's earlier pages read, held to {@link REQUEST_SIBLINGS_MAX}. */
   closedSoFar?: number;
 };
@@ -812,6 +820,8 @@ export async function decide(
   subAreaId?: Id<'waterBodySubAreas'>,
   landmarkId?: Id<'bodyLandmarks'>,
   bodyActionId?: Id<'moderationActions'>,
+  /** The ask whose group this closes, when it isn't `request`'s own (`answerInStead`). */
+  groupOf?: Doc<'waterBodyRequests'>,
 ): Promise<Id<'moderationActions'>> {
   const decision: Decision = {
     requestId: request._id,
@@ -823,6 +833,7 @@ export async function decide(
     ...(subAreaId !== undefined ? { subAreaId } : {}),
     ...(landmarkId !== undefined ? { landmarkId } : {}),
     ...(bodyActionId !== undefined ? { bodyActionId } : {}),
+    ...(groupOf !== undefined ? { groupOfRequestId: groupOf._id } : {}),
   };
   await assertMayDecide(ctx, request, actorId, status, {
     subArea: subAreaId ? await ctx.db.get(subAreaId) : null,
@@ -834,7 +845,7 @@ export async function decide(
   await inboxBatch(ctx, async () => {
     const actionId = await closeRow(ctx, request, decision);
     primary = actionId;
-    await closeSiblingPage(ctx, request, { ...decision, actionId });
+    await closeSiblingPage(ctx, groupOf ?? request, { ...decision, actionId });
   });
   // The primary's own row: the one its undo (`reopen_request`) undoes, every sibling with it.
   return primary as Id<'moderationActions'>;
@@ -935,7 +946,7 @@ export async function approveNamedBayRequest(
   // for the same bay are answered in its place ({@link heirOf}).
   if (request.status !== 'open') {
     const { rows } = await openSiblings(ctx, request, HEIR_SCAN, undefined, { subArea: bay });
-    return answerInStead(ctx, heirOf(rows, actor), actor, { subArea: bay, subAreaId });
+    return answerInStead(ctx, request, heirOf(rows, actor), actor, { subArea: bay, subAreaId });
   }
   await decide(ctx, request, 'approved', actor._id, Date.now(), undefined, undefined, subAreaId);
   return 'approved';
@@ -955,9 +966,10 @@ const HEIR_SCAN = 8;
  * The ask a save answers in place of the one it was saved for, when that one closed while the shape
  * was being drawn: the first of the other open asks it answers that its saver didn't file (their
  * own is never theirs to decide, D289). A skater taking back their ask closes only theirs, so the
- * others grouped with it are still waiting; a decision on it closed them too, and an ask found then
- * was filed since — answered all the same, since this is the place it asks for. Deciding the heir
- * closes the rest of the group with it, as deciding the ask would have.
+ * others grouped with it are still waiting. A decision on it closed them too, and an ask filed
+ * since is a new question for its own item: the decided ask's rule refuses there ({@link
+ * answerInStead}), so nothing is answered. Deciding the heir closes the rest of the closed ask's
+ * group with it — measured from the closed ask, as deciding it would have.
  */
 function heirOf(
   rows: readonly Doc<'waterBodyRequests'>[],
@@ -968,14 +980,17 @@ function heirOf(
 }
 
 /**
- * Decide `heir` with the shape saved for the closed ask, or nothing. The decision's own rule runs
- * first ({@link assertMayDecide}): one it refuses — the saver's own ask among the heir's group (D289),
- * a check that couldn't finish — leaves the group open for someone else, and the shape stands, as it
+ * Decide `heir` with the shape saved for the closed ask, or nothing — closing the closed ask's
+ * group (`groupOfRequestId`), not the heir's. The decision's own rule runs first, on both
+ * ({@link assertMayDecide}): one it refuses — the saver's own ask in the group (D289), a check that
+ * couldn't finish, an ask a decision closed — leaves the group open, and the shape stands, as it
  * did before the heir existed, rather than rolling back over asks it wasn't saved for. The rule's
- * check writes nothing a refusal must undo: at most it files the heir's item, as the backfill would.
+ * check writes nothing a refusal must undo: at most it files an item, as the backfill would.
  */
 async function answerInStead(
   ctx: MutationCtx,
+  /** The ask the shape was saved for, closed meanwhile: its group is the one answered. */
+  original: Doc<'waterBodyRequests'>,
   heir: Doc<'waterBodyRequests'> | null,
   actor: Doc<'profiles'>,
   answer: DecisionAnswer & {
@@ -985,12 +1000,13 @@ async function answerInStead(
 ): Promise<SavedAskOutcome> {
   if (!heir) return 'already_decided';
   const now = Date.now();
+  const rule = { subArea: answer.subArea ?? null, landmark: answer.landmark ?? null, asOf: now };
   try {
-    await assertMayDecide(ctx, heir, actor._id, 'approved', {
-      subArea: answer.subArea ?? null,
-      landmark: answer.landmark ?? null,
-      asOf: now,
-    });
+    // The group is the closed ask's (a landmark's same place is a radius, so the heir's own would
+    // reach other asks): its own-filing check is over that group — a withdrawn ask has no item, so
+    // the check is all its rule does. Then the heir's, as `decide` will run it.
+    await assertMayDecide(ctx, original, actor._id, 'approved', rule);
+    await assertMayDecide(ctx, heir, actor._id, 'approved', rule);
   } catch (err) {
     if (err instanceof ConvexError) return 'already_decided';
     throw err;
@@ -1005,6 +1021,8 @@ async function answerInStead(
     undefined,
     answer.subAreaId,
     answer.landmarkId,
+    undefined,
+    original,
   );
   return 'answered_others';
 }
@@ -1232,7 +1250,7 @@ export async function approveNamedLandmarkRequest(
       waiting.filter((r) => closesWith(request, r, { landmark }, Number.POSITIVE_INFINITY)),
       actor,
     );
-    return answerInStead(ctx, heir, actor, { landmark, landmarkId });
+    return answerInStead(ctx, request, heir, actor, { landmark, landmarkId });
   }
   await decide(
     ctx,

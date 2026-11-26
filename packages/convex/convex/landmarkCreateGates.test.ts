@@ -333,4 +333,45 @@ describe('landmarks.create, placing an ask', () => {
     expect((await t.run((ctx) => ctx.db.get(theirs)))?.status).toBe('open');
     expect((await t.run((ctx) => ctx.db.get(own)))?.status).toBe('open');
   });
+  test('the asks answered are the closed ask’s group, measured from its spot, not the heir’s', async () => {
+    const { t, as, body, request } = await seed();
+    const ben = await t.run((ctx) => ctx.db.insert('profiles', profile('ben', 'member')));
+    const at = (lat: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('waterBodyRequests', {
+          kind: 'name_landmark',
+          status: 'open',
+          requesterId: ben,
+          coord: { lat, lng: -73.1 },
+          waterBodyId: body,
+          name: 'Long Point',
+          createdAt: NOW,
+        }),
+      );
+    // The closed ask is at 44.4. The heir sits 800 m north of it, and a second ask 800 m south: both
+    // are its place, but 1.6 km from each other. A third, 870 m past the heir, is the heir's place,
+    // not the closed ask's.
+    const heir = await at(44.4072);
+    const south = await at(44.3928);
+    const beyond = await at(44.415);
+    vi.advanceTimersByTime(1_000);
+    await t.withIdentity({ subject: 'skater' }).mutation(api.corpusRequests.retract, {
+      requestId: request,
+    });
+    // Placed toward the heir: 1.4 km from the south ask and 1.07 km from the one beyond, so the
+    // landmark itself answers neither.
+    const answer = await as.mutation(api.landmarks.create, {
+      waterBodyId: body,
+      name: 'Long Point',
+      kind: 'point',
+      point: { lat: 44.4054, lng: -73.1 },
+      requestId: request,
+    });
+    expect(answer.request).toBe('answered_others');
+    const status = async (id: Id<'waterBodyRequests'>) =>
+      (await t.run((ctx) => ctx.db.get(id)))?.status;
+    expect(await status(heir)).toBe('approved');
+    expect(await status(south)).toBe('approved');
+    expect(await status(beyond)).toBe('open');
+  });
 });
