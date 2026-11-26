@@ -100,7 +100,7 @@ describe('the embed', () => {
     expect(screen.queryByRole('switch', { name: 'Summer aerial' })).toBeNull();
   });
 
-  it('draws its own inks in the dark map’s colors over the summer aerial, its legend plate in the page’s', () => {
+  it('draws its own inks in the dark map’s colors over the summer aerial, its plates in the page’s', () => {
     const fg2 = (sel: string) =>
       (document.querySelector(sel) as HTMLElement | SVGElement | null)?.style.getPropertyValue(
         '--fg2',
@@ -110,8 +110,13 @@ describe('the embed', () => {
     rerender(<InboxMapStill view={alertScene(ALERT)} width={300} aerial />);
     expect(fg2('[data-slot="body-map-still"]')).toBe(adminToken('dark', 'fg2'));
     expect(fg2('[data-slot="map-graticule"]')).toBe(adminToken('dark', 'fg2'));
-    expect(fg2('[data-slot="body-map-aerial-credit"]')).toBe(adminToken('dark', 'fg2'));
     expect(fg2('[data-slot="body-map-plate"]')).toBe('');
+    // The credit and the scale on their own plates, in the page's theme.
+    for (const sel of ['[data-map-plate="credit"]', '[data-map-plate="scale"]']) {
+      const el = document.querySelector(sel);
+      expect(el).not.toBeNull();
+      expect(el?.closest('[style*="--fg2"]')).toBeNull();
+    }
   });
 
   it('view only, on a phone: no zoom pair, and the map takes no pointer', () => {

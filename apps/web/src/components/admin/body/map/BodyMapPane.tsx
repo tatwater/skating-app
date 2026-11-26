@@ -20,6 +20,7 @@ import {
 } from '@/components/kit/map-controls';
 import { MapGraticule } from '@/components/kit/map-graticule';
 import { MARK_BOX } from '@/components/kit/map-marks';
+import { Plate } from '@/components/kit/plate';
 import { SwitchRow } from '@/components/kit/switch';
 import type { MapSurface } from '@/lib/mapSurface';
 import { cn } from '@/lib/utils';
@@ -58,9 +59,10 @@ import { mapInkStyle } from './mapInks';
  *   before the scale, as board 4.3 draws it, saying while the photograph loads or didn't all come
  *   (`aerialLoad`, `AerialCredit`).
  * - **Over the summer aerial (`overAerial`) the map's own inks are the dark map's** in either
- *   theme (`mapInks`): the graticule and its labels, the scene's labels, dimension lines, the scale
- *   and the credit's words. The chrome on its own plate — the rack, the key, the zoom pair, the
- *   plate, the marks, the hover plate, the mode bar, *Try again* — keeps the page's.
+ *   theme (`mapInks`): the graticule and its labels, the scene's labels, dimension lines. The
+ *   chrome on its own plate — the rack, the key, the zoom pair, the plate, the marks, the hover
+ *   plate, the mode bar, *Try again*, and the credit and the scale, each on a plate while the
+ *   photograph is under them — keeps the page's.
  */
 
 /** A credit with no state handed: the photograph is in. */
@@ -331,16 +333,24 @@ export function BodyMapPane({
         </div>
       )}
       <MapDock>
-        {credit !== null && (
-          <AerialCredit credit={credit} state={aerialLoad ?? LOADED} inks={inks} />
-        )}
-        {surface !== null && (
-          <MapScaleBar
-            metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
-            format={formatDistance}
-            style={inks}
-          />
-        )}
+        {credit !== null && <AerialCredit credit={credit} state={aerialLoad ?? LOADED} />}
+        {surface !== null &&
+          (overAerial ? (
+            // Over the photograph the scale sits on its own plate, as the credit does: chrome, in
+            // the page's theme, readable whatever the ground.
+            // It keeps its width on a narrow map (the credit beside it wraps instead).
+            <Plate variant="plate" data-map-plate="scale" className="shrink-0">
+              <MapScaleBar
+                metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
+                format={formatDistance}
+              />
+            </Plate>
+          ) : (
+            <MapScaleBar
+              metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
+              format={formatDistance}
+            />
+          ))}
         <MapZoom onZoomIn={onZoomIn} onZoomOut={onZoomOut} atMin={atMinZoom} atMax={atMaxZoom} />
       </MapDock>
       {foot != null && (

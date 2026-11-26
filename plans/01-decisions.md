@@ -9371,9 +9371,10 @@ there's a good chance I just don't want the average skater to see it"*.
   the service's CDN answers a repeat (A06e's `useImageryReveal`, in its unmasked mode, the old lake
   editor's). **Unmasked**: the whole view, not clipped to the body, so the shore and the ground
   round it (a put-in, a lot, whether a mark sits on the water) can be read. It goes in the console's
-  raster band, over the body's fill and under the hazard fields, every line and any winter pass, and
-  is dimmed toward the mode's ground so the console's inks stay legible. Its credit names the program
-  and, when the service's identify call answers, the month it was flown.
+  raster band, over the body's fill and under the hazard fields, every line and any winter pass, in
+  full color and lightly dimmed, under the dark map's inks in either theme (amended 2026-11-26,
+  below). Its credit names the program and, when the service's identify call answers, the month it
+  was flown.
 - **The Body console's switch.** A *Summer aerial* row at the foot of the map's rack, on every tab,
   for anyone who can open the Body console — moderators and admins, no capability gate. It is never
   disabled and never reset by a tab change; it is remembered per viewer in this browser's local
@@ -9396,6 +9397,31 @@ one body at a time, clipped to it, and nothing a skater sees changes. NAIP is a 
 two-to-three-year cycle and can never show ice (D147); the layer and its credit say only what was
 flown and when (D3). Both asides were built in B01-7a, the governor's call, since they sit in the
 Corpus domain and the aerial was already joining 7a for board 4.3.
+
+**Amended 2026-11-26 (founder, after the merge of B01-7a).** As built, the photograph was "dimmed
+toward the mode's ground" (a 0.42 brightness cap in the dark, a 0.58 floor in the light, saturation
+cut 40%); the founder found it *"super faded out"*, worst in the light. His rulings, in order:
+- **Full color, lightly dimmed.** No saturation cut; the brightest pixel capped at 0.85, a quarter of
+  the old step. One paint in both themes, since the inks over it are light in both (the light
+  theme's floor would gray the ground under light lines: 1.5–1.8:1 for the shore at the
+  photograph's brightest twentieth, against 2.3–3.0:1 with the cap).
+- **The dark map's inks over the photograph, in both themes.** A photograph is dark ground whatever
+  the theme, so while the aerial is on, everything the map draws on itself (the shore and outlines,
+  bay and scene lines, hazard fields, a tool's drafting lines, the graticule and the scene's labels)
+  takes the dark map's colors. From the switch, not the photograph's arrival: a ground of the dark
+  map's earth goes under the console's layers, so a cell still loading, or one that didn't come,
+  never leaves light inks on light ground. The chrome on its own plate keeps the page's theme.
+- **The credit and the scale on plates.** While the aerial is on, the credit (the imagery date,
+  which must read everywhere) and the scale each sit on the kit's opaque map plate, in the page's
+  theme: 8.0:1 on it in both themes, whatever the ground.
+- **Deferred:** halos and edged lines (the fallback if the lines don't read). The scene's labels and
+  the graticule's still read 1.6–3.4:1 over the photograph (Co16); the founder wants to see this
+  first.
+
+Measured on Mascoma and Groton (NAIP June 2023), the same in both themes now: the shore holds 6.2:1
+at the median beside it and 3.4:1 at the worst tenth (9.4:1 on the water side, 4.3:1 on the land
+side); the gray paint held 8.0–11.1:1 at the median and 6.7–8.5:1 at the worst tenth. The numbers live in `consoleAerial.ts`'s
+`AERIAL_PAINT`; the rule in `mapInks.ts`.
 
 **Related:** D3, D146, D147, D217, [`04-integrations`](./04-integrations.md) (NAIP),
 [`phase-B01`](./phases/B01-admin-console.md) *What the build found (B01-7a)*, the register's In30

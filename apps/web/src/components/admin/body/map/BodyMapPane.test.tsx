@@ -227,11 +227,17 @@ describe('the summer aerial on the console map', () => {
     expect(document.querySelector('[data-slot="body-map-aerial-still"]')).not.toBeNull();
     const credit = document.querySelector('[data-slot="body-map-aerial-credit"]');
     expect(credit).toHaveTextContent('Aerial · NAIP Jun 2023');
-    // In the dock, before the scale and the zoom pair: board 4.3's corner.
-    const group = credit?.parentElement;
+    // On its own plate, in the dock, before the scale and the zoom pair: board 4.3's corner.
+    const plate = credit?.parentElement;
+    expect(plate).toHaveAttribute('data-map-plate', 'credit');
+    const group = plate?.parentElement;
     expect(group?.parentElement).toHaveAttribute('data-slot', 'map-dock');
     expect(group?.parentElement?.firstElementChild).toBe(group);
-    expect(group?.firstElementChild).toBe(credit);
+    expect(group?.firstElementChild).toBe(plate);
+    // The scale on its plate too, while the photograph is under it.
+    expect(
+      document.querySelector('[data-map-plate="scale"] [data-slot="map-scale"]'),
+    ).not.toBeNull();
     // In: nothing owed, nothing to press.
     expect(credit).toHaveAttribute('data-state', 'loaded');
     expect(document.querySelector('[data-slot="body-map-aerial-retry"]')).toBeNull();
@@ -255,7 +261,6 @@ describe('the summer aerial on the console map', () => {
       q('[data-slot="body-map-still"]'),
       q('[data-slot="map-graticule"]'),
       q('[data-slot="body-map-label"]'),
-      q('[data-slot="map-scale"]'),
     ];
     const plated = () => [
       q('[data-slot="map-layer-rack"]'),
@@ -272,16 +277,25 @@ describe('the summer aerial on the console map', () => {
       expect(el).not.toBeNull();
       expect(ink(el)).toBe(dark);
     }
-    expect(ink(q('[data-slot="body-map-aerial-credit"]'))).toBe(dark);
-    // The chrome on its own plate keeps the page's theme.
-    for (const el of plated()) expect(ink(el)).toBe('');
+    // The chrome on its own plate keeps the page's theme: the credit and the scale now among it.
+    for (const el of [
+      ...plated(),
+      q('[data-slot="body-map-aerial-credit"]'),
+      q('[data-map-plate="scale"]'),
+      q('[data-slot="map-scale"]'),
+    ]) {
+      expect(el).not.toBeNull();
+      expect(el?.closest('[style*="--fg2"]')).toBeNull();
+    }
     expect(screen.getByRole('switch', { name: 'Summer aerial' }).closest('[style*="--fg2"]')).toBe(
       null,
     );
 
-    // Off again: straight back.
+    // Off again: straight back, and the scale off its plate.
     await user.click(screen.getByRole('switch', { name: 'Summer aerial' }));
     for (const el of onMap()) expect(ink(el)).toBe('');
+    expect(q('[data-map-plate="scale"]')).toBeNull();
+    expect(q('[data-slot="map-scale"]')).not.toBeNull();
   });
 
   it('draws over the fills and under every line: the shore stays on top', () => {

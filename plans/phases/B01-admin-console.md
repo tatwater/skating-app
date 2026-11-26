@@ -13332,8 +13332,8 @@ and Co13–Co20 came from the round that built them (*The last round*).
 | Co13 | *Nearest* is the closest of the **touching** neighbors (outlines within 30 m), so board 4.3's *"Osmore Pond · 1.1 mi north"* for a body that touches nothing, and its off-frame pointer, can't be drawn: they need a new stored fact, the nearest named body touching or not (computed by `bodyGeo`), and the map reporting its visible frame | *The last round* (7a) | a build (schema, a `bodyGeo` recompute) | nothing | open |
 | Co14 | Class conflicts' board gaps left out of 7a by the founder's (b): the silent-catalog column and the second (NHD) outline (not stored: a body keeps one outline), and, which (b) didn't name, the rows' per-name catalog tags, the *Acres* sort and the *Filter* menu | *Ruled on 2026-11-25, second batch*; *Board differences* | a build (the outline: a stored fact) | nothing | open |
 | Co15 | The summer aerial's cold first view takes over 45 s (each new grid cell is a fresh render; a repeat is the CDN's). 7a adds a loading and a failed state; a faster or tiled source is owed | *The last round* (7a); D312 | a build (a source to find) | nothing | open |
-| Co16 | The map's quiet labels read ~2.4–2.8:1 over the summer aerial | *The last round* (7a); D312 | a build | nothing | open |
-| Co17 | The basemap's roads and labels are hidden under the summer aerial | *The last round* (7a); D312 | a build | nothing | open |
+| Co16 | The map's quiet labels over the summer aerial. Under the dark map's inks (D312, amended 2026-11-26) the scene's labels read 3.4:1 at the median and 1.6:1 at the worst tenth, the graticule's 1.8:1 and 1.5:1 (Mascoma, both themes; were ~2.4–2.8:1). The credit and the scale moved onto plates (8.0:1). Halos or edged labels: the founder's deferred fallback | *The last round* (7a); D312 | the founder (a look), then a build | nothing | open |
+| Co17 | The basemap's roads and labels are hidden under the summer aerial; since 2026-11-26 the dark ground laid under it while it is on hides them where a cell hasn't arrived as well (D312, amended) | *The last round* (7a); D312 | a build | nothing | open |
 | Co18 | The summer aerial's flight date is sometimes missing: the identify call comes back without CORS headers and the browser refuses it, so the credit reads *Aerial · NAIP* alone | *The last round* (7a); D312 | a build (a proxy, or accept) | nothing | open |
 | Co19 | The skater app's `useImageryReveal` gained three optional parameters for the console (`minZoom`, `anchor`, `paint`), defaults unchanged: an admin PR touching a skater-side seam | *The last round* (7a) | 7a's review | nothing | open |
 | Co20 | No board draws the narrow consequence ladder (under a 36rem inspector) or the Body console's rack at 9rem with its *Summer aerial* row | *The last round* (7a) | the founder (a look, or boards) | nothing | open |
@@ -16229,7 +16229,8 @@ guideline, as one PR (D300, amended).
   - **a cold first view takes over 45 s** (the service renders each new cell on demand; a repeat is
     the CDN's). 7a adds a loading and a failed state before its PR; a faster or tiled source is
     owed (Co15);
-  - **the quiet labels read ~2.4–2.8:1 over the photograph** (Co16);
+  - **the quiet labels read ~2.4–2.8:1 over the photograph** (Co16; after the founder's rulings of
+    2026-11-26, D312 amended, the scene's labels 3.4:1 at the median and the graticule's 1.8:1);
   - **the basemap's roads and labels are hidden under it** (Co17);
   - **the flight date is sometimes missing:** the identify call comes back without CORS headers, the
     browser refuses it, and the credit reads *Aerial · NAIP* alone (Co18);
