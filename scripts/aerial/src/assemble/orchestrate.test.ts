@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AssemblyRecord } from './assemble';
-import { assemblyCounts, beat, checkRunTarget, followAssembly } from './orchestrate';
+import { assemblyCounts, beat, followAssembly } from './orchestrate';
 
 const record = {
   archive: { bytes: 100 },
@@ -17,20 +17,6 @@ const record = {
 } as unknown as AssemblyRecord;
 
 describe('the run row around the Machine', () => {
-  it('writes a pilot’s rows only to a local deployment', () => {
-    const target = (label: string) => ({
-      label,
-      isDev: label.startsWith('dev:'),
-      isProd: label.startsWith('prod:'),
-    });
-    expect(() => checkRunTarget('champlain', target('dev:x'))).toThrow('targets dev');
-    expect(() => checkRunTarget('champlain', target('prod:x'))).toThrow('targets prod');
-    expect(() => checkRunTarget('champlain', target('unknown'))).toThrow('an unknown deployment');
-    expect(() => checkRunTarget('champlain', target('local:local-x'))).not.toThrow();
-    expect(() => checkRunTarget('champlain', target('anonymous:anonymous-x'))).not.toThrow();
-    expect(() => checkRunTarget(null, target('dev:x'))).not.toThrow();
-  });
-
   it('turns the record into counts, numbers only', () => {
     const counts = assemblyCounts(record);
     expect(counts).toMatchObject({

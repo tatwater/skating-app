@@ -11,7 +11,7 @@ import { fileStore, fileUploads, type ObjectStore, sha256Hex } from './assemble/
 import { hashRenderer, writeSyntheticBuild } from './assemble/synthetic';
 import { tileBox, worldPixel } from './assemble/tileGrid';
 import { archiveKey, indexKey, manifestKey, shardKeys } from './keys';
-import { publicUrl, sampleIds, verifyBuild } from './verify';
+import { pmtilesCliCheck, publicUrl, sampleIds, verifyBuild } from './verify';
 import { boxPixelsAtZ16, coverage, seams, tileAt, writeReport } from './verifyReport';
 
 const CAMPAIGN = 'naip-pilot-20261212';
@@ -401,9 +401,11 @@ describe('the report', () => {
     // 1/16° at 44°N on the z16 grid: ~2,913 px wide, ~4,050 tall (Mercator's 1/cos 44°).
     expect(px).toBeGreaterThan(11.7e6);
     expect(px).toBeLessThan(11.9e6);
+    // `c` is a cell the archive holds no work tile of (a pilot's manifest records the region):
+    // never listed, where `b`, cut but supplied nothing, is.
     const m = {
-      cells: [{ key: 'a' }, { key: 'b' }],
-      workTiles: [{ cellCounts: { a: { f: px } } }],
+      cells: [{ key: 'a' }, { key: 'b' }, { key: 'c' }],
+      workTiles: [{ cells: ['a', 'b'], cellCounts: { a: { f: px } } }],
     } as unknown as AssembledManifest;
     expect(coverage(m, { cellBox: () => box })).toEqual([{ key: 'b', share: 0 }]);
     const index: NaipCellIndex = {
@@ -436,5 +438,39 @@ describe('the report', () => {
     expect(b.east).toBeGreaterThan(-72.5);
     expect(b.south).toBeLessThanOrEqual(44.5);
     expect(b.north).toBeGreaterThan(44.5);
+  });
+});
+
+describe('the pmtiles CLI as a second reader', () => {
+  const url = 'https://tiles.example/dev/naip/naip-summer-20261212.pmtiles';
+  it('reads the header over the URL with show, never verify (which takes a local file only)', async () => {
+    const calls: string[][] = [];
+    const ok = await pmtilesCliCheck(async (cmd, args) => {
+      calls.push([cmd, ...args]);
+      return { code: 0, stdout: 'pmtiles spec version: 3\ntile type: webp\n', stderr: '' };
+    }, url);
+    expect(calls).toEqual([['pmtiles', 'show', url]]);
+    expect(ok?.problems).toEqual([]);
+  });
+
+  it('refuses on a failing exit or a header that isn’t spec 3', async () => {
+    const failed = await pmtilesCliCheck(
+      async () => ({ code: 1, stdout: '', stderr: 'error: 404\n' }),
+      url,
+    );
+    expect(failed?.problems[0]).toMatch(/exited 1: error: 404/);
+    const odd = await pmtilesCliCheck(
+      async () => ({ code: 0, stdout: 'pmtiles spec version: 2\n', stderr: '' }),
+      url,
+    );
+    expect(odd?.problems[0]).toMatch(/no spec-3 header/);
+  });
+
+  it('is skipped, not failed, when the CLI isn’t installed', async () => {
+    expect(
+      await pmtilesCliCheck(async () => {
+        throw new Error('spawn pmtiles ENOENT');
+      }, url),
+    ).toBeNull();
   });
 });

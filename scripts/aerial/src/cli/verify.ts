@@ -18,13 +18,14 @@ import { parseNaipCellIndex, quarterQuadAt, quarterQuadCell, quarterQuadsIn } fr
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { PMTiles } from 'pmtiles';
 import { storeSource } from '../assemble/archiveRead';
-import { ASSEMBLE_SCOPE, checkRunTarget } from '../assemble/orchestrate';
+import { ASSEMBLE_SCOPE } from '../assemble/orchestrate';
 import { runProcess } from '../assemble/process';
 import { httpStore } from '../assemble/stores';
 import { serveHttp } from '../assemble/upload';
 import { archiveKey, archiveName, indexKey, scratchPaths } from '../keys';
+import { checkRunTarget, RunTargetRefusal } from '../runTarget';
 import { parseStageArgs, StageArgsError } from '../stages';
-import { publicUrl, verifyBuild } from '../verify';
+import { pmtilesCliCheck, publicUrl, verifyBuild } from '../verify';
 import { writeReport } from '../verifyReport';
 import { writeViewer } from '../viewer/page';
 
@@ -85,19 +86,14 @@ async function main(): Promise<number> {
         logger?.flush();
       },
     });
-    // The pmtiles CLI's own verify over the public URL, when it is installed: a second reader.
-    const cli = await runProcess('pmtiles', [
-      'verify',
+    // The pmtiles CLI over the public URL, when it is installed: a second reader of the header.
+    const cli = await pmtilesCliCheck(
+      runProcess,
       publicUrl(base, campaign, args.pilot, archiveName(campaign)),
-    ]).catch(() => null);
-    if (cli !== null && cli.code !== 0) {
-      outcome.ok = false;
-      outcome.checks.push({
-        name: 'pmtiles verify',
-        problems: [cli.stderr.trim().split('\n').slice(-3).join(' ')],
-        counts: {},
-        notes: [],
-      });
+    );
+    if (cli !== null) {
+      if (cli.problems.length > 0) outcome.ok = false;
+      outcome.checks.push(cli);
     }
     const report = scratchPaths(campaign).report;
     const title = `Summer aerial ${campaign}${pilot ? ` (pilot ${pilot})` : ''}`;
@@ -134,7 +130,7 @@ main().then(
   (code) => process.exit(code),
   (e) => {
     process.stderr.write(
-      `${e instanceof StageArgsError ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
+      `${e instanceof StageArgsError || e instanceof RunTargetRefusal ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
     );
     process.exit(1);
   },

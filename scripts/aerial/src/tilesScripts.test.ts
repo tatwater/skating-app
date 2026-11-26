@@ -113,7 +113,9 @@ echo '}' >> "$out"
   return b;
 }
 
-function cutAerial(opts: { failOn?: string; image?: string; local?: boolean } = {}) {
+function cutAerial(
+  opts: { failOn?: string; image?: string; local?: boolean; wholeWorkTile?: boolean } = {},
+) {
   const dir = tmp();
   const b = workerTools(dir);
   const unit = buildWorkUnit(
@@ -121,7 +123,7 @@ function cutAerial(opts: { failOn?: string; image?: string; local?: boolean } = 
       campaign: 'naip-pilot-20261125',
       pilot: 'warp-proof',
       workTile: '11/606/736',
-      window: '14/4852/5895',
+      ...(opts.wholeWorkTile ? {} : { window: '14/4852/5895' }),
       inputHash: 'h1',
       cells: [
         { key: '4407305ne', frames: ['ny_m_4407305_ne_18_060_20240728'] },
@@ -250,6 +252,27 @@ describe('cut-aerial.sh', () => {
     expect(run.status).toBe(1);
     expect(run.calls).toEqual([]);
     expect(run.stderr).toMatch(/by digest/);
+  });
+
+  test('a whole work tile: only the chunks a showing cell overlaps are tiled; the overviews stay inside it', () => {
+    // The two cells sit in one corner of 11/606/736: most of its sixteen z13 chunks hold no cell,
+    // and `gdal raster tile` refuses a range outside its mosaic rather than writing nothing.
+    const run = cutAerial({ wholeWorkTile: true, local: true });
+    expect(run.status).toBe(0);
+    const wanted = run.unit.chunks.filter((c) => c.cells.length > 0);
+    expect(wanted.length).toBeGreaterThan(0);
+    expect(wanted.length).toBeLessThan(16);
+    const tiles = run.calls.filter((c) => c.startsWith('gdal raster tile'));
+    const chunkRuns = tiles.filter((c) => c.includes('--min-zoom 13 --max-zoom 17'));
+    expect(chunkRuns.map((c) => /--min-x (\d+)/.exec(c)?.[1])).toEqual(
+      wanted.map((c) => String(c.range.minX)),
+    );
+    expect(run.stderr).toMatch(new RegExp(`tiled ${wanted.length} of 16 chunks`));
+    // The zooms above the chunks, and the work tile's own tile: bounded to the work tile.
+    const above = tiles.find((c) => c.includes('--min-zoom 12 --max-zoom 12')) as string;
+    expect(above).toContain('--min-x 1212 --max-x 1213 --min-y 1472 --max-y 1473');
+    const top = tiles.find((c) => c.includes('--min-zoom 11 --max-zoom 11')) as string;
+    expect(top).toContain('--min-x 606 --max-x 606 --min-y 736 --max-y 736');
   });
 
   test('set -euo pipefail', () => {

@@ -67,22 +67,25 @@ export const ARCHIVE_ZOOMS = { min: naipTileZoom(NAIP_MIN_ZOOM), max: naipTileZo
 /** The work tiles' own level, the overviews' source. */
 const TOP_ZOOM = naipTileZoom(NAIP_WORK_ZOOM + 1);
 
-/** The manifest's work tile, as the assembler publishes it: with what its cut counted. */
-export interface AssembledWorkTile extends NaipManifestWorkTile {
-  /**
-   * What each frame supplied each cell in this work tile (`ShardDone.cellCounts`), kept so a later
-   * `--from-current` build that copies this work tile can date it without its (deleted) shard.
-   */
-  cellCounts: ShardCellCounts;
-}
+/**
+ * The manifest's work tile as the assembler publishes it: core's `NaipManifestWorkTile` with its
+ * `cellCounts` written (the shard's own, or the copied work tile's from the build it came from), so a
+ * later `--from-current` build that copies it can date it without its deleted shard.
+ */
+export type AssembledWorkTile = NaipManifestWorkTile & {
+  cellCounts: NonNullable<NaipManifestWorkTile['cellCounts']>;
+};
 
-/** The manifest as published: the select stage's, plus the archive, the index and the counts. */
-export interface AssembledManifest
-  extends Omit<NaipManifest, 'workTiles' | 'archive' | 'cellIndex'> {
+/**
+ * The manifest as published: core's `NaipManifest` with its archive, its index and every work tile's
+ * counts filled in. A manifest read back from the bucket is typed `NaipManifest` (an older or a
+ * hand-made one may lack any of them) and checked where it is used.
+ */
+export type AssembledManifest = Omit<NaipManifest, 'workTiles' | 'archive' | 'cellIndex'> & {
   workTiles: AssembledWorkTile[];
   archive: NaipPublishedObject;
   cellIndex: NaipPublishedObject;
-}
+};
 
 /** What the assembler leaves for verify and the run row, at `<build prefix>assembly.json`. */
 export interface AssemblyRecord {
@@ -258,13 +261,13 @@ async function readCut(
 }
 
 function readCopied(
-  old: { key: string; archive: ArchiveEntries; manifest: AssembledManifest },
+  old: { key: string; archive: ArchiveEntries; manifest: NaipManifest },
   wt: NaipManifestWorkTile,
 ): WorkTileInput {
   const before = old.manifest.workTiles.find((w) => w.key === wt.key);
   if (before === undefined)
     refuse(`work tile ${wt.key} is unchanged, but ${old.key}'s manifest lacks it`);
-  const prior = before as AssembledWorkTile;
+  const prior = before as NaipManifestWorkTile;
   if (prior.inputHash !== wt.inputHash) {
     refuse(`work tile ${wt.key} is marked unchanged, but its input hash differs from ${old.key}'s`);
   }
@@ -285,7 +288,7 @@ function readCopied(
     srcOffset: new Float64Array(n),
     length: new Uint32Array(n),
     key4: new Uint32Array(n * 4),
-    counts: prior.cellCounts,
+    counts: prior.cellCounts as ShardCellCounts,
     copied: true,
   };
   tiles.forEach((t, i) => {
@@ -379,7 +382,7 @@ async function run(
 
   // ── 1. Inputs ───────────────────────────────────────────────────────────────────────────────
   const copiedTiles = manifest.workTiles.filter((w) => !w.retile);
-  let old: { key: string; archive: ArchiveEntries; manifest: AssembledManifest } | null = null;
+  let old: { key: string; archive: ArchiveEntries; manifest: NaipManifest } | null = null;
   if (copiedTiles.length > 0) {
     if (manifest.basedOn === null)
       refuse('work tiles are marked unchanged, but the manifest is based on no build');
@@ -395,7 +398,7 @@ async function run(
       archive: await readArchiveEntries(storeSource(deps.store, key)),
       manifest: JSON.parse(
         new TextDecoder().decode(oldManifestBytes as Uint8Array),
-      ) as AssembledManifest,
+      ) as NaipManifest,
     };
     if (old.manifest.archive?.name !== basedOn.archive) {
       refuse(

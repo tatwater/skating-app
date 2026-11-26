@@ -7,9 +7,9 @@ import { describe, expect, test } from 'vitest';
 import type { ShardDone } from './shard';
 import {
   type AerialWorkUnit,
+  boxesOverlap,
   buildWorkUnit,
   type CellOutline,
-  checkPilotTarget,
   chunksOf,
   framesToCut,
   heartbeatDue,
@@ -28,8 +28,12 @@ import {
   workUnitsFor,
 } from './tiles';
 
-/** The proof's hand decode of a quarter-quad key (core's `quarterQuadCell` is S's). */
-const outline: CellOutline = (key) => {
+/**
+ * The warp proof's hand decode of a quarter-quad key (`proofs/windows.json` was written with it).
+ * The units below use core's own grid, the one a build uses; this decode is kept to show the two
+ * agree, so the proof's windows are the cells a build cuts.
+ */
+const handDecode: CellOutline = (key) => {
   const lat = Number(key.slice(0, 2));
   const lon = Number(key.slice(2, 5));
   const q = Number(key.slice(5, 7));
@@ -45,6 +49,23 @@ const outline: CellOutline = (key) => {
   else w += 0.0625;
   return { minLat: s, minLng: w, maxLat: n, maxLng: e };
 };
+
+/** The units' outlines: core's grid, as `workUnitsFor` uses by default. */
+const outline: CellOutline = core.quarterQuadCell;
+
+test('core’s grid is the proof’s hand decode, cell for cell', () => {
+  const windows = readFileSync(new URL('../proofs/windows.json', import.meta.url), 'utf8');
+  const proofKeys = windows.match(/\d{7}[ns][ew]/g) ?? [];
+  expect(proofKeys.length).toBeGreaterThan(0);
+  const keys = ['4407305ne', '4407305nw', '4407305se', '4407305sw', '4507364sw', '4207101ne'];
+  for (const key of [...keys, ...proofKeys]) {
+    const a = handDecode(key);
+    const b = core.quarterQuadCell(key);
+    for (const side of ['minLat', 'minLng', 'maxLat', 'maxLng'] as const) {
+      expect(b[side], `${key} ${side}`).toBeCloseTo(a[side], 9);
+    }
+  }
+});
 
 const CAMPAIGN = 'naip-20261212';
 
@@ -165,6 +186,43 @@ describe('framesToCut', () => {
       'vt_m_4407305ne_fb1',
       'ny_m_4407305ne_fb2',
     ]);
+  });
+});
+
+describe('a unit’s chunks name the cells they overlap', () => {
+  test('a cell is listed on exactly the chunks its pixels overlap; touching an edge is not overlapping', () => {
+    const unit = buildWorkUnit(
+      {
+        campaign: CAMPAIGN,
+        pilot: null,
+        workTile: '11/606/736',
+        inputHash: 'h',
+        cells: [
+          { key: '4407305ne', frames: ['a'] },
+          { key: '4407306nw', frames: ['b'] },
+        ],
+      },
+      outline,
+    );
+    expect(unit.chunks).toHaveLength(16);
+    for (const chunk of unit.chunks) {
+      const [z, x, y] = chunk.tile.split('/').map(Number) as [number, number, number];
+      const b = tileBounds(z, x, y);
+      expect(chunk.cells).toEqual(
+        unit.cells.filter((c) => boxesOverlap(c.extent, b)).map((c) => c.key),
+      );
+    }
+    // Every cell is on some chunk, and some chunk holds none (the cells sit in one corner).
+    const listed = new Set(unit.chunks.flatMap((c) => c.cells));
+    expect([...listed].sort()).toEqual(unit.cells.map((c) => c.key));
+    expect(unit.chunks.some((c) => c.cells.length === 0)).toBe(true);
+  });
+
+  test('boxesOverlap: a shared edge or corner is not an overlap', () => {
+    expect(boxesOverlap([0, 0, 2, 2], [1, 1, 3, 3])).toBe(true);
+    expect(boxesOverlap([0, 0, 1, 1], [1, 0, 2, 1])).toBe(false);
+    expect(boxesOverlap([0, 0, 1, 1], [1, 1, 2, 2])).toBe(false);
+    expect(boxesOverlap([0, 0, 1, 1], [0, 1, 1, 2])).toBe(false);
   });
 });
 
@@ -493,18 +551,6 @@ describe('selectUploads', () => {
   });
 });
 
-describe('checkPilotTarget', () => {
-  test('a pilot writes rows to a local backend only; a production build anywhere it is pointed', () => {
-    expect(() => checkPilotTarget('p', { label: 'local:local-x' })).not.toThrow();
-    expect(() => checkPilotTarget('p', { label: 'anonymous:anonymous-x' })).not.toThrow();
-    expect(() => checkPilotTarget('p', { label: 'dev:quick-fox-123' })).toThrow(
-      /local deployment only/,
-    );
-    expect(() => checkPilotTarget('p', { label: 'unknown' })).toThrow(/local/);
-    expect(() => checkPilotTarget(null, { label: 'dev:quick-fox-123' })).not.toThrow();
-  });
-});
-
 /**
  * **Changing how a pixel is drawn means bumping `NAIP_TILING_VERSION`.** The input hash (core's
  * `naipWorkTileInputHash`) sees the stacks and that version, not the worker's GDAL arguments or
@@ -516,7 +562,10 @@ describe('checkPilotTarget', () => {
  */
 describe('the tiling fingerprint', () => {
   const FINGERPRINTS: Record<number, string> = {
-    1: '2d5ed95fde590424227e15bffc9e2ae016adb5285fc94e286f10f793a95ca74c',
+    // Re-recorded under 1 at integration (2026-11-26), deliberately: the overview zooms and the
+    // work tile's own tile gained the window's bounds, which stops a tile outside the work tile being
+    // written (the packer refused it) and changes no pixel inside it; and no archive had been built.
+    1: 'd6021484c204d95e1cd63aba5a02f34ac16170da227b923bdc6d06bda341b1bc',
   };
 
   /** The worker's GDAL invocations (with their continuation lines) and the counts helper's code. */
@@ -540,8 +589,7 @@ describe('the tiling fingerprint', () => {
   }
 
   test('the worker’s drawing is the one recorded for this NAIP_TILING_VERSION', () => {
-    // Read by name: core's tiling version lands with the select stage (S); until then it is 1.
-    const version = (core as unknown as { NAIP_TILING_VERSION?: number }).NAIP_TILING_VERSION ?? 1;
+    const version = core.NAIP_TILING_VERSION;
     const print = createHash('sha256').update(drawing()).digest('hex');
     expect(
       print,

@@ -17,6 +17,7 @@ import { NAIP_STATES, type NaipManifest, NaipSasSigner } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { walkCatalog } from '../catalog';
 import { AERIAL_SCRATCH, scratchPaths } from '../keys';
+import { checkRunTarget } from '../runTarget';
 import { gdalDecode, ScoreCache, scoreFrames } from '../score';
 import { readPrescreen, writeContactSheet } from '../scoreSheet';
 import { pickTable, runSelect, SelectRefusal, type SelectRunLog } from '../selectStage';
@@ -31,17 +32,7 @@ async function main(): Promise<void> {
   let run: SelectRunLog | null = null;
   if (!args.dryRun) {
     const target = resolveDeployment();
-    const local = /^(local|anonymous):/.test(target.label);
-    if (target.isProd)
-      throw new SelectRefusal('the summer aerial is built for dev only; refusing prod');
-    if (args.pilot !== null && !local) {
-      throw new SelectRefusal(
-        `a pilot writes its run rows to a local backend only, not ${target.label}`,
-      );
-    }
-    if (args.pilot === null && !target.isDev) {
-      throw new SelectRefusal(`a build writes its run rows to dev, not ${target.label}`);
-    }
+    checkRunTarget(args.pilot, target);
     run = new RunLogger({
       kind: 'aerial_select',
       label: 'Summer aerial: the frame rule over the NAIP catalog',

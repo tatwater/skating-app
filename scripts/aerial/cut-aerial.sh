@@ -116,6 +116,7 @@ command -v jq >/dev/null || die "jq is not installed"
 [[ "$(jq -r .version "$UNIT")" == "1" ]] || die "unit version $(jq -r .version "$UNIT"), this worker reads 1"
 WORK_TILE="$(jq -r .workTile "$UNIT")"
 WINDOW="$(jq -r .window "$UNIT")"
+IFS=/ read -r _ WX WY <<<"$WINDOW"
 RES="$(jq -r .resolution "$UNIT")"
 CRES="$(jq -r .countResolution "$UNIT")"
 TILE_SIZE="$(jq -r .settings.tileSize "$UNIT")"
@@ -291,32 +292,53 @@ tile_overview() {
   (( n > 0 )) || return 0
   # `-addalpha`: an opaque tile is written without an alpha band, a ragged one with.
   gdalbuildvrt -q -addalpha -input_file_list "$W/overview.txt" "$W/overview.vrt" || return 1
+  # Bounded to the window (at the deepest of these zooms), like every tiler run here: a source whose
+  # extent ends on the window's edge touches the neighbor's tiles too, and a tile outside the work
+  # tile is refused by the packer (measured 2026-11-26, the integration's local run).
+  local span=$(( 1 << (zmax - zmin) ))
   if (( zmax > zmin )); then
     gdal raster tile -q --format WEBP --co "QUALITY=$QUALITY" --tile-size "$TILE_SIZE" \
       --min-zoom $(( zmin + 1 )) --max-zoom "$zmax" --skip-blank --webviewer none \
+      --min-x $(( WX * span )) --max-x $(( WX * span + span - 1 )) --min-y $(( WY * span )) --max-y $(( WY * span + span - 1 )) \
       --resampling "$OVERVIEW_RESAMPLING" --overview-resampling "$OVERVIEW_RESAMPLING" \
       --convention xyz "$W/overview.vrt" "$W/tiles" || return 1
   fi
   top_tile "$W/overview.vrt" "$zmin"
 }
 # The window's own tile, always written — no `--skip-blank`, so a few pixels that average to nothing
-# at this zoom still leave a (transparent) tile: the assembler builds the shallow zooms from it.
+# at this zoom still leave a (transparent) tile: the assembler builds the shallow zooms from it. Only
+# the window's: its source can end exactly on the window's edge, which touches the neighbors.
 top_tile() {
   local src="$1" z="$2"
   gdal raster tile -q --format WEBP --co "QUALITY=$QUALITY" --tile-size "$TILE_SIZE" \
     --min-zoom "$z" --max-zoom "$z" --webviewer none \
+    --min-x "$WX" --max-x "$WX" --min-y "$WY" --max-y "$WY" \
     --resampling "$OVERVIEW_RESAMPLING" --overview-resampling "$OVERVIEW_RESAMPLING" \
     --convention xyz "$src" "$W/tiles"
 }
 if (( ${#LAYERS[@]} > 0 )); then
   step mosaic gdalbuildvrt -q -input_file_list "$W/mosaic.txt" "$W/mosaic.vrt" || die "the mosaic failed"
   CHUNKS="$(jq '.chunks | length' "$UNIT")"
+  # A chunk none of whose cells has a frame that shows draws nothing, and the tiler refuses a range
+  # outside the mosaic rather than writing nothing — so it is skipped (`tiles.ts`' AerialUnitChunk).
+  declare -A SHOWING=()
+  for line in "${LAYERS[@]}"; do SHOWING["${line%%$'\t'*}"]=1; done
+  chunk_shows() {
+    local cell
+    for cell in $(jq -r --argjson i "$1" '.chunks[$i].cells[]' "$UNIT"); do
+      [[ -n "${SHOWING[$cell]:-}" ]] && return 0
+    done
+    return 1
+  }
+  SKIPPED=0
   for (( c = 0; c < CHUNKS; c++ )); do
+    if ! chunk_shows "$c"; then SKIPPED=$((SKIPPED + 1)); continue; fi
     # One retry with a fresh token: a chunk that loses its token mid-run fails rather than
     # half-writing (GDAL refuses the read), so running it again is safe.
     step tile tile_chunk "$c" || { log "chunk $c failed; once more with a fresh token"; SAS_EXPIRES=0; step tile tile_chunk "$c"; } \
       || die "tiling chunk $c failed"
   done
+  log "tiled $(( CHUNKS - SKIPPED )) of $CHUNKS chunks ($SKIPPED hold no cell that shows)"
   if [[ "$(jq -r '.overview != null' "$UNIT")" == "true" ]]; then
     step overview tile_overview || die "the overview zooms failed"
   elif [[ -n "$(find "$W/tiles" -name '*.webp' -print -quit)" && ! -f "$W/tiles/$WINDOW.webp" ]]; then

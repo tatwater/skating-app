@@ -28,16 +28,15 @@ async function main(): Promise<void> {
   const listing = (await rcloneList(target, prefix))
     .filter((o) => !o.IsDir)
     .map((o) => ({ key: `${prefix}${o.Path}`, modified: new Date(o.ModTime) }));
-  let live: string | null = null;
+  // `undefined` when the web's env can't be read: planCleanup refuses rather than skip the check.
+  let live: string | null | undefined;
   try {
     live = envValue(
       await readFile(join(HERE, '..', '..', '..', '..', 'apps', 'web', '.env'), 'utf8'),
       'VITE_NAIP_PMTILES_URL',
     );
   } catch {
-    process.stderr.write(
-      '[cleanup] apps/web/.env not readable: the live-archive check is skipped\n',
-    );
+    live = undefined;
   }
   const plan = planCleanup({
     campaign: args.campaign,

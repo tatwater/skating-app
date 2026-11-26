@@ -25,10 +25,10 @@ import { fileURLToPath } from 'node:url';
 import type { NaipManifest } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { buildPrefix, scratchPaths } from '../keys';
+import { checkRunTarget, RunTargetRefusal } from '../runTarget';
 import { parseShardDone, type ShardDone } from '../shard';
 import { parseStageArgs, StageArgsError } from '../stages';
 import {
-  checkPilotTarget,
   HEARTBEAT_EVERY,
   heartbeatDue,
   runTileRounds,
@@ -80,7 +80,7 @@ async function main(): Promise<void> {
   if (args.dryRun) return;
 
   const deployment = resolveDeployment();
-  checkPilotTarget(args.pilot, deployment);
+  checkRunTarget(args.pilot, deployment);
   const remote = process.env.R2_REMOTE ?? 'r2';
   const bucket = need('R2_BUCKET');
   need('AERIAL_IMAGE');
@@ -174,7 +174,7 @@ async function main(): Promise<void> {
 
 main().catch((e) => {
   process.stderr.write(
-    `${e instanceof StageArgsError ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
+    `${e instanceof StageArgsError || e instanceof RunTargetRefusal ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
   );
   process.exit(1);
 });

@@ -29,6 +29,7 @@ import {
   type NaipManifest,
   type NaipManifestCell,
   type NaipState,
+  naipFramesToCut,
   naipTileZoom,
   parseWorkTileKey,
   quarterQuadCell,
@@ -192,8 +193,11 @@ export interface AerialWorkUnit {
   settings: typeof TILE_SETTINGS;
   /** Sorted by key. */
   cells: AerialUnitCell[];
-  /** The tiler's runs, each started with a fresh-enough SAS token (`TILE_SETTINGS.chunkTileZoom`). */
-  chunks: AerialChunk[];
+  /**
+   * The tiler's runs, each started with a fresh-enough SAS token (`TILE_SETTINGS.chunkTileZoom`),
+   * each with the cells it overlaps.
+   */
+  chunks: AerialUnitChunk[];
   /**
    * The zooms above the chunks, built from the chunks' top tiles with no source read; `null` when
    * the window is a chunk (a proof's) or smaller.
@@ -210,6 +214,31 @@ export interface AerialChunk {
   zooms: { min: number; max: number };
   /** Inclusive, in deepest-zoom tile numbers: `gdal raster tile --min-x … --max-y`. */
   range: { minX: number; maxX: number; minY: number; maxY: number };
+}
+
+/**
+ * A chunk as the unit hands it over: with **the cells whose pixels overlap it** (their `extent`, by a
+ * positive area). The worker skips a chunk none of whose cells has a frame that shows: `gdal raster
+ * tile` refuses a tile range outside its mosaic's extent rather than writing nothing (*"Dataset
+ * extent not intersecting specified min/max X/Y tile coordinates"*, measured 2026-11-26), and a work
+ * tile at a coast, a border or the region's edge has such chunks — the integration's local run cut
+ * one with 4 of its 16 chunks touched. A chunk no cell overlaps would draw nothing anyway, so
+ * skipping it changes no pixel.
+ */
+export interface AerialUnitChunk extends AerialChunk {
+  /** The cells (`AerialUnitCell.key`) whose extent overlaps this chunk, sorted. */
+  cells: string[];
+}
+
+/** Do two EPSG:3857 boxes share a positive area? (Touching at an edge is not overlapping.) */
+export function boxesOverlap(a: MercatorBounds, b: MercatorBounds): boolean {
+  return a[0] < b[2] && b[0] < a[2] && a[1] < b[3] && b[1] < a[3];
+}
+
+/** A chunk's EPSG:3857 bounds, from its `z/x/y`. */
+function chunkBounds(chunk: AerialChunk): MercatorBounds {
+  const [z, x, y] = chunk.tile.split('/').map(Number) as [number, number, number];
+  return tileBounds(z, x, y);
 }
 
 /** The zooms above the chunks: built from the chunks' top tiles, each placed by its bounds. */
@@ -261,13 +290,10 @@ export function chunksOf(window: WorkTile): {
 export type CellOutline = (key: string) => BBox;
 
 /**
- * The frames a cell's stack contributes to the cut, in the rule's order: the pick alone, unless the
- * pick doesn't cover the cell (`partial`) or the cell sits on a state line, where a flight may end
- * and the other state's frame must show through (§2.2, "fallbacks are read only where needed").
+ * The frames a cell's stack contributes to the cut, in the rule's order — core's `naipFramesToCut`,
+ * the one statement of it, which the input hash also covers.
  */
-export function framesToCut(cell: Pick<NaipManifestCell, 'pick' | 'stack' | 'partial' | 'states'>) {
-  return cell.partial || cell.states.length > 1 ? [cell.pick, ...cell.stack] : [cell.pick];
-}
+export const framesToCut = naipFramesToCut;
 
 function outlineOf(key: string, cellOutline: CellOutline): [number, number, number, number] {
   const b = cellOutline(key);
@@ -337,6 +363,7 @@ export function buildWorkUnit(
     if (extent === null || countExtent === null) continue;
     cells.push({ key: cell.key, outline, frames: [...cell.frames], extent, countExtent });
   }
+  const { chunks, overview } = chunksOf(window);
   const unit: AerialWorkUnit = {
     version: WORK_UNIT_VERSION,
     campaign: spec.campaign,
@@ -350,7 +377,14 @@ export function buildWorkUnit(
     countResolution,
     settings: TILE_SETTINGS,
     cells,
-    ...chunksOf(window),
+    chunks: chunks.map((c) => {
+      const b = chunkBounds(c);
+      return {
+        ...c,
+        cells: cells.filter((cell) => boxesOverlap(cell.extent, b)).map((x) => x.key),
+      };
+    }),
+    overview,
     keys: shardKeys(spec.campaign, work, spec.pilot ?? undefined),
   };
   return unit;
@@ -544,20 +578,4 @@ export function selectUploads(manifest: NaipManifest, scratch: string = AERIAL_S
     uploads.push({ local: join(paths.inventory, `${state.toLowerCase()}.jsonl.gz`), key });
   }
   return uploads;
-}
-
-// ── Where the run rows go ─────────────────────────────────────────────────────────────────────
-
-/**
- * A pilot's run rows go to a throwaway local backend only (G-8 a, §3.1): refuse a pilot whose
- * target is anything else — dev, prod, or a deploy key whose target can't be known. The same rule
- * as the assembler's `checkRunTarget`; after integration the two should be one function.
- */
-export function checkPilotTarget(pilot: string | null, target: { label: string }): void {
-  if (pilot === null) return;
-  if (!/^(local|anonymous):/.test(target.label)) {
-    throw new Error(
-      `a pilot writes its run rows to a local deployment only, not ${JSON.stringify(target.label)}`,
-    );
-  }
 }

@@ -14,6 +14,7 @@ import {
   type NaipCellIndex,
   naipCreditRange,
   naipExclusionsHash,
+  naipFramesToCut,
   naipIndexUrl,
   naipWorkTileInputHash,
   parseNaipCellIndex,
@@ -274,13 +275,24 @@ describe('sha256Hex', () => {
   });
 });
 
-describe('naipWorkTileInputHash', () => {
-  const cell = (key: string, pick: string, stack: string[] = [], partial = false) => ({
-    key,
-    pick,
-    stack,
-    partial,
+describe('naipFramesToCut', () => {
+  test('the pick alone, unless it is partial or the cell is on a state line', () => {
+    const c = { pick: 'p', stack: ['a', 'b'], partial: false, states: ['VT'] };
+    expect(naipFramesToCut(c)).toEqual(['p']);
+    expect(naipFramesToCut({ ...c, partial: true })).toEqual(['p', 'a', 'b']);
+    expect(naipFramesToCut({ ...c, states: ['NY', 'VT'] })).toEqual(['p', 'a', 'b']);
+    expect(naipFramesToCut({ ...c, stack: [], partial: true })).toEqual(['p']);
   });
+});
+
+describe('naipWorkTileInputHash', () => {
+  const cell = (
+    key: string,
+    pick: string,
+    stack: string[] = [],
+    partial = false,
+    states: string[] = ['VT'],
+  ) => ({ key, pick, stack, partial, states });
   const cells = [cell('4407236se', 'a', ['b', 'c']), cell('4407236sw', 'd', [], true)];
   const base = naipWorkTileInputHash('11/610/742', cells, 1);
 
@@ -310,8 +322,40 @@ describe('naipWorkTileInputHash', () => {
         1,
       ),
       naipWorkTileInputHash('11/610/742', [cells[0] as never], 1),
+      // A cell that becomes a border cell has its fallbacks cut: other pixels, another hash.
+      naipWorkTileInputHash(
+        '11/610/742',
+        [cell('4407236se', 'a', ['b', 'c'], false, ['NY', 'VT']), cells[1] as never],
+        1,
+      ),
     ];
     expect(new Set([base, ...variants]).size).toBe(variants.length + 1);
+  });
+
+  test('covers every input of the frames the worker cuts (a property)', () => {
+    // Two cells that differ in what the worker cuts never hash alike; a change that cuts the same
+    // frames from the same pick, stack and partial (a border cell gaining a third state) keeps it.
+    const ids = fc.constantFrom('a', 'b', 'c', 'd');
+    const arb = fc.record({
+      pick: ids,
+      stack: fc.uniqueArray(ids, { maxLength: 3 }),
+      partial: fc.boolean(),
+      states: fc.subarray(['MA', 'NH', 'NY', 'VT'], { minLength: 1 }),
+    });
+    fc.assert(
+      fc.property(arb, arb, (x, y) => {
+        const hx = naipWorkTileInputHash('11/610/742', [{ key: '4407236se', ...x }], 1);
+        const hy = naipWorkTileInputHash('11/610/742', [{ key: '4407236se', ...y }], 1);
+        const cutX = JSON.stringify(naipFramesToCut(x));
+        const cutY = JSON.stringify(naipFramesToCut(y));
+        if (cutX !== cutY) return hx !== hy;
+        const same =
+          x.pick === y.pick &&
+          x.partial === y.partial &&
+          JSON.stringify(x.stack) === JSON.stringify(y.stack);
+        return same === (hx === hy);
+      }),
+    );
   });
 
   test('refuses a work tile that lists a cell twice', () => {

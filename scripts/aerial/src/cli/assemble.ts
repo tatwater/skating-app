@@ -30,16 +30,12 @@ import {
   assemblyKeys,
   planAssembly,
 } from '../assemble/assemble';
-import {
-  ASSEMBLE_SCOPE,
-  assemblyCounts,
-  checkRunTarget,
-  followAssembly,
-} from '../assemble/orchestrate';
+import { ASSEMBLE_SCOPE, assemblyCounts, followAssembly } from '../assemble/orchestrate';
 import { gdalRenderer } from '../assemble/overviews';
 import { fileStore, fileUploads, httpStore, type ObjectStore } from '../assemble/stores';
 import { type RcloneTarget, rcatSink, rcloneRun, serveHttp } from '../assemble/upload';
 import { buildManifestKey } from '../keys';
+import { checkRunTarget, RunTargetRefusal } from '../runTarget';
 import { parseStageArgs, StageArgsError } from '../stages';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -221,7 +217,8 @@ async function main(): Promise<void> {
 }
 
 main().catch((e) => {
-  const refused = e instanceof StageArgsError || e instanceof AssembleRefusal;
+  const refused =
+    e instanceof StageArgsError || e instanceof AssembleRefusal || e instanceof RunTargetRefusal;
   process.stderr.write(`${refused ? 'refused' : 'failed'}: ${(e as Error).message}\n`);
   process.exit(1);
 });

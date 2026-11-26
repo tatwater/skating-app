@@ -8,7 +8,8 @@
  * - **never the newest archive** under its prefix (a production key among the production keys, a
  *   pilot's among its pilot's): the newest is the one being served or about to be;
  * - **never the archive the web points at** (`VITE_NAIP_PMTILES_URL` in the local web checkout, read
- *   by name and compared, never printed): the local env is the operator's record of what is live;
+ *   by name and compared, never printed): the local env is the operator's record of what is live —
+ *   and when it can't be read, nothing is deleted, since what is live can't be told;
  * - **never anything live under a week**: the archive that replaced `--old` must have been written at
  *   least seven days ago — the earliest it can have gone live on Vercel — so a cached client or a
  *   lagging deploy still finds its tiles (§2.5: *no sooner than a week after the new one is live*);
@@ -69,14 +70,15 @@ function campaignOf(key: string): { campaign: string; pilot?: string } {
 
 /**
  * The plan, or a refusal. `listing` is every object under `old`'s publish prefix; `liveArchiveUrl`
- * is what the web's env points at (or `null` when it isn't set).
+ * is what the web's env points at — `null` when it isn't set there (nothing is live yet), `undefined`
+ * when the env couldn't be read at all, which is refused (the check is never skipped).
  */
 export function planCleanup(args: {
   campaign: string;
   pilot: string | null;
   old: string;
   listing: readonly ListedObject[];
-  liveArchiveUrl: string | null;
+  liveArchiveUrl: string | null | undefined;
   now: Date;
 }): CleanupPlan {
   const { campaign, old, listing, now } = args;
@@ -116,6 +118,11 @@ export function planCleanup(args: {
   if (age < LIVE_GRACE_DAYS * DAY_MS) {
     refuse(
       `${replacement} was written ${(age / DAY_MS).toFixed(1)} days ago: ${old} stays until it has been live a week`,
+    );
+  }
+  if (args.liveArchiveUrl === undefined) {
+    refuse(
+      "apps/web/.env can't be read, so what the web points at (VITE_NAIP_PMTILES_URL) can't be told: run cleanup from a checkout that has it",
     );
   }
   if (args.liveArchiveUrl?.replace(/[?#].*$/, '').endsWith(`/${old}`)) {

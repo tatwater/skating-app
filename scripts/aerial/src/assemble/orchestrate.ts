@@ -3,29 +3,11 @@
  * holds R2 credentials but no Convex key (Governor fork G-5), so the laptop keeps the `aerial_assemble`
  * row: it opens the row, starts the Machine (T's `spawn.sh assemble`), and follows the progress
  * object the Machine writes beside the shards — a heartbeat per zoom written — until the assembly
- * record lands or the Machine stops without one.
- *
- * Also the shared rule for every stage CLI of this package: **a pilot's rows go to a local
- * deployment only** (G-8 a), never dev, never prod.
+ * record lands or the Machine stops without one. Where the row may go is `runTarget.ts`' rule.
  */
 
 import { NAIP_STATES } from '@skating/core';
-import type { resolveDeployment } from '@skating/run-log';
 import type { AssembleProgress, AssemblyRecord } from './assemble';
-
-/** Where `convex run` will write (run-log exports the resolver, not its type). */
-export type DeploymentTarget = ReturnType<typeof resolveDeployment>;
-
-/** Refuse a pilot whose run rows would reach a shared deployment. */
-export function checkRunTarget(pilot: string | null, target: DeploymentTarget): void {
-  if (pilot === null) return;
-  const local = /^(local|anonymous):/.test(target.label);
-  if (!local) {
-    throw new Error(
-      `a pilot writes its run rows to a local deployment only; this one targets ${target.isProd ? 'prod' : target.isDev ? 'dev' : 'an unknown deployment'}`,
-    );
-  }
-}
 
 /** The assembler's run scope: the archive, the seven states, the whole region. */
 export const ASSEMBLE_SCOPE = {

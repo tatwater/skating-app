@@ -22,7 +22,7 @@ import { totalCounts } from './assemble/cellIndex';
 import { worldPixel } from './assemble/tileGrid';
 import type { CheckResult, VerifyOutcome } from './verify';
 
-/** Core's grid, injected (S's `quarterQuadCell` and `quarterQuadAt`). */
+/** Core's grid (`quarterQuadCell`, `quarterQuadAt`), injected. */
 export interface Grid {
   cellBox(key: string): { minLat: number; minLng: number; maxLat: number; maxLng: number };
   cellAt(lat: number, lng: number): string;
@@ -40,15 +40,22 @@ export function boxPixelsAtZ16(b: {
   return (c.x - a.x) * (c.y - a.y);
 }
 
-/** Cells whose frames supplied under `threshold` of their outline, lowest first. */
+/**
+ * The archive's cells (those of its work tiles) whose frames supplied under `threshold` of their
+ * outline, lowest first. A cell the archive holds no work tile of is not listed: a pilot's manifest
+ * records every cell of the region, and listing the ~9,000 it never cut at 0% would bury the few
+ * that matter (found by the integration's local run).
+ */
 export function coverage(
   manifest: AssembledManifest,
   grid: Pick<Grid, 'cellBox'>,
   threshold = 0.99,
 ): { key: string; share: number }[] {
   const totals = totalCounts(manifest.workTiles.map((w) => w.cellCounts));
+  const inArchive = new Set(manifest.workTiles.flatMap((w) => w.cells));
   const out: { key: string; share: number }[] = [];
   for (const cell of manifest.cells) {
+    if (!inArchive.has(cell.key)) continue;
     const supplied = [...(totals.get(cell.key)?.values() ?? [])].reduce((n, v) => n + v, 0);
     const share = supplied / boxPixelsAtZ16(grid.cellBox(cell.key));
     if (share < threshold) out.push({ key: cell.key, share });

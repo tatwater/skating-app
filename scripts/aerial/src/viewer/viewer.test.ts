@@ -77,7 +77,7 @@ const config = {
   container: 'map',
 };
 const archive = { getHeader: async () => ({ minLon: -74, minLat: 44, maxLon: -71, maxLat: 45 }) };
-// Core's `naipIndexUrl` is S's (a stub until it lands); the viewer takes it injected like the parse.
+// The viewer takes the index's URL injected, like the parse; the last test runs it with core's own.
 const indexUrl = (u: string) => u.replace(/\.pmtiles$/, '-cells.json');
 
 describe('the viewer', () => {
@@ -174,17 +174,7 @@ describe('the viewer page', () => {
   });
 });
 
-// Core's grid and date bodies are S's: stubs that throw until they land. These run once they do.
-const coreBuilt = (() => {
-  try {
-    naipIndexUrl('https://tiles.example/a.pmtiles');
-    return true;
-  } catch {
-    return false;
-  }
-})();
-
-describe.skipIf(!coreBuilt)('with core’s own date functions (once they are built)', () => {
+describe('with core’s own date functions', () => {
   it('core names the index, parses it, and dates the view', async () => {
     const { library } = fakeLibrary();
     const credit = { textContent: null as string | null };
@@ -193,6 +183,7 @@ describe.skipIf(!coreBuilt)('with core’s own date functions (once they are bui
       archive,
     });
     expect(res.ok).toBe(true);
+    expect(naipIndexUrl(config.archiveUrl)).toBe(indexUrl(config.archiveUrl));
     expect(credit.textContent).toMatch(/^Aerial · NAIP /);
   });
 });

@@ -301,13 +301,31 @@ export interface NaipHashedCell {
   pick: string;
   stack: readonly string[];
   partial: boolean;
+  /** Every state whose catalog lists the cell: a border cell's fallbacks are cut (`naipFramesToCut`). */
+  states: readonly string[];
+}
+
+/**
+ * The frames the worker cuts for a cell, in the rule's order (§2.2, "fallbacks are read only where
+ * needed"): the pick alone, unless the pick doesn't cover the cell (`partial`) or the cell sits on a
+ * state line (listed by more than one state), where a flight may end and the other state's frame
+ * must show through — then the pick and its whole stack. The one statement of the rule: the tiles
+ * stage writes its units with it and the input hash covers its answer, so a change to anything it
+ * reads re-cuts the work tile.
+ */
+export function naipFramesToCut(
+  cell: Pick<NaipHashedCell, 'pick' | 'stack' | 'partial' | 'states'>,
+): string[] {
+  return cell.partial || cell.states.length > 1 ? [cell.pick, ...cell.stack] : [cell.pick];
 }
 
 /**
  * A work tile's input hash (§2.1.3): hex SHA-256 over everything that decides its pixels — the rule's
  * version, the tiling's (`NAIP_TILING_VERSION`, the zooms and the tile size), the work tile itself,
- * and each of its cells' pick, stack (in order) and `partial`. The cells' order doesn't matter;
- * anything else that changes does. "Landed" is a done record carrying this hash (`shardLanded`).
+ * and each of its cells' pick, stack (in order), `partial` and the frames the worker cuts for it
+ * (`naipFramesToCut`, which also reads whether the cell is on a state line). The cells' order doesn't
+ * matter; anything else that changes does. "Landed" is a done record carrying this hash
+ * (`shardLanded`).
  */
 export function naipWorkTileInputHash(
   workTile: string,
@@ -323,7 +341,7 @@ export function naipWorkTileInputHash(
       rule: ruleVersion,
       tiling: [NAIP_TILING_VERSION, NAIP_MIN_ZOOM, NAIP_MAX_ZOOM, NAIP_TILE_SIZE],
       workTile,
-      cells: sorted.map((c) => [c.key, c.pick, [...c.stack], c.partial]),
+      cells: sorted.map((c) => [c.key, c.pick, [...c.stack], c.partial, naipFramesToCut(c)]),
     }),
   );
 }

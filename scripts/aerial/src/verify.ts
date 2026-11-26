@@ -36,6 +36,7 @@ import {
 } from './assemble/assemble';
 import { totalCounts } from './assemble/cellIndex';
 import { prng } from './assemble/prng';
+import type { ProcessRunner } from './assemble/process';
 import { type ObjectStore, sha256Hex } from './assemble/stores';
 import { tileBox, workTileIdRange } from './assemble/tileGrid';
 import { archiveKey, archiveName, indexKey, manifestKey, publishPrefix, shardKeys } from './keys';
@@ -447,4 +448,31 @@ export function publicUrl(
   file: string,
 ): string {
   return `${base.replace(/\/+$/, '')}/${publishPrefix(campaign, pilot ?? undefined)}${file}`;
+}
+
+/**
+ * **A second reader of the published archive**: the `pmtiles` CLI's `show` over the public URL,
+ * when the CLI is installed (`null` when it isn't). Not `pmtiles verify`: that one takes a local file
+ * only — handed a URL it stats it as a path and fails (found by the integration's local run, which
+ * is how verify refused a good build wherever the CLI is installed) — and a region's archive is
+ * never on the laptop. The structural verify belongs to the assembler's round trip (`pmtiles
+ * verify` on a local archive, B05 §7.3).
+ */
+export async function pmtilesCliCheck(
+  run: ProcessRunner,
+  archiveUrl: string,
+): Promise<CheckResult | null> {
+  const res = await run('pmtiles', ['show', archiveUrl]).catch(() => null);
+  if (res === null) return null;
+  const ok = res.code === 0 && /pmtiles spec version: 3/.test(res.stdout);
+  return {
+    name: 'pmtiles show',
+    problems: ok
+      ? []
+      : [
+          `pmtiles show exited ${res.code}: ${res.stderr.trim().split('\n').slice(-3).join(' ') || 'no spec-3 header'}`,
+        ],
+    counts: {},
+    notes: ok ? ['the pmtiles CLI read the header and metadata over the public URL'] : [],
+  };
 }

@@ -68,6 +68,10 @@ describe('cleanup', () => {
     expect(plan({ liveArchiveUrl: null }).deleteKeys).toHaveLength(3);
   });
 
+  it('refuses when what the web points at can’t be read, rather than skip the check', () => {
+    expect(() => plan({ liveArchiveUrl: undefined })).toThrow(/can't be read/);
+  });
+
   it('refuses a swapped pair, its own archive, a key not there, a missing replacement, a pilot mismatch', () => {
     expect(() => plan({ campaign: 'naip-20261212' })).toThrow("this build's own archive");
     expect(() => plan({ campaign: 'naip-20261101' })).toThrow('is not older than');
