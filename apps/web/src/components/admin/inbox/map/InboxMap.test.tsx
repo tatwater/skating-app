@@ -2,6 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
+import { adminToken } from '../../body/map/bodyMapPalette';
 import { stubJsdomAnimations } from '../../body/tabs/jsdomStubs';
 import { EMBED_HEIGHT, InboxMap, InboxMapStill, legendItem } from './InboxMap';
 import { ADMIT, ALERT, DRAWN, LOOKALIKE, REPORT_POINT } from './inboxMapFixtures';
@@ -97,6 +98,20 @@ describe('the embed', () => {
     );
     // An embed has no rack: no switch of its own for it.
     expect(screen.queryByRole('switch', { name: 'Summer aerial' })).toBeNull();
+  });
+
+  it('draws its own inks in the dark map’s colors over the summer aerial, its legend plate in the page’s', () => {
+    const fg2 = (sel: string) =>
+      (document.querySelector(sel) as HTMLElement | SVGElement | null)?.style.getPropertyValue(
+        '--fg2',
+      );
+    const { rerender } = render(<InboxMapStill view={alertScene(ALERT)} width={300} />);
+    expect(fg2('[data-slot="body-map-still"]')).toBe('');
+    rerender(<InboxMapStill view={alertScene(ALERT)} width={300} aerial />);
+    expect(fg2('[data-slot="body-map-still"]')).toBe(adminToken('dark', 'fg2'));
+    expect(fg2('[data-slot="map-graticule"]')).toBe(adminToken('dark', 'fg2'));
+    expect(fg2('[data-slot="body-map-aerial-credit"]')).toBe(adminToken('dark', 'fg2'));
+    expect(fg2('[data-slot="body-map-plate"]')).toBe('');
   });
 
   it('view only, on a phone: no zoom pair, and the map takes no pointer', () => {

@@ -177,6 +177,7 @@ export function InboxMap({
         rack={false}
         foot={foot}
         plate={embedPlate(view)}
+        overAerial={aerial}
         credit={canvas.aerialCredit}
         aerialLoad={canvas.aerialLoad}
         onZoomIn={canvas.zoomIn}
@@ -241,6 +242,7 @@ export function InboxMapStill({
         rack={false}
         foot={foot}
         plate={embedPlate(view)}
+        overAerial={aerial}
         credit={aerial ? aerialCredit(aerialCapturedAt) : null}
         aerialLoad={load}
         onZoomIn={() => setZoomStep((z) => z + 1)}

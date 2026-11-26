@@ -13,6 +13,7 @@ import {
 } from '@/components/kit/storyKit';
 import { fitCamera } from '@/lib/mapSurface';
 import { frameInRealBox, MAX_ZOOM } from '../map/bodyMapFraming';
+import { adminToken } from '../map/bodyMapPalette';
 import { FIT_PADDING } from '../map/useBodyMapCanvas';
 import type { MergeFlowProps } from '../tabs/shape/MergeFlow';
 import {
@@ -187,10 +188,44 @@ export const SummerAerialOff: Story = {
   },
 };
 
-/** The same, light. */
+/**
+ * The same, light: a photograph is dark ground whatever the theme, so the map's own inks — the
+ * still's drawing, the graticule, the scene's labels, the scale, the credit's words — are the dark
+ * map's, while the chrome on its plates (the rack, the zoom pair, the key, the marks) keeps the
+ * light theme. Turned off, the light inks come straight back.
+ */
 export const SummerAerialLight: Story = {
   args: { aerial: true },
   globals: { surface: 'admin', mode: 'light' },
+  play: async ({ canvasElement }) => {
+    // The `--fg2` an element resolves (an SVG's too), and a token's hex, both as computed colors.
+    const token = (el: Element) =>
+      computedColor(canvasElement, getComputedStyle(el).getPropertyValue('--fg2'));
+    const as = (hex: string) => sameColor(computedColor(canvasElement, hex));
+    const onMap = () => [
+      slot(canvasElement, 'body-map-still'),
+      slot(canvasElement, 'map-graticule'),
+      slot(canvasElement, 'body-map-label'),
+      slot(canvasElement, 'map-scale'),
+    ];
+    for (const el of [...onMap(), slot(canvasElement, 'body-map-aerial-credit')]) {
+      await expect(token(el)).toEqual(as(adminToken('dark', 'fg2')));
+    }
+    // The scene's quiet labels draw in the dark map's ink, light on the photograph.
+    await expect(getComputedStyle(slot(canvasElement, 'body-map-label')).color).toEqual(
+      as(adminToken('dark', 'fg3')),
+    );
+    for (const el of [
+      slot(canvasElement, 'map-layer-rack'),
+      slot(canvasElement, 'map-key'),
+      slot(canvasElement, 'body-map-point'),
+      must(canvasElement.querySelector('[data-map-zoom]')),
+    ]) {
+      await expect(token(el)).toEqual(as(adminToken('light', 'fg2')));
+    }
+    await userEvent.click(within(canvasElement).getByRole('switch', { name: 'Summer aerial' }));
+    for (const el of onMap()) await expect(token(el)).toEqual(as(adminToken('light', 'fg2')));
+  },
 };
 
 /**

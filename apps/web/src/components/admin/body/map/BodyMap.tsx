@@ -70,7 +70,8 @@ export function BodyMap({
   const canvas = useBodyMapCanvas({ bbox, mode, drawn, aerial });
   // The tool a tab claimed (B01-6): its engine on this map, its mode bar over it.
   const tool = useMapToolClaim();
-  const palette = useMemo(() => bodyMapPalette(mode), [mode]);
+  // A tool draws on the map, so it takes the map's inks (the dark map's over the summer aerial).
+  const palette = useMemo(() => bodyMapPalette(canvas.inks), [canvas.inks]);
   useMapToolEngine(canvas.liveMap, tool, palette);
   return (
     <BodyMapPane
@@ -92,6 +93,7 @@ export function BodyMap({
       rack={rack}
       onLayerChange={onLayerChange}
       aerial={{ on: aerial, onChange: setAerial }}
+      overAerial={aerial}
       credit={canvas.aerialCredit}
       aerialLoad={canvas.aerialLoad}
       onZoomIn={canvas.zoomIn}
@@ -148,6 +150,7 @@ export function BodyMapStillView({
       rack={rack}
       onLayerChange={onLayerChange}
       aerial={{ on: aerial, onChange: setAerial }}
+      overAerial={aerial}
       credit={aerial ? aerialCredit(aerialCapturedAt) : null}
       aerialLoad={load}
       onZoomIn={() => setZoomStep((z) => z + 1)}

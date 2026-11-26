@@ -4,6 +4,7 @@ import { expect, userEvent, waitFor } from 'storybook/test';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { must } from '@/components/kit/storyKit';
 import { ThemePair } from '../../../../../.storybook/theme';
+import { adminToken } from '../../body/map/bodyMapPalette';
 import { InboxMapStill } from './InboxMap';
 import {
   ACCESS,
@@ -239,6 +240,43 @@ export const Narrow: Story = {
     // View only: the zoom pair is gone, the scale stays.
     await expect(canvasElement.querySelector('[data-map-zoom]')).not.toBeVisible();
     await expect(canvasElement.querySelector('[data-slot="map-scale"]')).toBeVisible();
+  },
+};
+
+/**
+ * The summer aerial under an embed, in both modes: the map's own inks (the still, the graticule, the
+ * scale, the credit's words) are the dark map's in either theme — a photograph is dark ground — and
+ * the legend plate keeps its quad's.
+ */
+export const AerialInks: Story = {
+  args: { view: admitScene(ADMIT), width: 420, height: 250, aerial: true },
+  render: (args) => (
+    <ThemePair surface="admin" columns="one">
+      {() => <InboxMapStill {...args} className="border border-line" />}
+    </ThemePair>
+  ),
+  play: async ({ canvasElement }) => {
+    const [dark, light] = quads(canvasElement);
+    // The `--fg2` an element resolves (an SVG's too), and a token's hex, both as computed colors.
+    const token = (el: Element) =>
+      computedColor(canvasElement, getComputedStyle(el).getPropertyValue('--fg2'));
+    const as = (hex: string) => sameColor(computedColor(canvasElement, hex));
+    for (const [q, mode] of [
+      [must(dark), 'dark'],
+      [must(light), 'light'],
+    ] as const) {
+      for (const name of [
+        'body-map-still',
+        'map-graticule',
+        'map-scale',
+        'body-map-aerial-credit',
+      ]) {
+        const el = must(q.querySelector<HTMLElement>(`[data-slot="${name}"]`));
+        await expect(token(el)).toEqual(as(adminToken('dark', 'fg2')));
+      }
+      const plate = must(q.querySelector<HTMLElement>('[data-slot="body-map-plate"]'));
+      await expect(token(plate)).toEqual(as(adminToken(mode, 'fg2')));
+    }
   },
 };
 

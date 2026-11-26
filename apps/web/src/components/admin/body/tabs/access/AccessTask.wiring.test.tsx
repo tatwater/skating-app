@@ -2,7 +2,7 @@ import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { ConvexError } from 'convex/values';
 import type { ReactNode } from 'react';
-import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 
 /**
  * **Access's map tasks through the real Body console route** (B01-6b): only the router, the role,
@@ -24,6 +24,8 @@ const mocks = vi.hoisted(() => ({
   announce: vi.fn((_receipt: unknown) => Promise.resolve()),
   navigate: vi.fn(),
   claim: null as null | import('../../frame/mapTool').MapToolClaim,
+  inks: 'dark' as 'dark' | 'light',
+  palette: null as null | import('../../map/bodyMapPalette').BodyMapPalette,
 }));
 
 vi.mock('convex/react', async () => {
@@ -73,11 +75,18 @@ vi.mock('../../map/useBodyMapCanvas', () => ({
     atMinZoom: false,
     atMaxZoom: false,
     liveMap: () => null,
+    // The map's ink mode (`mapInks`): what a tool's palette is built from.
+    inks: mocks.inks,
   }),
 }));
 vi.mock('../../map/useMapToolEngine', () => ({
-  useMapToolEngine: (_live: unknown, claim: typeof mocks.claim) => {
+  useMapToolEngine: (
+    _live: unknown,
+    claim: typeof mocks.claim,
+    palette: NonNullable<typeof mocks.palette>,
+  ) => {
     mocks.claim = claim;
+    mocks.palette = palette;
   },
 }));
 
@@ -88,6 +97,7 @@ import { resetConsoleReads } from '@/components/admin/reads/consoleReads';
 import { KeysProvider } from '@/lib/keys';
 import { BodyConsoleRoute } from '../../frame/BodyConsoleRoute';
 import { MASCOMA_EXTRAS, MASCOMA_ID, MASCOMA_RECORD } from '../../frame/bodyFixtures';
+import { adminToken } from '../../map/bodyMapPalette';
 import { stubJsdomAnimations } from '../jsdomStubs';
 import { ListWritersProvider } from '../listWriter';
 
@@ -181,6 +191,21 @@ const pick = (p: { lat: number; lng: number }) =>
     e.onPick(p);
   });
 const saveButton = () => within(task()).getByRole('button', { name: /Save/ });
+
+describe('Access: the tool’s drafting lines', () => {
+  it('draw in the map’s inks — the dark map’s over the summer aerial — whatever the page’s mode', async () => {
+    onTestFinished(() => {
+      mocks.inks = 'dark';
+    });
+    for (const inks of ['light', 'dark'] as const) {
+      mocks.inks = inks;
+      const { unmount } = render(<Mounted />);
+      await screen.findByRole('button', { name: /Add a put-in/ });
+      expect(mocks.palette?.outline.body.line).toBe(adminToken(inks, 'fg1'));
+      unmount();
+    }
+  });
+});
 
 describe('Access: a put-in placed on the map', () => {
   it('snaps to the outline while hovering; the save sends the spot and the name, with Undo', async () => {

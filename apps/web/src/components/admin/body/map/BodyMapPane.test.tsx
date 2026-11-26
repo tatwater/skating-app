@@ -10,6 +10,7 @@ import { stubJsdomAnimations } from '../tabs/jsdomStubs';
 import { BodyMapStillView } from './BodyMap';
 import { BodyMapKey } from './BodyMapMarks';
 import { BodyMapPane, RACK_UNDER_TOOL } from './BodyMapPane';
+import { adminToken } from './bodyMapPalette';
 import { drawScene, layerSwitches, mergeScenes } from './bodyScene';
 import type { MapPointMark } from './mapDescriptors';
 
@@ -234,6 +235,53 @@ describe('the summer aerial on the console map', () => {
     // In: nothing owed, nothing to press.
     expect(credit).toHaveAttribute('data-state', 'loaded');
     expect(document.querySelector('[data-slot="body-map-aerial-retry"]')).toBeNull();
+  });
+
+  it('draws the map’s own inks in the dark map’s colors while on, the chrome on its plates in the page’s', async () => {
+    const user = userEvent.setup();
+    render(
+      <BodyMapStillView
+        bbox={MASCOMA_BOUNDS}
+        scene={MASCOMA_SCENE}
+        resetKey="shape"
+        width={W}
+        height={H}
+      />,
+    );
+    const ink = (el: Element | null | undefined) =>
+      (el as HTMLElement | SVGElement | null)?.style.getPropertyValue('--fg2') ?? '';
+    const q = (sel: string) => document.querySelector(sel);
+    const onMap = () => [
+      q('[data-slot="body-map-still"]'),
+      q('[data-slot="map-graticule"]'),
+      q('[data-slot="body-map-label"]'),
+      q('[data-slot="map-scale"]'),
+    ];
+    const plated = () => [
+      q('[data-slot="map-layer-rack"]'),
+      q('[data-slot="body-map-point"]'),
+      q('[data-map-zoom]'),
+      q('[data-slot="map-key"]'),
+    ];
+    // Off: every ink is the page's own.
+    for (const el of [...onMap(), ...plated()]) expect(ink(el)).toBe('');
+
+    await user.click(screen.getByRole('switch', { name: 'Summer aerial' }));
+    const dark = adminToken('dark', 'fg2');
+    for (const el of onMap()) {
+      expect(el).not.toBeNull();
+      expect(ink(el)).toBe(dark);
+    }
+    expect(ink(q('[data-slot="body-map-aerial-credit"]'))).toBe(dark);
+    // The chrome on its own plate keeps the page's theme.
+    for (const el of plated()) expect(ink(el)).toBe('');
+    expect(screen.getByRole('switch', { name: 'Summer aerial' }).closest('[style*="--fg2"]')).toBe(
+      null,
+    );
+
+    // Off again: straight back.
+    await user.click(screen.getByRole('switch', { name: 'Summer aerial' }));
+    for (const el of onMap()) expect(ink(el)).toBe('');
   });
 
   it('draws over the fills and under every line: the shore stays on top', () => {
