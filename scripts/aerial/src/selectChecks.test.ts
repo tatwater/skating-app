@@ -9,11 +9,9 @@ import {
 import { describe, expect, test } from 'vitest';
 import { checkSelection } from './selectChecks';
 
-// The real inventory's slice, core's fixture: the checks must pass on the rule's real answer.
-const FIXTURE = readFileSync(
-  new URL('../../../packages/core/src/fixtures/naipInventory.jsonl', import.meta.url),
-  'utf8',
-)
+// A slice of the real catalog (cut from core's fixture, kept here so Turbo hashes it with this
+// package): the checks must pass on the rule's real answer.
+const FIXTURE = readFileSync(new URL('./selectFixture.jsonl', import.meta.url), 'utf8')
   .split('\n')
   .filter((l) => l !== '')
   .map((l) => {
@@ -34,7 +32,7 @@ const f = (key: string, acquired: string, gsd: number, state = 'VT'): NaipCandid
 const K = '4407236se';
 
 describe('checkSelection', () => {
-  test("passes on the rule's answer for the real slice", () => {
+  test("passes on the rule's answer for a real slice", () => {
     const selection = selectNaipPicks(FIXTURE, [], NAIP_OFF_SEASON_CELLS);
     expect(checkSelection(FIXTURE, [], selection)).toEqual({
       holes: [],

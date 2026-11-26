@@ -16,7 +16,7 @@ import { pickTable, runSelect, type SelectDeps, SelectRefusal } from './selectSt
 import { parseStageArgs } from './stages';
 
 const ITEMS: NaipCatalogItem[] = readFileSync(
-  new URL('../../../packages/core/src/fixtures/naipInventory.jsonl', import.meta.url),
+  new URL('./selectFixture.jsonl', import.meta.url),
   'utf8',
 )
   .split('\n')
@@ -61,7 +61,7 @@ function deps(over: Partial<SelectDeps> = {}) {
           ) {
             return [t.itemId, { white: 0, valid: 0.6 }];
           }
-          if (t.itemId.endsWith('20240913')) return [t.itemId, null];
+          if (t.itemId.includes('_4107102_se_')) return [t.itemId, null];
           return [t.itemId, { white: 0.001, valid: 1 }];
         }),
       );
@@ -98,7 +98,7 @@ describe('runSelect', () => {
     expect(out.manifest.catalog).toEqual({
       walkedOn: '2026-11-25',
       items: ITEMS.length,
-      perState: Object.fromEntries(Object.entries(perState).filter(([, n]) => n > 0)),
+      perState,
       archivedAt: 'naip/inventory/2026-11-25/',
     });
     // Every pick scored first; then the partial October cell's next frame; then the replacement of
@@ -113,7 +113,10 @@ describe('runSelect', () => {
     expect(out.counts.unscored).toBeGreaterThan(0);
     expect(d.run.start).toHaveBeenCalledOnce();
     expect(d.run.flush).toHaveBeenCalledTimes(7);
-    expect(d.run.count).toHaveBeenCalledWith('droppedOutsideState', 744);
+    expect(d.run.count).toHaveBeenCalledWith(
+      'droppedOutsideState',
+      ITEMS.filter((i) => i.state === 'ME' && i.year === 2025).length,
+    );
     expect(d.run.succeed).toHaveBeenCalledWith([
       expect.stringMatching(/^\d+ cells, \d+ of \d+ work tiles to cut$/),
       '1 picks over the cloud threshold, for review',
