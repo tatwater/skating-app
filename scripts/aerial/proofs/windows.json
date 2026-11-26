@@ -1,0 +1,111 @@
+{
+  "note": "Hand-written manifests for the local warp proof (B05 \u00a77.3): three z14 windows of real NAIP frames. Each cell lists its frames in the rule's order (the pick first; fallbacks only where framesToCut would cut them) and its outline from the quarter-quad key, decoded by hand and checked against every catalog footprint of the scouts' inventory (a stand-in for core's quarterQuadCell until it lands).",
+  "windows": [
+    {
+      "name": "champlain-vt-ny",
+      "workTile": "11/606/736",
+      "window": "14/4852/5895",
+      "cells": [
+        {
+          "key": "4407305ne",
+          "outline": [-73.4375, 44.9375, -73.375, 45.0],
+          "frames": ["ny_m_4407305_ne_18_060_20240728"]
+        },
+        {
+          "key": "4407306nw",
+          "outline": [-73.375, 44.9375, -73.3125, 45.0],
+          "frames": [
+            "vt_m_4407306_nw_18_030_20250811",
+            "vt_m_4407306_nw_18_030_20230620_20231113",
+            "ny_m_4407306_nw_18_060_20240702",
+            "ny_m_4407306_nw_18_060_20220801",
+            "ny_m_4407306_nw_18_060_20190801_20191210",
+            "vt_m_4407306_nw_18_060_20180914_20190225",
+            "vt_m_4407306_nw_18_h_20160804",
+            "ny_m_4407306_nw_18_.5_20150604_20151109"
+          ]
+        }
+      ],
+      "seams": [
+        {
+          "west": "4407305ne",
+          "east": "4407306nw",
+          "what": "NY 2024 0.6 m | VT 2025 0.3 m, the state line's two flights, both UTM 18"
+        }
+      ],
+      "fallThrough": null
+    },
+    {
+      "name": "jaffrey-72w",
+      "workTile": "11/614/754",
+      "window": "14/4915/6037",
+      "cells": [
+        {
+          "key": "4207117nw",
+          "outline": [-72.0, 42.6875, -71.9375, 42.75],
+          "frames": [
+            "nh_m_4207117_nw_19_030_20230831_20231113",
+            "ma_m_4207117_nw_19_030_20230831_20231116",
+            "ma_m_4207117_nw_19_060_20250811",
+            "nh_m_4207117_nw_19_060_20250811",
+            "ma_m_4207117_nw_19_060_20180824_20190206",
+            "nh_m_4207117_nw_19_060_20180824_20190206",
+            "ma_m_4207117_nw_19_.6_20160803_20160928",
+            "nh_m_4207117_nw_19_h_20160803"
+          ]
+        },
+        {
+          "key": "4207224ne",
+          "outline": [-72.0625, 42.6875, -72.0, 42.75],
+          "frames": [
+            "nh_m_4207224_ne_18_030_20230831_20231113",
+            "ma_m_4207224_ne_18_030_20230831_20231113",
+            "ma_m_4207224_ne_18_060_20250811",
+            "nh_m_4207224_ne_18_060_20250811",
+            "ma_m_4207224_ne_18_060_20180824_20190206",
+            "nh_m_4207224_ne_18_060_20180824_20190206",
+            "ma_m_4207224_ne_18_.6_20160803_20160928",
+            "nh_m_4207224_ne_18_h_20160803"
+          ]
+        }
+      ],
+      "seams": [
+        {
+          "west": "4207224ne",
+          "east": "4207117nw",
+          "what": "NH 2023 0.3 m, UTM 18 | UTM 19 at 72\u00b0W"
+        }
+      ],
+      "fallThrough": null
+    },
+    {
+      "name": "maine-partial",
+      "workTile": "11/633/732",
+      "window": "14/5065/5859",
+      "cells": [
+        {
+          "key": "4506827sw",
+          "outline": [-68.75, 45.5, -68.6875, 45.5625],
+          "frames": [
+            "me_m_4506827_sw_19_030_20230901_20240103",
+            "me_m_4506827_sw_19_060_20210816",
+            "me_m_4506827_sw_19_060_20180720_20190305"
+          ]
+        },
+        {
+          "key": "4506827se",
+          "outline": [-68.6875, 45.5, -68.625, 45.5625],
+          "frames": ["me_m_4506827_se_19_060_20180720_20190305"]
+        }
+      ],
+      "seams": [
+        {
+          "west": "4506827sw",
+          "east": "4506827se",
+          "what": "ME 2023 0.3 m (partial) | ME 2018 0.6 m"
+        }
+      ],
+      "fallThrough": "4506827sw"
+    }
+  ]
+}
