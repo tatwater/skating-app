@@ -11,7 +11,8 @@
  *   pixel extents the warps write, the tiler's chunks, the tile zooms and the shard's keys.
  *   The worker decides nothing the unit could have decided.
  * - **The input hash** is the manifest's (the select stage's, core's `naipWorkTileInputHash`): the
- *   rule's version, `NAIP_TILING_VERSION` and each cell's pick, stack and `partial`. This file only
+ *   rule's version, `NAIP_TILING_VERSION` and each cell's pick, stack, `partial` and the frames it
+ *   cuts (`naipFramesToCut`, which `framesToCut` is). This file only
  *   compares it. Everything in `TILE_SETTINGS` — and the GDAL arguments in `cut-aerial.sh` — draws
  *   pixels the hash can't see, so **changing any of it means bumping `NAIP_TILING_VERSION`** (or a
  *   rebuild copies stale tiles as unchanged); `tiles.test.ts` fingerprints both and fails until the

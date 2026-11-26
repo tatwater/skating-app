@@ -17,7 +17,7 @@
 # throwaway local backend only and refuses dev and prod (G-8 a); nothing writes prod's (F-4 a). A
 # cheap argument must never fail an expensive build at its last step (run-corpus.sh's lesson).
 #
-# The heavy stages run on Fly and this laptop orchestrates them for the build's wall time (about 9 h
+# The heavy stages run on Fly and this laptop orchestrates them for the build's wall time (about 16 h
 # for the region): run it under `caffeinate -i`. Every stage resumes — a sleep costs a re-run of the
 # reconcile, not the work done. The README is the runbook, the gated steps and the Fly traps.
 #

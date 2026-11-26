@@ -974,6 +974,9 @@ only. One entry point builds it whole, by stage or for the cells that changed; a
 any newer summer flights for Machinery to show, never spending on its own. *An operator opens the
 aerial on any lake and it is there in a second, with the months it was flown.*
 
+#### Data runs
+- **2026-11-25 — the first catalog walk (`naip-20261125`, a dry run, no rows):** 69,207 items over the seven states → 9,168 quarter-quads, every one with a pick; 28,568 frames; 1,764 work tiles; 140 partial picks; 60 cloud candidates, two struck by the founder's review
+
 #### Deferred
 - ⚪ **Color matching across flights** — the low-zoom quilt is accepted in v1 → the plan's §1.3
 - ⚪ **A console *Rebuild* that launches the build** — Convex can start Fly Machines, but the build's orchestration stays on the laptop until B01's hosted-runner decision → the plan's §3.2
@@ -987,8 +990,9 @@ aerial on any lake and it is there in a second, with the months it was flown.*
 - **A prod copy** — prod points at dev's dated object at the cutover
 
 #### Owed
-- The pilot (F-9 ruled (c), 2026-11-25: Champlain's north end, the NH–MA strip, the Maine cells north of Rumford and a New York 2024/2019 join, ~63 cells), then the founder's go for the full region run (~9 h on Fly, ~$20)
-- G-6, which bucket serves the archive publicly, checked at build start; a bucket-scoped R2 token on the Fly app if it is a new one (a founder task)
+- B05-1 is built and integrated (2026-11-26) but not yet open as a PR: the pilot (F-9 ruled (c): Champlain's north end, the NH–MA strip, the Maine cells north of Rumford and a New York 2024/2019 join, ~63 cells) comes first, gated on the governor's go — the image pushed under its own label, the run rows to a throwaway local backend — then `/code-review`, the PR, and the founder's go for the full region run (~16 h on Fly, ~$30–40, the plan's §6.1)
+- The archive measured larger than designed: ~550 GB, ~$8 a month (~$100 a year against the ~$70 accepted), because the design's 387 GB left out the pyramid's upper levels — for the founder's go/no-go with the pilot's numbers
+- G-6 answered at build start: `skating-imagery`, whose public host already serves the winter archive and which the app's staged R2 token writes — no new credential
 - `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, and `NAIP_MANIFEST_URL` on Convex dev, once the archive exists
 - The widen's deploy to dev (`convex dev --once` from main) after B05-1 merges, before the full run writes its rows
 

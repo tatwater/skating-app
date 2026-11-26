@@ -29,7 +29,7 @@ all apply here — each costs money silently. The six that bite this directory:
 5. **No comment between backslash-continuations** — it ends the command and drops every argument
    after it, silently (twenty winter Machines once ran with no granule).
 6. **The live-Machine cap is shared with the winter pump.** `spawn.sh` counts every live Machine on
-   `skating-imagery` against `MAX_PARALLEL` (25), the pump's included, so a nine-hour build holds the
+   `skating-imagery` against `MAX_PARALLEL` (25), the pump's included, so a sixteen-hour build holds the
    winter pump's spawns back while it runs. Run the full build when the season can wait a night.
 
 And one that is the aerial's own:
@@ -60,7 +60,7 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 | `select` | laptop | the frame rule over the whole catalog → `.scratch/<campaign>/manifest.json`, the snapshot in `inventory/` | `aerial_select` |
 | `tiles` | laptop → Fly `ams` | uploads the manifest and snapshot, writes a unit per work tile, spawns, drains, reconciles by done record, three rounds | `aerial_tiles`, a heartbeat every 25 landed |
 | `assemble` | laptop → one Fly Machine | the streaming PMTiles writer, the overviews (tile zooms 7–10), the date index | `aerial_assemble` |
-| `verify` | laptop | counts, spot reads from the public URL, coverage, dates, seams, the viewer page | — |
+| `verify` | laptop | counts, spot reads from the public URL, coverage, dates, seams, the viewer page | `aerial_assemble` (label `verify …`) |
 | `cleanup` | laptop | deletes an old archive, never the newest, never within a week | — |
 
 `all` is select → tiles → assemble → verify, stopping at the first refusal. **Every argument is
@@ -93,7 +93,8 @@ one-pixel spill at every work tile's edge (measured).
 ### ⚠ Changing how a pixel is drawn means bumping `NAIP_TILING_VERSION`
 
 A rebuild re-cuts only the work tiles whose input hash changed (core's `naipWorkTileInputHash`: the
-rule's version, `NAIP_TILING_VERSION`, each cell's pick, stack and `partial`). The worker's GDAL
+rule's version, `NAIP_TILING_VERSION`, each cell's pick, stack, `partial` and the frames it cuts —
+core's `naipFramesToCut`, which also reads whether the cell is on a state line). The worker's GDAL
 arguments and `tiles.ts`' `TILE_SETTINGS` aren't in it. Change one so the same stack draws
 different pixels, and bump `NAIP_TILING_VERSION` in core in the same commit — or a
 `--from-current` build copies stale tiles beside new ones. `tiles.test.ts` fingerprints both and
@@ -160,6 +161,28 @@ deployed: `caffeinate -i scripts/aerial/run-aerial.sh naip-<YYYYMMDD>`.
 deleted once verify passes, an old archive by `--stage cleanup --old <key>` after a week.
 
 ---
+
+## A local end-to-end run, no cloud
+
+The integration's recipe (2026-11-26), for a change that crosses stages: every stage CLI for real
+on one pilot work tile, with Planetary Computer, R2 and Fly stood in for locally.
+
+1. **Select and tiles** through `run-aerial.sh <naip-pilot-…> --pilot <name> --cells <file> --stage
+   select --dry-run`, then `--stage tiles --dry-run`: the manifest and the units under `.scratch/`.
+   Copy a kept walk (`.scratch/<campaign>/inventory/`) and `scores.json` first, and nothing is read.
+2. **The cut**: `cut-aerial.sh <unit> --local <bucket dir>`, with `PC_STAC` and `PC_SAS` as
+   `file://` URLs (a STAC item per frame, a token file), `CPL_AZURE_ENDPOINT=http://127.0.0.1:<port>`
+   and `CPL_AZURE_USE_HTTPS=NO` over `rclone serve http` of a directory of synthetic COGs, a fake
+   `AERIAL_IMAGE` digest, and `AERIAL_PACK="node .scratch/image/tiles-pack.mjs"` (the bundle).
+3. **Assemble**: copy the manifest to its build key, then `AERIAL_LOCAL_BUCKET=<bucket dir> node
+   .scratch/image/assemble.mjs <campaign> --pilot <name>`.
+4. **Verify** through `run-aerial.sh … --stage verify --dry-run`, with `RCLONE_CONFIG` holding a
+   `type = local` remote named by `R2_REMOTE`, `R2_BUCKET` the bucket dir's absolute path, and
+   `R2_PUBLIC_BASE_URL` a static server over it that answers ranges and serves the gzip-bodied
+   `-cells.json` with `Content-Encoding: gzip`, as R2 does.
+
+What it can't stand in for: the run rows (a dry run writes none), the Machines, R2 itself and real
+frames — the warp proof below covers the frames, the pilot the rest.
 
 ## The local warp proof
 

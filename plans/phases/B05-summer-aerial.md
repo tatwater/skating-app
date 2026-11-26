@@ -13,7 +13,9 @@ lines.*
 > answered all eight forks on 2026-11-25 (§1.2), and two follow-ups the same day (no interim surface
 > for the July offer; no clipped reveal for skaters either), having been told the size (12,000–20,000
 > lines, two PRs) without objecting. The one question the rulings opened (§8, F-9) he answered the
-> same day: (c), the pilot grows to ~63 cells. The builder briefs are §10.
+> same day: (c), the pilot grows to ~63 cells. The builder briefs are §10. **B05-1 is built and
+> integrated** (2026-11-26: S, T and P merged, their seams closed, the stages run end to end locally
+> with the cloud stood in for); the pilot (§10.7, gated) is next. What the build found is at the end.
 >
 > **The token.** `B05`: the work is launch-era console infrastructure, and the `A` era (enrichment,
 > `A01`–`A10`) is closed in the README's table, so it is not `A06j` even though its family is A06e's
@@ -81,7 +83,8 @@ Quoted where they bear; these are the inputs, not this doc's reading of them.
 
 **The eight forks, ruled (2026-11-25).** The design's §8 asked; he answered every one:
 
-1. **Maximum zoom: z18 everywhere** (F-1 b, D317). One archive, one layer, ~387 GB, ~$5.80 a month.
+1. **Maximum zoom: z18 everywhere** (F-1 b, D317). One archive, one layer, ~387 GB, ~$5.80 a month
+   (the design's figure; ~550 GB and ~$8.30 a month measured, §6.1).
    No two-band stacking.
 2. **Where the July offer appears** (F-2): not an Overview card and not the Inbox. *"I think this
    belongs in the Machinery pages eventually, where we manage the rest of the imagery runs."* And no
@@ -174,20 +177,26 @@ that doesn't cover its whole cell (a state's flight ending at a state line or th
 Maine picks per the scouts' thumbnails) lets the next one show through (§2.2). Stack depth in the
 snapshot: 718 cells have one leaf-on frame and no fallback; the median cell has three.
 
-**What the rule picks today** (re-run on the snapshot for the design, identical to the scouts'
-`picks_T2.json`):
+**What the rule picks today** (S's select stage over the first walk, `naip-20261125`, 69,207 items,
+after the founder's cloud review; the design's re-run matched the scouts' `picks_T2.json` — S's rule
+matches it on 9,123 of 9,168 cells, the other 45 being one frame published under two states' labels
+on the same day, which the rule now breaks by item id):
 
 | State (by the pick's label) | Pick | Cells |
 | --- | --- | --- |
 | VT | 2025, 0.3 m | 812 |
-| NH | 2023, 0.3 m · 2025, 0.6 m | 688 · 2 |
-| MA | 2023, 0.3 m | 692 |
-| CT | 2023, 0.3 m · 2025, 0.6 m | 385 · 1 |
+| NH | 2023, 0.3 m · 2025, 0.6 m | 656 · 2 |
+| MA | 2023, 0.3 m | 711 |
+| CT | 2023, 0.3 m · 2025, 0.6 m | 398 · 1 |
 | RI | 2023, 0.3 m | 85 |
-| ME | 2023, 0.3 m · 2021, 0.6 m · 2018, 0.6 m · Oct 2023, 0.3 m | 1,650 · 807 · 258 · 6 |
+| ME | 2023, 0.3 m · 2021, 0.6 m · 2018, 0.6 m · Oct 2023, 0.3 m | 1,648 · 809 · 258 · 6 |
 | NY | 2024 · 2022 · 2021 · 2019, all 0.6 m | 2,474 · 385 · 132 · 791 |
 
-Before the cloud step (§2.1.2), which moved two Maine cells from 2023 to 2021 (the founder's review).
+After the cloud step (§2.1.2), which moved two Maine cells from 2023 to 2021 (the founder's review).
+The three 2025 0.6 m picks are the rule working, not a gap in it: at `4407155ne` and `4407155se`
+(NH) New Hampshire's 2023 0.3 m frame was flown on 3 October — leaf-off, so no candidate — and the
+newest leaf-on frame is 20 September 2025; at `4107202se` (CT) the catalog holds no 2023 frame at
+all (Connecticut's flights there are 2012, 2014, 2016, 2018, November 2021 and August 2025).
 
 #### §2.1.1 — The mislabeled Maine 2025 items
 
@@ -256,10 +265,12 @@ six) — the full-inventory proof that CI's fixture can't carry (§7.3).
 
 ### §2.2 — Tile: the work tiles, the warp stack, the shard
 
-**The unit of work is a z11 Web Mercator tile** — 1,769 of them touch a quarter-quad (z10 would be
-488, z9 135; measured from the quarter-quad outlines). At z11 each is about 220 MB of output and,
-at the scouts' ~220 machine-hours for the region, about 7 minutes on a `shared-cpu-4x` Machine: small
-enough that a failure costs minutes, large enough that boot time (seconds) is noise.
+**The unit of work is a z11 Web Mercator tile** — 1,769 of them touch a quarter-quad by the design's
+count (z10 would be 488, z9 135; measured from the quarter-quad outlines), **1,764 by core's grid**
+(`workTilesOf`, which doesn't count an outline that only touches a tile's edge; the select stage's
+full dry run, 2026-11-25). A fully covered one is 235–440 MB of output and, by §6.1's measured
+figure, roughly 12–20 minutes on a `shared-cpu-4x` Machine (the design said ~220 MB and ~7 minutes):
+small enough that a failure costs minutes, large enough that boot time (seconds) is noise.
 
 **The quarter-quad grid is computed, not read.** A key like `4407236se` is a 3.75′ cell: 1° block
 (44°N, 72°W), 7.5′ quad 36 of 64, quadrant SE. Its nominal outline in NAD83 is exact from the key
@@ -269,18 +280,32 @@ enough that a failure costs minutes, large enough that boot time (seconds) is no
 **The warp stack, per work tile.** Inputs mix UTM zones 18 and 19 (the line is 72°W), so a VRT of
 the raw COGs can't mosaic them. Instead:
 
-1. For each quarter-quad touching the work tile, for each frame in its stack (pick and fallbacks),
-   a **warped VRT** (`gdalwarp -of VRT`): to EPSG:3857 on the archive's pixel grid (`-tap`, z18's
-   resolution, D317), cut to **its own cell's outline** (`-cutline`), alpha from the source's nodata,
-   RGB only (NAIP's fourth band is near-infrared), `-r cubic`.
+1. For each quarter-quad touching the work tile, for each frame in its stack that supplies a pixel
+   (step 4 is taken first), a **warped VRT** (`gdalwarp -of VRT`): to EPSG:3857 on the archive's
+   pixel grid at z18's resolution (D317), written on **exactly its own cell's pixels** — `-te` the
+   unit's `extent`, the pixels whose centers lie in the cell (`tiles.ts`' `pixelExtent`), so two
+   neighbors split their shared edge with none left over and none claimed twice — alpha from NAIP's
+   fill (`-srcnodata "0 0 0"`, §9), RGB only (NAIP's fourth band is near-infrared), `-r cubic`.
+   *Changed from the design's `-cutline` (T, measured 2026-11-25):* a cutline is applied on each
+   source's own pixel grid, and two frames on different grids disagreed about the edge pixel — a
+   one-pixel gap or overlap at a join. A quarter-quad is a parallel-and-meridian rectangle, which is a
+   rectangle in Web Mercator, so exact pixel extents cut it with no geometry at all.
 2. One **mosaic VRT** of those, ordered bottom to top: each cell's oldest fallback first, its pick
    last. Since every input is cut to its own cell, neighbors abut exactly and the 300 m overlaps are
    discarded — no frame from one cell paints its neighbor, and within a cell the pick wins wherever it
    has pixels, its fallbacks wherever it doesn't. A state's flight that ends at a state line falls
    through to the other state's frame of the same cell.
 3. `gdal raster tile` over the mosaic, clipped to the work tile: WebP quality 80 (A06e's setting; the
-   scouts measured ~8–21 KB a 256-px land tile, under 1 KB water), `--skip-blank`, pixel zooms z12
-   to z18. *Zooms in this doc are pixel zooms* (a 256-px tile's number at that resolution, D317's
+   scouts measured ~8–21 KB a 256-px land tile, under 1 KB water; T measured 43–80 KB a 512-px tile at
+   the deepest zoom, §6.1), `--skip-blank`, pixel zooms z12 to z18 — **a z13 chunk at a time**
+   (sixteen to a work tile, each its own run), because Planetary Computer's anonymous SAS tokens live
+   15 minutes and a run must outlive its token (below); a chunk none of whose cells has a frame that
+   shows is skipped, since the tiler refuses a range outside its mosaic rather than writing nothing
+   (found by the integration's run of a whole work tile, 2026-11-26). The zooms above the chunks are
+   built from the chunks' own top tiles, with no source read, **each a 2×2 average** of the one below
+   (not cubic: a kernel wider than its block read past the window's edge and left a translucent rim
+   and a one-pixel spill at every work tile's edge, T measured), and bounded to the work tile (a
+   source ending exactly on its edge touches the neighbor's tiles). *Zooms in this doc are pixel zooms* (a 256-px tile's number at that resolution, D317's
    terms). At G-2's 512-px tiles a tile's number is one less (core's `naipTileZoom`): a shard holds
    tile zooms 11–17 (the work tile's own 512-px tile down to the deepest level), the archive's header
    reads 7–17, and the work tile is the same z11 slippy cell either way.
@@ -303,7 +328,14 @@ state line or the border. That holds source reads near the picks' own size rathe
 (the scouts' 9–10 TB counted whole stacks; the pilot measures the real figure).
 
 **Where.** The COGs are in Azure West Europe, so the Machines run in **`ams`** (or `fra`), not the
-cutter's `sjc`. Each Machine fetches its own SAS token (they expire; refresh per work tile).
+cutter's `sjc`. Each Machine fetches its own SAS token. **The 15-minute rule** (T, measured
+2026-11-25): an anonymous token lives 15 minutes and the endpoint hands out the *current* one however
+little of it is left (minted 03:23:19, expiring 03:38:20, served at 03:26 with 12 minutes left), so a
+token fetched once per work tile dies mid-tile. The worker checks before every read
+(`AERIAL_SAS_MARGIN`, 180 s), waits out a dying token for the next, and runs the tiler a z13 chunk at
+a time so each run finishes inside its token; GDAL reads the blobs through `/vsiaz/` with the token
+in the environment, never on a command line, and the worker's stderr loses every `sig=` before it
+reaches `fly logs`.
 
 **Idempotent and resumable.** A shard's keys are a function of the campaign and the work tile; a
 re-run overwrites them. "Landed" means a done record whose input hash matches the manifest's for
@@ -324,8 +356,18 @@ or re-pins that image, and the winter cutter's files stay outside the aerial bui
 is pushed to the same Fly app (`skating-imagery`) under its own label, and every Machine is spawned
 with A06e's non-optional flags (`--rm --restart no --detach`, explicit `--vm-size` and
 `--vm-memory`, the image pinned by digest, the live-Machine cap counted on every live state). The
-app's staged secrets already carry R2 credentials — but see Governor fork G-6 on which bucket they
-reach.
+app's staged secrets already carry R2 credentials, and they reach the archive's bucket (G-6,
+answered: `skating-imagery`).
+
+**The image's TypeScript is bundled on the laptop** (`scripts/aerial/bundle.sh`, T and P): the
+worker's packer (`src/tilesPackMain.ts`) and the assembler (`src/cli/assemble.ts`), each one
+self-contained ES module built with the package's own `esbuild` devDependency into
+`.scratch/image/`, which the Dockerfile copies. *Changed from P's brief's in-image build:* `pnpm
+install` inside `docker build` fails the workspace's supply-chain check (it fetches metadata for every
+lockfile entry, one from a registry that needs a token the build doesn't have — a 401, T measured),
+and the image then needs Node alone, no `node_modules`. Node's binary needs `libatomic1`, which the
+GDAL base lacks. Both bundles start under Node 26 (checked at integration, and the integration's
+local run used them for the pack and the assembly).
 
 ### §2.3 — Overviews
 
@@ -345,7 +387,7 @@ What can be avoided is re-tiling.
 changed; the assembler copies every other work tile's tiles **out of the current archive** by range
 reads (in a clustered archive each work tile's tiles at a zoom are one contiguous run, because the
 Hilbert order keeps an aligned block's descendants together), and their per-cell counts out of the
-current manifest's work tiles (`cellCounts`, which the assembler writes there for this reason). Keeping a separate shard cache would double storage (~$70 a year)
+current manifest's work tiles (`cellCounts`, which the assembler writes there for this reason). Keeping a separate shard cache would double storage (~$100 a year at §6.1's measured size)
 to save work the old archive already holds (Governor fork G-4).
 
 **A streaming writer, not `pmtiles convert`.** `pmtiles convert` wants the whole input as an MBTiles
@@ -366,7 +408,11 @@ Fly volume is understood to hold (unverified, §9). The assembler instead:
 directories against the spec itself and read back in its tests by the `pmtiles` JS library the web
 uses. *Changed from the design's Python assembler on the protomaps package's helpers (the briefs'
 call):* CI has no Python, the helpers' names were never verified, and D40 wants the round trip in
-CI. It runs on one Fly Machine in the Machines' region; R2 has no egress charge, but Fly bills
+CI. It runs on one Fly Machine in **`iad`** (`FLY_ASSEMBLE_REGION`; T's call): it reads nothing from
+Azure, only range-reads the shards from R2 and streams the archive back, so it belongs nearest the
+bucket — R2 places a bucket near where it was created, and the team works from the US east, but the
+bucket's location hasn't been read (Cloudflare's dashboard shows it; `ams` if it says Western
+Europe). It ships in the image as a bundled ES module (`bundle.sh`, below). R2 has no egress charge, but Fly bills
 outbound transfer (§6.1).
 
 **Keys** (the bathymetry archive's convention, `dev/<name>-YYYYMMDD.pmtiles`, immutable — the public
@@ -388,9 +434,15 @@ points at the same dated object. No prod copy is made.
 - **Counts.** The header's addressed tiles against the shards' indexes plus what was copied; every
   work tile in the manifest present; every zoom present.
 - **Spot reads.** A few hundred tiles fetched from the **public URL** by HTTP range, byte-compared to
-  their shard source; the header and directories read by the same `pmtiles` JS library the web uses.
-- **Coverage.** Per quarter-quad, the share of its outline with alpha at z14; anything under 100%
-  listed. Expected: only cells cut by the coast or the Canadian border.
+  their shard source; the header and directories read by the same `pmtiles` JS library the web uses,
+  and, where the CLI is installed, a second reader: `pmtiles show` over the URL. *Not `pmtiles
+  verify`*, which takes a local file only — handed the URL, it failed every build on a machine with
+  the CLI (found by the integration's local run, 2026-11-26); the structural verify is the
+  assembler's round trip on a local archive (§7.3).
+- **Coverage.** Per quarter-quad **the archive holds** (a pilot's manifest records the whole region),
+  the pixels its frames supplied (the cut's counts, on the z16 grid) over its nominal outline's;
+  anything under 99% listed. Expected: only cells cut by the coast or the Canadian border — and, in
+  a pilot, cells whose other work tiles it didn't build.
 - **Dates (D318).** Every cell any tile touches has an entry in the date index; every entry names at
   least one flight; every flight's date is a real day that matches its item id's; the index names
   this archive, and the SHA-256 of its decoded JSON is the manifest's. Any miss refuses the build: **an undated cell is
@@ -517,12 +569,12 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 ### §3.2 — What "on demand" honestly means
 
 - **The heavy stages run on Fly**, spawned from the operator's laptop with `flyctl`, as A06e's
-  backfills are. The laptop runs the orchestration for the build's wall time (about 9 h for the
+  backfills are. The laptop runs the orchestration for the build's wall time (about 16 h for the
   region on 25 Machines; a pilot minutes), so it must stay awake (`caffeinate`) — but every stage is
   resumable, so a laptop that sleeps costs a re-run of the reconcile, not the work done.
 - **Convex can launch Fly Machines** — the live imagery pump does (`imageryLive.ts`, `lib/fly.ts`,
   `FLY_API_TOKEN` and `FLY_IMAGE` on Convex dev since 2026-10-09). So a console *Rebuild* is
-  technically reachable. It is not built here: a nine-hour campaign with its run rows written through
+  technically reachable. It is not built here: a sixteen-hour campaign with its run rows written through
   `RunLogger` (the `convex run` CLI with a deploy key) and a long-lived assembler is B01's deferred
   *hosted ETL runner* decision, not a button. Governor fork G-5 weighs a Fly "conductor" Machine as
   the step between.
@@ -789,21 +841,55 @@ both; no brief displays a value. Every brief that touches them carries CLAUDE.md
 
 ### §6.1 — The archive
 
-From the scouts' measurements (6.59 M z17 tiles over ~324,000 km², WebP q80 at 8–21 KB a 256-px land
-tile), not re-measured here; ±30%. **z18 everywhere** (D317):
+The design's figures were the scouts' (6.59 M z17 tiles over ~324,000 km², WebP q80 at 8–21 KB a
+256-px land tile), ±30%. T's warp proof measured real 512-px tiles on three windows (§9, *What the
+build found*), and the integration checked T's arithmetic (2026-11-26). **z18 everywhere** (D317):
 
-| | |
-| --- | --- |
-| Archive | ~387 GB |
-| R2 storage | ~$5.80 / month |
-| Fly compute, a full build | ~220 machine-hours, ~$4 at `shared-cpu-4x`/2 GB |
-| Wall time on 25 Machines | ~9 h |
-| Pixel at 44°N | 0.43 m (1.4 ft) |
-| The date index | ~140 KB raw, ~30–40 KB gzipped |
+| | Design | T, measured | Integration's figure |
+| --- | --- | --- | --- |
+| Archive | ~387 GB | 375–700 GB, ~525 GB central | **380–700 GB, ~550 GB central** |
+| R2 storage | ~$5.80 / month | ~$8 / month | **~$8.30 / month** ($5.70–$10.50) |
+| Fly compute, a full build | ~220 machine-hours, ~$4 | ~410 machine-hours, ~$7.60 | **~400 machine-hours** (320–540), ~$7–10 — unless shared CPUs throttle (below) |
+| Wall time on 25 Machines | ~9 h | ~16 h | **~16 h** (13–22) |
+| Fly outbound transfer | ~2× the archive, ~$15 | ~1 TB, ~$21 | **~1.1 TB, ~$22** (0.75–1.4 TB) |
+| A fully covered work tile's shard | ~220 MB | 235–440 MB | **235–440 MB** |
+| Pixel at 44°N | 0.43 m (1.4 ft) | | |
+| The date index | ~140 KB raw, ~30–40 KB gzipped | | not re-measured (the integration's one-tile run: 169 B for 3 cells) |
+| The manifest | 1.5–3 MB raw | | **~6–7 MB raw** for the region: the integration's pilot manifest, which records every cell and frame, was 5.4 MB before any work tile's counts |
 
-Plus, per full build: Fly's outbound transfer for the shards (to R2) and the assembled archive (to
-R2), roughly 2× the archive at Fly's North America / Europe rate (about $0.02/GB, unverified: ~$15);
-R2 operations, pennies. A partial rebuild costs its share. A full region run is ~$20 all told.
+**Why the archive moved.** The design's 387 GB is the deepest level alone: 6.59 M 512-px tiles at
+tile zoom 17 (the same footprint as a 256-px z17 tile) × ~59 KB, which is 14.7 KB a 256-px quarter —
+inside the scouts' 8–21 KB, and no allowance above it. But the archive is a pyramid. Each level above
+holds a quarter of the tiles below it, so tile zooms 7–16 hold 1/4 + 1/16 + … = **1/3 of the deepest
+level's tile count**, and T's measurements show a shallower tile costs about what a deep one does
+(Champlain 41.9 / 42.0 / 42.7 KB at tile zooms 15 / 16 / 17; the 72°W window 67.7 → 80.0 KB from 14
+to 17; Maine 94.7 → 75.5 KB) — a downsampled tile packs more detail into the same 512 px. So T's
+"overviews add about a third" is right, and the archive is 4/3 × the deepest level. The deepest level
+itself: T's real tiles averaged 42.7 KB (a window half lake), 80.0 and 75.5 KB (land). The region is
+mostly land, so a mean of ~62 KB (between the design's 59 and the land windows' 78, weighted for the
+lakes and coastal quarter-quads) gives 6.59 M × 62 KB × 4/3 ≈ **545 GB**; the range is the measured
+extremes, 6.59 M × 43–80 KB × 4/3 ≈ 375–705 GB. (The 6.59 M tile count checks: 9,168 quarter-quads of
+~34.5 km² is ~316,000 km², over 0.048 km² a tile at 44°N, ~6.5 M.)
+
+**Why the compute moved.** The design's ~7 minutes a work tile was the scouts' guess. The proof's
+z14 windows took 71–130 s on the laptop, network-bound from the US, and a work tile is 64 of them at
+full coverage (91% on average); the integration's run of a whole work tile against local sources
+spent ~31 ms a tile on the laptop's cores, CPU alone, from 2.4 m sources (a real 0.3–0.6 m frame
+decodes 16–64× more source pixels). On a `shared-cpu-4x` in `ams`, where the reads are ~10× faster
+than the laptop's (T's estimate, not measured), that is roughly 12–20 minutes a work tile × 1,764 ×
+91% ≈ 320–540 machine-hours; T's ~14 minutes, ~410 hours, sits inside it. **The risk the pilot
+measures:** Fly's shared vCPUs carry a sustained-use quota (a baseline share of a core with a burst
+balance), and a 15-minute CPU-bound tile may drain the burst and run throttled — if the pilot's
+seconds per work tile are several times the estimate, the answer is a `performance` size, at several
+times the hourly price, for the same total work.
+
+**Transfer.** Fly bills outbound: the shards leave the work Machines for R2 (about the archive's size:
+they hold tile zooms 11–17, all but a sliver of it) and the assembled archive leaves the assembler
+for R2 (the archive again); reads into Fly — Azure's COGs, R2's shards — are inbound and free. So
+~2 × ~550 GB ≈ 1.1 TB at about $0.02/GB (unverified): ~$22. R2 operations are pennies; R2 has no
+egress charge. **A full region run is ~$30–40 all told** (compute, transfer, the first month's
+storage), against the design's ~$20 — and ~$8 a month to keep (~$100 a year, against the founder's
+"about $70 a year"). A partial rebuild costs its share.
 
 ### §6.2 — The code
 
@@ -934,7 +1020,7 @@ credit's range across a join, and the archive loading in about a second. What it
 per work tile, bytes per tile at each zoom (to firm §6.1), the date index's size, source bytes read,
 outbound transfer, the assembler's throughput. Pennies of spend, started only on the governor's go.
 
-**The full region run** (~9 h, ~25 Machines, a few terabytes read, ~$20 all told) is **the
+**The full region run** (~16 h on ~25 Machines by §6.1's measured figure, a few terabytes read, ~$30–40 all told) is **the
 founder's go/no-go**, given the pilot's numbers — never a builder's.
 
 ### §7.5 — Definitions of done
@@ -1016,7 +1102,7 @@ and copies the rest from the live archive; (b) keep every build's shards in R2 (
 ~$70 a year). **Recommendation: (a).**
 
 **G-5 — Who runs the heavy stages.** (a) The laptop orchestrates Fly Machines, as A06e's backfills
-do (it must stay awake about 9 h; every stage resumes); (b) a "conductor" Fly Machine runs the
+do (it must stay awake about 16 h, §6.1; every stage resumes); (b) a "conductor" Fly Machine runs the
 whole build so the laptop can close (it needs a Fly token and a Convex deploy key staged on the app —
 new credential placements, a founder task); (c) Convex launches it from a console button. **The
 recommendation: (a)** now; (b) or (c) is B01's hosted-runner decision.
@@ -1064,31 +1150,48 @@ a few ME 2023/2018 cells) and a New York 2024/2019 join: ~63 cells (§7.4, §10.
 
 ## §9 — Not verified
 
-Relied on from the scouts or from memory, not re-checked for this doc:
+Relied on from the scouts or from memory, not re-checked for this doc — **as of B05-1's integration
+(2026-11-26), with what the build answered marked**:
 
-- The **sizes**: 6.59 M z17 tiles, ~387 GB ±30%, 8–21 KB land and <1 KB water tiles, ~220
-  machine-hours, ~9 h on 25 Machines, 9–10 TB of source reads (and this doc's claim that reading
-  fallbacks only where needed cuts that); the date index's ~140 KB.
-- **Planetary Computer**: lossless 4-band COGs, anonymous SAS tokens and their lifetime, blobs in West
-  Europe; the STAC's paging behavior from Convex; whether NAIP COGs carry a nodata value or a mask
-  (the stack's alpha depends on it; a dark-water pixel must not read as nodata).
-- **Ground facts**: ME 2023's 565 unflown North Woods cells (consistent with the counts here: 2,189
-  items against 2,754), NAIP ending 0–7 km past the border, the ~300 m quarter-quad overlap, the
-  Long Island and Aroostook cloud and glare cases, the 134 partial Maine picks (thumbnail-based).
+- The **sizes**: ~387 GB ±30%, ~220 machine-hours, ~9 h on 25 Machines — **revised** by T's
+  measurements and the integration's arithmetic (§6.1: ~550 GB, ~400 machine-hours, ~16 h; the
+  6.59 M tiles checked against the quarter-quads' area). Still unmeasured: 9–10 TB of source reads
+  (and the claim that reading fallbacks only where needed cuts that: the proof's windows read
+  135–321 MB a z14 window, which at 64 a work tile is 9–20 GB a tile from the laptop — T estimates
+  2–9 GB a tile, as a Machine reads only what shows); seconds per work tile on a Machine, and whether
+  shared CPUs throttle under a sustained tile (§6.1). **Measured:** the date index of the real region
+  (P's index proof over the scouts' picks, 2026-11-26): 9,168 cells, 141 flights, 168 KB raw,
+  **26 KB gzipped**, 18 bytes a cell; the assembler's memory for a region-sized layout (P's scale
+  proof, 8.7 M tiles): **1.39 GB peak RSS**, inside the assembler's 4,096 MB.
+- **Planetary Computer**: blobs in West Europe and lossless 4-band COGs (as read by T's proof).
+  **Answered:** NAIP's COGs **declare no nodata value and carry no mask; an unflown pixel is RGB
+  0,0,0** (T, measured 2026-11-25), so the warps read alpha from `-srcnodata "0 0 0"` with
+  `UNIFIED_SRC_NODATA=YES` — a pixel is nodata only when all three bands are 0, and dark water stays
+  opaque (the Champlain window, on the lake, had no transparent pixel inside its cells); **anonymous SAS tokens live 15
+  minutes** and the endpoint serves the current one however little is left (§2.2). Unverified: the
+  STAC's paging behavior from Convex (B05-2).
+- **Ground facts**: ME 2023's 565 unflown North Woods cells, NAIP ending 0–7 km past the border, the
+  ~300 m quarter-quad overlap, the 134 partial Maine picks (S's thumbnails found 140 partial picks
+  region-wide). **Answered:** the cloud and glare cases (§2.1.2, the founder's review).
 - **Infrastructure**: R2's 5 GiB single-PUT cap and 10,000-part multipart limit; Cloudflare not
-  caching an object this size at the edge; R2's free 10 M Class B reads and $0.36/M; R2's public
-  URL serving a `Content-Encoding: gzip` object as such; Fly's outbound transfer rate and its volume
-  size limit; the Fly Machine's ephemeral disk size; `ams` and `fra` being the right regions for West
-  Europe; pushing a second image to `skating-imagery` under its own label without touching the
-  pinned cutter image.
-- **Tools**: `gdal raster tile`'s tile-size option; `pmtiles verify` on a streamed archive;
-  `rclone rcat` with 128 MiB parts.
-- **Which bucket** serves `VITE_IMAGERY_ARCHIVE_URL` publicly (G-6).
-- **The scouts' snapshot** (the inventory, the thumbnails' scores, `picks_T2.json`) was in another
-  session's scratchpad, which a reboot can clear; X copied the inventory, the picks and the scores
-  (13 MB, the thumbnails left behind) to the gitignored `scripts/aerial/.scratch/scouts/` on
-  2026-11-25 (§10.3). S's fixture slice is cut from that copy, or from a fresh catalog walk if it is
-  gone (§10.4).
+  caching an object this size at the edge; R2's free 10 M Class B reads and $0.36/M; **R2's public
+  URL serving a `Content-Encoding: gzip` object as such** (the integration's local run proved the
+  client side against a stand-in host that does; R2 itself is the pilot's to show); Fly's outbound
+  transfer rate; the Fly Machine's ephemeral disk size (a work tile's scratch is its shard plus
+  small intermediates, a few hundred MB); `ams` being the right region for West Europe; **the
+  bucket's location**, which decides the assembler's region (§2.4: `iad` by default); pushing a
+  second image to `skating-imagery` under its own label without touching the pinned cutter image (the
+  image was built locally, never pushed).
+- **Tools.** **Answered:** `gdal raster tile --tile-size 512` (T's proof); `pmtiles verify` clean on a
+  streamed archive and `rclone rcat` in 128 MiB parts (P's stream proof, re-run at integration: a
+  1.8 GB archive in 15 parts through real `rclone` into a local S3 server, byte-equal, verify clean,
+  92 MB/s, 832 MB peak RSS). Not answered: the same against R2 itself, and the assembler's
+  throughput on a Machine (at the local 92 MB/s, a 550 GB archive streams in under two hours).
+- **Which bucket** serves `VITE_IMAGERY_ARCHIVE_URL` publicly (G-6). **Answered** (T, 2026-11-25, by
+  hosts and names only): `skating-imagery`, from its own public host at the bucket's root; the
+  register had it as `skating-basemap` and is corrected (`05` § 1).
+- **The scouts' snapshot** was copied to the gitignored `scripts/aerial/.scratch/scouts/` (§10.3);
+  S's first full walk is kept beside its campaign (`.scratch/naip-20261125/inventory/`, in S's copy).
 
 Checked for the design: the inventory's composition by state, year, gsd and month; the mislabeled
 Maine items (744, at 42.x°N, a `me_` prefix); the rule's picks re-run (identical to the scouts'); the
@@ -1421,7 +1524,8 @@ the credit from core's `naipCreditRange`), the stage CLIs `scripts/aerial/src/cl
 cleanup}.ts`, their tests. The `rclone rcat` boundary lives in `src/assemble/upload.ts`, the one
 file X's `vitest.config.ts` already excludes for it. How the assembler ships in T's image (a
 bundled `.mjs`, or `tsx`) is P's call, agreed with T by a seam request; the entrypoint script itself
-is T's.
+is T's. *As built:* a bundled `.mjs`, written on the laptop by `bundle.sh` with the package's
+`esbuild` devDependency (§2.2, *The image's TypeScript*), not in the image.
 
 **Builds:** §2.3 and §2.4's assembler, §2.7's index from the manifest and the done records (and, for
 unchanged work tiles, the current build's counts), §2.5's verify, cleanup and the viewer; the run row
@@ -1518,3 +1622,110 @@ The same invariants (§10.2). Written in full when the pilot is in; the shape no
   from the CLI's by template; after the widen it produced the same module set as the committed
   `_generated`, which was restored unchanged. The widen adds validator members only, so nothing in
   `_generated` moves; CI's `convex dev --once` step is the real check.
+
+## What the build found (B05-1)
+
+**S, selection (2026-11-25).**
+
+- **The rule reproduces the scouts' picks on 9,123 of 9,168 cells.** The other 45 are one frame
+  published under two states' labels on the same day (a border cell's two catalogs list identical
+  pixels); the rule now breaks that tie by item id, so a pick is never a coin toss. §2.1's table
+  shifts by that much between NH, MA and CT.
+- **The first full walk** (`naip-20261125`, a dry run): 69,207 items (NY 30,983, ME 16,697, VT
+  6,496, NH 6,168, MA 5,208, CT 2,842, RI 813), **9,168 cells, none without a pick**, 28,568 frames in
+  picks and stacks, 1,764 work tiles, 140 partial picks, 319 border cells; 9,366 frames scored (every
+  pick, then each partial pick's fallbacks round by round), 60 picks over 3% white, one fallback.
+  The walk is kept beside its campaign and read back on a re-run, so a select after a refusal
+  decides the same build.
+- **The envelope's margin is pinned to the catalog's furthest real reach**: Vermont flies `4407361sw`
+  on Champlain's New York shore, 0.25′ past its state's envelope; a zero margin dropped it and no
+  test noticed (a mutation survived) until one did.
+- **The three 2025 0.6 m picks in NH and CT are the rule, not a bug** (§2.1): New Hampshire's 2023
+  0.3 m frame at `4407155ne`/`se` was flown on 3 October (leaf-off), and Connecticut has no 2023
+  frame at `4107202se` at all.
+- **Cell `4506827se`** (T reported the scouts' picks lacked it): they don't. `picks_T2.json` and
+  `cloudall.json` both hold it, with the 20 July 2018 0.6 m frame (score 0, full coverage), and S's
+  rule picks the same frame with an empty stack — its only other frames are October 2021 (leaf-off)
+  and 1 m. Nothing to fix.
+- **The cloud review**: two Aroostook frames struck, Long Island and New York City kept (§2.1.2).
+- **A test that read core's fixture from `scripts/aerial`** was invisible to Turbo's hash (the
+  `turboCache.test.ts` guard caught it); the select stage's tests read a 117-row slice of their own.
+
+**T, tiles, the worker and the entry point (2026-11-25).**
+
+- **No `-cutline`**: a cutline is applied on each source's own grid, and two frames on different
+  grids disagreed about a join's edge pixel. Each frame is warped onto exactly its cell's pixels
+  (§2.2 step 1).
+- **Overviews are 2×2 averages**: cubic read past the window's edge and left a translucent rim
+  (alpha 211–238) and a one-pixel spill at every work tile's edge, at every zoom but the deepest.
+- **The 15-minute SAS rule**, the **z13 chunks**, and **NAIP's 0,0,0 fill with no nodata declared**
+  (§2.2, §9).
+- **The warp proof** on three real z14 windows (laptop in the US, network-bound): Champlain's NY 2024 |
+  VT 2025 line, 2 of 9 stacked frames shown, 142 MB read, 77 s, 42.7 KB a deepest 512-px tile; the
+  72°W UTM seam, 2 of 16, 321 MB, 130 s, 80.0 KB; a partial Maine 2023 pick falling through to 2021,
+  3 of 4, 135 MB, 71 s, 75.5 KB. Every assertion held: cells partition each window, no frame paints a
+  neighbor, no transparent pixel inside the cells, the pick shows wherever it has pixels, the counted
+  frames are exactly the visible ones; the joins register at 0.00 px (72°W, both ways), 0.00 / −0.24
+  px (NY | VT) and −0.51 px along the Maine forest join.
+- **The image** builds locally from `ghcr.io/osgeo/gdal:ubuntu-small-3.13.2` plus rclone, jq,
+  `pmtiles`, Node 26 (which needs `libatomic1`) and the two bundles, and cut the Champlain window to
+  the laptop's counts. `pnpm install` inside the build fails the workspace's supply-chain check (a
+  401), hence `bundle.sh`. Never pushed.
+- **G-6**: `skating-imagery` (§9). **The assembler's region**: `iad`, overridable (§2.4).
+- **Changing how a pixel is drawn means bumping `NAIP_TILING_VERSION`**, enforced by a fingerprint of
+  the worker's GDAL lines and `TILE_SETTINGS` (`tiles.test.ts`).
+
+**P, the assembler, the date index, verify and cleanup (2026-11-25).**
+
+- **The writer** is checked against the spec and `pmtiles@4.5.0`'s reader: the 127-byte header,
+  varint directories, the root inside the reader's first 16 KiB with leaves split as needed,
+  clustered order, dedupe through a 128-bit content table, runs for consecutive repeats. The date is
+  checked before a byte is written: every pixel's cell is dated from the cut's counts first.
+- **Its proofs, re-run at integration (2026-11-26)**: the real region's date index, 168 KB raw and
+  **26 KB gzipped** (141 flights, 531 cells dated by two); a region-sized layout of 8.7 M tiles in
+  **1.39 GB peak RSS**; a 1.8 GB archive streamed through real `rclone rcat` in fifteen 128 MiB parts,
+  byte-equal and `pmtiles verify` clean, at 92 MB/s.
+- **The index's hash is over its decoded JSON**, not the gzip body (with S): the encoding is
+  transport, and a CDN may re-encode it.
+- **The viewer** is MapLibre 6.19.0 (the web's version, from unpkg) with core's own credit range,
+  bundled by `esbuild`, which the package declares.
+
+**The integration (2026-11-26).**
+
+- **The merges were clean**: the three territories touched no common file beyond what each owned.
+- **Seams closed**: one run-target rule for every stage (the builders' three copies disagreed — the
+  tiles and verify stages let a build write its rows to prod or to an unknown deployment); the input
+  hash now covers the frames the worker cuts (the rule moved into core as `naipFramesToCut`: a cell
+  that became a border cell had its fallbacks cut while its hash stayed the same, so a
+  `--from-current` build would have copied its old tiles); the tiling fingerprint reads core's
+  version; the units use core's grid, checked cell for cell against the proof's decode; the
+  assembler's manifest type is core's; the viewer's core-gated test runs. No `PLACEHOLDER`, `todo`
+  or builder-gated skip remains: the skips left are P's three stream proofs (each run by hand, by its
+  variable) and two tests that need GDAL, which CI doesn't have.
+- **The local end-to-end run**: select and tiles through `run-aerial.sh` (dry runs, the kept walk, no
+  network), the real worker on the whole of work tile `11/596/763` (four NY cells, 19% covered)
+  against a local stand-in for Planetary Computer serving synthetic COGs, the bundled packer and
+  assembler, verify through `run-aerial.sh` against local stand-ins for R2, and the index read back
+  with core's parser: 1,139 tiles in 37 s on the laptop, a 1.9 MB archive of 1,143 tiles at zooms
+  7–17, its index 147 bytes gzipped, every check passed, the credit *Aerial · NAIP Sep 2024*, an index
+  naming another archive refused. The recipe is in `scripts/aerial/README.md`.
+- **What that run found, each fixed with a test**: the worker died on any work tile its cells don't
+  wholly cover (every coast, border and region-edge tile — `gdal raster tile` refuses a chunk outside
+  its mosaic); the overview pass wrote a tile outside its work tile, which the packer refused (the
+  overview runs are now bounded to the window; the fingerprint is re-recorded under tiling version 1,
+  since no pixel inside changes and nothing had been built); verify handed `pmtiles verify` a URL it
+  can't read, so it refused every build wherever the CLI is installed (`pmtiles show` now); and its
+  coverage list named all 9,168 cells of a pilot's manifest.
+- **The review found**: cleanup skipped its "never the archive the web points at" refusal when the web
+  env couldn't be read (it now refuses); `run-aerial.sh` never loaded `scripts/aerial/.env.local`,
+  where the runbook puts `AERIAL_IMAGE`, `R2_BUCKET` and `R2_REMOTE` (only `spawn.sh` did, so the tiles
+  stage would have refused); and the credentials guard couldn't see any env read under a pipeline's
+  `src/` subdirectories — the aerial's stage CLIs read theirs in `src/cli/` (it now scans the whole
+  tree, and `05` registers what it found).
+- **The manifest is ~6–7 MB, not 1.5–3**: it records every cell and every frame (the pilot's was
+  5.4 MB before any counts). For B05-2: the July check fetches and parses it in a Convex action;
+  a 7 MB JSON parse is tens of megabytes of heap, near the default runtime's 64 MB, so K measures it
+  or runs the action in Node.
+- **The cost**: ~$8 a month to keep (~$100 a year, against the ~$70 the founder accepted) and
+  ~$30–40 a full build (against ~$20), because the design's 387 GB left out the pyramid above the
+  deepest level (§6.1).
