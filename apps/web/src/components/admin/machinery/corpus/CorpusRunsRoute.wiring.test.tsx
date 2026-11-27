@@ -190,10 +190,11 @@ describe('the list on the second', () => {
 });
 
 describe('opening a run', () => {
-  it('opens a campaign by its campaign id and a pass by its run id', () => {
+  it('opens a campaign and a pass each by its own run id', () => {
     mount();
     fireEvent.click(must(screen.getAllByRole('option')[0], 'the campaign'));
-    expect(h.navigated.at(-1)).toMatchObject({ search: { campaign: 'a07a-20261012' } });
+    expect(h.navigated.at(-1)).toMatchObject({ search: { run: STALLED_CAMPAIGN.id } });
+    expect(h.navigated.at(-1)?.search).not.toHaveProperty('campaign');
     expect(h.navigated.at(-1)?.replace).toBeUndefined();
     fireEvent.click(must(screen.getAllByRole('option')[1], 'a pass'));
     expect(h.navigated.at(-1)).toMatchObject({ search: { run: PASS.id } });
@@ -205,9 +206,25 @@ describe('opening a run', () => {
     fireEvent.click(must(screen.getAllByRole('option')[0], 'the campaign'));
     expect(h.navigated.at(-1)).toEqual({
       to: '/admin/machinery/corpus',
-      search: { campaign: 'a07a-20261012' },
+      search: { run: STALLED_CAMPAIGN.id },
       replace: true,
     });
+  });
+
+  it('opens an older campaign run again under the same id as itself, never the newest', () => {
+    const older = { ...STALLED_CAMPAIGN, id: runId(77), status: 'failed' as const };
+    h.answers['machineryRuns:listPage'] = () => runPage([STALLED_CAMPAIGN, older]);
+    h.answers['machineryRuns:campaign'] = (args) => ({
+      ...STALLED_PAGE,
+      row: args.runId === older.id ? older : STALLED_CAMPAIGN,
+    });
+    mount();
+    fireEvent.click(must(screen.getAllByRole('option')[1], 'the older campaign'));
+    expect(h.navigated.at(-1)).toMatchObject({ search: { run: older.id } });
+    h.search = { run: older.id };
+    h.asked = [];
+    mount();
+    expect(last('machineryRuns:campaign')).toEqual({ runId: older.id, now: expect.any(Number) });
   });
 
   it('reads ?campaign= by its id, and marks its row open', () => {

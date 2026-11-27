@@ -144,8 +144,7 @@ export function CorpusRunsRoute({ pages }: { pages?: RunPages } = {}) {
       {...(joined.failed && { onRetryList: chain.retry })}
       selectedId={selectedRow(place, joined.rows, runValue)}
       onOpen={(id, from) => {
-        const row = joined.rows.find((r) => r.id === id);
-        go(placeForRow(row, id), isOpen(place));
+        go(placeForRow(id), isOpen(place));
         if (from === 'keys') detailRef.current?.focus();
       }}
       onClose={() => go({ campaign: null, run: null }, true)}
@@ -215,11 +214,13 @@ export function joinRuns(pages: readonly Loadable<RunListPage>[] | null): Joined
   return { ...joined, indexed: joined.read.every((p) => p.indexed) };
 }
 
-/** The place a row opens: a campaign by its campaign id, anything else by its run id. */
-export function placeForRow(row: RunRowView | undefined, id: string): MachineryPlace {
-  return row?.kind === 'campaign' && row.campaignId !== null
-    ? { campaign: row.campaignId, run: null }
-    : { campaign: null, run: id };
+/**
+ * The place a row opens: always its own row, by its run id — a campaign's too. A campaign id can be
+ * run again, and `?campaign=` opens the id's newest campaign (the script's printed link), so an older
+ * row opened by its campaign id would show another campaign's passes and log.
+ */
+export function placeForRow(id: string): MachineryPlace {
+  return { campaign: null, run: id };
 }
 
 /** What the open place reads: a run by its id (unless the list already says it is a campaign). */
