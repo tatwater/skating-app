@@ -4,6 +4,7 @@ import { Button } from '@/components/kit/button';
 import { isTextEntry } from '@/lib/keys';
 import { cn } from '@/lib/utils';
 
+import { InspectorProvider } from '../../inspector/inspectorContext';
 import type { ChainStatus } from '../../reads/joinChain';
 import { useColumnsFit, usePaneFocus } from '../../shell/columnsFit';
 import {
@@ -46,8 +47,11 @@ export type CorpusRunsViewProps = {
   /** Close the open run (back to the list). */
   onClose?: () => void;
   detail: RunDetailState;
-  /** The run pages, as the integrator mounts them; a stand-in head without. */
-  pages?: RunPages;
+  /** The run pages: the route's live `CampaignView` and `RunView`, or a story's. */
+  pages: RunPages;
+  /** The clock the detail column's frame reads (its lock's time); the route's minute. */
+  now: number;
+  timeZone?: string;
   /** The detail column, for the route to move focus into when a run opens. */
   detailRef?: RefObject<HTMLElement | null>;
   className?: string;
@@ -66,6 +70,8 @@ export function CorpusRunsView({
   onClose,
   detail,
   pages,
+  now,
+  timeZone,
   detailRef,
   className,
 }: CorpusRunsViewProps) {
@@ -193,8 +199,11 @@ export function CorpusRunsView({
             </Button>
           </div>
         )}
-        {/* A run page lays out its own head, scroll and action bar in this column. */}
-        <RunDetail state={detail} {...(pages !== undefined && { pages })} />
+        {/* A run page lays out its own head, scroll and action bar in this column; it reads the
+            column (its pane, and whether the page is one pane at a time) from the context. */}
+        <InspectorProvider value={{ pane, decidedOnOpen: false, now, timeZone, narrow }}>
+          <RunDetail state={detail} pages={pages} />
+        </InspectorProvider>
       </section>
     </div>
   );

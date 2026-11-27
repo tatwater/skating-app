@@ -4,34 +4,25 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 import { computedColor, sameColor } from '@/components/kit/measure';
 import { expectNoSidewaysScroll, faceLoaded, must } from '@/components/kit/storyKit';
 
-import type { CampaignPageView, RunPageView } from '../machineryTypes';
 import { MachineryBoard } from './machineryBoard';
-import type { RunDetailState } from './RunDetail';
 import { BOARD_ROWS, liveRow, REBUILT_FAILED, STALLED_CAMPAIGN } from './runListFixtures';
 
 /**
  * Board 6.2 — Machinery › Corpus in the console's frame at 1440 × 900, on the board's clock: the
  * sidebar with Corpus alone under *Pipelines*, the run list newest first with its month dividers,
- * and the open run's column (the run pages are drawn by their own stories; here the column's own
- * states). Render one beside the board to compare.
+ * and the open run's column — the run pages mounted as the route mounts them, on the fixtures (their
+ * own stories cover every state). Render one beside the board to compare.
  */
 const meta = {
   title: 'Admin/Machinery/Corpus runs',
   component: MachineryBoard,
   globals: { surface: 'admin', mode: 'dark' },
   parameters: { layout: 'fullscreen' },
-  args: { rows: BOARD_ROWS, initialOpen: STALLED_CAMPAIGN.id, detailFor: standIn },
+  args: { rows: BOARD_ROWS, initialOpen: STALLED_CAMPAIGN.id },
 } satisfies Meta<typeof MachineryBoard>;
 
 export default meta;
 type Story = StoryObj<typeof meta>;
-
-/** The column's stand-in for a read run: its name, as the page head carries it. */
-function standIn(row: (typeof BOARD_ROWS)[number]): RunDetailState {
-  return row.kind === 'campaign'
-    ? { kind: 'campaign', view: { row } as unknown as CampaignPageView }
-    : { kind: 'run', view: { doc: { label: row.title } } as unknown as RunPageView };
-}
 
 const slot = (root: ParentNode, name: string) =>
   must(root.querySelector<HTMLElement>(`[data-slot="${name}"]`));
@@ -83,7 +74,8 @@ export const Board: Story = {
       await expect(slot(r, 'run-row-sub')).toHaveTextContent(/^Rebuilt from its runs/);
     // The open campaign's column.
     const detail = must(canvasElement.querySelector<HTMLElement>('[data-pane="detail"]'));
-    await expect(within(detail).getByText('a07a-20261012')).toBeVisible();
+    await expect(slot(detail, 'run-title')).toHaveTextContent('a07a-20261012');
+    await expect(slot(detail, 'campaign-view')).toBeVisible();
   },
 };
 
@@ -104,7 +96,7 @@ export const Keys: Story = {
     const third = must(within(list).getAllByRole('option')[2]);
     await waitFor(() => expect(third).toHaveAttribute('aria-selected', 'true'));
     const detail = must(canvasElement.querySelector<HTMLElement>('[data-pane="detail"]'));
-    await expect(within(detail).getByText('load-landmarks')).toBeVisible();
+    await waitFor(() => expect(slot(detail, 'run-title')).toHaveTextContent('load-landmarks'));
     // Type-ahead: "s" jumps to seed-standing.
     await userEvent.keyboard('s');
     await waitFor(() =>

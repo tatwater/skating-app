@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { getFunctionName } from 'convex/server';
 import type { ReactNode } from 'react';
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -7,7 +7,16 @@ import { KeysProvider } from '@/lib/keys';
 
 import { stubJsdomAnimations } from '../../body/tabs/jsdomStubs';
 import { FAILED_READ } from '../../reads/readFailureFixtures';
-import { BOARD_ROWS, REBUILT_FAILED, runId, runPage, STALLED_CAMPAIGN } from './runListFixtures';
+import { assembledCampaign, boardCampaign, finishedPassDoc, loadView } from './runFixtures';
+import {
+  BOARD_ROWS,
+  liveRow,
+  NOW,
+  REBUILT_FAILED,
+  runId,
+  runPage,
+  STALLED_CAMPAIGN,
+} from './runListFixtures';
 
 /**
  * **Machinery › Corpus's route and view together**: the real layout's sidebar, the real
@@ -54,6 +63,17 @@ vi.doMock('@/components/admin/reads/consoleReads', async (orig) => {
   };
 });
 
+// The live pages' two Convex hooks stood in: the writes (recorded) and the tail's paginated read.
+const writes = { markFailed: vi.fn(), wait: vi.fn(), stop: vi.fn() };
+vi.doMock('../actions/useRunWrites', async (orig) => ({
+  ...(await orig<typeof import('../actions/useRunWrites')>()),
+  useLiveRunWrites: () => writes,
+}));
+vi.doMock('./RunTail', async (orig) => ({
+  ...(await orig<typeof import('./RunTail')>()),
+  LiveRunTail: ({ runId: id }: { runId: string }) => <div data-slot="live-tail" data-run={id} />,
+}));
+
 const { CorpusRunsRoute } = await import('./CorpusRunsRoute');
 const { MachinerySidebarProvider } = await import('../MachineryRoute');
 
@@ -72,9 +92,19 @@ const must = <T,>(x: T | null | undefined, what: string): T => {
 };
 const detail = () => must(document.querySelector<HTMLElement>('[data-pane="detail"]'), 'detail');
 const PASS = BOARD_ROWS[1] as (typeof BOARD_ROWS)[number];
+const slotIn = (root: ParentNode, name: string) =>
+  must(root.querySelector<HTMLElement>(`[data-slot="${name}"]`), name);
+/** The stalled campaign's page, as the server answers it. */
+const STALLED_PAGE = { ...boardCampaign(NOW), row: STALLED_CAMPAIGN };
+/** A pass's run page, as the server answers it. */
+const passPage = (label: string, parent: { id: string; title: string } | null = null) => ({
+  ...loadView(NOW, { doc: { ...finishedPassDoc(), _id: PASS.id, label } }),
+  parent,
+});
 
 beforeAll(stubJsdomAnimations);
 beforeEach(() => {
+  for (const f of Object.values(writes)) f.mockReset().mockResolvedValue(true);
   h.search = {};
   h.navigated = [];
   h.can = () => true;
@@ -132,6 +162,33 @@ describe('the list', () => {
   });
 });
 
+describe('the list on the second', () => {
+  it("re-reads a running row by core's rule as the clock moves, with no new answer", () => {
+    vi.useFakeTimers({ toFake: ['Date', 'setInterval', 'clearInterval'] });
+    try {
+      const start = Date.now();
+      const row = {
+        ...liveRow('running', 40),
+        livenessInputs: {
+          self: { kind: 'corpus_campaign', status: 'running' as const },
+          passes: [{ kind: 'canonical_water', status: 'running' as const, progressAt: start }],
+        },
+      };
+      h.answers['machineryRuns:listPage'] = () => runPage([row]);
+      mount();
+      const chip = () => slotIn(screen.getAllByRole('option')[0] as HTMLElement, 'run-row-state');
+      expect(chip()).toHaveTextContent('running');
+      // Past twice the load's pace: late, on the second — the answer hasn't changed.
+      act(() => {
+        vi.advanceTimersByTime(7 * 60_000);
+      });
+      expect(chip()).toHaveTextContent('late');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
 describe('opening a run', () => {
   it('opens a campaign by its campaign id and a pass by its run id', () => {
     mount();
@@ -155,7 +212,7 @@ describe('opening a run', () => {
 
   it('reads ?campaign= by its id, and marks its row open', () => {
     h.search = { campaign: 'a07a-20261012' };
-    h.answers['machineryRuns:campaign'] = () => ({ row: STALLED_CAMPAIGN });
+    h.answers['machineryRuns:campaign'] = () => STALLED_PAGE;
     mount();
     expect(last('machineryRuns:campaign')).toEqual({
       campaignId: 'a07a-20261012',
@@ -163,24 +220,24 @@ describe('opening a run', () => {
     });
     expect(asked('machineryRuns:run')).toHaveLength(0);
     expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
-    expect(within(detail()).getByText('a07a-20261012')).toBeInTheDocument();
+    expect(slotIn(detail(), 'run-title')).toHaveTextContent('a07a-20261012');
   });
 
   it('reads ?run= on a pass as that run, and draws its name', () => {
     h.search = { run: PASS.id };
-    h.answers['machineryRuns:run'] = () => ({
-      doc: { kind: 'landmark_seed', label: 'Load names' },
-    });
+    h.answers['machineryRuns:run'] = () => passPage('Load names');
     mount();
     expect(last('machineryRuns:run')).toEqual({ runId: PASS.id, now: expect.any(Number) });
     expect(asked('machineryRuns:campaign')).toHaveLength(0);
-    expect(within(detail()).getByText('Load names')).toBeInTheDocument();
+    expect(slotIn(detail(), 'run-title')).toHaveTextContent('Load names');
+    // Its tail is the live one, reading this run's log.
+    expect(slotIn(detail(), 'live-tail')).toHaveAttribute('data-run', PASS.id);
     expect(screen.getAllByRole('option')[1]).toHaveAttribute('aria-selected', 'true');
   });
 
   it('reads ?run= on a campaign row as the campaign page, by its id', () => {
     h.search = { run: STALLED_CAMPAIGN.id };
-    h.answers['machineryRuns:campaign'] = () => ({ row: STALLED_CAMPAIGN });
+    h.answers['machineryRuns:campaign'] = () => STALLED_PAGE;
     mount();
     expect(asked('machineryRuns:run')).toHaveLength(0);
     expect(last('machineryRuns:campaign')).toEqual({
@@ -193,21 +250,26 @@ describe('opening a run', () => {
     const away = runId(99);
     h.search = { run: away };
     h.answers['machineryRuns:run'] = () => ({ doc: { kind: 'corpus_campaign', label: 'x' } });
-    h.answers['machineryRuns:campaign'] = () => ({ row: REBUILT_FAILED });
+    h.answers['machineryRuns:campaign'] = () => ({ ...assembledCampaign(), row: REBUILT_FAILED });
     mount();
     expect(last('machineryRuns:campaign')).toEqual({ runId: away, now: expect.any(Number) });
-    expect(within(detail()).getByText('a07a-20260809')).toBeInTheDocument();
+    expect(slotIn(detail(), 'run-title')).toHaveTextContent('a07a-20260809');
+    // A campaign rebuilt from its runs has always ended: no action on it.
+    expect(detail().querySelector('[data-slot="run-actions"]')).toBeNull();
   });
 
   it('marks a pass’s campaign row open when the pass is under it', () => {
     const away = runId(98);
     h.search = { run: away, campaign: 'a07a-20261012' };
-    h.answers['machineryRuns:run'] = () => ({
-      doc: { kind: 'canonical_water', label: 'Load' },
-      parent: { id: STALLED_CAMPAIGN.id, title: 'a07a-20261012' },
-    });
+    h.answers['machineryRuns:run'] = () =>
+      passPage('Load', { id: STALLED_CAMPAIGN.id, title: 'a07a-20261012' });
     mount();
     expect(screen.getAllByRole('option')[0]).toHaveAttribute('aria-selected', 'true');
+    // Its head links back to its campaign, by the campaign row's id.
+    expect(within(detail()).getByRole('link', { name: /a07a-20261012/ })).toHaveAttribute(
+      'href',
+      '/admin/machinery/corpus',
+    );
   });
 
   it.each([
@@ -226,6 +288,38 @@ describe('opening a run', () => {
     expect(detail().querySelector('[data-slot="run-detail-none"]')).toHaveTextContent(
       'No run open',
     );
+  });
+});
+
+describe('the run pages, mounted', () => {
+  it('gives a viewer with machinery.corpus the action bar, wired to the live writes', () => {
+    h.search = { campaign: 'a07a-20261012' };
+    h.answers['machineryRuns:campaign'] = () => STALLED_PAGE;
+    mount();
+    expect(detail().querySelector('[data-slot="run-actions"]')).not.toBeNull();
+    fireEvent.click(
+      within(detail()).getAllByRole('button', { name: /Wait 30 minutes/ })[0] as HTMLElement,
+    );
+    expect(writes.wait).toHaveBeenCalledWith(
+      expect.objectContaining({ runId: expect.any(String) }),
+    );
+  });
+
+  it('draws no action bar for a viewer without machinery.corpus', () => {
+    h.can = (c) => c !== 'machinery.corpus';
+    h.search = { campaign: 'a07a-20261012' };
+    h.answers['machineryRuns:campaign'] = () => STALLED_PAGE;
+    mount();
+    expect(slotIn(detail(), 'campaign-view')).toBeInTheDocument();
+    expect(detail().querySelector('[data-slot="run-actions"]')).toBeNull();
+  });
+
+  it('draws the page in the column, never a stand-in head', () => {
+    h.search = { campaign: 'a07a-20261012' };
+    h.answers['machineryRuns:campaign'] = () => STALLED_PAGE;
+    mount();
+    expect(detail().querySelector('[data-slot="run-detail-head"]')).toBeNull();
+    expect(slotIn(detail(), 'campaign-view')).toHaveAttribute('data-state', 'stalled');
   });
 });
 

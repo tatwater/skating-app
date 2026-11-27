@@ -17,7 +17,7 @@ import type { CampaignView as CampaignData, RunView as RunData, RunEventView } f
  * so only stories may import it): the detail column at board 6.2's size (830 × 1630, or a phone's
  * 360), the console's undo with a fake server that records each Undo, a toast dock of its own, the
  * writes through the real write path against a fake server that answers or refuses, the tails from
- * the fixture logs, and core's stall rule's fake.
+ * the fixture logs, and core's stall rule.
  */
 
 /** What each fake write answered with, and what the undo ran — for a story's play to read. */
@@ -73,6 +73,36 @@ function Writes({
     timeZone: ZONE,
   });
   return children(writes);
+}
+
+/**
+ * The run pages' writes as a story's console holds them: the console's undo and a toast dock of its
+ * own, the real write path against the fake server. Board 6.2's frame draws its pages through it.
+ */
+export function StoryWrites({
+  calls = { marks: [], waits: [], undone: [] },
+  refuse = false,
+  children,
+}: {
+  calls?: BoardCalls;
+  refuse?: boolean;
+  children: (writes: RunWrites) => ReactNode;
+}) {
+  const [manager] = useState(createToastManager);
+  const [undo] = useState<UndoServer>(() => ({
+    latestOwn: async () => null,
+    run: async ({ actionId }) => {
+      calls.undone.push(actionId);
+    },
+  }));
+  return (
+    <UndoProvider server={undo} manager={manager}>
+      <Writes calls={calls} refuse={refuse} manager={manager}>
+        {children}
+      </Writes>
+      <Toaster manager={manager} />
+    </UndoProvider>
+  );
 }
 
 export type RunBoardProps = {

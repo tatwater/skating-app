@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react';
 
-import { DisplayWord } from '@/components/kit/display-word';
 import { Note } from '@/components/kit/note';
 import { RetryNote } from '@/components/kit/retry-note';
 import { SkeletonText } from '@/components/kit/skeleton';
@@ -15,7 +14,7 @@ import { NOTHING_OPEN, NOTHING_OPEN_HINT, RUN_FAILED, RUN_MISSING } from '../wor
  *
  * The two pages are W2's (`CampaignView`, `RunView`); this frame hands each its read whole through
  * `pages`, so the route that wires the reads (`CorpusRunsRoute`) and the pages that draw them never
- * share a file. Without `pages` (until they are mounted) a read run shows only its name.
+ * share a file.
  */
 
 export type RunDetailState =
@@ -26,25 +25,13 @@ export type RunDetailState =
   | { kind: 'campaign'; view: CampaignPageView }
   | { kind: 'run'; view: RunPageView };
 
-/** How the run pages are drawn: W2's `CampaignView` and `RunView`, mounted by the integrator. */
+/** How the run pages are drawn: `CampaignView` and `RunView` (the route's live ones, a story's). */
 export type RunPages = {
   campaign: (view: CampaignPageView) => ReactNode;
   run: (view: RunPageView) => ReactNode;
 };
 
-/** The pages' stand-in: the run's name as the page head would carry it. */
-const STAND_IN: RunPages = {
-  campaign: (view) => <Head title={view.row.title} />,
-  run: (view) => <Head title={view.doc.label} />,
-};
-
-export function RunDetail({
-  state,
-  pages = STAND_IN,
-}: {
-  state: RunDetailState;
-  pages?: RunPages;
-}) {
+export function RunDetail({ state, pages }: { state: RunDetailState; pages: RunPages }) {
   switch (state.kind) {
     case 'none':
       return (
@@ -89,15 +76,4 @@ export function RunDetail({
     case 'run':
       return pages.run(state.view);
   }
-}
-
-function Head({ title }: { title: string }) {
-  return (
-    <div
-      data-slot="run-detail-head"
-      className="shrink-0 border-0 border-b border-solid border-line px-gutter pt-(--space-4) pb-(--space-3)"
-    >
-      <DisplayWord render={(props) => <h2 {...props} />}>{title}</DisplayWord>
-    </div>
-  );
 }

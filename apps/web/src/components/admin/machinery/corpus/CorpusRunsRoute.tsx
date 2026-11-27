@@ -1,14 +1,17 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useRef } from 'react';
+import { Link, useNavigate, useSearch } from '@tanstack/react-router';
+import { type RefObject, useMemo, useRef } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
+import { useTickingNow } from '../../body/tabs/tabParts';
 import { isFailed, type Loadable, loaded, read, useConsoleReadSet } from '../../reads/consoleReads';
 import { type JoinedChain, joinChain, useJoinedPages } from '../../reads/joinChain';
 import { useChainedPages } from '../../reads/useChainedPages';
 import { useMinuteNow } from '../../shell/presence';
+import { type RunWrites, useLiveRunWrites } from '../actions/useRunWrites';
+import { rowsAt } from '../liveness';
 import { useMachinerySidebar } from '../MachineryRoute';
 import {
   isOpen,
@@ -18,8 +21,11 @@ import {
   searchOf,
 } from '../machinerySearch';
 import type { CampaignRead, RunListPage, RunRead, RunRowView } from '../machineryTypes';
+import { CampaignView } from './CampaignView';
 import { CorpusRunsView } from './CorpusRunsView';
 import type { RunDetailState, RunPages } from './RunDetail';
+import { LiveRunTail } from './RunTail';
+import { RunView } from './RunView';
 import { withMonths } from './runRows';
 
 /**
@@ -35,18 +41,26 @@ import { withMonths } from './runRows';
  *   a marked campaign) opens the campaign page, read by its id.
  * - **Every change of place is a navigation**, so the back button, a reload and a shared link put
  *   the page back as it was; opening a run beside one already open replaces the entry.
- * - **Every read waits on `machinery.read`**; a viewer without it reads nothing.
+ * - **Every read waits on `machinery.read`**; a viewer without it reads nothing. **The actions wait
+ *   on `machinery.corpus`**: a viewer without it gets the pages with no action bar.
+ * - **Two clocks.** The reads ask on the minute (`now`); the list's states and the pages' heartbeat
+ *   and ages are re-read every second (`tick`) from the inputs each read carries, by core's rule
+ *   through `../liveness` — one re-reading for the list and the page, so the two never disagree.
  *
- * `pages` mounts the run pages (`CampaignView`, `RunView`); until then a read run shows its name.
+ * `pages` overrides the live run pages (a test's own).
  */
 export function CorpusRunsRoute({ pages }: { pages?: RunPages } = {}) {
   const navigate = useNavigate();
   const { can } = useRole();
   const canRead = can('machinery.read');
   const now = useMinuteNow();
+  const tick = useTickingNow(TICK_MS);
   const place = placeOf(useSearch({ strict: false }) as MachinerySearch);
   const sidebar = useMachinerySidebar('corpus');
   const detailRef = useRef<HTMLElement | null>(null);
+  const liveWrites = useLiveRunWrites();
+  const writes = can('machinery.corpus') ? liveWrites : null;
+  const livePages = useLivePages(tick, writes, detailRef);
 
   // ── The list ──
   const chain = useChainedPages<RunListPage>(
@@ -121,7 +135,7 @@ export function CorpusRunsRoute({ pages }: { pages?: RunPages } = {}) {
     <CorpusRunsView
       sidebar={sidebar}
       list={{
-        entries: withMonths(joined.rows, now),
+        entries: withMonths(rowsAt(joined.rows, tick), now),
         status: joined.status,
         indexed: joined.indexed,
         retryPending: chain.retrying,
@@ -136,9 +150,53 @@ export function CorpusRunsRoute({ pages }: { pages?: RunPages } = {}) {
       }}
       onClose={() => go({ campaign: null, run: null }, true)}
       detail={detail}
-      {...(pages !== undefined && { pages })}
+      pages={pages ?? livePages}
+      now={now}
       detailRef={detailRef}
     />
+  );
+}
+
+/** How often the list's states and the pages' heartbeat are re-read: the heartbeat counts seconds. */
+const TICK_MS = 1_000;
+
+/** The live run pages: the tail read from Convex, the writes (or none), the campaign link. */
+function useLivePages(
+  now: number,
+  writes: RunWrites | null,
+  pane: RefObject<HTMLElement | null>,
+): RunPages {
+  return useMemo(
+    () => ({
+      campaign: (view) => (
+        <CampaignView
+          view={view}
+          now={now}
+          tail={(t) => <LiveRunTail {...t} />}
+          writes={writes}
+          pane={pane}
+        />
+      ),
+      run: (view) => (
+        <RunView
+          view={view}
+          now={now}
+          tail={(t) => <LiveRunTail {...t} />}
+          writes={writes}
+          pane={pane}
+          linkToRun={(id, label) => (
+            <Link
+              to="/admin/machinery/corpus"
+              search={searchOf({ campaign: null, run: id }) as never}
+              className="text-assist text-fg2"
+            >
+              {label}
+            </Link>
+          )}
+        />
+      ),
+    }),
+    [now, writes, pane],
   );
 }
 
