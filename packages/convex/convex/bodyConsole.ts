@@ -46,6 +46,7 @@ import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { geoFactsOf, placesOf, townNamesOf, townRowsOf, townsWithStateOf } from './lib/bodyGeo';
 import { hasContoursFor } from './lib/bodyLibrary';
+import { firstCampaignRunOf } from './lib/campaignRuns';
 import { MODERATION_ACTIONS } from './lib/enums';
 import { capabilityRefusal } from './lib/inboxRules';
 import { bodyRef } from './lib/inboxViews';
@@ -131,10 +132,8 @@ export const consoleExtras = query({
     let outlineTrustedVia: 'approved' | 'campaign' | null = vouched ? 'approved' : null;
     if (outlineTrustedSince === null && body.lastCampaignId !== undefined) {
       const campaignId = body.lastCampaignId;
-      const run = await ctx.db
-        .query('importRuns')
-        .withIndex('by_campaign', (q) => q.eq('campaignId', campaignId))
-        .first();
+      // The campaign's merge or load, not its first row (its region build or its own row, Co11).
+      const run = await firstCampaignRunOf(ctx, campaignId);
       if (run) {
         outlineTrustedSince = run.startedAt;
         outlineTrustedVia = 'campaign';

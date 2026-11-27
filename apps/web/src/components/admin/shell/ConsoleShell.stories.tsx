@@ -43,10 +43,15 @@ const meta = {
 export default meta;
 type Story = StoryObj<typeof meta>;
 
-type Props = Partial<ComponentProps<typeof ConsoleShell>> & { admin?: boolean };
+type Props = Partial<ComponentProps<typeof ConsoleShell>> & { admin?: boolean; current?: string };
 
 /** A console page: the Overview current, the rail as an admin or a moderator sees it. */
-function Console({ admin = true, className = 'h-[56.25rem] w-[90rem]', ...props }: Props) {
+function Console({
+  admin = true,
+  current = 'overview',
+  className = 'h-[56.25rem] w-[90rem]',
+  ...props
+}: Props) {
   const [palette, setPalette] = useState(false);
   const [query, setQuery] = useState('');
   const legacy = admin
@@ -57,7 +62,11 @@ function Console({ admin = true, className = 'h-[56.25rem] w-[90rem]', ...props 
   return (
     <ConsoleShell
       className={className}
-      modes={CONSOLE_MODES.map((m) => ({ ...m, current: m.id === 'overview' }))}
+      // The rail draws a mode only for a viewer who can read its page: Machinery is an admin's alone.
+      modes={CONSOLE_MODES.filter((m) => admin || m.capability !== 'machinery.read').map((m) => ({
+        ...m,
+        current: m.id === current,
+      }))}
       legacy={legacy}
       onLegacy={onLegacy}
       linkFor={(to) => (
@@ -208,7 +217,7 @@ export const GoMode: Story = {
     await userEvent.keyboard('g');
     await waitFor(() => expect(shell).toHaveAttribute('data-go'));
     const chips = [...shell.querySelectorAll('[data-slot="rail-go"]')].map((c) => c.textContent);
-    await expect(chips).toEqual(['GO', 'GI', 'GC', 'GP', 'GL', 'GA']);
+    await expect(chips).toEqual(['GO', 'GI', 'GC', 'GP', 'GM', 'GL', 'GA']);
     await userEvent.keyboard('l');
     const menu = await within(document.body).findByRole('menu');
     await expect(await within(menu).findAllByRole('menuitem')).toHaveLength(LEGACY_PAGES.length);
@@ -275,4 +284,27 @@ export const Dark: Story = {
 export const Light: Story = {
   render: () => <Console />,
   globals: { surface: 'admin', mode: 'light' },
+};
+
+/** Machinery is on an admin's rail, after People, and lit on its own pages; a moderator's has none. */
+export const MachineryMode: Story = {
+  render: () => <Console current="machinery" />,
+  play: async ({ canvasElement }) => {
+    const modes = rail(canvasElement);
+    const machinery = within(modes).getByRole('link', { name: /Machinery/ });
+    await expect(machinery).toHaveAttribute('href', '#/admin/machinery');
+    await expect(machinery).toHaveAttribute('aria-current', 'page');
+    const names = within(modes)
+      .getAllByRole('link')
+      .map((l) => l.textContent ?? '');
+    const at = (name: string) => names.findIndex((n) => n.includes(name));
+    await expect(at('Machinery')).toBe(at('People') + 1);
+  },
+};
+
+export const ModeratorRail: Story = {
+  render: () => <Console admin={false} />,
+  play: async ({ canvasElement }) => {
+    await expect(within(rail(canvasElement)).queryByRole('link', { name: /Machinery/ })).toBeNull();
+  },
 };

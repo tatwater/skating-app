@@ -13,6 +13,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "record": "tsx src/cli.ts",
+    "campaign": "tsx src/campaign.ts",
     "backfill-archives": "tsx src/backfillArchives.ts"
   },
   "dependencies": {

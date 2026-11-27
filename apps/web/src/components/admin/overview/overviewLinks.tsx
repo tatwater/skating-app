@@ -11,7 +11,8 @@ import type { CorpusTask, InboxLane } from './overviewData';
 export type OverviewTarget =
   | { kind: 'inbox'; lane?: InboxLane }
   | { kind: 'corpus'; task?: CorpusTask }
-  | { kind: 'machinery' }
+  /** Machinery; with `run`, that run's page in Machinery › Corpus (an import row on the card). */
+  | { kind: 'machinery'; run?: string }
   | { kind: 'people'; list?: 'staff' | 'new' | 'suspended' | 'banned' | 'leaving' }
   | { kind: 'ledger' }
   | { kind: 'body'; id: string }
@@ -48,6 +49,16 @@ export const CORPUS_LANE_OF: Readonly<Record<CorpusTask, string | null>> = {
   enrichment: null,
 };
 
+/**
+ * Machinery's page for a run (Machinery › Corpus, `?run=`), or the mode itself — which opens on its
+ * first built page (Corpus) until Health lands. One answer for both link maps, so they can't disagree.
+ */
+export function machineryPath(run?: string): string {
+  return run === undefined
+    ? '/admin/machinery'
+    : `/admin/machinery/corpus?run=${encodeURIComponent(run)}`;
+}
+
 /** The console's routes (the phase plan's table), for a page that isn't handed a router. */
 export function overviewHref(to: OverviewTarget): string {
   switch (to.kind) {
@@ -58,7 +69,7 @@ export function overviewHref(to: OverviewTarget): string {
         ? `/admin/corpus?lane=${CORPUS_LANE_OF[to.task]}`
         : '/admin/corpus';
     case 'machinery':
-      return '/admin/machinery';
+      return machineryPath(to.run);
     case 'people':
       return to.list ? `/admin/people?lane=${PEOPLE_LANE_OF[to.list]}` : '/admin/people';
     case 'ledger':

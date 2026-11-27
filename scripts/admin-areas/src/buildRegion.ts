@@ -108,7 +108,18 @@ const MASK_OUTPUTS = [
   join(REPO, 'apps', 'mobile', 'src', 'assets', 'regionMask.ts'),
 ];
 
-const log = makeLog('region');
+const say = makeLog('region');
+
+/**
+ * **Every line the build says is also a beat** (D341): the build never flushed, so its row was
+ * silent for its whole run. Each layer it finishes logs a line, and the run logger reports at most
+ * once a minute, so a line costs a clock read. Set once the row is open.
+ */
+let beating: RunLogger | undefined;
+const log = (message: string): void => {
+  say(message);
+  beating?.beat(message);
+};
 
 /**
  * Natural Earth, for everywhere TIGER does not reach.
@@ -525,6 +536,7 @@ function main(logger: RunLogger): void {
   );
   let dropped = 0;
   for (const state of others) {
+    beating?.beat();
     if (!nearRegion(state)) {
       dropped++;
       continue;
@@ -557,6 +569,7 @@ function main(logger: RunLogger): void {
   );
   const inRange = countries.filter(nearRegion);
   for (const country of inRange) {
+    beating?.beat();
     push(
       'foreign',
       maskFeature(country, TOLERANCE.canada, 'land', {
@@ -579,6 +592,7 @@ function main(logger: RunLogger): void {
   const lakesInRange = lakes.filter(nearRegion);
   let kept = 0;
   for (const lake of lakesInRange) {
+    beating?.beat();
     const trimmed = maskFeature(lake, TOLERANCE.lake, 'water', {
       cutAgainst: cutLine,
       clipToBleedBox: needsClipping(lake),
@@ -666,6 +680,7 @@ const logger = new RunLogger({
   notes: ['Writes files only: nothing in Convex but this row.'],
 });
 if (runLogEnabled) logger.start();
+beating = logger;
 
 try {
   main(logger);

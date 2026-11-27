@@ -166,6 +166,10 @@ export const CAPABILITIES = {
     'admin',
     'Start, pause, retry and poll the live imagery pipeline (A06i).',
   ),
+  'machinery.corpus': write(
+    'admin',
+    'Mark a corpus run failed, wait on a stalled one, and ask one to stop (D342).',
+  ),
   'machinery.ledger': granted(
     'admin',
     'canEditLedger',

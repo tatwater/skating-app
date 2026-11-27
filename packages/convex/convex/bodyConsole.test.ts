@@ -264,6 +264,39 @@ describe('consoleExtras', () => {
     expect(x.touchingBodyIds).toEqual([lake]);
   });
 
+  test('a body is trusted since its campaign’s merge or load, not its first row (Co11)', async () => {
+    const t = harness();
+    const { as } = await seedUser(t);
+    const id = await seedBody(t, { name: 'Campaigned', lastCampaignId: 'c-11' });
+    const runAt = (kind: Doc<'importRuns'>['kind'], startedAt: number, label = 'run') =>
+      t.run((ctx) =>
+        ctx.db.insert('importRuns', {
+          kind,
+          label,
+          campaignId: 'c-11',
+          deployment: 'dev',
+          isProd: false,
+          status: 'succeeded',
+          startedAt,
+          counts: [],
+          stages: [],
+          failures: [],
+          failuresTotal: 0,
+        }),
+      );
+    // The campaign's own row and its region build come first; then the merge, then the load.
+    await runAt('corpus_campaign', NOW - 12 * DAY);
+    await runAt('region_masks', NOW - 11 * DAY);
+    const trusted = () => as.query(api.bodyConsole.consoleExtras, { waterBodyId: id });
+    expect((await trusted()).outlineTrustedSince).toBeNull();
+    await runAt('corpus_merge', NOW - 10 * DAY);
+    await runAt('canonical_water', NOW - 9 * DAY);
+    expect(await trusted()).toMatchObject({
+      outlineTrustedSince: NOW - 10 * DAY,
+      outlineTrustedVia: 'campaign',
+    });
+  });
+
   test('a catalog body is trusted since its campaign; no boundary is no town', async () => {
     const t = harness();
     const { as } = await seedUser(t);

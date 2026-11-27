@@ -217,6 +217,48 @@ export const CountCardRows: Story = {
   },
 };
 
+/**
+ * Machinery while the corpus campaign reports on time: the import row *running* in the quiet ink
+ * (neither red nor amber: nothing waits on a person), and a link to its run in Machinery.
+ */
+export const MachineryRunning: Story = {
+  render: () => (
+    <div className="w-[20.5rem]">
+      <MachineryCard
+        data={{
+          ...MACHINERY,
+          jobs: [
+            {
+              ...(MACHINERY.jobs[0] as (typeof MACHINERY.jobs)[number]),
+              state: 'running',
+              at: NOW - 60_000,
+            },
+            ...MACHINERY.jobs.slice(1),
+          ],
+        }}
+        now={NOW}
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const row = must(slots(canvasElement, 'count-row')[0]);
+    await expect(row.dataset.state).toBe('running');
+    await expect(slot(row, 'count-detail')).toHaveTextContent('running');
+    await expect(
+      slot(row, 'count-detail').querySelector('[data-tone="bad"], [data-tone="warn"]'),
+    ).toBeNull();
+    await expect(row.closest('a') ?? row.querySelector('a')).toHaveAttribute(
+      'href',
+      '/admin/machinery/corpus?run=k00000000000000000000000000000001',
+    );
+  },
+};
+
+export const MachineryRunningLight: Story = {
+  ...MachineryRunning,
+  globals: { surface: 'admin', mode: 'light' },
+};
+
 /** Machinery: the status square, the word in its tone, the time in a fixed column. */
 export const MachineryRows: Story = {
   render: () => (

@@ -241,3 +241,55 @@ describe('Inbox zero’s Not in the inbox', () => {
     expect(h.asked.some((a) => a.name === 'corpusTasks:lanes')).toBe(false);
   });
 });
+
+describe('Inbox zero’s Machinery line', () => {
+  const zero = () => {
+    h.lanes = { ...LANES, allOpen: 0, pending: false } satisfies InboxLanesView;
+    h.search = {};
+  };
+  const elsewhere = () =>
+    must(
+      document.querySelector<HTMLElement>('[data-slot="inbox-zero-elsewhere"]'),
+      'the elsewhere rows',
+    );
+  const machineryRow = () =>
+    [...elsewhere().children].find((r) => r.textContent?.includes('Machinery')) as
+      | HTMLElement
+      | undefined;
+
+  it('says a stalled run and links to Machinery, read on the page’s minute', () => {
+    zero();
+    h.answers['machineryRuns:lanes'] = () => ({ corpus: { state: 'stalled', at: 1 } });
+    mount();
+    const row = must(machineryRow(), 'the Machinery row');
+    expect(row).toHaveTextContent('1 run stalled');
+    const link = must(row.querySelector('[data-slot="inbox-zero-link"]'), 'the Machinery link');
+    expect(link.getAttribute('href')).toBe('/admin/machinery');
+    expect(lastArgs('machineryRuns:lanes')).toEqual({ now: expect.any(Number) });
+  });
+
+  it('links with no words while every run is quiet', () => {
+    zero();
+    h.answers['machineryRuns:lanes'] = () => ({ corpus: { state: 'ok', at: 1 } });
+    mount();
+    const row = must(machineryRow(), 'the Machinery row');
+    expect(row).not.toHaveTextContent('run');
+    expect(row.querySelector('[data-slot="inbox-zero-link"]')).not.toBeNull();
+  });
+
+  it('leaves the line out, and asks nothing, for a viewer who can’t open Machinery', () => {
+    zero();
+    h.can = (c) => c !== 'machinery.read';
+    mount();
+    expect(machineryRow()).toBeUndefined();
+    expect(h.asked.some((a) => a.name === 'machineryRuns:lanes')).toBe(false);
+    // Corpus is the last line now: no rule under it.
+    expect(elsewhere().children).toHaveLength(1);
+  });
+
+  it('asks the pipelines only at zero', () => {
+    h.lanes = LANES;
+    mount();
+    expect(h.asked.some((a) => a.name === 'machineryRuns:lanes')).toBe(false);
+  });
+});

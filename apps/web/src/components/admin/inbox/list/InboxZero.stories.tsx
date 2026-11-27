@@ -2,7 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, fn, userEvent, waitFor, within } from 'storybook/test';
 
 import { must } from '@/components/kit/storyKit';
-import { InboxZero } from './InboxZero';
+import { InboxZero, ZeroLinks } from './InboxZero';
 import { NOW, ZERO_TODAY } from './inboxFixtures';
 
 /**
@@ -36,11 +36,40 @@ export const Ready: Story = {
       (d) => d.textContent,
     );
     await expect(cells).toEqual(['1', '3', '8', '4', '1', '3', '2']);
-    // Corpus and Machinery aren't built: their links say so.
-    const corpus = within(slot(canvasElement, 'inbox-zero-elsewhere')).getByRole('button', {
-      name: /Corpus/,
-    });
+    // No links handed in: Corpus says it isn't here yet, and Machinery (an admin's alone) isn't drawn.
+    const elsewhere = slot(canvasElement, 'inbox-zero-elsewhere');
+    const corpus = within(elsewhere).getByRole('button', { name: /Corpus/ });
     await expect(corpus).toHaveAttribute('aria-disabled', 'true');
+    await expect(elsewhere).not.toHaveTextContent('Machinery');
+  },
+};
+
+/** An admin's: Machinery's line says a run needs a person, and its link opens the mode. */
+export const WithMachinery: Story = {
+  args: { notInInbox: { corpus: '140 open tasks', machinery: '1 run stalled' } },
+  decorators: [
+    (Story) => (
+      <ZeroLinks
+        value={{
+          // biome-ignore lint/a11y/useAnchorContent: the row's chip clones its content in
+          corpus: <a href="#corpus" />,
+          // biome-ignore lint/a11y/useAnchorContent: the row's chip clones its content in
+          machinery: <a href="#machinery" />,
+        }}
+      >
+        {Story()}
+      </ZeroLinks>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const elsewhere = slot(canvasElement, 'inbox-zero-elsewhere');
+    await expect(elsewhere.children).toHaveLength(2);
+    const row = elsewhere.children[1] as HTMLElement;
+    await expect(row).toHaveTextContent('1 run stalled');
+    await expect(within(row).getByRole('link', { name: /Machinery/ })).toHaveAttribute(
+      'href',
+      '#machinery',
+    );
   },
 };
 

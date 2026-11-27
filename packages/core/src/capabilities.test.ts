@@ -76,6 +76,7 @@ describe('the capability map (D217)', () => {
       'inbox.support.read',
       'instruments.tuning',
       'machinery.read',
+      'machinery.corpus',
       'machinery.ledger',
       'season.read',
       'season.settings',

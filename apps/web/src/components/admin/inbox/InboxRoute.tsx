@@ -10,6 +10,7 @@ import { firstOpenLane, openTotal } from '../corpus/taskLanes';
 import { taskSearchFor } from '../corpus/taskSearch';
 import { openTasks } from '../corpus/words/corpusWords';
 import { LOCK_START, lockSeenOf, nextLock } from '../inspector/lockModel';
+import { zeroLine as machineryZeroLine } from '../machinery/words/machineryWords';
 import { isFailed, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
 import { useClockFor } from '../reads/readArgs';
@@ -119,6 +120,21 @@ export function InboxRoute() {
     />
   ) : undefined;
 
+  // *Not in the inbox*'s Machinery line: the corpus pipeline's tail (`machineryRuns.lanes`, read only
+  // at zero, on the minute — a run falling late is the clock's doing), worded only when it needs a
+  // person. An admin's alone: a moderator can't open Machinery, so their list leaves the line out.
+  const canMachinery = can('machinery.read');
+  const { reads: machineryReads } = useConsoleReadSet({
+    lanes: canMachinery && atZero ? read(api.machineryRuns.lanes, { now }) : null,
+  });
+  const machineryTail = loaded(machineryReads.lanes)?.corpus;
+  const machineryLine =
+    machineryTail === undefined ? undefined : (machineryZeroLine(machineryTail.state) ?? undefined);
+  const zeroLinks = {
+    ...(corpusLink !== undefined && { corpus: corpusLink }),
+    ...(canMachinery && { machinery: <Link to="/admin/machinery" /> }),
+  };
+
   // ── The open item and its lock ──────────────────────────────────────────────────────────────
   // A `ticket:` ref to a viewer without support's read is refused by the read itself; it isn't
   // asked, and the refusal is said in the read's own sentence (the server's `SUPPORT_REFUSAL`).
@@ -213,7 +229,7 @@ export function InboxRoute() {
   return (
     // The unmerge's live state where a merge is refused with `unmerging` (the Drawn lever).
     <UnmergeLiveProvider>
-      <ZeroLinks value={corpusLink === undefined ? {} : { corpus: corpusLink }}>
+      <ZeroLinks value={zeroLinks}>
         <InboxView
           lanes={lanes}
           canReadSupport={canSupport}
@@ -236,7 +252,10 @@ export function InboxRoute() {
             atZero
               ? {
                   day: zeroDay,
-                  ...(corpusLine !== undefined && { notInInbox: { corpus: corpusLine } }),
+                  notInInbox: {
+                    ...(corpusLine !== undefined && { corpus: corpusLine }),
+                    ...(machineryLine !== undefined && { machinery: machineryLine }),
+                  },
                 }
               : null
           }

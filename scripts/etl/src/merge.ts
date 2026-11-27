@@ -130,12 +130,32 @@ const DOWNSTATE_FILE = join(HERE, '..', '..', 'basemap', '.scratch', 'downstate-
  */
 const NHD_ID_ACCEPTANCE_FLOOR = 0.99;
 
+/**
+ * A line of the merge's own report — **and a beat** (D341): the merge never flushed, so its row was
+ * silent for its whole run (22–45 minutes). Each line it prints between stages now offers the run
+ * logger a beat, which reports at most once a minute and otherwise costs a clock read.
+ */
 function log(message: string): void {
   process.stderr.write(`[merge] ${message}\n`);
+  activeLogger?.beat(message.trim());
 }
 
 /** Set once `main` has opened its run row, so the top-level catch can close it as failed. */
 let activeLogger: RunLogger | undefined;
+
+/** The run logger's beat, for the pure stages (`buildMasterList`, the emit) to offer labels to. */
+const beat = (label: string): void => activeLogger?.beat(label);
+
+/** Lines between the beats a catalog read offers — the logger's clock decides whether one reports. */
+const BEAT_LINES = 1_000;
+
+/** A counter offering a beat every {@link BEAT_LINES} lines of one catalog file. */
+function lineBeat(label: string): () => void {
+  let n = 0;
+  return () => {
+    if (++n % BEAT_LINES === 0) beat(`${label} · ${n.toLocaleString('en-US')} lines read`);
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Sources
@@ -168,7 +188,9 @@ async function loadOsm(refresh: boolean, ledger: LaneLedger): Promise<Feature[]>
   for (const state of OSM_STATES) {
     const file = join(CLASSIFY_SCRATCH, `osm-${state}.geojsonseq`);
     if (!existsSync(file) || refresh) extractOsm(state, file);
+    const read = lineBeat(`reading OSM ${state}`);
     for await (const line of readLines(file)) {
+      read();
       const parsed = parseLine<RawOsmFeature>(line);
       // Every exit is counted. `parseLine` failing used to be `catch { continue }` — invisible, and
       // exactly how a truncated extract would report as a region with fewer lakes.
@@ -188,6 +210,8 @@ function extractOsm(state: string, out: string): void {
   };
   const filtered = join(CLASSIFY_SCRATCH, `osm-${state}.pbf`);
   log(`${state}: filtering…`);
+  // ⚠ Two synchronous osmium runs: no beat reaches the row until they return (first run or
+  // `--refresh` only; a cached extract skips them).
   // The argv lives in `./extract` so the dry run, the merge and the canonical loader cannot drift
   // apart on which tags an extract keeps — a narrower filter here would not error, it would just
   // produce fewer lakes.
@@ -223,7 +247,9 @@ async function loadNhd(refresh: boolean, ledger: LaneLedger, ids: DropLedger): P
       );
       if (res.status !== 0) throw new Error(`${key}: ogr2ogr exited ${res.status}`);
     }
+    const read = lineBeat(`reading NHD ${key}`);
     for await (const line of readLines(geojson)) {
+      read();
       const parsed = parseLine<RawNhdFeature>(line);
       const feature = parsed.ok
         ? // The id normalizer gets its own `DropLedger` so `expectAcceptance` can assert it against
@@ -254,7 +280,9 @@ async function loadThreeDhp(refresh: boolean, ledger: LaneLedger): Promise<Featu
   }
   const out: Feature[] = [];
   const seen = new Set<string>();
+  const read = lineBeat('reading 3DHP');
   for await (const line of readLines(geojson)) {
+    read();
     const parsed = parseLine<RawThreeDhpFeature>(line);
     const feature = parsed.ok
       ? ledger.record(parseThreeDhpFeature(parsed.value, seen))
@@ -606,11 +634,12 @@ async function main(): Promise<void> {
     downstate,
     elevation,
     log,
+    beat,
   });
   const { bodies: kept, subAreas, dropped, stats } = master;
 
   // ── The emit stage — the artifact the loader actually consumes (A07a step 5) ────────────────
-  const emit = emitCanonicalBodies(kept, towns);
+  const emit = emitCanonicalBodies(kept, towns, beat);
   const failedCount = [...emit.failures.values()].reduce((a, b) => a + b, 0);
   if (emit.emitted.length + failedCount !== kept.length) {
     throw new Error(
@@ -839,6 +868,8 @@ async function main(): Promise<void> {
     })),
   );
   writeNdjson(join(SCRATCH, 'absorbed.ndjson'), absorbedPairs);
+  // What Machinery reads to mark `retire-absorbed` required after this campaign (D341).
+  logger.count('absorbedPairs', absorbedPairs.length);
   log(
     `absorbed → ${join(SCRATCH, 'absorbed.ndjson')} (${absorbedPairs.length.toLocaleString()}) ` +
       '— retire with `pnpm --filter @skating/etl retire-absorbed` (dry by default)',

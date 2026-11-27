@@ -31,7 +31,11 @@ export function isCampaignRun(run: Pick<Doc<'importRuns'>, 'kind' | 'label'>): b
   return (CAMPAIGN_RUN_KINDS as readonly string[]).includes(run.kind) && !isLegacyRetireRow(run);
 }
 
-/** The newest merge-or-load run of the last campaign of either kind, or `null` past the lookback. */
+/**
+ * The newest **succeeded** merge-or-load run of either kind, or `null` past the lookback — the
+ * Overview's *last campaign*. A running merge or load is no campaign yet, and a failed one (marked
+ * failed in the console included) didn't land, so neither names the last campaign (B01-8a).
+ */
 export async function lastCampaignRun(ctx: QueryCtx): Promise<Doc<'importRuns'> | null> {
   let last: Doc<'importRuns'> | null = null;
   for (const kind of CAMPAIGN_RUN_KINDS) {
@@ -40,7 +44,9 @@ export async function lastCampaignRun(ctx: QueryCtx): Promise<Doc<'importRuns'> 
       .withIndex('by_kind_started', (q) => q.eq('kind', kind))
       .order('desc')
       .take(CAMPAIGN_RUN_LOOKBACK);
-    const run = recent.find(isCampaignRun);
+    const run = recent.find(
+      (r) => isCampaignRun(r) && r.status === 'succeeded' && r.markedFailed === undefined,
+    );
     if (run && (last === null || run.startedAt > last.startedAt)) last = run;
   }
   return last;
@@ -60,4 +66,20 @@ export async function campaignRunOf(
     .order('desc')
     .take(CAMPAIGN_RUN_LOOKBACK);
   return recent.find(isCampaignRun) ?? null;
+}
+
+/**
+ * The **first** merge-or-load run carrying `campaignId` — when the campaign's corpus was written —
+ * never its region build, its campaign row (B01-8a), or a by-hand pass stamped with it later; `null`
+ * when none is within the lookback. A body's *outline trusted since* (register Co11).
+ */
+export async function firstCampaignRunOf(
+  ctx: QueryCtx,
+  campaignId: string,
+): Promise<Doc<'importRuns'> | null> {
+  const early = await ctx.db
+    .query('importRuns')
+    .withIndex('by_campaign', (q) => q.eq('campaignId', campaignId))
+    .take(CAMPAIGN_RUN_LOOKBACK);
+  return early.find(isCampaignRun) ?? null;
 }

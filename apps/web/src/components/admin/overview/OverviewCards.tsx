@@ -172,6 +172,7 @@ const JOB: Record<JobState, { dot: StatusDotTone; tone: ValueTone; word: string 
   failed: { dot: 'bad', tone: 'bad', word: 'failed' },
   late: { dot: 'warn', tone: 'warn', word: 'late' },
   retried: { dot: 'warn', tone: 'warn', word: 'retried' },
+  running: { dot: 'quiet', tone: 'default', word: 'running' },
   ok: { dot: 'quiet', tone: 'dim', word: 'ok' },
   never: { dot: 'hollow', tone: 'dim', word: 'not run' },
 };
@@ -212,6 +213,8 @@ export function MachineryCard({
             detailTone={look.tone}
             value={jobWhen(job.at, now)}
             tone="dim"
+            // The corpus import row opens its run in Machinery.
+            {...(job.runId !== undefined && { to: { kind: 'machinery', run: job.runId } })}
           />
         );
       })}

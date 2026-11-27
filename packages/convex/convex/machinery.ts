@@ -3,30 +3,44 @@
  *
  * **Only what a record can tell.** A job is listed when something it writes says how its last run
  * went: the live imagery's poll, pump and index (`imageryRuns`), the 6-hourly metric rollup and the
- * weekly coverage sweep (the `metricSnapshots` rows they stamp), and the last import (`importRuns`).
- * Every other cron leaves no trace yet — that is §5's heartbeat (D218) — so it is counted in `more`
- * and never called ok: `moreAllOk` is true only when nothing left out is unknown. A running import is
- * not shown either way: without a heartbeat it can't be told from a dead one.
+ * weekly coverage sweep (the `metricSnapshots` rows they stamp), and the newest corpus run Machinery
+ * lists (`importRuns`, D341) — running, late or stalled by core's `runLiveness`, the same verdict
+ * Machinery's sidebar draws (`machineryRuns.corpusTail`). Every other cron leaves no trace yet —
+ * that is §5's heartbeat (D218) — so it is counted in `more` and never called ok: `moreAllOk` is
+ * true only when nothing left out is unknown.
  *
  * Admin only, as Machinery is (`machinery.read`): a moderator's read is `null`, which the card draws
  * as *Not recorded yet*.
  */
 
+import type { RunLiveness } from '@skating/core';
 import { archiveSeasonAt, callerNow } from '@skating/core';
 import { v } from 'convex/values';
-import type { Doc } from './_generated/dataModel';
+import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import crons from './crons';
 import { hasCapability, requireCapability } from './lib/auth';
 import { jobRow } from './lib/imageryPump';
 import { latestMetric } from './lib/metricReads';
+import { corpusTail } from './machineryRuns';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 
-/** A job's last word, worst first — the card's order. `never` hasn't run this season. */
-export const JOB_STATES = ['stalled', 'failed', 'late', 'retried', 'ok', 'never'] as const;
+/**
+ * A job's last word, worst first — the card's order. `running` is a corpus run reporting on time
+ * (shown, so the card says the campaign is going); `never` hasn't run this season.
+ */
+export const JOB_STATES = [
+  'stalled',
+  'failed',
+  'late',
+  'retried',
+  'running',
+  'ok',
+  'never',
+] as const;
 export type JobState = (typeof JOB_STATES)[number];
 
 export type JobRow = {
@@ -35,7 +49,29 @@ export type JobRow = {
   state: JobState;
   /** When its last run finished (or started, for a late one); `null` if it never ran. */
   at: number | null;
+  /** The import row's run, which the card's row opens in Machinery; absent on every other job. */
+  runId?: Id<'importRuns'>;
 };
+
+/**
+ * A listed run's card state, from the verdict Machinery draws: a stall held by *Wait 30 minutes*
+ * reads late (someone is on it, and it isn't fine), as does a running row with no heartbeat (it
+ * needs a look, and nothing says it died); a finished one is failed — a mark included — or ok.
+ */
+export function importJobState(
+  run: Pick<Doc<'importRuns'>, 'status' | 'markedFailed'>,
+  liveness: RunLiveness,
+): JobState {
+  switch (liveness.state) {
+    case 'finished':
+      return run.status === 'failed' || run.markedFailed !== undefined ? 'failed' : 'ok';
+    case 'waiting':
+    case 'notRecorded':
+      return 'late';
+    default:
+      return liveness.state;
+  }
+}
 
 /** How many rows the card shows: everything that needs a look, then ok rows up to this many. */
 export const CARD_ROWS = 5;
@@ -156,16 +192,34 @@ async function trackedJobs(ctx: QueryCtx, now: number): Promise<JobRow[]> {
     rows.push({ id: job.id, name: job.name, state: byAge(at, job.every, now), at });
   }
 
-  // The last import that finished. A running one is left out: nothing yet tells it from a dead one.
-  const imports = await ctx.db.query('importRuns').withIndex('by_started').order('desc').take(10);
-  const lastImport = imports.find((r) => r.status !== 'running');
-  if (lastImport !== undefined) {
+  // The newest corpus run Machinery lists, whatever its status. Until the listing backfill has run
+  // on a deployment nothing older than it is listed, so the card falls back to the last import that
+  // finished, as it read before.
+  const tail = await corpusTail(ctx, now);
+  if (tail !== null) {
+    const { run, liveness } = tail;
     rows.push({
       id: 'import',
-      name: lastImport.label,
-      state: lastImport.status === 'failed' ? 'failed' : 'ok',
-      at: lastImport.finishedAt ?? lastImport.startedAt,
+      name: run.label,
+      state: importJobState(run, liveness),
+      at:
+        liveness.state === 'finished'
+          ? (run.finishedAt ?? run.startedAt)
+          : (run.progressAt ?? run.startedAt),
+      runId: run._id,
     });
+  } else {
+    const imports = await ctx.db.query('importRuns').withIndex('by_started').order('desc').take(10);
+    const lastImport = imports.find((r) => r.status !== 'running');
+    if (lastImport !== undefined) {
+      rows.push({
+        id: 'import',
+        name: lastImport.label,
+        state: lastImport.status === 'failed' ? 'failed' : 'ok',
+        at: lastImport.finishedAt ?? lastImport.startedAt,
+        runId: lastImport._id,
+      });
+    }
   }
 
   return rows.sort((a, b) => JOB_STATES.indexOf(a.state) - JOB_STATES.indexOf(b.state));

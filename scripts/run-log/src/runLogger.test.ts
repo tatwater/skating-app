@@ -6,16 +6,24 @@ import { DRY_RUN_NOTE, MAX_FORWARDED_FAILURES, RunLogger } from './runLogger';
 
 const DEV: DeploymentTarget = { label: 'dev:agile-bee-397', isDev: true, isProd: false };
 
-/** Record every call the logger makes, and hand back a run id from `start`. */
+/**
+ * Record every `importRuns` call the logger makes, and hand back a run id from `start`. The live
+ * log's appends are kept apart (`runLoggerEvents.test.ts` holds them), so these tests read the row.
+ */
 function recorder(overrides: { throwOn?: string } = {}) {
   const calls: { fn: string; args: Record<string, unknown> }[] = [];
+  const appends: unknown[] = [];
   const warnings: string[] = [];
   const call = <T>(fn: string, args: unknown): T => {
     if (overrides.throwOn === fn) throw new Error(`boom in ${fn}`);
+    if (fn === 'runEvents:append') {
+      appends.push(args);
+      return { stop: false, markedFailed: false, stored: 1, dropped: 0 } as T;
+    }
     calls.push({ fn, args: args as Record<string, unknown> });
     return (fn === 'importRuns:start' ? 'run_1' : undefined) as T;
   };
-  return { calls, warnings, call, warn: (m: string) => warnings.push(m) };
+  return { calls, appends, warnings, call, warn: (m: string) => warnings.push(m) };
 }
 
 function makeLogger(rec: ReturnType<typeof recorder>, extra: Record<string, unknown> = {}) {
@@ -25,6 +33,8 @@ function makeLogger(rec: ReturnType<typeof recorder>, extra: Record<string, unkn
     target: DEV,
     call: rec.call,
     warn: rec.warn,
+    // Never the suite's own environment: a stray RUN_CORPUS_PASS would change what `start` sends.
+    env: {},
     ...extra,
   });
 }

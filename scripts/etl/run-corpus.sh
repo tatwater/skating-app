@@ -49,6 +49,14 @@
 #
 # **Every pass carries the campaign id**, the region masks and the landmark match included, so the
 # campaign's run rows group as one (`importRuns.by_campaign`).
+#
+# **The campaign keeps its own row** (B01-8a, D341), so Machinery can draw it live: opened before the
+# first pass with the flags and the plan (each skipped pass with why), beaten as each pass starts, and
+# closed from the `EXIT` trap with the script's real exit status and the pass it was in — on success,
+# on a failing pass, on a refused merge, and on Ctrl-C. Each pass's row points at it through
+# `RUN_CORPUS_PARENT` and names itself through `RUN_CORPUS_PASS`. The row is bookkeeping: if it can't
+# be opened (a deployment from before it) the campaign runs exactly as before, and nothing here can
+# change the exit status. A stop asked in the console is honored between passes (exit 130).
 set -euo pipefail
 
 # Where the caller stood, so a relative --mentions= path means what they typed.
@@ -57,6 +65,8 @@ cd "$(dirname "$0")"
 
 CAMPAIGN="${1:?usage: ./run-corpus.sh <campaign-id> [--refresh] [--apply-sub-areas --actor=<id>] [--mentions=<csv> | --without-corpus] [--skip-landmarks]}"
 shift
+# What the script was asked, verbatim, for the campaign's row.
+FLAGS=("$@")
 
 REFRESH=""
 APPLY_SUB_AREAS=""
@@ -132,29 +142,88 @@ else
   }
 fi
 
-exec > >(stamp_lines | tee "$LOG") 2>&1
+# The logger ignores Ctrl-C: the interrupt is the script's to handle, and a `tee` killed by it would
+# lose the last lines — the campaign row's close among them — exactly when they matter. (Bash already
+# has a script's background jobs ignore SIGINT; this says so rather than relying on it.)
+exec > >(trap '' INT; stamp_lines | tee "$LOG") 2>&1
 TEE_PID=$!
+
+# ── The campaign's own row (D341) ─────────────────────────────────────────────────────────────────
+# Every call is best-effort and its failure ignored: bookkeeping never breaks the thing it books.
+campaign() { pnpm --silent --filter @skating/run-log campaign "$@"; }
+CAMPAIGN_RUN=""
+CURRENT_PASS=""
+
 # **And the script waits for its own logger.** Bash does not wait for a process substitution at exit,
 # so `tee` can be torn down with the pipe still holding the last lines — which on a FAILING run are
 # exactly the lines worth keeping. Closing both descriptors gives `tee` its EOF, `wait` reaps it, and
 # the original status is re-raised explicitly so the trap itself cannot become the thing that eats the
-# exit code the header is about.
+# exit code the header is about. The campaign row closes first, with that same status, while the log
+# is still open to say so; nothing it does can touch `$status`.
 finish() {
   local status=$?
+  trap - INT
+  if [ -n "$CAMPAIGN_RUN" ]; then
+    campaign close "$CAMPAIGN_RUN" --exit="$status" --last-pass="$CURRENT_PASS" || true
+  fi
   exec 1>&- 2>&-
   wait "$TEE_PID" 2>/dev/null || true
   exit "$status"
 }
 trap finish EXIT
+# Ctrl-C ends the script as an interrupt (130) through the trap above, whatever bash would do alone.
+trap 'exit 130' INT
 echo "══ logging to ${SCRATCH#./}/run-${CAMPAIGN}.log — do NOT pipe this script; it eats the exit code"
+
+# The plan, as this script will run it: a pass it will skip says why, decided by the same flags the
+# steps below read. (Sub-areas can also be skipped later, when the merge emits none.)
+PLAN_ARGS=(--plan=build-region,merge,load,load-sub-areas,landmarks,load-landmarks,load-landmark-names
+  --hand=prune-floor,seed-standing,retire-absorbed)
+if [ -z "$ACTOR" ]; then PLAN_ARGS+=("--skipped=load-sub-areas:no --actor given"); fi
+if [ -n "$SKIP_LANDMARKS" ]; then
+  for pass in landmarks load-landmarks load-landmark-names; do
+    PLAN_ARGS+=("--skipped=${pass}:--skip-landmarks")
+  done
+elif [ -n "$WITHOUT_CORPUS" ]; then
+  PLAN_ARGS+=("--skipped=load-landmark-names:built without the corpus")
+fi
+CAMPAIGN_RUN="$(campaign open "$CAMPAIGN" "${PLAN_ARGS[@]}" -- ${FLAGS[@]+"${FLAGS[@]}"} | tail -n 1)" ||
+  CAMPAIGN_RUN=""
+# A Convex id or nothing: whatever else came back is not a row to point the passes at.
+case "$CAMPAIGN_RUN" in *[!a-z0-9]* | "") CAMPAIGN_RUN="" ;; esac
+export RUN_CORPUS_PARENT="$CAMPAIGN_RUN"
+if [ -z "$CAMPAIGN_RUN" ]; then
+  echo "══ the campaign's own row could not be opened — its passes still record their own rows"
+fi
+echo "══ watch it at /admin/machinery/corpus?campaign=${CAMPAIGN}"
+
+# Each pass: named for its row, a heartbeat on the campaign's, and the console's stop honored here,
+# between passes — the only place the script can stop without cutting a pass in half.
+begin_pass() {
+  if [ -n "$CAMPAIGN_RUN" ]; then
+    local said
+    said="$(campaign pass "$CAMPAIGN_RUN" "$1")" || said=""
+    if [ "$said" = "stop" ]; then
+      echo "══ asked to stop in the console — stopping before ${1}" >&2
+      exit 130
+    fi
+  fi
+  CURRENT_PASS="$1"
+  export RUN_CORPUS_PASS="$1"
+}
+skip_pass() {
+  if [ -n "$CAMPAIGN_RUN" ]; then campaign skip "$CAMPAIGN_RUN" "$1" "$2" || true; fi
+}
 
 # The region masks come first and are not optional: the merge clips against `boundaries.ndjson` and
 # `downstate-ny.geojson`, and a stale mask moves tens of thousands of bodies across the region line
 # without changing anything else about the run.
 echo "══ region masks (TIGER)"
+begin_pass build-region
 pnpm --filter @skating/admin-areas build-region --campaign="$CAMPAIGN"
 
 echo "══ merge — three catalogs, one filter"
+begin_pass merge
 pnpm --filter @skating/etl merge --campaign="$CAMPAIGN" $REFRESH
 
 # **The merge is not a step that can be half-done.** It writes `bodies.ndjson` before the manifest,
@@ -166,6 +235,7 @@ if [ ! -f "$MANIFEST" ]; then
 fi
 
 echo "══ load bodies"
+begin_pass load
 pnpm --filter @skating/etl load "${SCRATCH}/bodies.ndjson" --campaign="$CAMPAIGN"
 
 # Bays after bodies, always: `importBaySubAreas` resolves a parent by catalog id and refuses a bay
@@ -173,6 +243,7 @@ pnpm --filter @skating/etl load "${SCRATCH}/bodies.ndjson" --campaign="$CAMPAIGN
 # it needs an explicit actor and an explicit --apply-sub-areas.
 if [ ! -s "${SCRATCH}/sub-areas.ndjson" ]; then
   echo "══ no sub-areas emitted — skipping"
+  skip_pass load-sub-areas "the merge emitted no sub-areas"
 elif [ -z "$ACTOR" ]; then
   # ⚠ **Skipped, not failed** (2026-08-09). `load-sub-areas` requires `--actor` *unconditionally* —
   # even for a dry run — while this script only ever guarded the `--apply` case. So a plain
@@ -194,6 +265,7 @@ elif [ -z "$ACTOR" ]; then
   echo "     --campaign=${CAMPAIGN} --actor=<moderatorProfileId> [--apply]"
 else
   echo "══ load sub-areas${APPLY_SUB_AREAS:+ (applying)}"
+  begin_pass load-sub-areas
   pnpm --filter @skating/etl load-sub-areas "${SCRATCH}/sub-areas.ndjson" \
     --campaign="$CAMPAIGN" "$ACTOR" $APPLY_SUB_AREAS
 fi
@@ -207,6 +279,7 @@ if [ -n "$SKIP_LANDMARKS" ]; then
   echo "   pnpm --filter @skating/etl load-landmark-names --campaign=${CAMPAIGN} --apply"
 else
   echo "══ landmarks — OSM + GNIS matched to the bodies just loaded (D202)"
+  begin_pass landmarks
   if [ -n "$WITHOUT_CORPUS" ]; then
     pnpm --filter @skating/etl landmarks --refresh-bodies $REFRESH --without-corpus \
       --campaign="$CAMPAIGN"
@@ -215,17 +288,19 @@ else
       --campaign="$CAMPAIGN"
   fi
   echo "══ load landmarks"
+  begin_pass load-landmarks
   pnpm --filter @skating/etl load-landmarks --campaign="$CAMPAIGN" --apply $WITHOUT_CORPUS
   if [ -n "$WITHOUT_CORPUS" ]; then
     echo "══ place-names queue: SKIPPED — built without the corpus"
   else
     echo "══ load the corpus's unplaced names into the moderator queue"
+    begin_pass load-landmark-names
     pnpm --filter @skating/etl load-landmark-names --campaign="$CAMPAIGN" --apply
   fi
 fi
 
 echo
-echo "campaign ${CAMPAIGN} complete — the path is at /admin/imports?campaign=${CAMPAIGN}"
+echo "campaign ${CAMPAIGN} complete — its record is at /admin/machinery/corpus?campaign=${CAMPAIGN}"
 echo "Still manual, and deliberately so — all three change what the map shows, so all are dry by"
 echo "default and none runs without you. Order does not matter; skipping any is silent."
 echo

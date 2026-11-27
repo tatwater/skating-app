@@ -1,9 +1,10 @@
+import type { Capability } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import { routerTarget } from '@/lib/routerTarget';
 import { taskLaneById } from '../corpus/taskLanes';
 import { modeAt, usesOldShell } from '../shell/consoleNav';
 import { type ActionRow, CORPUS_TASKS, type CorpusTask, INBOX_LANES } from './overviewData';
-import type { OverviewTarget } from './overviewLinks';
+import { type OverviewTarget, overviewHref } from './overviewLinks';
 
 import { consolePathFor, feedTargetPath } from './overviewRoutes';
 
@@ -27,6 +28,7 @@ const TARGET_TYPES = [
   'bodyLandmark',
   'corpusPlaceName',
   'supportTicket',
+  'importRun',
 ] as const satisfies readonly ActionRow['targetType'][];
 const allListed: Exclude<ActionRow['targetType'], (typeof TARGET_TYPES)[number]> extends never
   ? true
@@ -60,6 +62,8 @@ describe('Home’s links, until the new modes land', () => {
       const path = consolePathFor(target) as string;
       expect(path).not.toBeNull();
       if (target.kind === 'body') expect(modeAt(path)?.id).toBe('corpus');
+      // Machinery has landed (B01-8a): its card's foot opens the mode, never the old Imports page.
+      else if (target.kind === 'machinery') expect(modeAt(path)?.id).toBe('machinery');
       // Every Inbox lane is the Inbox's now (B01-5e and B01-5f retired the last old pages).
       else if (target.kind === 'inbox') expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
@@ -149,6 +153,21 @@ describe('Home’s links, until the new modes land', () => {
     expect(consolePathFor({ kind: 'body', id: 'k1/7' })).toBe('/admin/body/k1%2F7');
   });
 
+  it('opens Machinery, and an import row its run, where the stories’ fallback map does', () => {
+    expect(consolePathFor({ kind: 'machinery' })).toBe('/admin/machinery');
+    expect(consolePathFor({ kind: 'machinery', run: 'k1/7' })).toBe(
+      '/admin/machinery/corpus?run=k1%2F7',
+    );
+    const run = routerTarget(consolePathFor({ kind: 'machinery', run: 'k1/7' }) as string);
+    expect(run).toEqual({ to: '/admin/machinery/corpus', search: { run: 'k1/7' } });
+    expect(modeAt(run.to)?.id).toBe('machinery');
+    // The two link maps agree: the app's and the one a page without a router falls back to.
+    for (const to of [{ kind: 'machinery' }, { kind: 'machinery', run: 'k1/7' }] as const) {
+      expect(consolePathFor(to)).toBe(overviewHref(to));
+    }
+    expect(consolePathFor({ kind: 'machinery' })).not.toBe('/admin/imports');
+  });
+
   it('has no page for the ledger yet', () => {
     expect(consolePathFor({ kind: 'ledger' })).toBeNull();
   });
@@ -166,6 +185,7 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('corpus');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
+      else if (type === 'importRun') expect(modeAt(routerTarget(path).to)?.id).toBe('machinery');
       else if (INBOX_TARGETS.has(type)) expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
@@ -184,6 +204,20 @@ describe('the audit feed’s rows', () => {
     );
     for (const type of ['report', 'post', 'comment', 'photo', 'hazard'] as const)
       expect(feedTargetPath({ type, id: 'jd7c1', label: 'x' })).toBe('/admin/inbox?lane=decided');
+  });
+
+  it('opens a run on its own page in Machinery › Corpus, the id escaped', () => {
+    expect(feedTargetPath({ type: 'importRun', id: 'k1/7', label: 'x' })).toBe(
+      '/admin/machinery/corpus?run=k1%2F7',
+    );
+  });
+
+  it('never opens Machinery for a viewer who can’t read it; every other target still opens', () => {
+    const moderator = (capability: Capability) => capability !== 'machinery.read';
+    expect(feedTargetPath({ type: 'importRun', id: 'r1', label: 'x' }, moderator)).toBeNull();
+    expect(feedTargetPath({ type: 'user', id: 'k1', label: 'Rob' }, moderator)).toBe(
+      '/admin/people/k1',
+    );
   });
 
   it('opens an ask on its own Inbox item', () => {
