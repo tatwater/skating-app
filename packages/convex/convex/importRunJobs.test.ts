@@ -17,6 +17,8 @@ const harness = () => convexTest(schema, modules);
 type T = ReturnType<typeof harness>;
 
 const HOUR = 3_600_000;
+/** A kind no Machinery page lists yet. */
+const OTHER_PIPELINE = 'lake_depth' as const;
 const T0 = Date.UTC(2026, 7, 9, 12);
 
 /** A row as a loader before B01-8a wrote it: no `listedIn`, no parent, no pass name. */
@@ -101,6 +103,30 @@ afterEach(() => {
 });
 
 describe('backfillListed', () => {
+  // Another pipeline's build, grouped by its own campaign id (the summer aerial's `naip-<date>`):
+  // Machinery's Corpus never lists it, and the backfill never folds it into a corpus campaign.
+  test('a run of another pipeline under a campaign id stays out of Corpus, with no campaign made', async () => {
+    const t = convexTest(schema, modules);
+    const c = 'naip-20261101';
+    const ids = [
+      await oldRun(t, { kind: OTHER_PIPELINE, campaignId: c, label: 'select', startedAt: T0 }),
+      await oldRun(t, {
+        kind: OTHER_PIPELINE,
+        campaignId: c,
+        label: 'tiles',
+        startedAt: T0 + HOUR,
+      }),
+    ];
+    const [tally] = await walk(t);
+    expect(tally).toMatchObject({ campaignsCreated: 0, passesLinked: 0, isDone: true });
+    expect(await campaignsOf(t, c)).toEqual([]);
+    for (const id of ids) {
+      const row = await get(t, id);
+      expect(row.listedIn).toBeUndefined();
+      expect(row.parentRunId).toBeUndefined();
+    }
+  });
+
   test('writes one reconstructed campaign from what its passes prove, and lists the rest', async () => {
     const t = convexTest(schema, modules);
     const { c, ids } = await august(t);

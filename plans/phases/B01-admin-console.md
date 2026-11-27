@@ -17473,6 +17473,12 @@ commit with its test, mutation-checked.
     that ends it early;
   - *Mark failed*'s receipt says when it asked for the weather-cell sync (`markRunFailed` answers
     `cellSync`), where it always said nothing was scheduled.
+- **Other pipelines' runs under a campaign id.** The summer aerial's build (#188) logs
+  `aerial_select`, `aerial_tiles` and `aerial_assemble`, grouped by its own `naip-<date>` campaign
+  id. None is a corpus kind, so `listedInOf` lists them nowhere yet, the backfill never folds them
+  into a reconstructed corpus campaign (it starts only from a corpus script pass), and the stall
+  rule gives them no verdict (no `RUN_QUIET_MS` entry). They row under Imagery when 8b lands. A test
+  holds the backfill's half.
 
 ##### The scripted campaign, end to end
 
