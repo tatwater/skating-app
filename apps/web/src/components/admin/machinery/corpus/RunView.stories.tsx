@@ -98,6 +98,26 @@ export const Waiting: Story = {
   },
 };
 
+/**
+ * The wait's record outlives the wait: a flush came, or the run closed, before the half hour was up.
+ * The page reads the rule, not the record — no *Waiting* note beside *Running* or an ended run.
+ */
+export const WaitEndedEarly: Story = {
+  args: { now: NOW_RUNNING, run: loadView(NOW_RUNNING, { waiting: WAITING }) },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'run-state')).toHaveTextContent('Running');
+    await expect(canvasElement.querySelector('[data-slot="run-waiting"]')).toBeNull();
+  },
+};
+
+export const WaitEndedByClose: Story = {
+  args: { run: loadView(NOW_STALLED, { doc: finishedPassDoc(), waiting: WAITING }) },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'run-view')).toHaveAttribute('data-state', 'finished');
+    await expect(canvasElement.querySelector('[data-slot="run-waiting"]')).toBeNull();
+  },
+};
+
 /** Marked, and the loader's own close came after: kept beside the mark, the mark stands. */
 export const MarkedWithLateClose: Story = {
   args: {

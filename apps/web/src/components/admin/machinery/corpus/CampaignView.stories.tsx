@@ -187,6 +187,15 @@ export const MarkRefused: Story = {
   },
 };
 
+/** A wait whose record the read still sends, while the rule no longer reads *waiting*: no note. */
+export const WaitEndedEarly: Story = {
+  args: { campaign: { ...boardCampaign(NOW_RUNNING), waiting: WAITING }, now: NOW_RUNNING },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'campaign-view')).not.toHaveAttribute('data-state', 'waiting');
+    await expect(canvasElement.querySelector('[data-slot="run-waiting"]')).toBeNull();
+  },
+};
+
 /** Held by *Wait 30 minutes*: amber, until 14:42, who; *Mark failed* stays, no second *Wait*. */
 export const Waiting: Story = {
   args: { campaign: boardCampaign(NOW_STALLED, { waiting: WAITING }) },

@@ -124,7 +124,8 @@ export function RunView({
       >
         <RunNotes
           marked={view.marked}
-          waiting={view.waiting}
+          // The note holds only while the rule reads *waiting*: a flush or a close ends it early.
+          waiting={liveness.state === 'waiting' ? view.waiting : null}
           {...(timeZone !== undefined && { timeZone })}
         />
         <StatGrid data-slot="run-stats" columns={narrow ? 1 : 3}>

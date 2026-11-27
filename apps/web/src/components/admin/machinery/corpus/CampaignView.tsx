@@ -113,7 +113,8 @@ export function CampaignView({
       >
         <RunNotes
           marked={view.marked}
-          waiting={view.waiting}
+          // The note holds only while the rule reads *waiting*: a flush or a close ends it early.
+          waiting={liveness.state === 'waiting' ? view.waiting : null}
           clockSkewMs={view.clockSkewMs}
           {...(timeZone !== undefined && { timeZone })}
         />
