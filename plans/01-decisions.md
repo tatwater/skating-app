@@ -9515,7 +9515,7 @@ part of a standard machinery pipeline that can be called on demand or via a cron
 arrives (the register's Co15, Co18); which frame we see is the service's choice. Owning the tiles
 costs roughly $70 a year (~$5.80 a month at z18) and buys about a second for a first view, the choice
 of frame, and independence. **What does not change:** D147 (free sources only — NAIP is public
-domain, and still a summer photograph that can never show ice, D3). The archive is console staff's
+domain, and still a photograph flown in summer, never evidence about ice, D3). The archive is console staff's
 alone (D316).
 
 **Related:** D3, D84, D146, D147, D148, D218, D310, D312, D315, D316, D317, D318,

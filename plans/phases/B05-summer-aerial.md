@@ -864,8 +864,11 @@ Not EAS: mobile has no console and never draws it (D316). Convex dev gets `NAIP_
 
 ### §5.1 — D3: a summer photograph, with its date
 
-The layer is a photograph flown in summer, two to three years apart per state (D147); it can never
-show ice and nothing may imply it does. The credit names the program and the flight months under the
+The layer is a photograph flown in summer, two to three years apart per state (D147) — and in the
+cells the off-season step reaches (§2.1 step 5), in autumn or October. It is never evidence about
+ice, and no word may say it can or can't show any: the rule keeps a cell's newest sharpest frame
+whatever its season when nothing better is flown, so an absolute claim would be one the catalog can
+break. The credit names the program and the flight months under the
 view (D318); the July record speaks of flights and cells. No word anywhere calls it current,
 live, or satellite "of today".
 
