@@ -244,6 +244,9 @@ describe('campaignLiveness', () => {
     expect(campaignLiveness(campaign(), [later, early], NOW)).toEqual(runLiveness(later, NOW));
     const unbeaten = live({ progressAt: undefined });
     expect(campaignLiveness(campaign(), [fresh, unbeaten], NOW).state).toBe('notRecorded');
+    expect(campaignLiveness(campaign(), [unbeaten, unbeaten], NOW)).toEqual({
+      state: 'notRecorded',
+    });
   });
 
   it('between passes, is quiet since the last pass reported, on the campaign’s own gap', () => {

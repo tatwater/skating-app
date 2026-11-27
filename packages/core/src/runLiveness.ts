@@ -73,7 +73,7 @@ const RANK: Record<Exclude<RunLiveness['state'], 'finished'>, number> = {
 
 /** A kind's expected gap, or `null` for a kind with no verdict (own keys only: never `toString`). */
 export function expectedQuietMs(kind: string): number | null {
-  return Object.hasOwn(RUN_QUIET_MS, kind) ? (RUN_QUIET_MS[kind] ?? null) : null;
+  return Object.hasOwn(RUN_QUIET_MS, kind) ? (RUN_QUIET_MS[kind] as number) : null;
 }
 
 export function runLiveness(run: RunLivenessInput, now: number): RunLiveness {
