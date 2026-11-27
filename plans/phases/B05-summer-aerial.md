@@ -2036,3 +2036,34 @@ in particular. Each fix landed with a test (commits on the branch):
   (§2.1.4); and an archive orphaned by an assembly that died before its manifest is deleted by hand
   (§2.5).
 - A property test now holds the proposal's flight-day entries to the selection's reading of them.
+
+**The PR's review (2026-11-27)**, three comments on #188, each checked against the code and the data
+before anything changed; each fix landed with a test (commits on the branch):
+
+- **Verify read an item id's date with its own pattern**, which wanted a three-digit resolution
+  token. The walked catalog's tokens: `060` 29,424, `1` 27,191, `030` 5,856, `.5` 3,876, `h` 1,587,
+  `.6` 1,273 — and the `.5`, `.6` and `h` ids are 0.5–0.6 m frames of 2015–2016, so candidates: 5,156
+  of the manifest's 28,566 frames, all in fallback stacks, 555 of them in the 319 cells whose
+  fallbacks are cut. The pilot cut 42 and none showed; in the full build any that did would have
+  refused the whole assembly after the tiles were paid for. Verify now reads core's
+  `parseNaipItemId`, the one reader of an id (walk, select, verify), and **the select stage holds the
+  manifest to verify's date rule before writing it** (`checkManifestFrames`), so a date problem never
+  reaches a Machine.
+- **Cleanup's week counted from the replacement's upload**, not its publication, which nothing
+  records: `--live-since` now states it, and cleanup refuses without it, with one in the future or
+  before the upload, and while no web env file points at the replacement (§2.5).
+- **A strip narrower than a z16 pixel could stay transparent** (§2.2 step 4): fixed under tiling 2.
+  Re-running the warp proof on its three windows of real frames: no check fired, the same frames show
+  from the same reads (142.0, 320.7 and 135.2 MB), every assertion held.
+- **Checked and left:** the catalog reader against every downstream reading of an id (the walk
+  checks `datetime` against the id's first date; a kept walk's rows match their ids on all 69,207;
+  the date index and the foliage strikes read the manifest's frames, never an id; the worker resolves
+  a COG through STAC by id; `aerialImagery.ts`' scene-name resolution belongs to the USGS path B05-2
+  deletes); and every other z18 fact taken from a coarser sample — `partial`, from the 200-px
+  thumbnail, decides whether a cell's fallbacks are cut at all (the pilot's 286 pick-only cell and
+  work tile pairs had the pick at every counted pixel; a sub-pixel strip in such a cell would have no
+  fallback to fill it in any design short of cutting every stack), verify's coverage reads the same
+  counts (a report, and now counts the strips), and a cell with z18 pixels but no z16 pixel in a
+  window, which the real grid never has (0 of 18,225 pairs) and the unit now refuses rather than
+  dropping silently.
+- **Work tiles spawn on `performance-4x`** by default (the governor's ruling, §6.1).
