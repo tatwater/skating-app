@@ -1,3 +1,4 @@
+import { campaignLiveness, type RunLivenessInput } from '@skating/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { expect, userEvent, waitFor, within } from 'storybook/test';
 
@@ -6,6 +7,7 @@ import { must } from '@/components/kit/storyKit';
 import { type BoardCalls, cappedTail, RunBoard } from './runBoard';
 import {
   assembledCampaign,
+  at,
   boardCampaign,
   MARKED,
   NOW_LATE,
@@ -255,6 +257,52 @@ export const NoRecordKept: Story = {
     await expect(slot(canvasElement, 'stat-elapsed')).toHaveTextContent('Took');
     await expect(slot(canvasElement, 'path')).toHaveTextContent('Not recorded');
     await expect(bar(canvasElement)).toBeNull();
+  },
+};
+
+/**
+ * Between passes, gone quiet: the merge closed at 13:25:41 and no load has opened. The tail is the
+ * campaign's own, and its quiet line names when the campaign was last heard from.
+ */
+export const QuietBetweenPasses: Story = {
+  args: {
+    campaign: (() => {
+      const board = boardCampaign(NOW_STALLED);
+      const self: RunLivenessInput = {
+        kind: 'corpus_campaign',
+        status: 'running',
+        progressAt: at(13, 25, 41),
+      };
+      const liveness = campaignLiveness(self, [], NOW_STALLED);
+      const passes = board.passes.map((p) =>
+        p.pass === 'load' ? { ...p, state: 'waiting' as const, run: null } : p,
+      );
+      const merge = must(board.passes.find((p) => p.pass === 'merge')?.run);
+      return {
+        ...board,
+        row: {
+          ...board.row,
+          liveness,
+          livenessInputs: { self, passes: [] },
+          line: { ...board.row.line, passesDone: 2, current: null },
+        },
+        passes,
+        liveness,
+        current: {
+          runId: merge.id,
+          pass: 'merge',
+          counts: [],
+          progressAt: merge.finishedAt,
+          batches: null,
+          failures: { stored: 0, total: 0, keys: [] },
+        },
+      };
+    })(),
+  },
+  play: async ({ canvasElement }) => {
+    await expect(slot(canvasElement, 'run-state')).toHaveTextContent(/Stalled/);
+    const lines = [...canvasElement.querySelectorAll('[data-slot="log-line"]')];
+    await expect(lines.at(-1)).toHaveTextContent(/no flush since 13:25:41/);
   },
 };
 

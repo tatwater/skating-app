@@ -308,6 +308,13 @@ function TailSection({
           ? 'live'
           : 'finished';
   const name = isCampaign ? view.row.title : (pass?.pass ?? view.current?.pass ?? '');
+  // When the campaign last reported: the running pass's heartbeat; between passes, the one its
+  // liveness was read from (the campaign's beat or a pass's close), so the quiet line names a time.
+  const lastHeardAt = isCurrent
+    ? (running?.progressAt ?? null)
+    : live && 'quietMs' in liveness
+      ? now - liveness.quietMs
+      : null;
   return (
     <Section
       data-slot="tail"
@@ -319,7 +326,7 @@ function TailSection({
         runId,
         state,
         liveness: live ? liveness : { state: 'finished' },
-        lastHeardAt: isCurrent ? (running?.progressAt ?? null) : null,
+        lastHeardAt,
         now,
         ...(timeZone !== undefined && { timeZone }),
       })}
