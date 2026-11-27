@@ -168,7 +168,8 @@ step() {
 }
 
 # A GDAL read, with the bytes it fetched written to its own stats file (GDAL prints them on stdout
-# at exit). Every source read goes through here, so their sum is every byte the work tile read.
+# at exit). Every source read goes through here, so their sum is every byte the work tile read — a
+# warp's and the mosaic's opens of the source (its header) and the counts helper's strip checks too.
 STATS_N=0
 gdal_read() {
   STATS_N=$((STATS_N + 1))
@@ -249,7 +250,7 @@ warp() {
   read -r -a te <<<"$3"
   for b in "${BANDS[@]}"; do srcbands+=(-srcband "$b"); done
   sas_ensure || return 1
-  gdalwarp -q -overwrite -of VRT -t_srs EPSG:3857 -te "${te[@]}" -tr "$res" "$res" \
+  gdal_read gdalwarp -q -overwrite -of VRT -t_srs EPSG:3857 -te "${te[@]}" -tr "$res" "$res" \
     -srcnodata "$SRC_NODATA" -wo UNIFIED_SRC_NODATA=YES "${srcbands[@]}" -dstalpha \
     -r "$resampling" "${SRC[$id]}" "$out"
 }
@@ -278,7 +279,7 @@ count_cell() {
        warp: { bands: $bands, srcNodata: $nodata, resampling: $r }, frames: $frames }' \
     > "$W/count/$cell/job.json"
   sas_ensure || return 1
-  "$AERIAL_PYTHON" "$AERIAL_COUNTS" "$W/count/$cell/job.json"
+  gdal_read "$AERIAL_PYTHON" "$AERIAL_COUNTS" "$W/count/$cell/job.json"
 }
 for cell in "${CELLS[@]}"; do
   step count count_cell "$cell" || die "counting $cell failed"
@@ -356,7 +357,7 @@ top_tile() {
     "${TILER_PARALLEL[@]}" --convention xyz "$src" "$W/tiles"
 }
 if (( ${#LAYERS[@]} > 0 )); then
-  step mosaic gdalbuildvrt -q -input_file_list "$W/mosaic.txt" "$W/mosaic.vrt" || die "the mosaic failed"
+  step mosaic gdal_read gdalbuildvrt -q -input_file_list "$W/mosaic.txt" "$W/mosaic.vrt" || die "the mosaic failed"
   CHUNKS="$(jq '.chunks | length' "$UNIT")"
   # A chunk none of whose cells has a frame that shows draws nothing, and the tiler refuses a range
   # outside the mosaic rather than writing nothing — so it is skipped (`tiles.ts`' AerialUnitChunk).

@@ -611,8 +611,10 @@ describe('the tiling fingerprint', () => {
     1: 'd6b25433e0b8fd5f5225740004750f94d7052a041ec20f7653e7e2c371a42139',
     // 2 (B05-1's review, 2026-11-27): the counts read a ring past each cell, and a frame that fills
     // only a strip the counts' grid can't see is checked at the deepest zoom and drawn in its
-    // windows — the same stack now draws pixels tiling 1 left transparent.
-    2: '94207eb716944bfb1f1745accc74efbc52fa8833cecce10079f36f3e1988258c',
+    // windows — the same stack now draws pixels tiling 1 left transparent. Re-recorded under 2 the
+    // same day, deliberately: the warps, the mosaic and the helper run under `gdal_read`, which only
+    // counts the bytes they read; no argument changed, and no archive had been built.
+    2: '97e121a08a7772c8af6e7b136c7114014755bec062b3806b47f687eebb215582',
   };
 
   /** The worker's GDAL invocations (with their continuation lines) and the counts helper's code. */

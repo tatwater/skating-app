@@ -29,7 +29,8 @@ its count is those pixels in counts' units (at least one), and it is drawn **onl
 windows** (`windows`: `{ "<itemId>": [[minX, minY, maxX, maxY], ...] }`, written only when some
 frame has one), so it is read only there. A band is usually empty — where a pick covers its cell
 with its 300 m of overlap, there is no edge at all — and a check, when there is one, reads a few
-megabytes of source along it.
+megabytes of source along it (counted with the worker's other reads: `cut-aerial.sh` runs this
+under `gdal_read`, and GDAL prints the helper's network statistics on stdout at exit).
 
 Python because the image already carries GDAL's bindings and numpy (the winter cutter's
 `zonal-clear.py` uses the same), and this is a sweep over a few small arrays — a cross-tabulation

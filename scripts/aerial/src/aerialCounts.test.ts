@@ -10,10 +10,11 @@
  * cell's first column is the fallback's or nothing.
  */
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, relative } from 'node:path';
+import process from 'node:process';
 import { afterAll, describe, expect, it } from 'vitest';
 import {
   type AerialWorkUnit,
@@ -43,8 +44,8 @@ const lngOf = (x: number) => (x / (Math.PI * R)) * 180;
 const dir = mkdtempSync(join(tmpdir(), 'aerial-counts-'));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
-const run = (cmd: string, args: string[]) => {
-  const r = spawnSync(cmd, args, { encoding: 'utf8' });
+const run = (cmd: string, args: string[], env?: NodeJS.ProcessEnv) => {
+  const r = spawnSync(cmd, args, { encoding: 'utf8', env: env && { ...process.env, ...env } });
   if (r.status !== 0) throw new Error(`${cmd} ${args.join(' ')}: ${r.stderr}`);
   return r.stdout;
 };
@@ -126,8 +127,12 @@ function warp(src: string, box: MercatorBounds, res: number, r: string, out: str
   ]);
 }
 
-/** Counts and windows for the cell, as `count_cell` would have them; then the mosaic, read back. */
-function cut(name: string, pickFrom: number, unit: AerialWorkUnit) {
+/**
+ * Counts and windows for the cell, as `count_cell` would have them; then the mosaic, read back. With
+ * `served`, the helper reads the frames over HTTP from that base (`dir` served) with GDAL's network
+ * statistics on, as `gdal_read` runs it, and `fetched` is what it reports.
+ */
+function cut(name: string, pickFrom: number, unit: AerialWorkUnit, served?: string) {
   const work = mkdtempSync(join(dir, `${name}-`));
   const cell = unit.cells[0] as AerialWorkUnit['cells'][number];
   const b = unit.bounds;
@@ -144,7 +149,12 @@ function cut(name: string, pickFrom: number, unit: AerialWorkUnit) {
       join(work, `${i}.vrt`),
     );
     run('gdal_translate', ['-q', '-b', '4', join(work, `${i}.vrt`), join(work, `${i}-alpha.tif`)]);
-    return { id, alpha: join(work, `${i}-alpha.tif`), src: src[id as 'pick' | 'fallback'] };
+    const path = src[id as 'pick' | 'fallback'];
+    return {
+      id,
+      alpha: join(work, `${i}-alpha.tif`),
+      src: served ? `/vsicurl/${served}/${relative(dir, path)}` : path,
+    };
   });
   const job = join(work, 'job.json');
   writeFileSync(
@@ -163,7 +173,16 @@ function cut(name: string, pickFrom: number, unit: AerialWorkUnit) {
       frames,
     }),
   );
-  run(PY, ['-I', COUNTS, job]);
+  const said = run(
+    PY,
+    ['-I', COUNTS, job],
+    served
+      ? { CPL_VSIL_SHOW_NETWORK_STATS: 'YES', GDAL_DISABLE_READDIR_ON_OPEN: 'EMPTY_DIR' }
+      : undefined,
+  );
+  // `cut-aerial.sh`'s reading of a stats file: the JSON after the marker, its GET total.
+  const stats = said.split(/^Network statistics:$/m)[1];
+  const fetched = stats ? (JSON.parse(stats).methods?.GET?.downloaded_bytes ?? 0) : 0;
   const counts = readCellCounts(work, unit);
   const windows = readCellWindows(work, unit, counts);
   const layers = mosaicLayers(unit, counts, windows);
@@ -211,9 +230,25 @@ print(json.dumps({"count": int((a == 0).sum()), "cols": cols[:10]}))
     windows,
     layers,
     holes,
+    fetched,
     raw: readFileSync(job.replace('job.json', `${cell.key}.json`), 'utf8'),
   };
 }
+
+/** A file server with byte ranges over argv's directory, in its own process (`cut` blocks this one). */
+const SERVE = `
+const fs = require('node:fs'), path = require('node:path');
+require('node:http').createServer((req, res) => {
+  let body;
+  try { body = fs.readFileSync(path.join(process.argv[1], decodeURIComponent(req.url))); }
+  catch { res.writeHead(404).end(); return; }
+  const m = /bytes=(\\d+)-(\\d*)/.exec(req.headers.range || '');
+  const a = m ? +m[1] : 0, b = m && m[2] ? Math.min(+m[2], body.length - 1) : body.length - 1;
+  const head = { 'Accept-Ranges': 'bytes', 'Content-Length': b - a + 1 };
+  if (m) head['Content-Range'] = 'bytes ' + a + '-' + b + '/' + body.length;
+  res.writeHead(m ? 206 : 200, head).end(body.subarray(a, b + 1));
+}).listen(0, '127.0.0.1', function () { console.log(this.address().port); });
+`;
 
 describe.skipIf(!hasGdalPython)('aerial-counts.py, with real GDAL', () => {
   const { unit, edge } = setup();
@@ -258,6 +293,25 @@ describe.skipIf(!hasGdalPython)('aerial-counts.py, with real GDAL', () => {
     });
     expect(pickOnly.holes.count).toBeGreaterThan(0);
     expect(pickOnly.holes.cols).toEqual([0, 1]);
+  });
+
+  it('a check’s reads of the source reach the worker’s count: on stdout at exit, as `gdal_read` takes them', async () => {
+    const server = spawn(process.execPath, ['-e', SERVE, dir], {
+      stdio: ['ignore', 'pipe', 'inherit'],
+    });
+    try {
+      const port = await new Promise<string>((ok) =>
+        server.stdout.once('data', (d) => ok(String(d).trim())),
+      );
+      const base = `http://127.0.0.1:${port}`;
+      const strip = cut('served-strip', edge + 1.1, unit, base);
+      expect(strip.counts[cell.key]?.fallback).toBeGreaterThanOrEqual(1);
+      expect(strip.fetched).toBeGreaterThan(0);
+      // No band, no check: the helper reads only its local alphas, and reports nothing.
+      expect(cut('served-covered', edge - 300, unit, base).fetched).toBe(0);
+    } finally {
+      server.kill();
+    }
   });
 
   it('a pick that runs past its cell leaves no band: no check, no extra warp', () => {

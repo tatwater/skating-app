@@ -2067,3 +2067,13 @@ before anything changed; each fix landed with a test (commits on the branch):
   window, which the real grid never has (0 of 18,225 pairs) and the unit now refuses rather than
   dropping silently.
 - **Work tiles spawn on `performance-4x`** by default (the governor's ruling, §6.1).
+- **The strip check's reads went uncounted** (a fourth comment): the worker's source bytes are the
+  network statistics each `gdal_read` captures, and the counts helper ran outside it, so a check's
+  remote reads (its in-memory warp of a 100 m box of a served, tiled 0.3 m GeoTIFF of noise: 803,080
+  bytes, measured on GDAL 3.13.2 over a local range server) never reached the total. The same rule caught two older opens:
+  a warp to VRT and the mosaic's open of each warped layer read the source's header, 16,384 bytes
+  each. All three now run under `gdal_read`, so "bytes read from the source" has one counter; the
+  helper's Python GDAL prints its statistics on stdout at exit like the CLI does (a real-GDAL test
+  over HTTP holds that; a stand-in test on CI holds the sum). No check fired in the warp proof's
+  three windows, so their totals above were short only by those header reads. Nothing drawn changed;
+  tiling stays 2.

@@ -60,6 +60,10 @@ function workerTools(dir: string): string {
   mkdirSync(b);
   // biome-ignore lint/suspicious/noTemplateCurlyInString: bash, not a template.
   const last = 'out="${@: -1}"';
+  // Like GDAL, a stand-in that reads the source prints what it fetched only when asked: a read the
+  // worker doesn't route through `gdal_read` goes uncounted, as it would on a Machine.
+  const fetched = (bytes: number) =>
+    `if [ "\${CPL_VSIL_SHOW_NETWORK_STATS:-}" = YES ]; then printf 'Network statistics:\\n{"methods":{"GET":{"count":1,"downloaded_bytes":${bytes}}}}\\n'; fi\n`;
   bin(
     b,
     'curl',
@@ -75,10 +79,16 @@ esac
   bin(
     b,
     'gdalwarp',
-    `echo "gdalwarp $*" >> "$CALLS"\n[ "\${FAIL_ON:-}" = gdalwarp ] && exit 4\n${last}; echo vrt > "$out"\n`,
+    // Its open of the source: the COG's header (16 KB with real GDAL; 100 here).
+    `echo "gdalwarp $*" >> "$CALLS"\n[ "\${FAIL_ON:-}" = gdalwarp ] && exit 4\n${fetched(100)}${last}; echo vrt > "$out"\n`,
   );
   bin(b, 'gdal_translate', `echo "gdal_translate $*" >> "$CALLS"\n${last}; echo tif > "$out"\n`);
-  bin(b, 'gdalbuildvrt', `echo "gdalbuildvrt $*" >> "$CALLS"\n${last}; echo vrt > "$out"\n`);
+  // The mosaic opens its warped layers, and each its source's header (10 here).
+  bin(
+    b,
+    'gdalbuildvrt',
+    `echo "gdalbuildvrt $*" >> "$CALLS"\n${fetched(10)}${last}; echo vrt > "$out"\n`,
+  );
   bin(
     b,
     'gdal',
@@ -107,7 +117,8 @@ jq '[.frames[].id] | to_entries | map({ (.value): (if .key == 0 then 7 else 0 en
 if [ -n "\${STRIP:-}" ] && [ "$(jq '.frames | length' "$job")" -gt 1 ]; then
   jq '[.frames[].id] | to_entries | map({ (.value): (if .key == 0 then 7 elif .key == 1 then 1 else 0 end) }) | add' "$job" > "$(jq -r .counts "$job")"
   jq -c '{ (.frames[1].id): [[.extent[0], .extent[1], (.extent[0] + 4 * .res), .extent[3]]] }' "$job" > "$(jq -r .windows "$job")"
-fi
+  # The check read the strip's source at the deepest zoom.
+  ${fetched(500)}fi
 `,
   );
   bin(
@@ -230,7 +241,8 @@ describe('cut-aerial.sh', () => {
       `r2:bucket/${run.unit.keys.index}`,
       `r2:bucket/${run.unit.keys.done}`,
     ]);
-    expect(run.stderr).toMatch(/source bytes read: 1000/);
+    // Every read of the source: the tiler's 1,000, five warps' opens at 100, the mosaic's 10.
+    expect(run.stderr).toMatch(/source bytes read: 1510\n/);
     expect(run.stderr).toMatch(/landed 11\/606\/736: 4 tiles/);
     // The scratch is gone, and the rclone config written into it with it.
     expect(readdirSync(run.dir).filter((n) => n.startsWith('aerial.'))).toEqual([]);
@@ -285,6 +297,10 @@ describe('cut-aerial.sh', () => {
       '4407306nw-1-w1.vrt',
       '4407306nw-0.vrt',
     ]);
+    // The check's 500 bytes count with every other read: the tiler's 1,000, six warps' 600, the
+    // mosaic's 10 — in the log and in the figure the warp proof's measurements read.
+    expect(run.stderr).toMatch(/source bytes read: 2110\n/);
+    expect(readFileSync(join(run.dir, 'kept', 'source-bytes'), 'utf8')).toBe('2110\n');
   });
 
   test('--local writes the shard under its keys; its done record is checked and dated', () => {
