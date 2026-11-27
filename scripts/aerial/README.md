@@ -61,7 +61,7 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 
 | Stage | Runs on | What | Run row |
 | --- | --- | --- | --- |
-| `select` | laptop | the frame rule over the whole catalog → `.scratch/<campaign>/manifest.json`, the snapshot in `inventory/` | `aerial_select` |
+| `select` | laptop | the frame rule over the whole catalog (cloud and foliage reviews applied) → `.scratch/<campaign>/manifest.json`, the snapshot in `inventory/` | `aerial_select` |
 | `tiles` | laptop → Fly `ams` | uploads the manifest and snapshot, writes a unit per work tile, spawns, drains, reconciles by done record, three rounds | `aerial_tiles`, a heartbeat every 25 landed |
 | `assemble` | laptop → one Fly Machine | the streaming PMTiles writer, the overviews (tile zooms 7–10), the date index | `aerial_assemble` |
 | `verify` | laptop | counts, spot reads from the public URL, coverage, dates, seams, the viewer page | `aerial_assemble` (label `verify …`) |
@@ -79,6 +79,22 @@ file and read the status: `scripts/aerial/run-aerial.sh … > /dev/null 2>&1; ec
 
 The laptop orchestrates for the build's wall time: run under `caffeinate -i`. Every stage resumes —
 a done record whose input hash is the manifest's is landed, anything else is re-spawned.
+
+### Before a full build: the foliage review (D319)
+
+```bash
+pnpm --filter @skating/aerial foliage naip-<YYYYMMDD> [--threshold 0.6]
+```
+
+Not a stage, and no run row: it reads the campaign's walk (walking the catalog if there is none),
+scores every candidate flown from 1 September from its thumbnail (`src/foliage.ts`, cached in
+`.scratch/foliage-scores.json`), and writes to `.scratch/<campaign>/report/foliage/`: the review
+sheet (`index.html`, by flight day), the proposal (`proposed.json`, every entry
+`reviewedBy: 'proposed'`), and the select stage's dry run with the proposal applied
+(`manifest-proposed.json`, its cloud sheet in `cloud/`). **The founder confirms by flight day; only
+confirmed entries go into core's `NAIP_FOLIAGE_STRIKES`** (`reviewedBy: 'founder'`), by a reviewed
+commit. The select stage refuses to build — anything but a dry run — with an unconfirmed entry.
+New picks the proposal makes are not cloud-reviewed: read the applied cloud sheet before the build.
 
 ### The worker, one work tile (`cut-aerial.sh`)
 
@@ -164,7 +180,9 @@ caffeinate -i scripts/aerial/run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champla
 ```
 
 **3. The full region** — the founder's go, from main after the merge and the run kinds' widen are
-deployed: `caffeinate -i scripts/aerial/run-aerial.sh naip-<YYYYMMDD>`.
+deployed, and after his foliage review is committed (above): `caffeinate -i
+scripts/aerial/run-aerial.sh naip-<YYYYMMDD>`. Its select stage logs the off-season cells by name
+(`noLeafOn`, `allTurned`); the manifest keeps them for the July check.
 
 **Publish and clean up** are §2.5's: `VITE_NAIP_PMTILES_URL` set by the founder, the build prefix
 deleted once verify passes, an old archive by `--stage cleanup --old <key>` after a week.

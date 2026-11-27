@@ -962,13 +962,14 @@ longer need.*
 - The founder's sequencing (2026-11-13): B01 is the focus; the boards and B04's design and build passes wait, designed and built in tandem later. Until then the plan is the running list of skater-side changes the console build finds (its *The running list*)
 
 ## Phase B05 — The summer aerial: our own NAIP archive of the region
-🟡 **In progress** 2026-11-25 · [plan](./phases/B05-summer-aerial.md) · D314 D315 D316 D317 D318
+🟡 **In progress** 2026-11-25 · [plan](./phases/B05-summer-aerial.md) · D314 D315 D316 D317 D318 D319
 
 The console's summer aerial asks a USGS service to render every view on demand, so a first look
 takes up to 45 seconds and its flight date often never arrives. The founder chose to own the imagery:
 one raster archive of all seven states, NY to RI, cut from NAIP's own files on Fly and stored in R2
 to z18, seamless across state lines. Each quarter-quad gets the frame his rule picks — leaf-on,
-newest, a 0.3 m frame over a newer 0.6 m one within two years, clouds struck by review — and a date
+newest, a 0.3 m frame over a newer 0.6 m one within two years, clouds and autumn-colored September
+flights struck by his review — and a date
 index means the map always says when the imagery under the view was flown. It is for console staff
 only. One entry point builds it whole, by stage or for the cells that changed; a July check stores
 any newer summer flights for Machinery to show, never spending on its own. *An operator opens the
@@ -976,12 +977,13 @@ aerial on any lake and it is there in a second, with the months it was flown.*
 
 #### Data runs
 - **2026-11-25 — the first catalog walk (`naip-20261125`, a dry run, no rows):** 69,207 items over the seven states → 9,168 quarter-quads, every one with a pick; 28,568 frames; 1,764 work tiles; 140 partial picks; 60 cloud candidates, two struck by the founder's review
+- **2026-11-27 — the first foliage review (`naip-20261127`, the 2026-11-26 walk, a dry run, no rows):** 18,939 frames from 1 September scored, 8,947 turned at 0.6; proposed 524 entries (16 flight days, 508 frames); applied, 1,074 of 9,168 cells change (ME 456, NY 423, VT 186, NH 9), 264 from 0.3 m to 0.6 m, 3.2 years older on average; all cells covered; 80 + 6 cells named off-season
 
 #### Deferred
 - ⚪ **Color matching across flights** — the low-zoom quilt is accepted in v1 → the plan's §1.3
 - ⚪ **A console *Rebuild* that launches the build** — Convex can start Fly Machines, but the build's orchestration stays on the laptop until B01's hosted-runner decision → the plan's §3.2
 - ⚪ **Machinery's imagery page drawing the July check's offer** — B05 stores the record (`aerialOffers`); the page is B01's Machinery mode → the deferred register's *Machinery: the summer aerial's offer*
-- ❓ **The October-cell fallbacks in Maine and New York** — older summer frames fill cells flown only in October; the founder revisits them once he has seen them, in the pilot (F-9 c) → the plan's §5.5, §8 F-9
+- 🟢 **The October-cell fallbacks in Maine and New York** — revisited 2026-11-27 once the pilot showed September in color too: D319, turned flights struck by his review of flight days, the six October cells keep 2 October 2023 → the plan's §2.1.4, §5.5
 
 #### Ruled out
 - **A summer aerial for skaters, region-wide or clipped to one lake** — D316: console staff only, not for now, revisited only on the founder's word
@@ -990,6 +992,7 @@ aerial on any lake and it is there in a second, with the months it was flown.*
 - **A prod copy** — prod points at dev's dated object at the cutover
 
 #### Owed
+- **The founder's foliage review, before the full run** (D319): confirm the proposal by flight day on the sheet (`scripts/aerial/review/naip-20261127-foliage-proposed.json`, the sheet beside the campaign), the confirmed entries committed to `NAIP_FOLIAGE_STRIKES`; then read the applied run's cloud sheet (one new pick over 3% white, a likely false positive)
 - B05-1 is built and integrated (2026-11-26) but not yet open as a PR: the pilot (F-9 ruled (c): Champlain's north end, the NH–MA strip, the Maine cells north of Rumford and a New York 2024/2019 join, ~63 cells) comes first, gated on the governor's go — the image pushed under its own label, the run rows to a throwaway local backend — then `/code-review`, the PR, and the founder's go for the full region run (~16 h on Fly, ~$30–40, the plan's §6.1)
 - The archive measured larger than designed: ~550 GB, ~$8 a month (~$100 a year against the ~$70 accepted), because the design's 387 GB left out the pyramid's upper levels — for the founder's go/no-go with the pilot's numbers
 - G-6 answered at build start: `skating-imagery`, whose public host already serves the winter archive and which the app's staged R2 token writes — no new credential

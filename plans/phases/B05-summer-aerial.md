@@ -16,6 +16,9 @@ lines.*
 > same day: (c), the pilot grows to ~63 cells. The builder briefs are §10. **B05-1 is built and
 > integrated** (2026-11-26: S, T and P merged, their seams closed, the stages run end to end locally
 > with the cloud stood in for); the pilot (§10.7, gated) is next. What the build found is at the end.
+> **2026-11-27:** the pilot built and looked at, the founder ruled on its autumn frames (**D319**,
+> amends D315: turned flights struck by his review of flight days, §2.1.4); the first proposal awaits
+> his review before the full run.
 >
 > **The token.** `B05`: the work is launch-era console infrastructure, and the `A` era (enrichment,
 > `A01`–`A10`) is closed in the README's table, so it is not `A06j` even though its family is A06e's
@@ -114,6 +117,15 @@ Quoted where they bear; these are the inputs, not this doc's reading of them.
 
 The build proceeds now, alongside B01-7b.
 
+**The foliage rulings (2026-11-27, D319)**, on the pilot's finding that September flights can be in
+full autumn color (§2.1.4): (1) keep the calendar, score every candidate flown from 1 September for
+greenness, and have the founder confirm strikes by flight day on a review sheet — a screen for review,
+never an automatic rule; (2) the threshold is 0.6; (3) the ~80 western Maine cells with no green frame
+at 0.6 m or better keep their 27 September 2023 frames at 0.3 m, not the 2015 1 m ones, by a rule
+that generalizes the six-cell exception and names the cells for the July check; (4) the six October
+cells keep 2 October 2023, not 5 October 2018. His order of preference stands: no dead trees, snow or
+ice first, then recency, then sharpness only with recency.
+
 ### §1.3 — Out of scope
 
 - **Any summer aerial for skaters** (D316): no region view, no body-clipped reveal, on any client,
@@ -155,24 +167,32 @@ listed by two states, and their frames compete):
    an item whose quarter-quad lies outside its labeled state's envelope (§2.1.1); an item on the
    reviewed exclusion list (§2.1.2).
 2. **Leaf-on only.** Acquired 1 June–30 September, or from 20 May south of 43.5°N (the
-   quarter-quad's middle).
+   quarter-quad's middle) — **and not struck by the founder's foliage review** (§2.1.4, D319): a
+   frame flown leaf-on by the calendar but already in autumn color. A struck frame is demoted, not
+   dropped: never the pick while a green leaf-on frame is left, and below every green one in the
+   stack.
 3. **The newest**, by acquisition date. In the snapshot `naip:year` equals the acquisition year for
    every leaf-on frame (the four mismatches — NH and VT 2018 flown in January 2019, NY 2021 flown in
    April and May 2022 — are all leaf-off), so the two-year window is measured in program years and
    ties break by date.
 4. **A 0.3 m frame within two years of the newest beats it.**
-5. **The off-season step: no leaf-on candidate at all.** Steps 3 and 4 over every candidate,
-   whatever its season. This is the founder's ruling for six quarter-quads in one north–south strip
-   in Maine's western mountains, at 70.53°W from 44.6°N to 45.0°N (running north from Rumford:
-   `4407028ne`, `4407020se`, `4407020ne`, `4407012ne`, `4407004se`, `4407004ne`), flown only in
-   October (2018, 2021, 2023) with summer frames only at 1 m (July 2015): each takes **the 2 October
-   2023 frame at 0.3 m**. The six are a committed list in core (`NAIP_OFF_SEASON_CELLS`), and **the
-   select stage refuses a build in which the step reaches any cell not on it** — a seventh is a look
-   for the founder, never a silent foliage pick. The July check reports such a cell rather than
-   refusing (§3.3).
+5. **The off-season step: no green leaf-on candidate left.** Two reasons, both the rule's and both
+   named in every run's log and manifest (`offSeasonCells`, with why), so the July check can revisit
+   them (D319 generalized the six-cell list this step once held):
+   - **`allTurned`** — every leaf-on frame struck by the foliage review: steps 3 and 4 over those
+     leaf-on frames, turned or not, so the cell **keeps its newest sharpest one** in autumn color
+     (the founder's ruling 3, 2026-11-27: about 80 cells in western Maine keep 27 September 2023 at
+     0.3 m, never the 2015 1 m frames).
+   - **`noLeafOn`** — nothing flown leaf-on at 0.6 m or better: steps 3 and 4 over every candidate,
+     whatever its season. Six quarter-quads in one north–south strip in Maine's western mountains, at
+     70.53°W from 44.6°N to 45.0°N (running north from Rumford: `4407028ne`, `4407020se`,
+     `4407020ne`, `4407012ne`, `4407004se`, `4407004ne`), flown only in October (2018, 2021, 2023)
+     with summer frames only at 1 m (July 2015): each takes **the 2 October 2023 frame at 0.3 m**
+     (F-7 a, confirmed 2026-11-27 over the 5 October 2018 frames).
 
 **The fallback stack.** The pick's alternates, in the order the rule would choose them if the pick
-were struck — every other leaf-on candidate (every other candidate, for an off-season cell). A frame
+were struck — every other leaf-on candidate, those struck as turned last (every other candidate,
+for a cell never flown leaf-on). A frame
 that doesn't cover its whole cell (a state's flight ending at a state line or the border, 134 of the
 Maine picks per the scouts' thumbnails) lets the next one show through (§2.2). Stack depth in the
 snapshot: 718 cells have one leaf-on frame and no fallback; the median cell has three.
@@ -248,7 +268,8 @@ list it ran with, the build it diffs against (`basedOn`, `--from-current`), and 
 frames** by item id (acquisition date, gsd, `naip:year`, labeled state) holding every pick and every
 fallback, so the date index can date a fallback that shows without parsing its id. Per quarter-quad:
 its key, the states that list it, the pick (an item id in that table), the step that picked it
-(`leafOn` or `offSeason`), the fallback stack (ids in order), whether the pick covers its cell
+(`leafOn` or `offSeason`; the cells the off-season step reached are listed once more, each with why,
+in `offSeasonCells`, beside the foliage list's hash, `foliageStrikesHash`), the fallback stack (ids in order), whether the pick covers its cell
 (`partial`), its cloud score, and the work tiles it touches. Per work tile (§2.2): its input hash,
 its cells, and whether this build cuts it (`retile`; `false` only for a `--from-current` work tile
 whose hash is unchanged, which the assembler copies). About 1.5–3 MB raw. The assembler adds, before
@@ -260,8 +281,73 @@ The types are `NaipManifest` in core's `naipManifest.ts`.
 
 The run's counts say how many cells picked by each step, how many fell back to October, how many
 items each exclusion dropped, and assert the rule's invariants on the whole catalog (every cell has
-a pick; no candidate beats its pick under the rule; the off-season step reached only the committed
-six) — the full-inventory proof that CI's fixture can't carry (§7.3).
+a pick; no candidate beats its pick under the rule; no struck frame sits above a green one; the
+off-season list is exactly the cells the step picked, each with the right why) — the full-inventory
+proof that CI's fixture can't carry (§7.3).
+
+#### §2.1.4 — Foliage: a reviewed list of turned flights (D319)
+
+The pilot showed that step 2's calendar lets autumn through: Maine's 27 September 2023, New York's
+16 September 2024 and Vermont's 20 September 2025 are in full color or brown, while New York's
+18 September 2019 is green — the year matters more than the date, so a stricter cutoff is the wrong
+tool. **The founder's four rulings (2026-11-27):** keep the calendar and score every candidate flown
+from 1 September for how green its vegetation is, for his review by flight day; 0.6 is the threshold;
+where striking leaves a cell nothing green at 0.6 m or better it keeps its newest sharpest frame
+(step 5's `allTurned`), never the 2015 1 m frames; the six October cells keep 2 October 2023.
+
+- **The score** (`scripts/aerial/src/foliage.ts`), from the 200-px catalog thumbnail: each pixel is
+  nodata, water, neutral (roads, roofs, rock, cloud) or vegetation; a vegetation pixel is *green* when
+  its green–red index `(G − R) / (G + R)` is over 0.02; the score is the green share of the
+  vegetation, with no verdict under 200 vegetation pixels or a quarter of the valid ones (open water,
+  a city). Exact integer tests, so it is the same on every machine for the same decoded pixels; on
+  the 35,247 cached thumbnails it reproduces the analyst's scores and verdicts exactly. **Under 0.6
+  reads as turned; 0.6–0.7 is borderline and kept.**
+- **A screen, never a rule.** A turned score makes a frame a *candidate*; the selection reads only
+  `NAIP_FOLIAGE_STRIKES` in core, which an entry joins once the founder has confirmed it
+  (`reviewedBy: 'founder'`), as the cloud review's do. One entry strikes a whole flight day (labeled
+  state and acquisition day) with a `keep` list; a frame entry strikes one frame on a day not struck.
+  The select stage refuses to build — anything but a dry run — with an entry still `proposed`.
+- **The review** (`pnpm --filter @skating/aerial foliage <campaign>`, before a full build): scores the
+  campaign's candidates from 1 September, proposes the turned ones — a day where turned frames are the
+  majority is one flight entry keeping the rest by id, otherwise frame entries, so the proposal strikes
+  exactly the frames under the threshold — and writes the sheet: per flight day a handful of its
+  thumbnails with their scores, the proposal, the cells it changes, what each falls back to, the
+  0.3 m → 0.6 m and age cost; then the borderline picks with what striking them too would do, and the
+  cells left on a turned frame by name. Then it runs the select stage as a dry run with the proposal
+  applied. Never proposed: a frame the cloud review kept (`NAIP_CLOUD_KEPT`: the 23 Long Island and
+  New York City picks, three of them September frames), a frame a reviewed entry names, a frame not
+  leaf-on by the calendar.
+- **Known misses**, on the sheet: cities read as not green; some partly yellowed frames pass; dull
+  July frames aren't judged at all (only frames from 1 September are scored).
+- **A known limit, not chased:** the USDA stitches some quarter-quads from more than one flight under
+  one date (about 130 picks probably hold such a strip, the analyst's count from the thumbnails'
+  edge strips — `4407012se`'s orange west edge in the pilot is one). The date shown for that strip is
+  the frame's stated date and can be wrong for the strip; the score reads the whole thumbnail.
+  Fixing it would need the USDA's seamline files.
+
+**The first proposal (2026-11-27, `naip-20261127`, the pilot's walk of 2026-11-26 — the same
+69,207 items).** 18,939 frames scored (none without a thumbnail): 8,947 turned, 702 borderline, 8,399
+green, 891 without enough vegetation. Proposed: **524 entries** (16 whole flight days, 508 frames),
+committed as `scripts/aerial/review/naip-20261127-foliage-proposed.json`, **awaiting the founder**.
+Applied, it changes **1,074 cells**, every one of the 9,168 still covered, and leaves the two
+Aroostook cloud strikes and the 23 kept Long Island and New York City picks as they are:
+
+| State (today's pick) | Cells change | 0.3 m → 0.6 m | Years older, changed cells | Picks after |
+| --- | --- | --- | --- | --- |
+| VT | 186 of 812 | 25 | 2.4 | 2025 0.3 m 626 · 2023 0.3 m 127 · 2021 0.6 m 18 (+ NH frames 41) |
+| NH | 9 of 658 | 8 | 1.2 | 2023 0.3 m 682 · 2021 0.6 m 11 · 2025 0.6 m 5 · 2018 0.6 m 1 |
+| MA, CT, RI | 0 | 0 | — | unchanged |
+| ME | 456 of 2,721 | 231 | 3.2 | 2023 0.3 m 1,423 · 2021 0.6 m 732 · 2018 0.6 m 566 |
+| NY | 423 of 3,782 | 0 | 3.5 | 2024 2,088 · 2022 526 · 2021 155 · 2019 1,013, all 0.6 m |
+| **All** | **1,074** | **264** | **3.2** (0.37 over every cell) | 0.3 m picks 4,316 → 4,052 |
+
+*Picks after* is by the new pick's labeled state (a Vermont cell can fall to New Hampshire's 2023
+frame across the line). **88 picks still read turned**, every one accounted for: the 80 `allTurned`
+cells (76 keep 27 September 2023 at 0.3 m; `4507035nw` and `4507035sw` keep 30 September 2023 at
+0.3 m; `4407047ne` and `4407047nw` keep ME 19 September 2021 at 0.6 m — no green frame at 0.6 m or
+better in any of them), the six `noLeafOn` October cells on 2 October 2023, and two kept by the cloud
+review on purpose (`4007438ne`, `4007439nw`, New York City's 13 September 2024 glare frames, which
+read as not green because they are city and water).
 
 ### §2.2 — Tile: the work tiles, the warp stack, the shard
 
@@ -595,8 +681,10 @@ What one check does, in one action:
 2. **Enumerates the catalog** — the same ~70 STAC pages the select stage reads, against a deadline
    inside the action limit; items held as compact candidates per quarter-quad (a few MB), not raw
    STAC JSON.
-3. **Applies the core rule** with the committed exclusion list and the committed off-season cells
-   (a cell the off-season step reaches beyond the six is reported in the finding, not refused).
+3. **Applies the core rule** with the committed exclusion list and the committed foliage strikes
+   (D319), and compares the cells the off-season step reaches with the manifest's `offSeasonCells`:
+   a cell new to it (or one that left it, a newer green flight) is reported in the finding by name.
+   New September frames are not foliage-scored here; the offer says they are unreviewed.
 4. **Diffs** picks and stacks against the manifest: per state, the changed cells, the newest
    leaf-on flight among their new picks and the oldest date it would replace; the count of new picks
    with no reviewed cloud score.
@@ -619,7 +707,8 @@ What one check does, in one action:
 - `cells`: at most 500 changed cells (key, the current flight date and gsd, the new one's), and
   `totalCells`; the full diff is recomputed by `--from-current`, so the row never approaches Convex's
   8,192-item array cap.
-- `unscored`, `offSeasonBeyondList` (counts), `command` (the exact `run-aerial.sh` line, formatted by
+- `unscored`, `offSeasonChanged` (counts: new picks with no reviewed cloud score; cells joining or
+  leaving the off-season list), `command` (the exact `run-aerial.sh` line, formatted by
   core's `aerialRebuildCommand` so the script and the offer agree).
 - Index `by_status_opened`. One open offer at most: an unchanged diff on a later check leaves it
   open and sends nothing.
@@ -808,9 +897,12 @@ Color matching is out of scope (§1.3).
 
 Maine 2023 didn't fly 565 quarter-quads in the North Woods; they fall back to ME 2021 (807 cells) or
 ME 2018 (258) at 0.6 m. That is a recency gap, not a hole. The six October-only cells north of
-Rumford take their 2 October 2023 0.3 m frame, in autumn color (§2.1, the founder's ruling). The
-credit's dates say how old and which month each is. The October-cell fallback rule for Maine and New
-York is to be revisited once the founder has seen it.
+Rumford take their 2 October 2023 0.3 m frame, in autumn color (§2.1, the founder's ruling, confirmed
+2026-11-27). The credit's dates say how old and which month each is. **Revisited 2026-11-27 (D319)**,
+once the pilot showed the September flights in color too: turned flights are struck by the founder's
+review of flight days (§2.1.4), which moves about 450 Maine cells to ME 2021 or 2018 at 0.6 m, and
+the ~80 cells around Rangeley, Rumford and Kingfield with no green frame at 0.6 m or better keep
+27 September 2023 at 0.3 m in autumn color, named for the July check.
 
 ### §5.6 — Coast and border nodata
 
@@ -868,6 +960,16 @@ fully covered ones × 140–185 MB a shard (the pilot's mixed mean 146 MB; its l
 which the Machine ran at ~0.44 of a core with 28% steal; on `performance-4x` no tile throttled at all
 (throttle counter 0), used 318 CPU-seconds a tile on average (227–400: ~1.2 cores of 4 busy), and peaked
 under 0.6 GB of its 8 GB. Read with §6.1's older columns as history.
+
+**What the foliage review changes (2026-11-27, D319): nothing material.** The archive is z18
+everywhere, so the tile count is the same whatever the picks; the first proposal changes 1,074 of
+9,168 picks, and only 264 of them from 0.3 m to 0.6 m sources (0.3 m picks 4,316 → 4,052). The frames
+the worker cuts fall from 11,481 to 11,457, the 0.3 m ones among them from 4,676 to 4,419, and the
+source pixels decoded — the warp's work, in 0.3 m-equivalents — by about 3%; a 0.6 m source upscaled
+to z18 may pack a little smaller, which the pilot didn't separate out (2.9% of cells, so under 1% of
+the archive at most). The figures above stand: ~260 GB, ~$3.90 a month, ~7–9 h and ~$37 a full run.
+Applying it **after** a full build instead would be a `--from-current` rebuild of ~615 work tiles
+(35%: 429 touched by a changed pick, the rest by a reordered stack), ~$13 — hence the review first.
 
 **Why the archive moved.** The design's 387 GB is the deepest level alone: 6.59 M 512-px tiles at
 tile zoom 17 (the same footprint as a 256-px z17 tile) × ~59 KB, which is 14.7 KB a 256-px quarter —
@@ -976,15 +1078,17 @@ The briefs are §10; this is the roster.
 - **S ↔ W:** `quarterQuadsIn`, `naipIndexUrl`, `parseNaipCellIndex`, `naipCreditRange` in core; W
   never computes a date itself.
 - **Order:** X → S, T and P in parallel → integration → the local proofs (§7.3) → the pilot (§7.4,
-  gated) → `/code-review xhigh --fix` → B05-1 opens → merge → the widen deployed to dev → the full
-  run (the founder's go) → Y → K and W → B05-2 opens → merge.
+  gated) → the founder's foliage review (§2.1.4, D319; his confirmed strikes committed, on the branch
+  or after the merge) → `/code-review xhigh --fix` → B05-1 opens → merge → the widen deployed to dev
+  → the full run (the founder's go) → Y → K and W → B05-2 opens → merge.
 
 ### §7.3 — What is proven how
 
 - **The rule: properties on the real inventory.** `fast-check` over generated candidate sets (a pick
   is leaf-on whenever any candidate is; no leaf-on candidate is newer than the pick unless the pick is
-  0.3 m within two years; the off-season step runs only where no candidate is leaf-on, and the build
-  refuses it outside the committed six; an excluded item is never picked or stacked; the stack is
+  0.3 m within two years; the off-season step runs exactly where no green leaf-on candidate is left,
+  with the right why; a foliage strike demotes, never drops; an excluded item is never picked or
+  stacked; the stack is
   every other candidate in rule order; the answer doesn't depend on input order) **and** on a
   committed slice of the real inventory (~2,000–3,000 rows chosen to hold every edge class: the six
   October cells, the Long Island glare cells, Aroostook, the 319 two-state cells' kind, NY's April and
@@ -1019,7 +1123,7 @@ The briefs are §10; this is the roster.
 line, Vermont 2025 at 0.3 m against New York 2024 at 0.6 m, Québec's edge, big water (~24
 quarter-quads) — plus a strip straddling 72°W on the New Hampshire–Massachusetts line near Jaffrey and
 Winchendon (~16: the UTM zone seam and another state line); plus a strip north of Rumford (~15: the six
-October cells of `NAIP_OFF_SEASON_CELLS`, their 2023 summer neighbors, and a few cells where ME 2023
+October cells of §2.1's off-season step, their 2023 summer neighbors, and a few cells where ME 2023
 meets the ME 2018 fallback); plus a New York join where 2024 meets the 2019 fallback (~8). **~63
 cells** in all, the pilot named `champlain-nhma-me-ny`. Built end to end to dev's bucket under
 `dev/naip/pilot/champlain-nhma-me-ny/…`, its run rows on a throwaway local backend (never dev), and
@@ -1033,7 +1137,10 @@ per work tile, bytes per tile at each zoom (to firm §6.1), the date index's siz
 outbound transfer, the assembler's throughput. Pennies of spend, started only on the governor's go.
 
 **The full region run** (~16 h on ~25 Machines by §6.1's measured figure, a few terabytes read, ~$30–40 all told) is **the
-founder's go/no-go**, given the pilot's numbers — never a builder's.
+founder's go/no-go**, given the pilot's numbers — never a builder's. **It waits for his foliage review**
+(§2.1.4, D319): the confirmed strikes committed to `NAIP_FOLIAGE_STRIKES` first, and the applied run's
+cloud sheet read, so the build is cut once with the picks he chose rather than re-cut by a
+`--from-current` rebuild afterwards (which would re-tile ~615 of the 1,764 work tiles).
 
 ### §7.5 — Definitions of done
 
@@ -1157,6 +1264,15 @@ puts both of the rulings you wanted to see in front of you before the expensive 
 **Ruled: (c)** (the founder, 2026-11-25, through the governor) — the pilot is Champlain's north end,
 the NH–MA strip, the Maine strip north of Rumford (the six October cells, their 2023 summer neighbors,
 a few ME 2023/2018 cells) and a New York 2024/2019 join: ~63 cells (§7.4, §10.7).
+
+### What the pilot opened (2026-11-27)
+
+**F-10 — Autumn frames inside the calendar.** The pilot showed September flights already in color
+(§2.1.4). **Ruled (the founder, 2026-11-27, D319):** the measured screen with his review of flight days
+at 0.6; the cells with no green frame at 0.6 m or better keep their newest sharpest frame by rule; the
+six October cells keep 2 October 2023. **Open: his review of the first proposal** (524 entries,
+`scripts/aerial/review/naip-20261127-foliage-proposed.json`, on the sheet by flight day), before the
+full run.
 
 ---
 
@@ -1595,7 +1711,9 @@ go:
 
 Then `/code-review xhigh --fix` over `main...<branch>`, the gates again, B05-1 opens. **The full
 region run is the founder's go/no-go** on the pilot's numbers, run from main after the merge and the
-widen's deploy, by the executor the governor names — never by a builder.
+widen's deploy and **after his foliage review is committed** (§2.1.4: the run's select stage refuses an
+unconfirmed strike, and reads only the confirmed ones), by the executor the governor names — never by
+a builder.
 
 ### §10.8 — B05-2, in brief (after the pilot)
 
@@ -1810,4 +1928,39 @@ end, verified, and looked at. Every key under `naip/build/pilot/champlain-nhma-m
 - **A first view in about a second**: headless Chromium on the laptop, a cold context each time, three
   places at z15 — MapLibre idle at 906, 906 and 1,072 ms after navigation; the first archive range at
   350–415 ms, the last answered by 760–930 ms (13–16 ranges).
+
+**The foliage review (2026-11-27, D319).** Built on the analyst's uncommitted study of 2026-11-26 (the
+greenness score and several rules re-run on the real catalog); the founder ruled the same day (§1.2).
+
+- **The score is the analyst's, exactly.** Ported to exact integer tests (`49·G > 51·R` is GRVI over
+  0.02), it reproduces his Python scores and turned verdicts on all 35,247 cached thumbnails, frame for
+  frame. His no-verdict cut read a rounded vegetation share; the port reads the exact one, and no frame
+  on this catalog differs.
+- **The proposal matches his figures but for the cloud review's kept frames.** His measured rule changed
+  1,076 cells (NY 425); the proposal changes **1,074** (NY 423): New York City's `4007438ne` and
+  `4007439nw` keep their 13 September 2024 frames, which the cloud review kept on purpose and the screen
+  never proposes. Every other cell picks what his run picked (9,166 of 9,168); 0.3 m → 0.6 m is 264 in
+  both. He counted 86 picks still turned; here 88, the same two.
+- **Not every kept-turned cell is 27 September 2023.** Of the 80 `allTurned` cells, 76 keep 27 September
+  2023 at 0.3 m; `4507035nw`/`sw` keep 30 September 2023 at 0.3 m, and `4407047ne`/`nw` keep Maine's
+  19 September 2021 at 0.6 m (no 2023 frame there; no green frame at 0.6 m or better).
+- **A struck frame is demoted, not dropped** (the builder's reading of "strike", D319): it shows only
+  where nothing green has pixels. In **105 cells** the new green pick is partial and a demoted frame is
+  among the frames cut under it — 34 in the Catskills (41.x°N, 74–75°W), 39 along the Vermont–New
+  Hampshire line (44.x°N, 71–72°W), the rest scattered; dropped, that part of each cell could be
+  empty. The
+  date index dates such a strip by its own frame. Partial picks stay at 140, as before.
+- **The six-cell list is gone, and with it the refusal of a seventh** (ruling 3: a rule, not a hand
+  list). The off-season step now names its cells, with why, in every run's log and the manifest.
+- **The proposal's shape:** 16 whole flight days and 508 frame entries. Most frame entries are days where
+  turned frames are a minority of the day: New Hampshire's 20 September 2025 0.6 m flight (186, all
+  fallbacks under 2023's 0.3 m frames), New York's 19 September 2021 (90) and 13 September 2024 (59),
+  and so on, 23 days in all. Fifteen proposed days change no pick at all.
+- **Borderline (0.6–0.7):** 203 picks over 24 days stay; New York's 14 September 2024 holds the most (34),
+  visibly yellowing in the analyst's sheet.
+- **One new pick crosses the cloud threshold**, unreviewed: `4606701se` falls from ME 2021 to ME
+  2018-07-21 at 4.7% white — Loring's runways and bare fields, a false positive by the builder's
+  pre-screen. The applied run's cloud sheet holds it.
+- **Rule 2, manifest 2.** `NAIP_RULE_VERSION` and `NAIP_MANIFEST_VERSION` are 2; the pilot's archive and
+  manifest (rule 1) stay as built, and no `--from-current` build is ever based on a pilot.
 

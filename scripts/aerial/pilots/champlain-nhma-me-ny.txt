@@ -48,7 +48,7 @@
 4207117nw
 4207117se
 4207117sw
-# The Maine strip north of Rumford (16): the six October cells of NAIP_OFF_SEASON_CELLS (2 October
+# The Maine strip north of Rumford (16): the six October cells of the off-season step (2 October
 # 2023, 0.3 m) beside their September 2023 summer neighbors, and one ME 2018 0.6 m cell among them.
 4407004ne
 4407004nw

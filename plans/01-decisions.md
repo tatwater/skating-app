@@ -9553,7 +9553,13 @@ rule's order — which shows through wherever the pick has no pixels. The rule l
 
 **Why:** the founder's, in his words above.
 
-**Related:** D3, D147, D314, D318, [`phase-B05`](./phases/B05-summer-aerial.md).
+**Amended 2026-11-27 by D319:** step 1's calendar now has a reviewed exception — frames flown leaf-on
+by the calendar but already in autumn color or brown, struck by the founder's review of flight days —
+and the off-season step is the rule's, not a committed list of six: a cell with no leaf-on frame left
+that isn't struck keeps its newest sharpest leaf-on frame (or, flown only off-season, its newest
+sharpest frame), and every run names it. The six October cells keep their 2 October 2023 frames.
+
+**Related:** D3, D147, D314, D318, D319, [`phase-B05`](./phases/B05-summer-aerial.md).
 
 ## D316 — The summer aerial is for console staff only: not offered to skaters (amends D84 and D146, B05)
 
@@ -9627,3 +9633,49 @@ unless the date says otherwise. D312's credit dated only the center when the ser
 answered; this dates the whole view, every time.
 
 **Related:** D3, D84, D312, D314, D315, [`phase-B05`](./phases/B05-summer-aerial.md) §2.7, §4.2.
+
+## D319 — The summer aerial's turned frames are struck by the founder's review of flight days, never by a score (amends D315, B05)
+
+**Decided (2026-11-27, founder), four rulings on the pilot's finding** that D315's calendar test for
+leaf-on (to 30 September) lets through frames in full autumn color or brown — northern Maine on
+27 September 2023, New York on 16 September 2024, Vermont on 20 September 2025 — while a year can
+matter more than a date (New York's 18 September 2019 is green), so a stricter cutoff is the wrong
+tool. His order of preference stands: no dead trees, snow or ice first; then recency; sharpness only
+together with recency.
+
+1. **The measured rule, with his review of flight days.** The calendar stays. Every candidate frame
+   flown from 1 September is scored from its catalog thumbnail for how green its vegetation is; a
+   frame that reads as turned is a **candidate** for striking, and the pipeline builds a review sheet
+   grouped by flight day (labeled state and date). He confirms, mostly whole days at a time. Confirmed
+   strikes go on a committed reviewed list in core (`NAIP_FOLIAGE_STRIKES`), the cloud review's
+   mechanism: one entry strikes a whole flight day, with per-frame exceptions either way (a day's
+   `keep`; a frame entry on a day not struck). **The selection reads only that list** — a screen for
+   review, never an automatic rule.
+2. **The threshold is 0.6**: a frame whose vegetation is under 60% clearly green reads as turned.
+3. **Where striking leaves a cell nothing green at 0.6 m or better, the cell keeps the newest sharpest
+   frame** and is recorded as a known off-season cell — not the 2015 1 m frames. About 80 cells in
+   western Maine (around Rangeley, Rumford and Kingfield) keep their 27 September 2023 frames at 0.3 m
+   in autumn color. It is a rule, not a hand list: the six-cell exception of D315 is generalized, and
+   every run and manifest names the cells, so the July check can revisit them.
+4. **The six October cells north of Rumford keep their 2 October 2023 frames** at 0.3 m, not the
+   5 October 2018 ones.
+
+How the build reads it (B05 §2.1, §2.1.4): a struck frame is demoted below every green leaf-on frame in
+the fallback stack, never dropped, so it shows only where nothing green has pixels — autumn imagery
+rather than a hole. The off-season step has two reasons, both named: `allTurned` (every leaf-on frame
+struck: keep the newest sharpest of them) and `noLeafOn` (nothing flown leaf-on at 0.6 m or better:
+the newest sharpest of every season). The select stage refuses to build with an entry he hasn't
+confirmed; the screen never proposes a frame the cloud review kept (the Long Island and New York City
+picks, D315 step 4) or one not leaf-on by the calendar.
+
+**Known limits, stated on the sheet:** cities read as not green; some partly yellowed frames pass;
+dull July frames aren't judged at all (only frames from 1 September are scored); and the USDA stitches
+some quarter-quads from more than one flight under one date (about 130 picks probably hold such a
+strip), so the date shown for that strip is the frame's stated date and can be wrong for the strip.
+Not chased: fixing it would need the USDA's seamline files.
+
+**Why:** the founder's. A score is evidence, not a judgment: the same number means a turned forest in
+Maine and a city in July, so a person looks, by the flight day he can recognize. D3 is untouched: a
+summer photograph, its date shown (D318), never a claim about ice.
+
+**Related:** D3, D314, D315, D318, [`phase-B05`](./phases/B05-summer-aerial.md) §2.1.4.
