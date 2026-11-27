@@ -1,5 +1,6 @@
 /**
- * `pnpm --filter @skating/aerial cleanup <campaign> --old <key> [--pilot <name>] [--dry-run]` — the
+ * `pnpm --filter @skating/aerial cleanup <campaign> --old <key> --live-since <YYYY-MM-DD>
+ * [--dry-run]` (a pilot: `--pilot <name>`, no `--live-since`) — the
  * cleanup stage (B05 §2.5), on the laptop, through the gitignored rclone remote (`R2_REMOTE`, default
  * `r2`; `R2_BUCKET`). A shell over `cleanup.ts`: every refusal is decided before anything is deleted,
  * and `--dry-run` prints the plan and deletes nothing.
@@ -13,7 +14,7 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { rcloneList, rcloneRun } from '../assemble/upload';
-import { CleanupRefusal, planCleanup, webArchiveUrls } from '../cleanup';
+import { CleanupRefusal, parseLiveSince, planCleanup, webArchiveUrls } from '../cleanup';
 import { publishPrefix } from '../keys';
 import { parseStageArgs, StageArgsError } from '../stages';
 
@@ -44,10 +45,11 @@ async function main(): Promise<void> {
     old: args.old as string,
     listing,
     liveArchiveUrls: live,
+    liveSince: args.liveSince === null ? null : parseLiveSince(args.liveSince),
     now: new Date(),
   });
   process.stdout.write(
-    `[cleanup] ${args.dryRun ? 'would delete' : 'deleting'}: ${plan.deleteKeys.join(', ')} and ${plan.deletePrefix}* (replaced by ${plan.replacedBy}, written ${plan.replacedAt.toISOString()})\n`,
+    `[cleanup] ${args.dryRun ? 'would delete' : 'deleting'}: ${plan.deleteKeys.join(', ')} and ${plan.deletePrefix}* (replaced by ${plan.replacedBy}, uploaded ${plan.replacedAt.toISOString()}, live since ${plan.liveFrom.toISOString()})\n`,
   );
   if (args.dryRun) return;
   for (const key of plan.deleteKeys) {

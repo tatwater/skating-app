@@ -3,6 +3,7 @@ import {
   CleanupRefusal,
   envValue,
   LIVE_GRACE_DAYS,
+  parseLiveSince,
   planCleanup,
   WEB_ENV_FILES,
   webArchiveUrls,
@@ -27,6 +28,8 @@ const plan = (patch: Partial<Parameters<typeof planCleanup>[0]> = {}) =>
     old: 'dev/naip/naip-summer-20261212.pmtiles',
     listing,
     liveArchiveUrls: ['https://tiles.example/dev/naip/naip-summer-20270801.pmtiles'],
+    // Uploaded ten days ago, published the next day: live since the end of 2027-08-11, 8 days.
+    liveSince: parseLiveSince('2027-08-11'),
     now: NOW,
     ...patch,
   });
@@ -42,6 +45,7 @@ describe('cleanup', () => {
       deletePrefix: 'naip/build/naip-20261212/',
       replacedBy: 'dev/naip/naip-summer-20270801.pmtiles',
       replacedAt: at(10),
+      liveFrom: at(8),
     });
   });
 
@@ -55,17 +59,61 @@ describe('cleanup', () => {
     );
   });
 
-  it('refuses anything whose replacement has been live under a week', () => {
-    const fresh = listing.map((o) =>
-      o.key.includes('20270801') ? { ...o, modified: at(LIVE_GRACE_DAYS - 0.5) } : o,
+  it('counts the week from when the replacement went live, never from its upload', () => {
+    // Uploaded 30 days ago, published today: the old archive's cached clients have had no week.
+    const old = listing.map((o) => (o.key.includes('20270801') ? { ...o, modified: at(30) } : o));
+    expect(() => plan({ listing: old, liveSince: parseLiveSince('2027-08-20') })).toThrow(
+      /has been live 0\.0 days \(since 2027-08-21T00:00:00\.000Z\): .* stays until it has been live a week/,
     );
-    expect(() => plan({ listing: fresh })).toThrow(
-      /written 6\.5 days ago: .* stays until it has been live a week/,
+    // A bare day counts from its end; an ISO time from itself.
+    expect(() => plan({ liveSince: parseLiveSince('2027-08-13') })).toThrow(/live 6\.0 days/);
+    expect(plan({ liveSince: parseLiveSince('2027-08-12') }).liveFrom).toEqual(at(LIVE_GRACE_DAYS));
+    expect(() => plan({ liveSince: parseLiveSince('2027-08-13T12:00:00Z') })).toThrow(
+      /live 6\.5 days/,
     );
-    const week = listing.map((o) =>
-      o.key.includes('20270801') ? { ...o, modified: at(LIVE_GRACE_DAYS) } : o,
+    expect(plan({ liveSince: parseLiveSince('2027-08-12T20:00:00-04:00') }).liveFrom).toEqual(
+      at(LIVE_GRACE_DAYS),
     );
-    expect(plan({ listing: week }).replacedAt).toEqual(at(7));
+  });
+
+  it('refuses without --live-since, with one in the future, or one before the upload', () => {
+    expect(() => plan({ liveSince: null })).toThrow(/cleanup needs --live-since <YYYY-MM-DD>/);
+    expect(() => plan({ liveSince: parseLiveSince('2027-08-21') })).toThrow(/is in the future/);
+    expect(() => plan({ liveSince: parseLiveSince('2027-08-20T00:00:01Z') })).toThrow(
+      /is in the future/,
+    );
+    // Uploaded ten days ago (2027-08-10T00:00Z): the day before can't have been live.
+    expect(() => plan({ liveSince: parseLiveSince('2027-08-09') })).toThrow(
+      /is before .* was uploaded/,
+    );
+    expect(() => plan({ liveSince: parseLiveSince('2027-08-09T23:59:00Z') })).toThrow(
+      /is before .* was uploaded/,
+    );
+    // The upload's own day is the earliest it can have gone live.
+    expect(plan({ liveSince: parseLiveSince('2027-08-10') }).liveFrom).toEqual(at(9));
+  });
+
+  it('refuses while the replacement has never been live: no web env file points at it', () => {
+    for (const liveArchiveUrls of [
+      [],
+      ['https://tiles.example/dev/naip/naip-summer-20991231.pmtiles'],
+    ]) {
+      expect(() => plan({ liveArchiveUrls })).toThrow(
+        /naip-summer-20270801\.pmtiles is not the archive the web points at .* it has never been live/,
+      );
+    }
+  });
+
+  it('reads --live-since as a real day or an ISO time with its offset, nothing else', () => {
+    expect(parseLiveSince('2027-08-11')).toEqual({
+      from: new Date('2027-08-11T00:00:00Z'),
+      to: new Date('2027-08-12T00:00:00Z'),
+    });
+    const t = new Date('2027-08-11T22:30:00Z');
+    expect(parseLiveSince('2027-08-11T18:30:00-04:00')).toEqual({ from: t, to: t });
+    for (const bad of ['2027-02-30', '2027-8-11', 'yesterday', '2027-08-11T18:30:00', '']) {
+      expect(() => parseLiveSince(bad)).toThrow(CleanupRefusal);
+    }
   });
 
   it('refuses the archive the web points at', () => {
@@ -74,7 +122,6 @@ describe('cleanup', () => {
         liveArchiveUrls: ['https://tiles.example/dev/naip/naip-summer-20261212.pmtiles?v=1'],
       }),
     ).toThrow('is the archive the web points at');
-    expect(plan({ liveArchiveUrls: [] }).deleteKeys).toHaveLength(3);
   });
 
   it('refuses it named in any of the web’s env files, and by its file name whatever the path', () => {
@@ -147,9 +194,32 @@ describe('cleanup', () => {
         old: 'dev/naip/pilot/champlain/naip-summer-20261201.pmtiles',
         listing: pilotListing,
         liveArchiveUrls: [],
+        liveSince: null,
         now: NOW,
       }).deletePrefix,
     ).toBe('naip/build/pilot/champlain/naip-pilot-20261201/');
+  });
+
+  it('a pilot, never published, counts its week from its upload and takes no --live-since', () => {
+    const pilot = (modifiedDaysAgo: number, liveSince: ReturnType<typeof parseLiveSince> | null) =>
+      planCleanup({
+        campaign: 'naip-pilot-20261212',
+        pilot: 'champlain',
+        old: 'dev/naip/pilot/champlain/naip-summer-20261201.pmtiles',
+        listing: [
+          { key: 'dev/naip/pilot/champlain/naip-summer-20261201.pmtiles', modified: at(30) },
+          {
+            key: 'dev/naip/pilot/champlain/naip-summer-20261212.pmtiles',
+            modified: at(modifiedDaysAgo),
+          },
+        ],
+        liveArchiveUrls: [],
+        liveSince,
+        now: NOW,
+      });
+    expect(pilot(7, null).liveFrom).toEqual(at(7));
+    expect(() => pilot(6.5, null)).toThrow(/has been live 6\.5 days/);
+    expect(() => pilot(20, parseLiveSince('2027-08-01'))).toThrow(/--live-since is for a build/);
   });
 
   it('reads an env value by name without printing it', () => {

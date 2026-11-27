@@ -466,6 +466,15 @@ describe('aerialRebuildCommand', () => {
     ).toBe(
       `scripts/aerial/run-aerial.sh naip-20270712 --stage cleanup --old 'dev/naip/it'\\''s.pmtiles'`,
     );
+    expect(
+      aerialRebuildCommand('naip-20270712', {
+        stage: 'cleanup',
+        old: 'dev/naip/naip-summer-20261212.pmtiles',
+        liveSince: '2027-07-20',
+      }),
+    ).toBe(
+      'scripts/aerial/run-aerial.sh naip-20270712 --stage cleanup --old dev/naip/naip-summer-20261212.pmtiles --live-since 2027-07-20',
+    );
     expect(aerialRebuildCommand('naip-20270712', { cells: '' })).toBe(
       "scripts/aerial/run-aerial.sh naip-20270712 --cells ''",
     );

@@ -32,6 +32,7 @@ describe('parseStageArgs: what it reads', () => {
       pilot: null,
       dryRun: false,
       old: null,
+      liveSince: null,
     });
   });
 
@@ -55,12 +56,16 @@ describe('parseStageArgs: what it reads', () => {
     expect(parse(`${PILOT} --pilot champlain-nhma`).pilot).toBe('champlain-nhma');
   });
 
-  test('cleanup takes --old, a published archive key', () => {
-    expect(parse(`${BUILD} --stage cleanup --old ${OLD} --dry-run`)).toMatchObject({
-      stage: 'cleanup',
-      old: OLD,
-      dryRun: true,
-    });
+  test('cleanup takes --old, a published archive key, and --live-since, the day its replacement went live', () => {
+    expect(
+      parse(`${BUILD} --stage cleanup --old ${OLD} --live-since 2026-12-20 --dry-run`),
+    ).toMatchObject({ stage: 'cleanup', old: OLD, liveSince: '2026-12-20', dryRun: true });
+    expect(
+      parse(`${BUILD} --stage cleanup --old ${OLD} --live-since=2026-12-20T18:30:00-05:00`)
+        .liveSince,
+    ).toBe('2026-12-20T18:30:00-05:00');
+    // Its absence is planCleanup's refusal for a build, which knows whether it is one.
+    expect(parse(`${BUILD} --stage cleanup --old ${OLD}`).liveSince).toBeNull();
   });
 
   test('a stage CLI runs its own stage, with or without --stage naming it', () => {
@@ -107,6 +112,16 @@ describe('parseStageArgs: what it refuses, before any work', () => {
     [`${BUILD} --stage cleanup --old ${OLD} --from-current`, /cleanup takes --old/],
     [`${BUILD} --old ${OLD}`, /--old belongs to --stage cleanup/],
     [`${BUILD} --stage verify --old ${OLD}`, /--old belongs to --stage cleanup/],
+    [
+      `${BUILD} --stage cleanup --old ${OLD} --live-since 2026-02-30`,
+      /is not a day the calendar has/,
+    ],
+    [`${BUILD} --stage cleanup --old ${OLD} --live-since last-week`, /is not a YYYY-MM-DD day/],
+    [
+      `${PILOT} --pilot p --stage cleanup --old ${archiveKey('naip-pilot-20261101', 'p')} --live-since 2026-12-02`,
+      /--live-since is for a build: a pilot is live from its upload/,
+    ],
+    [`${BUILD} --live-since 2026-12-20`, /--live-since belongs to --stage cleanup/],
   ])('%j', (line, message) => {
     refused(line, message);
   });
@@ -126,6 +141,7 @@ describe('parseStageArgs: what it refuses, before any work', () => {
       '--pilot',
       '--dry-run',
       '--old',
+      '--live-since',
     ]) {
       expect(AERIAL_USAGE).toContain(flag);
     }
@@ -152,10 +168,9 @@ describe('stageArgsToOptions', () => {
       stage: 'all',
       cells: 'c.txt',
     });
-    expect(stageArgsToOptions(parse(`${BUILD} --stage cleanup --old ${OLD}`))).toEqual({
-      stage: 'cleanup',
-      old: OLD,
-    });
+    expect(
+      stageArgsToOptions(parse(`${BUILD} --stage cleanup --old ${OLD} --live-since 2026-12-20`)),
+    ).toEqual({ stage: 'cleanup', old: OLD, liveSince: '2026-12-20' });
   });
 });
 

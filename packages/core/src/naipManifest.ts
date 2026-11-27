@@ -510,6 +510,8 @@ export interface AerialRunOptions {
   dryRun?: boolean;
   /** `cleanup`'s target: the old archive's key. */
   old?: string;
+  /** `cleanup`'s: the day (or ISO time) the web began serving the replacement. */
+  liveSince?: string;
 }
 
 /** Where the entry point lives, from the repository's root. */
@@ -553,5 +555,6 @@ export function aerialRebuildCommand(campaign: string, options: AerialRunOptions
   if (options.pilot !== undefined) words.push('--pilot', options.pilot);
   if (options.dryRun === true) words.push('--dry-run');
   if (options.old !== undefined) words.push('--old', options.old);
+  if (options.liveSince !== undefined) words.push('--live-since', options.liveSince);
   return words.map(shellWord).join(' ');
 }

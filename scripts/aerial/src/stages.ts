@@ -6,7 +6,7 @@
  * ```text
  * run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
  *               [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>] [--dry-run]
- *               [--old <key>]
+ *               [--old <key>] [--live-since <YYYY-MM-DD>]
  * ```
  *
  * Both `--flag value` and `--flag=value` are read. Everything else is refused before any work starts:
@@ -20,6 +20,7 @@ import {
   isNaipState,
   type NaipState,
 } from '@skating/core';
+import { parseLiveSince } from './cleanup';
 import { isPilotName, parseArchiveKey, parseCampaign } from './keys';
 
 export { AERIAL_STAGES, type AerialStage };
@@ -33,7 +34,7 @@ export const ALL_STAGES: readonly AerialStageName[] = ['select', 'tiles', 'assem
 export const AERIAL_USAGE = [
   'usage: run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]',
   '                     [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>]',
-  '                     [--dry-run] [--old <key>]',
+  '                     [--dry-run] [--old <key> --live-since <YYYY-MM-DD>]',
 ].join('\n');
 
 /** A refused argument list. The message says what was wrong; `AERIAL_USAGE` says what is right. */
@@ -51,9 +52,11 @@ export interface StageArgs {
   pilot: string | null;
   dryRun: boolean;
   old: string | null;
+  /** `cleanup`'s: when the web began serving the replacement, as given (`parseLiveSince` reads it). */
+  liveSince: string | null;
 }
 
-const VALUE_FLAGS = ['stage', 'states', 'cells', 'pilot', 'old'] as const;
+const VALUE_FLAGS = ['stage', 'states', 'cells', 'pilot', 'old', 'live-since'] as const;
 const SWITCHES = ['from-current', 'dry-run'] as const;
 type ValueFlag = (typeof VALUE_FLAGS)[number];
 type Switch = (typeof SWITCHES)[number];
@@ -140,6 +143,7 @@ export function parseStageArgs(argv: readonly string[], forStage?: AerialStageNa
   }
 
   const old = values.get('old') ?? null;
+  const liveSince = values.get('live-since') ?? null;
   if (stage === 'cleanup') {
     if (old === null) refuse('cleanup needs --old <key>: the archive to delete');
     try {
@@ -148,10 +152,21 @@ export function parseStageArgs(argv: readonly string[], forStage?: AerialStageNa
       refuse(`--old: ${(e as Error).message}`);
     }
     if (states !== null || cells !== null || switches.has('from-current')) {
-      refuse('cleanup takes --old, --pilot and --dry-run only');
+      refuse('cleanup takes --old, --live-since, --pilot and --dry-run only');
+    }
+    if (liveSince !== null) {
+      try {
+        parseLiveSince(liveSince);
+      } catch (e) {
+        refuse((e as Error).message);
+      }
+      // A pilot is never published: its viewer reads it from the upload, so its week counts from that.
+      if (pilot !== null) refuse('--live-since is for a build: a pilot is live from its upload');
     }
   } else if (old !== null) {
     refuse('--old belongs to --stage cleanup');
+  } else if (liveSince !== null) {
+    refuse('--live-since belongs to --stage cleanup');
   }
 
   return {
@@ -163,6 +178,7 @@ export function parseStageArgs(argv: readonly string[], forStage?: AerialStageNa
     pilot,
     dryRun: switches.has('dry-run'),
     old,
+    liveSince,
   };
 }
 
@@ -180,6 +196,7 @@ export function stageArgsToOptions(args: StageArgs): AerialRunOptions {
   if (args.pilot !== null) options.pilot = args.pilot;
   if (args.dryRun) options.dryRun = true;
   if (args.old !== null) options.old = args.old;
+  if (args.liveSince !== null) options.liveSince = args.liveSince;
   return options;
 }
 

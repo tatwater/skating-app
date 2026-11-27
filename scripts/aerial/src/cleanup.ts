@@ -11,9 +11,17 @@
  *   checkout's env files Vite reads — `.env.local` as well as `.env` — by name and compared by the
  *   archive's file name, never printed): the local env is the operator's record of what is live —
  *   and when none of those files can be read, nothing is deleted, since what is live can't be told;
- * - **never anything live under a week**: the archive that replaced `--old` must have been written at
- *   least seven days ago — the earliest it can have gone live on Vercel — so a cached client or a
- *   lagging deploy still finds its tiles (§2.5: *no sooner than a week after the new one is live*);
+ * - **never anything live under a week, counted from when the web began serving its replacement**
+ *   (§2.5: *no sooner than a week after the new one is live*), so a cached client or a lagging deploy
+ *   still finds its tiles. Publishing is a separate step by hand (`VITE_NAIP_PMTILES_URL` on Vercel,
+ *   a redeploy) that nothing in the pipeline records, and an archive can sit uploaded for weeks
+ *   before it is published — so its upload time says nothing about how long it has been live. For a
+ *   build, then, the replacement must be **the archive the web points at** (a replacement no env
+ *   file names has never been live, and cleanup refuses), and the operator states the day it went
+ *   live, `--live-since <YYYY-MM-DD | ISO time>`: required, never in the future, never before the
+ *   replacement was uploaded, and the week counts from it (from the end of a bare day). A pilot is
+ *   never published — its viewer reads its public URL from the moment it is uploaded — so its week
+ *   counts from the upload, and `--live-since` is refused for one;
  * - and the `<campaign>` named must be the replacement, newer than `--old`: cleanup is run *from*
  *   the build that superseded it, so the two can't be swapped by a typo.
  *
@@ -47,9 +55,42 @@ export interface CleanupPlan {
   deleteKeys: string[];
   /** The old build's private prefix, deleted whole. */
   deletePrefix: string;
-  /** For the report: what replaced it and when. */
+  /** For the report: what replaced it, when it was uploaded, and when the week began. */
   replacedBy: string;
   replacedAt: Date;
+  liveFrom: Date;
+}
+
+/**
+ * When the operator says the replacement went live: `[from, to]`, the instant for an ISO time
+ * with an offset (`2027-08-01T18:30:00-04:00`, `…Z`), the whole UTC day for a bare `YYYY-MM-DD` —
+ * whose week counts from its end, so a deploy late that day is never shortchanged.
+ */
+export interface LiveSince {
+  from: Date;
+  to: Date;
+}
+
+const BARE_DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
+const ISO_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Reads `--live-since`; throws a `CleanupRefusal` on anything but a real day or an ISO time. */
+export function parseLiveSince(text: string): LiveSince {
+  const day = BARE_DAY.exec(text);
+  if (day) {
+    const from = new Date(`${text}T00:00:00Z`);
+    if (Number.isNaN(from.getTime()) || from.toISOString().slice(0, 10) !== text) {
+      refuse(`--live-since ${JSON.stringify(text)} is not a day the calendar has`);
+    }
+    return { from, to: new Date(from.getTime() + DAY_MS) };
+  }
+  const at = new Date(text);
+  if (!ISO_TIME.test(text) || Number.isNaN(at.getTime())) {
+    refuse(
+      `--live-since ${JSON.stringify(text)} is not a YYYY-MM-DD day or an ISO time with its offset`,
+    );
+  }
+  return { from: at, to: at };
 }
 
 /** A refusal: nothing was deleted. */
@@ -81,9 +122,11 @@ export function planCleanup(args: {
   old: string;
   listing: readonly ListedObject[];
   liveArchiveUrls: readonly string[] | undefined;
+  /** `--live-since`, read (`parseLiveSince`); `null` when not given. */
+  liveSince: LiveSince | null;
   now: Date;
 }): CleanupPlan {
-  const { campaign, old, listing, now } = args;
+  const { campaign, old, listing, now, liveSince } = args;
   const pilot = args.pilot ?? undefined;
   const target = parseArchiveKey(old);
   const current = parseCampaign(campaign);
@@ -116,12 +159,6 @@ export function planCleanup(args: {
   const next = archives.find((a) => a.key === replacement);
   if (next === undefined) refuse(`${replacement}, which replaces it, is not in the bucket`);
   const replacedAt = (next as (typeof archives)[number]).modified;
-  const age = now.getTime() - replacedAt.getTime();
-  if (age < LIVE_GRACE_DAYS * DAY_MS) {
-    refuse(
-      `${replacement} was written ${(age / DAY_MS).toFixed(1)} days ago: ${old} stays until it has been live a week`,
-    );
-  }
   if (args.liveArchiveUrls === undefined) {
     refuse(
       `no apps/web env file (${WEB_ENV_FILES.join(', ')}) can be read, so what the web points at (VITE_NAIP_PMTILES_URL) can't be told: run cleanup from a checkout that has one`,
@@ -129,14 +166,57 @@ export function planCleanup(args: {
   }
   // By the archive's file name, not its whole key: a public URL may serve the publish prefix at
   // another path (a custom domain), and a false match only refuses.
-  const oldName = old.slice(old.lastIndexOf('/') + 1);
-  const named = (url: string) => {
-    const path = url.replace(/[?#].*$/, '');
-    return path === oldName || path.endsWith(`/${oldName}`);
+  const live = args.liveArchiveUrls as readonly string[];
+  const named = (key: string) => {
+    const name = key.slice(key.lastIndexOf('/') + 1);
+    return (url: string) => {
+      const path = url.replace(/[?#].*$/, '');
+      return path === name || path.endsWith(`/${name}`);
+    };
   };
-  if ((args.liveArchiveUrls as readonly string[]).some(named)) {
+  if (live.some(named(old))) {
     refuse(
       `${old} is the archive the web points at (VITE_NAIP_PMTILES_URL): repoint and redeploy first`,
+    );
+  }
+
+  // The week, from when the replacement went live.
+  let liveFrom: Date;
+  if (pilot !== undefined) {
+    if (liveSince !== null) {
+      refuse(
+        '--live-since is for a build: a pilot is live from its upload, and its week counts from that',
+      );
+    }
+    liveFrom = replacedAt;
+  } else {
+    if (!live.some(named(replacement))) {
+      refuse(
+        `${replacement} is not the archive the web points at (VITE_NAIP_PMTILES_URL): it has never been live, so ${old} stays — publish the replacement, and clean up a week after`,
+      );
+    }
+    if (liveSince === null) {
+      refuse(
+        `cleanup needs --live-since <YYYY-MM-DD>: the day the web began serving ${replacement} (its upload, ${replacedAt.toISOString()}, says nothing about when it was published)`,
+      );
+    }
+    const since = liveSince as LiveSince;
+    if (since.from.getTime() > now.getTime()) {
+      refuse(`--live-since ${since.from.toISOString()} is in the future`);
+    }
+    // No moment of it at or after the upload (a bare day's end is exclusive).
+    const up = replacedAt.getTime();
+    if (since.from.getTime() < up && since.to.getTime() <= up) {
+      refuse(
+        `--live-since ${since.from.toISOString()} is before ${replacement} was uploaded (${replacedAt.toISOString()}): it can't have been live then`,
+      );
+    }
+    liveFrom = new Date(Math.max(since.to.getTime(), replacedAt.getTime()));
+  }
+  const age = now.getTime() - liveFrom.getTime();
+  if (age < LIVE_GRACE_DAYS * DAY_MS) {
+    refuse(
+      `${replacement} has been live ${(Math.max(0, age) / DAY_MS).toFixed(1)} days (since ${liveFrom.toISOString()}): ${old} stays until it has been live a week`,
     );
   }
 
@@ -150,6 +230,7 @@ export function planCleanup(args: {
     deletePrefix: buildPrefix(was.campaign, was.pilot),
     replacedBy: replacement,
     replacedAt,
+    liveFrom,
   };
 }
 

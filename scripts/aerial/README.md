@@ -56,7 +56,7 @@ And one that is the aerial's own:
 ```text
 run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
               [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>] [--dry-run]
-              [--old <key>]
+              [--old <key> --live-since <YYYY-MM-DD>]
 ```
 
 | Stage | Runs on | What | Run row |
@@ -65,7 +65,7 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 | `tiles` | laptop → Fly `ams` | uploads the manifest and snapshot, writes a unit per work tile, spawns, drains, reconciles by done record, three rounds | `aerial_tiles`, a heartbeat every 25 landed |
 | `assemble` | laptop → one Fly Machine | the streaming PMTiles writer, the overviews (tile zooms 7–10), the date index | `aerial_assemble` |
 | `verify` | laptop | counts, spot reads from the public URL, coverage, dates, seams, the viewer page | `aerial_assemble` (label `verify …`) |
-| `cleanup` | laptop | deletes an old archive, never the newest, never within a week | — |
+| `cleanup` | laptop | deletes an old archive: never the newest, never the one the web points at, never before its replacement has been live a week (`--live-since`, below) | — |
 
 `all` is select → tiles → assemble → verify, stopping at the first refusal. **Every argument is
 checked first** (`src/tilesRunArgs.ts`, through the same `parseStageArgs` every stage reads): a
@@ -188,7 +188,14 @@ scripts/aerial/run-aerial.sh naip-<YYYYMMDD>`. Its select stage logs the off-sea
 (`noLeafOn`, `allTurned`); the manifest keeps them for the July check.
 
 **Publish and clean up** are §2.5's: `VITE_NAIP_PMTILES_URL` set by the founder, the build prefix
-deleted once verify passes, an old archive by `--stage cleanup --old <key>` after a week.
+deleted once verify passes, an old archive by `--stage cleanup --old <key> --live-since <day>` a
+week after its replacement went live. **Note the day you publish** (the redeploy that put the new
+URL on Vercel): nothing in the pipeline records it, and the upload's time says nothing about it —
+an archive can sit uploaded for weeks before it is published. Cleanup refuses without
+`--live-since`, with one in the future or before the replacement was uploaded, when the web's env
+files don't point at the replacement (it has never been live), and until seven days have passed
+from the end of that day. A pilot is never published: its week counts from its upload, and it
+takes no `--live-since`.
 
 ---
 

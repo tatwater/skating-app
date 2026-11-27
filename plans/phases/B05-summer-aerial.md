@@ -556,7 +556,15 @@ founder or the governor's named executor sets them; no brief displays a value.
 **Clean up.** The build prefix (shards, indexes) is deleted once verify passes and the URL is live.
 The previous archive (and its index and manifest) is deleted no sooner than a week after the new one
 is live on Vercel — never by the build itself, and never the newest key
-(`run-aerial.sh <campaign> --stage cleanup --old <key>` refuses both).
+(`run-aerial.sh <campaign> --stage cleanup --old <key> --live-since <day>` refuses both). **The week
+counts from publication, which nothing records** (*changed at the PR's review, 2026-11-27*: it
+counted from the replacement's upload, and an archive uploaded a month before it was published
+could be deleted the day its replacement went live, under clients still holding its URL). So the
+operator states the day the web began serving the replacement, `--live-since`; cleanup refuses
+without it, with one in the future or before the replacement's upload, and while the web's env files
+don't point at the replacement — an archive no env file names has never been live (true of every
+archive until B05-2's swap). A bare day counts from its end. A pilot is never published (its viewer
+reads it from the upload), so its week counts from the upload and it takes no `--live-since`.
 
 **An assembly that dies before its manifest** — after its archive (or index) went up, before the
 manifest, the last write — leaves objects at published keys that nothing names and nothing has

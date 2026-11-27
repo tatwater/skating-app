@@ -4,7 +4,7 @@
 #
 #   scripts/aerial/run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 #                                [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>]
-#                                [--dry-run] [--old <key>]
+#                                [--dry-run] [--old <key> --live-since <YYYY-MM-DD>]
 #
 # `all` (the default) runs select → tiles → assemble → verify and stops at the first refusal; one
 # stage re-runs that stage against the campaign's stored manifest; cleanup is only ever run alone.
@@ -36,7 +36,7 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # there wins over the shell's in both. `AERIAL_ENV_FILE` points elsewhere (the tests).
 ENV_FILE="${AERIAL_ENV_FILE:-$HERE/.env.local}"
 if [[ -f "$ENV_FILE" ]]; then set -a; source "$ENV_FILE" >/dev/null 2>&1; set +a; fi
-USAGE="usage: run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all] [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>] [--dry-run] [--old <key>]"
+USAGE="usage: run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all] [--states NH,VT] [--cells <file>] [--from-current] [--pilot <name>] [--dry-run] [--old <key> --live-since <YYYY-MM-DD>]"
 
 # A FIFO (`| tee`) or a socket (how most process runners wire stdout): either way the status a
 # caller sees is not necessarily this run's. Redirect to a file or a terminal instead.
