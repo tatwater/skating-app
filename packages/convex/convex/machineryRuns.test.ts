@@ -19,6 +19,7 @@ import { lastCampaignRun } from './lib/campaignRuns';
 import { importJobState } from './machinery';
 import {
   CAMPAIGN_PASS_LIMIT,
+  isAppliedHandPass,
   isReconstructed,
   LIST_PAGE_SIZE,
   type RunRowView,
@@ -878,5 +879,66 @@ describe('lastCampaignRun', () => {
       startedAt: NOW - 3 * DAY,
     });
     expect(await last()).toBe(newer);
+  });
+});
+
+describe('where a run was written, and whether it wrote', () => {
+  const doc = (over: Partial<Doc<'importRuns'>>) =>
+    ({
+      kind: 'floor_prune',
+      label: 'prune',
+      status: 'succeeded',
+      notes: [],
+      ...over,
+    }) as Doc<'importRuns'>;
+
+  test('applied: a by-hand pass that ran to its end, wrote, and was not marked', () => {
+    expect(isAppliedHandPass(doc({}))).toBe(true);
+    expect(isAppliedHandPass(doc({ notes: [DRY_RUN_NOTE] }))).toBe(false);
+    expect(isAppliedHandPass(doc({ status: 'failed' }))).toBe(false);
+    expect(isAppliedHandPass(doc({ status: 'running' }))).toBe(false);
+    expect(isAppliedHandPass(doc({ markedFailed: {} as Doc<'importRuns'>['markedFailed'] }))).toBe(
+      false,
+    );
+    // A script pass that wrote is *succeeded*, never *applied*; a campaign row neither.
+    expect(isAppliedHandPass(doc({ kind: 'canonical_water' }))).toBe(false);
+    expect(isAppliedHandPass(doc({ kind: 'corpus_campaign', campaignId: 'c1' }))).toBe(false);
+  });
+
+  test('the list row says applied; the run page says dry run; the campaign page its deployment', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    const wrote = await seedRun(t, {
+      kind: 'floor_prune',
+      label: 'prune',
+      status: 'succeeded',
+      finishedAt: NOW - MINUTE,
+    });
+    const dry = await seedRun(t, {
+      kind: 'floor_prune',
+      label: 'prune',
+      status: 'succeeded',
+      startedAt: NOW - 40 * MINUTE,
+      finishedAt: NOW - 2 * MINUTE,
+      notes: [DRY_RUN_NOTE],
+    });
+    const list = await as.query(api.machineryRuns.listPage, {
+      lane: 'corpus',
+      paginationOpts: { numItems: 25, cursor: null },
+      now: NOW,
+    });
+    expect(list.page.map((r) => [r.id, r.applied, r.dryRun])).toEqual([
+      [wrote, true, false],
+      [dry, false, true],
+    ]);
+    expect((await as.query(api.machineryRuns.run, { runId: dry, now: NOW }))?.dryRun).toBe(true);
+    expect((await as.query(api.machineryRuns.run, { runId: wrote, now: NOW }))?.dryRun).toBe(false);
+
+    const { campaign } = await seedCampaign(t, 'c2');
+    await t.run((ctx) =>
+      ctx.db.patch(campaign, { deployment: 'dev:agile-bee-397', isProd: false }),
+    );
+    const page = await as.query(api.machineryRuns.campaign, { campaignId: 'c2', now: NOW });
+    expect(page).toMatchObject({ deployment: 'dev:agile-bee-397', isProd: false });
   });
 });

@@ -86,6 +86,7 @@ export function CampaignView({
   const kicker = [
     W.campaign,
     view.row.scope === null ? W.scopeNotRecorded : W.scope(view.row.scope.pass),
+    ...(view.deployment === undefined ? [] : [view.isProd ? W.production : view.deployment]),
     ...(view.row.dryRun ? [W.dryRun] : []),
   ].join(' · ');
 

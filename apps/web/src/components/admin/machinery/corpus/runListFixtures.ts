@@ -131,9 +131,23 @@ export const BOARD_ROWS: RunRowView[] = [
       dryRun: true,
     },
   ),
-  pass(5, 'seed-standing', NOW - 25 * DAY, { name: 'bodiesShelved', value: 23_520 }),
-  pass(6, 'retire-absorbed', NOW - 63 * DAY, { name: 'rowsFolded', value: 96 }),
-  pass(7, 'prune-floor', NOW - 63 * DAY - 2 * 3_600_000, { name: 'rowsDemoted', value: 412 }),
+  pass(
+    5,
+    'seed-standing',
+    NOW - 25 * DAY,
+    { name: 'bodiesShelved', value: 23_520 },
+    { applied: true },
+  ),
+  pass(6, 'retire-absorbed', NOW - 63 * DAY, { name: 'rowsFolded', value: 96 }, { applied: true }),
+  pass(
+    7,
+    'prune-floor',
+    NOW - 63 * DAY - 2 * 3_600_000,
+    { name: 'rowsDemoted', value: 412 },
+    {
+      applied: true,
+    },
+  ),
   REBUILT_FAILED,
   REBUILT_FLAGGED,
   pass(

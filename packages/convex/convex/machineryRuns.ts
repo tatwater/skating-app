@@ -61,6 +61,11 @@ export type RunRowView = {
   status: RunState;
   liveness: LivenessView;
   dryRun: boolean;
+  /**
+   * A by-hand pass that ran, wrote and was not marked: the list's *applied* (a script pass's is
+   * *succeeded*). Always sent; optional so an older fixture still reads.
+   */
+  applied?: boolean;
   marked: boolean;
   scope: ScopeView;
   startedAt: number;
@@ -145,10 +150,15 @@ export type CampaignView = {
   waiting: WaitingView | null;
   /** The newest line's `loggedAt − at`, when over a minute. */
   clockSkewMs: number | null;
+  /** The deployment the campaign's row was written to, as its writer named it. */
+  deployment?: string;
+  isProd?: boolean;
 };
 
 export type RunView = {
   doc: Doc<'importRuns'>;
+  /** The run wrote nothing (its notes end with `importRuns`' `DRY_RUN_NOTE`). */
+  dryRun?: boolean;
   liveness: LivenessView;
   parent: { id: Id<'importRuns'>; title: string } | null;
   marked: MarkedView | null;
@@ -331,6 +341,15 @@ function newestLive(passes: readonly Run[], now: number): Run | null {
   return found;
 }
 
+/** A by-hand pass that ran to its end, wrote, and was not marked failed. */
+export function isAppliedHandPass(run: Run): boolean {
+  if (isCampaignRow(run) || run.status !== 'succeeded' || run.markedFailed !== undefined) {
+    return false;
+  }
+  if (isDryRun(run)) return false;
+  return HAND_PASSES.has(passOfRun(run) ?? run.campaignPass ?? '');
+}
+
 /** A run list row. `passes` are a campaign row's (ignored for a pass). */
 export function rowView(run: Run, passes: readonly Run[], now: number): RunRowView {
   const campaignRow = isCampaignRow(run);
@@ -340,6 +359,7 @@ export function rowView(run: Run, passes: readonly Run[], now: number): RunRowVi
     campaignId: run.campaignId ?? null,
     status: run.status,
     dryRun: isDryRun(run),
+    applied: isAppliedHandPass(run),
     marked: run.markedFailed !== undefined,
     scope: scopeOf(run),
     startedAt: run.startedAt,
@@ -667,6 +687,8 @@ export const campaign = query({
       marked: await markedOf(ctx, row),
       waiting: await waitingOf(ctx, heldBy, now),
       clockSkewMs: running === null ? null : await clockSkewOf(ctx, running._id),
+      deployment: row.deployment,
+      isProd: row.isProd,
     };
   },
 });
@@ -685,6 +707,7 @@ export const run = query({
     const parentDoc = doc.parentRunId === undefined ? null : await ctx.db.get(doc.parentRunId);
     return {
       doc,
+      dryRun: isDryRun(doc),
       liveness,
       parent: parentDoc === null ? null : { id: parentDoc._id, title: titleOf(parentDoc) },
       marked: await markedOf(ctx, doc),

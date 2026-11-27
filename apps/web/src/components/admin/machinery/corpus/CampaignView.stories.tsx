@@ -73,7 +73,9 @@ export const Late: Story = {
 export const Stalled: Story = {
   play: async ({ canvasElement }) => {
     await expect(slot(canvasElement, 'run-title')).toHaveTextContent('a07a-20261012');
-    await expect(slot(canvasElement, 'run-kicker')).toHaveTextContent('Campaign · full canonical');
+    await expect(slot(canvasElement, 'run-kicker')).toHaveTextContent(
+      'Campaign · full canonical · dev',
+    );
     await expect(slot(canvasElement, 'run-state')).toHaveTextContent('Stalled · 40 min quiet');
     await expect(slot(canvasElement, 'stat-passes')).toHaveTextContent(
       '2 done · load stalled · 7 waiting',

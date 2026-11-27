@@ -170,6 +170,7 @@ export const DryRun: Story = {
       ...loadView(NOW_STALLED, {
         doc: { ...finishedPassDoc(), notes: ['dry run — nothing written'] },
       }),
+      dryRun: true,
       parent: null,
     },
     tail: fixtureTail([], false),

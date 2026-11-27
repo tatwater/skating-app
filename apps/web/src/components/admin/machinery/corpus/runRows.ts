@@ -1,5 +1,3 @@
-import { CORPUS_HAND_PASSES } from '@skating/core';
-
 import { shortAge } from '@/lib/ages';
 
 import { dayMonth } from '../../shell/consoleTime';
@@ -22,7 +20,8 @@ import {
  *
  * - **The state chip** reads the server's liveness first (a running row: *stalled* red, *late* and
  *   *waiting* amber, *running* lit, *no heartbeat* amber for a running row from before heartbeats),
- *   then the outcome (*failed* red; *dry run*, *applied* for a by-hand pass that wrote, else
+ *   then the outcome (*failed* red; *dry run*, *applied* for a by-hand pass that wrote (the
+ *   server's `applied`), else
  *   *succeeded*, all quiet).
  * - **A rebuilt campaign** (`isRebuilt`) never reads live: its record was put together from its
  *   runs after the fact, so a `running` on it is a fact nobody recorded, and the chip says so.
@@ -46,8 +45,6 @@ export interface RunRowModel {
   live: 'stalled' | 'late' | 'waiting' | 'running' | 'notRecorded' | null;
   rebuilt: boolean;
 }
-
-const HAND = new Set<string>(CORPUS_HAND_PASSES);
 
 /** The row's live state, or `null` for a finished one (and every rebuilt campaign). */
 export function liveOf(row: RunRowView): RunRowModel['live'] {
@@ -76,7 +73,7 @@ export function stateChip(row: RunRowView): RunChip {
   if (row.status === 'failed' || row.marked) return { label: STATE_WORDS.failed, tone: 'bad' };
   if (row.status === 'running') return { label: STATE_WORDS.unknown, tone: 'dim' };
   if (row.dryRun) return { label: STATE_WORDS.dryRun, tone: 'ok' };
-  if (row.kind === 'pass' && HAND.has(row.title)) return { label: STATE_WORDS.applied, tone: 'ok' };
+  if (row.applied === true) return { label: STATE_WORDS.applied, tone: 'ok' };
   return { label: STATE_WORDS.succeeded, tone: 'ok' };
 }
 

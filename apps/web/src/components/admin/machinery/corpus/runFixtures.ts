@@ -254,6 +254,8 @@ export function boardCampaign(
     marked,
     waiting,
     clockSkewMs: null,
+    deployment: 'dev',
+    isProd: false,
   };
 }
 

@@ -26,12 +26,6 @@ import {
 } from './runSections';
 import type { RunView as RunData } from './runViews';
 
-/**
- * The run logger's dry-run label (`@skating/run-log`'s `DRY_RUN_NOTE`, which the web can't import):
- * matched whole, so a note that only mentions a dry run never marks an applied run as one.
- */
-export const DRY_RUN_NOTE = 'dry run — nothing written';
-
 export type RunViewProps = {
   view: RunData;
   /** The page's ticking clock. */
@@ -77,7 +71,7 @@ export function RunView({
   const narrow = useInspectorContext().narrow === true;
   const marked = view.marked !== null;
   const title = doc.campaignPass ?? doc.label;
-  const dryRun = doc.notes?.includes(DRY_RUN_NOTE) === true;
+  const dryRun = view.dryRun === true;
   const kicker = [
     view.parent === null ? W.singlePass : W.campaignPass,
     scopeWords(doc),
