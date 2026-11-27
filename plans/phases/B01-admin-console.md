@@ -17465,6 +17465,14 @@ commit with its test, mutation-checked.
   - a loader's failed late close beside a mark is red;
   - a log line trimmed to the server's length never splits an emoji;
   - a moderator's audit feed never opens Machinery, which the rail never draws for them.
+- **The PR's first review (Greptile, three notes):**
+  - a campaign row in the list opens by its own run id. Opening it by its campaign id showed the
+    id's newest campaign, so an older row read another campaign's passes. `?campaign=` stays the
+    script's printed link;
+  - the *Waiting* note follows the rule's reading. The wait's record outlives a flush or a close
+    that ends it early;
+  - *Mark failed*'s receipt says when it asked for the weather-cell sync (`markRunFailed` answers
+    `cellSync`), where it always said nothing was scheduled.
 
 ##### The scripted campaign, end to end
 
