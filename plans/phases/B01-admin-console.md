@@ -17383,6 +17383,141 @@ first; then the calls left to the governor.
 - **The stall rule's gaps ship provisional** and are tuned from the campaign's events (Ma1).
 - **Sh5 stays open with its arithmetic** rather than splitting the heartbeat from the row now.
 
+#### What B01-8a's build found
+
+Built on `phase-b01-machinery` (2026-11-27) off `origin/main` at `ac51f02e7`: the seams (X), S1, S2,
+L, W1 and W2 integrated in the brief's order, then the pre-PR review (`/code-review xhigh --fix` over
+`origin/main...phase-b01-machinery`, and a pass for the recurring defect classes), each fix its own
+commit with its test, mutation-checked.
+
+##### Where the build departed from the design, and why
+
+- **The seams were hand-written, then verified.** X wrote `convex/_generated/api.d.ts`' three new
+  modules by hand, in the CLI's order, so every builder could start on the stubs at once. CI's
+  codegen step, run as CI runs it (`CONVEX_AGENT_MODE=anonymous`, `convex init`, `convex dev --once`
+  on a throwaway local backend), regenerates it with no diff at the review's head.
+- **The server sends the rule's inputs, so the list and the pages share one rule.** Every running
+  row's verdict carries `livenessInputs` (the row's own and, for a campaign, its passes'); the web's
+  `machinery/liveness.ts` re-reads them by core's `runLiveness` / `campaignLiveness` each second. The
+  run list, the campaign page and the run page read every row through it. The review added the
+  sidebar's tail: it carries its inputs too and re-reads on the same clock, so it never says
+  *running* beside a list row already *late*. The Overview's card stays on the server's
+  minute-rounded verdict; it is never drawn beside the list.
+- **The backfill's page size is 50, not 100.** On a throwaway local backend, the first page over a
+  history of 100 campaigns at the 60-row bound, with one pass of each on the page, was refused: "Too
+  many reads in a single function execution (limit: 4096)", 100 × (1 read + 60 linking patches). At
+  50 it is 50 × 61 = 3,050 ranges, under 4,096 with the start cost. A `convex-test` over that worst
+  page passes at 50 and throws at 100. On the backend the worst page wrote 50 campaign rows and
+  linked 3,000 passes in one transaction, and the chained walk finished a 6,162-row table with no
+  corpus row left unlisted and unparented.
+- **The kept `stop` line.** The logger's own words about stopping arrive as a `warn`, which the
+  2,000-line cap drops, so a run stopped late in a long log lost the moment it stopped. `append`'s
+  stop directive now writes one `stop` line (always kept) on the run it told, when it first stamps
+  `seenAt`.
+- **The founder's rulings on the forks (2026-11-27)**, as built:
+  - **Stop stays hidden** (fork 1, (a)). `requestRunStop` and `withdrawRunStop` are built and
+    tested, and nothing draws them.
+  - ***Mark failed* schedules the weather-cell reconcile** (fork 2, (b)), when the run is of an
+    invalidating kind, isn't a dry run, and applied at least one batch (`markChangedBodies`). The
+    marked run's note says so.
+  - **Older campaigns are backfilled** (fork 3, (b), the founder's departure from the design's (a)).
+    `importRunJobs:backfillListed` writes one reconstructed campaign row per campaign from before
+    8a, marked as reconstructed. It reads as finished history, *Rebuilt from its runs*, with no
+    flags and no plan.
+
+##### What the review fixed
+
+- **A recorded campaign is judged by the passes under it.** The page also took any row sharing the
+  campaign's id without a parent as one of its passes, while the list read only the rows under it.
+  So a by-hand re-run of a script pass, or a row an earlier campaign left running, could make the
+  page read *no heartbeat* while the list read *running*.
+- **A campaign id run again.** The id is the operator's own word. The page read the id's oldest 50
+  rows, so `?campaign=<id>` could open an older campaign. It could also show an earlier campaign's
+  retire as this one's, and read *retire-absorbed* as done when it was still required. It now opens
+  the newest campaign, and reads only the rows from that campaign's start up to the next campaign
+  under the same id.
+- **The backfill tells a script pass by its pass, not its kind.** A `retire-absorbed` row from
+  before it had its own kind is `canonical_water`, and was being folded under the reconstructed
+  campaign.
+- **`indexed` can't clear early.** It probed only the 25 newest unlisted rows, which other
+  pipelines' runs can fill. It also reads each corpus kind's oldest row now.
+- **The web's smaller fixes:**
+  - the marked run's note matched fork 2;
+  - a campaign quiet between passes names when it was last heard from;
+  - a log that was empty when it opened still pages older lines on scroll-up;
+  - a loader's failed late close beside a mark is red;
+  - a log line trimmed to the server's length never splits an emoji;
+  - a moderator's audit feed never opens Machinery, which the rail never draws for them.
+
+##### The scripted campaign, end to end
+
+Run on a throwaway local backend made as CI's codegen step makes one, never against dev. A stand-in
+`pnpm` on `PATH` replaced each pass with a stub driving the real `RunLogger`, and passed the campaign
+CLI and every `convex run` through. A temporary proof module, since removed, supplied an admin
+profile and pushed a heartbeat into the past. That stood in for a pass going quiet, without editing
+`RUN_QUIET_MS`. What each step showed:
+
+1. **Open.** The campaign row opened, listed, with its plan. *load-sub-areas* was skipped (no
+   actor), each pass's row sat under it, and the script printed the Machinery URL first.
+2. **The load quiet 7 minutes.** The campaign page, the sidebar's tail and the Overview's card all
+   read *late*. *Wait 30 minutes* was refused ("This run isn't stalled").
+3. **Quiet 32 minutes.** All three read *stalled*. *Wait* was then accepted, and the campaign read
+   *waiting* (the card reads *late*, as designed).
+4. ***Mark failed*** on the load. The pass read *failed*, and the campaign went back to its own
+   heartbeat between passes.
+5. **The loader's late close.** Released, the stub closed itself as succeeded. The row kept the mark,
+   with `loaderFinish` beside it, and the log shows the server's *The loader closed the run itself:
+   succeeded* after the mark line. The logger carried on, and the script ran the next pass.
+6. **Undo of the mark.** The load read *succeeded*, closed at the loader's own close, and the
+   campaign counted three passes done.
+7. **A stop requested on the campaign** while *landmarks* beat. It was honored at the pass's next
+   flush, about 25 seconds later on this backend. The pass closed *Stopped on request*, and the
+   script exited 130. The campaign closed failed, *Stopped at landmarks (exit 130)*, with `seenAt`
+   stamped.
+8. **A failing pass.** A second campaign's merge failed. The script exited 3, and the campaign row
+   closed failed, *Stopped at merge (exit 3)*.
+
+The page itself was read through its stories on these states, not live: a live page needs a Clerk
+session the throwaway backend can't issue.
+
+##### Provisional, and not measured
+
+- **The stall gaps are provisional** (Ma1). `RUN_QUIET_MS` is 2–3 minutes a kind, from the design's
+  reading of the code. The first campaign's events measure the real gaps.
+- **The silent stretches inside one step are not measured** (Ma13). The beats cover each pass's
+  loops, but one long call between two beats can still read late. Examples: a single large file
+  read, one Convex call, or the merge's file writes.
+
+##### Board differences kept
+
+As *Where the boards and this design differ*, above, none reversed. The heartbeat's sub-line says
+the expected gap, not a measured rate. The tail draws the logger's lines, not the loaders' stderr.
+The quiet line is the page's own, never stored. The right column ends after *Outcome so far* and
+*Path* until 8d. The sidebar lists Corpus alone. Every refusal is a toast.
+
+##### Owed to 8d
+
+*Your machine* and *Copy*, *Afterwards on Convex*, the diagnosis prompt, *Sync weather cells* by
+hand, and retiring `/admin/imports` with everything *Legacy retirement* lists.
+
+##### After merge: dev, then the founder's laptop, in order
+
+1. Deploy dev from main at the squash (`convex dev --once`, codegen first). It is widen-only.
+2. Run `convex run importRunJobs:backfillListed '{"dryRun":true}'` and read the tally, then run it
+   without `dryRun`. The history lists; the note *Older runs appear once they're indexed* goes away.
+3. On the laptop: `git pull` on main, `pnpm install`, Node 26 (`nvm use`).
+4. **The D311 snapshot export of dev**, a must before the campaign. Copy
+   `scripts/etl/.scratch/merge/` aside too.
+5. `./run-corpus.sh <id> …`, then open the URL it prints first.
+
+##### Buttons awaiting the founder's first press on dev
+
+Only he presses real triggers:
+
+- *Mark failed*, and its *Undo* (the receipt's and History's);
+- *Wait 30 minutes*, and its *Undo*;
+- *Stop* isn't drawn, so there is nothing to press.
+
 #### Machinery follow-ups (the register)
 
 Ruling 20's list, with what this design's reading added. Each row says where it would land.
@@ -17401,6 +17536,11 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma10 | The logger's per-call subprocess (`pnpm exec convex run`, one to three seconds) bounds how often any pass can beat; a hosted runner would hold a client | this design | the hosted runner (the roadmap's deferred register) | open |
 | Ma11 | Health's count of crons and their next due: 52 crons, 46 of them intervals whose phase is set at deploy, so no next-run time can be read (ruling 17) | ruling 21 | Health (8e) | open |
 | Ma12 | A laptop campaign that sleeps reads *stalled* though nothing failed; a *paused* state would need the laptop to say so before it sleeps, which it can't | this design | — (the stall is the honest reading) | wontfix |
+| Ma13 | The silent stretches inside one step (a single long read, one Convex call, the merge's file writes) aren't measured; a long one between two beats can read late | 8a's build | with Ma1, from the campaign's events | open |
+| Ma14 | *Mark failed* on a campaign's running pass marks that pass only: the campaign row stays running on its own heartbeat, and a dead laptop's campaign then asks for a second *Mark failed* on the campaign itself | 8a's review (the scripted proof) | a founder call: mark the campaign with its pass, or keep two presses | open |
+| Ma15 | A transient failure of one `append` drops that batch of log lines (the terminal and the log file keep them); a lost `close` line is the one that matters | 8a's review (the scripted proof) | a later logger change: requeue a failed batch once | open |
+| Ma16 | The pages re-read liveness on the browser's clock; a browser clock minutes off shows *late* or *Wait* early, and the server refuses the press (a toast) | 8a's review | a later change: a server-clock offset on the web | open |
+| Ma17 | A stop honored between passes closes the campaign as *Stopped at <the pass that last ran>* (designed, tested): it reads as if that pass was cut, though it finished | 8a's review | the copy pass, if *Stop* is ever drawn | open |
 
 ## Ruled out
 
