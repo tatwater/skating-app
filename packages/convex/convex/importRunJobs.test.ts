@@ -204,6 +204,32 @@ describe('backfillListed', () => {
     expect((await get(t, only)).parentRunId).toBe(campaign?._id);
   });
 
+  test('a retire-absorbed row from before its own kind stays a by-hand row, out of the campaign', async () => {
+    const t = convexTest(schema, modules);
+    const merge = await oldRun(t, {
+      kind: 'corpus_merge',
+      campaignId: 'c',
+      startedAt: T0,
+      finishedAt: T0 + HOUR,
+    });
+    // `canonical_water`, as `retire-absorbed` was logged before B01-7a, and later than the merge.
+    const retire = await oldRun(t, {
+      kind: 'canonical_water',
+      label: 'retire absorbed duplicates',
+      campaignId: 'c',
+      startedAt: T0 + 5 * HOUR,
+      status: 'failed',
+      finishedAt: T0 + 6 * HOUR,
+    });
+    await walk(t);
+    const [campaign] = await campaignsOf(t, 'c');
+    // Its aggregate is the merge's alone: the retire's failure and its finish are not the campaign's.
+    expect(campaign).toMatchObject({ status: 'succeeded', finishedAt: T0 + HOUR });
+    expect((await get(t, merge)).parentRunId).toBe(campaign?._id);
+    expect(await get(t, retire)).toMatchObject({ listedIn: 'corpus', campaignId: 'c' });
+    expect((await get(t, retire)).parentRunId).toBeUndefined();
+  });
+
   test('a campaign still running has no finish, and reads running', async () => {
     const t = convexTest(schema, modules);
     await oldRun(t, { kind: 'corpus_merge', campaignId: 'c', startedAt: T0 });

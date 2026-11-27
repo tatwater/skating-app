@@ -30,7 +30,7 @@
  * pass logs its tally and schedules the next until the table is walked.
  */
 
-import { CORPUS_RUN_PLAN } from '@skating/core';
+import { CORPUS_RUN_PLAN, passOfRun } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -52,10 +52,20 @@ export const BACKFILL_PAGE = 50;
  */
 export const BACKFILL_CAMPAIGN_READ = 60;
 
-/** The kinds `run-corpus.sh` itself runs: the passes a campaign row is the parent of. */
-const SCRIPT_PASS_KINDS: ReadonlySet<string> = new Set(
-  CORPUS_RUN_PLAN.filter((p) => p.by === 'script').map((p) => p.kind),
+/** The passes `run-corpus.sh` itself runs: the ones a campaign row is the parent of. */
+const SCRIPT_PASSES: ReadonlySet<string> = new Set(
+  CORPUS_RUN_PLAN.filter((p) => p.by === 'script').map((p) => p.pass),
 );
+
+/**
+ * Whether a row is one of the script's passes, named by its pass rather than its kind alone: a
+ * `retire-absorbed` row from before it had its own kind is `canonical_water` too, and is a by-hand
+ * pass that keeps its own row in the list (`passOfRun` tells it by its label).
+ */
+const isScriptPassRow = (row: Doc<'importRuns'>): boolean => {
+  const pass = passOfRun(row);
+  return pass !== null && SCRIPT_PASSES.has(pass);
+};
 
 export type BackfillTally = {
   scanned: number;
@@ -140,7 +150,7 @@ async function backfillCampaign(
   // Its script passes: those with no parent, or already this reconstructed row's (a re-run).
   const passes = rows.filter(
     (r) =>
-      SCRIPT_PASS_KINDS.has(r.kind) &&
+      isScriptPassRow(r) &&
       (r.parentRunId === undefined || (existing !== null && r.parentRunId === existing._id)),
   );
   if (passes.length === 0) return 'rebuilt';
@@ -204,9 +214,7 @@ export const backfillListed = internalMutation({
     for (const row of result.page) {
       tally.scanned++;
       const pass =
-        row.campaignId !== undefined &&
-        row.parentRunId === undefined &&
-        SCRIPT_PASS_KINDS.has(row.kind);
+        row.campaignId !== undefined && row.parentRunId === undefined && isScriptPassRow(row);
       if (pass) {
         if (!campaignIds.includes(row.campaignId as string)) {
           campaignIds.push(row.campaignId as string);
@@ -226,7 +234,7 @@ export const backfillListed = internalMutation({
       // A campaign left as it is (its own row, or too large): its passes list as any row does.
       for (const row of result.page) {
         if (row.campaignId !== campaignId || row.parentRunId !== undefined) continue;
-        if (!SCRIPT_PASS_KINDS.has(row.kind)) continue;
+        if (!isScriptPassRow(row)) continue;
         const listedIn = listedInOf(row.kind, undefined);
         if (row.listedIn !== listedIn) {
           tally.listed++;
