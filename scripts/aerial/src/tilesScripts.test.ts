@@ -648,11 +648,13 @@ describe('assemble-aerial.sh', () => {
     mkdirSync(b);
     bin(b, 'rclone', 'exit 0\n');
     bin(b, 'gdal_translate', 'exit 0\n');
-    // Stands in for the bundled assembler: says what it was handed.
+    // Stands in for the bundled assembler: says what it was handed. GNU `stat -c` first: on Linux
+    // `stat -f` is the filesystem's status, which it prints to stdout before failing on `%Lp`
+    // (CI's red on #188); BSD's `stat -c` fails with nothing on stdout.
     bin(
       b,
       'node',
-      'echo "node $*"; echo "config=$RCLONE_CONFIG"; stat -f %Lp "$RCLONE_CONFIG" 2>/dev/null || stat -c %a "$RCLONE_CONFIG"; head -1 "$RCLONE_CONFIG"\n',
+      'echo "node $*"; echo "config=$RCLONE_CONFIG"; stat -c %a "$RCLONE_CONFIG" 2>/dev/null || stat -f %Lp "$RCLONE_CONFIG"; head -1 "$RCLONE_CONFIG"\n',
     );
     const res = spawnSync(
       'bash',
