@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { CleanupRefusal, envValue, LIVE_GRACE_DAYS, planCleanup } from './cleanup';
+import {
+  CleanupRefusal,
+  envValue,
+  LIVE_GRACE_DAYS,
+  planCleanup,
+  WEB_ENV_FILES,
+  webArchiveUrls,
+} from './cleanup';
 
 const DAY = 86_400_000;
 const NOW = new Date('2027-08-20T00:00:00Z');
@@ -19,7 +26,7 @@ const plan = (patch: Partial<Parameters<typeof planCleanup>[0]> = {}) =>
     pilot: null,
     old: 'dev/naip/naip-summer-20261212.pmtiles',
     listing,
-    liveArchiveUrl: 'https://tiles.example/dev/naip/naip-summer-20270801.pmtiles',
+    liveArchiveUrls: ['https://tiles.example/dev/naip/naip-summer-20270801.pmtiles'],
     now: NOW,
     ...patch,
   });
@@ -63,13 +70,51 @@ describe('cleanup', () => {
 
   it('refuses the archive the web points at', () => {
     expect(() =>
-      plan({ liveArchiveUrl: 'https://tiles.example/dev/naip/naip-summer-20261212.pmtiles?v=1' }),
+      plan({
+        liveArchiveUrls: ['https://tiles.example/dev/naip/naip-summer-20261212.pmtiles?v=1'],
+      }),
     ).toThrow('is the archive the web points at');
-    expect(plan({ liveArchiveUrl: null }).deleteKeys).toHaveLength(3);
+    expect(plan({ liveArchiveUrls: [] }).deleteKeys).toHaveLength(3);
+  });
+
+  it('refuses it named in any of the web’s env files, and by its file name whatever the path', () => {
+    expect(() =>
+      plan({
+        liveArchiveUrls: [
+          'https://tiles.example/dev/naip/naip-summer-20270801.pmtiles',
+          'https://tiles.example/dev/naip/naip-summer-20261212.pmtiles',
+        ],
+      }),
+    ).toThrow('is the archive the web points at');
+    // A custom domain mapped onto the publish prefix serves the same object at a shorter path.
+    expect(() =>
+      plan({ liveArchiveUrls: ['https://aerial.example/naip-summer-20261212.pmtiles#x'] }),
+    ).toThrow('is the archive the web points at');
   });
 
   it('refuses when what the web points at can’t be read, rather than skip the check', () => {
-    expect(() => plan({ liveArchiveUrl: undefined })).toThrow(/can't be read/);
+    expect(() => plan({ liveArchiveUrls: undefined })).toThrow(
+      /can be read, so what the web points at .* can't be told/,
+    );
+  });
+
+  it('reads the web’s env the way Vite does: .env.local as well as .env', () => {
+    const NAME = 'VITE_NAIP_PMTILES_URL';
+    const files: Record<string, string> = {
+      '.env': 'OTHER=1\n',
+      '.env.local': `${NAME}=https://tiles.example/dev/naip/naip-summer-20261212.pmtiles\n`,
+    };
+    const read = (name: string) => files[name] ?? null;
+    expect(WEB_ENV_FILES).toContain('.env.local');
+    // The operator's checkout keeps it in .env.local; .env alone said "nothing is live".
+    expect(webArchiveUrls(read)).toEqual([
+      'https://tiles.example/dev/naip/naip-summer-20261212.pmtiles',
+    ]);
+    expect(() => plan({ liveArchiveUrls: webArchiveUrls(read) })).toThrow(
+      'is the archive the web points at',
+    );
+    expect(webArchiveUrls((name) => (name === '.env' ? 'OTHER=1\n' : null))).toEqual([]);
+    expect(webArchiveUrls(() => null)).toBeUndefined();
   });
 
   it('refuses a swapped pair, its own archive, a key not there, a missing replacement, a pilot mismatch', () => {
@@ -101,7 +146,7 @@ describe('cleanup', () => {
         pilot: 'champlain',
         old: 'dev/naip/pilot/champlain/naip-summer-20261201.pmtiles',
         listing: pilotListing,
-        liveArchiveUrl: null,
+        liveArchiveUrls: [],
         now: NOW,
       }).deletePrefix,
     ).toBe('naip/build/pilot/champlain/naip-pilot-20261201/');

@@ -7,9 +7,10 @@
  *
  * - **never the newest archive** under its prefix (a production key among the production keys, a
  *   pilot's among its pilot's): the newest is the one being served or about to be;
- * - **never the archive the web points at** (`VITE_NAIP_PMTILES_URL` in the local web checkout, read
- *   by name and compared, never printed): the local env is the operator's record of what is live —
- *   and when it can't be read, nothing is deleted, since what is live can't be told;
+ * - **never the archive the web points at** (`VITE_NAIP_PMTILES_URL` in any of the local web
+ *   checkout's env files Vite reads — `.env.local` as well as `.env` — by name and compared by the
+ *   archive's file name, never printed): the local env is the operator's record of what is live —
+ *   and when none of those files can be read, nothing is deleted, since what is live can't be told;
  * - **never anything live under a week**: the archive that replaced `--old` must have been written at
  *   least seven days ago — the earliest it can have gone live on Vercel — so a cached client or a
  *   lagging deploy still finds its tiles (§2.5: *no sooner than a week after the new one is live*);
@@ -69,16 +70,17 @@ function campaignOf(key: string): { campaign: string; pilot?: string } {
 }
 
 /**
- * The plan, or a refusal. `listing` is every object under `old`'s publish prefix; `liveArchiveUrl`
- * is what the web's env points at — `null` when it isn't set there (nothing is live yet), `undefined`
- * when the env couldn't be read at all, which is refused (the check is never skipped).
+ * The plan, or a refusal. `listing` is every object under `old`'s publish prefix; `liveArchiveUrls`
+ * is every value the web's env files give `VITE_NAIP_PMTILES_URL` (`webArchiveUrls`) — empty when
+ * none sets it (nothing is live yet), `undefined` when no env file could be read at all, which is
+ * refused (the check is never skipped).
  */
 export function planCleanup(args: {
   campaign: string;
   pilot: string | null;
   old: string;
   listing: readonly ListedObject[];
-  liveArchiveUrl: string | null | undefined;
+  liveArchiveUrls: readonly string[] | undefined;
   now: Date;
 }): CleanupPlan {
   const { campaign, old, listing, now } = args;
@@ -120,12 +122,19 @@ export function planCleanup(args: {
       `${replacement} was written ${(age / DAY_MS).toFixed(1)} days ago: ${old} stays until it has been live a week`,
     );
   }
-  if (args.liveArchiveUrl === undefined) {
+  if (args.liveArchiveUrls === undefined) {
     refuse(
-      "apps/web/.env can't be read, so what the web points at (VITE_NAIP_PMTILES_URL) can't be told: run cleanup from a checkout that has it",
+      `no apps/web env file (${WEB_ENV_FILES.join(', ')}) can be read, so what the web points at (VITE_NAIP_PMTILES_URL) can't be told: run cleanup from a checkout that has one`,
     );
   }
-  if (args.liveArchiveUrl?.replace(/[?#].*$/, '').endsWith(`/${old}`)) {
+  // By the archive's file name, not its whole key: a public URL may serve the publish prefix at
+  // another path (a custom domain), and a false match only refuses.
+  const oldName = old.slice(old.lastIndexOf('/') + 1);
+  const named = (url: string) => {
+    const path = url.replace(/[?#].*$/, '');
+    return path === oldName || path.endsWith(`/${oldName}`);
+  };
+  if ((args.liveArchiveUrls as readonly string[]).some(named)) {
     refuse(
       `${old} is the archive the web points at (VITE_NAIP_PMTILES_URL): repoint and redeploy first`,
     );
@@ -163,4 +172,35 @@ export function envValue(text: string, name: string): string | null {
     value = v === '' ? null : v;
   }
   return value;
+}
+
+/**
+ * The web checkout's env files Vite reads, `.env` first (`vite dev`'s and `vite build`'s modes
+ * included): the operator's checkout keeps its URLs in `.env.local`, and a value in any of them may
+ * be what the web serves.
+ */
+export const WEB_ENV_FILES = [
+  '.env',
+  '.env.local',
+  '.env.development',
+  '.env.development.local',
+  '.env.production',
+  '.env.production.local',
+] as const;
+
+/**
+ * Every value `VITE_NAIP_PMTILES_URL` has in the web's env files (`read` gives a file's text, or
+ * `null` when it can't be read); `undefined` when none of them can be — what is live can't be told.
+ */
+export function webArchiveUrls(read: (file: string) => string | null): string[] | undefined {
+  let readAny = false;
+  const urls: string[] = [];
+  for (const file of WEB_ENV_FILES) {
+    const text = read(file);
+    if (text === null) continue;
+    readAny = true;
+    const url = envValue(text, 'VITE_NAIP_PMTILES_URL');
+    if (url !== null) urls.push(url);
+  }
+  return readAny ? urls : undefined;
 }

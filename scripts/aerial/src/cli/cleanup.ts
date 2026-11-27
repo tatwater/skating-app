@@ -4,16 +4,16 @@
  * `r2`; `R2_BUCKET`). A shell over `cleanup.ts`: every refusal is decided before anything is deleted,
  * and `--dry-run` prints the plan and deletes nothing.
  *
- * What the web points at is read from `apps/web/.env`'s `VITE_NAIP_PMTILES_URL` by name and compared
- * in code; its value is never printed.
+ * What the web points at is read from `apps/web`'s env files (`.env`, `.env.local`, … —
+ * `WEB_ENV_FILES`), `VITE_NAIP_PMTILES_URL` by name and compared in code; its value is never printed.
  */
 
-import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { rcloneList, rcloneRun } from '../assemble/upload';
-import { CleanupRefusal, envValue, planCleanup } from '../cleanup';
+import { CleanupRefusal, planCleanup, webArchiveUrls } from '../cleanup';
 import { publishPrefix } from '../keys';
 import { parseStageArgs, StageArgsError } from '../stages';
 
@@ -28,22 +28,22 @@ async function main(): Promise<void> {
   const listing = (await rcloneList(target, prefix))
     .filter((o) => !o.IsDir)
     .map((o) => ({ key: `${prefix}${o.Path}`, modified: new Date(o.ModTime) }));
-  // `undefined` when the web's env can't be read: planCleanup refuses rather than skip the check.
-  let live: string | null | undefined;
-  try {
-    live = envValue(
-      await readFile(join(HERE, '..', '..', '..', '..', 'apps', 'web', '.env'), 'utf8'),
-      'VITE_NAIP_PMTILES_URL',
-    );
-  } catch {
-    live = undefined;
-  }
+  // `undefined` when none of the web's env files can be read: planCleanup refuses rather than skip
+  // the check.
+  const webDir = join(HERE, '..', '..', '..', '..', 'apps', 'web');
+  const live = webArchiveUrls((file) => {
+    try {
+      return readFileSync(join(webDir, file), 'utf8');
+    } catch {
+      return null;
+    }
+  });
   const plan = planCleanup({
     campaign: args.campaign,
     pilot: args.pilot,
     old: args.old as string,
     listing,
-    liveArchiveUrl: live,
+    liveArchiveUrls: live,
     now: new Date(),
   });
   process.stdout.write(

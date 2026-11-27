@@ -852,7 +852,8 @@ Once tiles ship, nothing draws from `imagery.nationalmap.gov`, and its code goes
 
 `VITE_NAIP_PMTILES_URL` — the archive's public URL. Named for the source, not the rack's label.
 The date index's URL is derived from it (`.pmtiles` → `-cells.json`). Set, as the bathymetry archive
-is: both local web checkouts (`apps/web/.env`), Vercel Preview and Production,
+is: both local web checkouts (`apps/web/.env.local`, where the checkouts keep their URLs; cleanup
+reads every env file Vite does), Vercel Preview and Production,
 `apps/web/.env.example` (blank), the web README's table, and `05-accounts-and-credentials.md` § 2c.
 Not EAS: mobile has no console and never draws it (D316). Convex dev gets `NAIP_MANIFEST_URL`
 (§3.3), registered in § 2a.
