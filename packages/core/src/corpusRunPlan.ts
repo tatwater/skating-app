@@ -7,9 +7,6 @@
  * Core holds it (not the Convex package) because the server's reads, `importRuns.start`'s
  * `listedIn` derivation and the web's passes table all name passes, and the three must agree.
  * `kind` is a plain string here: core can't import the Convex package's `IMPORT_RUN_KINDS`.
- *
- * PLACEHOLDER (B01-8a T0): the names, kinds and order are the seam, from the design's pass table;
- * the *What it does* words and `passOfRun` are S2's.
  */
 
 /** `run-corpus.sh`'s name for each pass it runs, in order, then the by-hand passes. */
@@ -43,16 +40,31 @@ export interface CorpusPlanPass {
  * kind alone can't name a pass (`passOfRun`).
  */
 export const CORPUS_RUN_PLAN: readonly CorpusPlanPass[] = [
-  { pass: 'build-region', kind: 'region_masks', by: 'script', does: '' },
-  { pass: 'merge', kind: 'corpus_merge', by: 'script', does: '' },
-  { pass: 'load', kind: 'canonical_water', by: 'script', does: '' },
-  { pass: 'load-sub-areas', kind: 'sub_area_seed', by: 'script', does: '' },
-  { pass: 'landmarks', kind: 'landmark_match', by: 'script', does: '' },
-  { pass: 'load-landmarks', kind: 'landmark_seed', by: 'script', does: '' },
-  { pass: 'load-landmark-names', kind: 'landmark_seed', by: 'script', does: '' },
-  { pass: 'prune-floor', kind: 'floor_prune', by: 'hand', does: '' },
-  { pass: 'seed-standing', kind: 'standing_seed', by: 'hand', does: '' },
-  { pass: 'retire-absorbed', kind: 'absorbed_retire', by: 'hand', does: '' },
+  { pass: 'build-region', kind: 'region_masks', by: 'script', does: 'Region masks' },
+  { pass: 'merge', kind: 'corpus_merge', by: 'script', does: 'Three catalogs, one filter' },
+  { pass: 'load', kind: 'canonical_water', by: 'script', does: 'Bodies → Convex' },
+  { pass: 'load-sub-areas', kind: 'sub_area_seed', by: 'script', does: 'Bays under their lakes' },
+  { pass: 'landmarks', kind: 'landmark_match', by: 'script', does: 'Match OSM + GNIS names' },
+  { pass: 'load-landmarks', kind: 'landmark_seed', by: 'script', does: 'Landmarks → Convex' },
+  {
+    pass: 'load-landmark-names',
+    kind: 'landmark_seed',
+    by: 'script',
+    does: 'Unplaced names → review',
+  },
+  { pass: 'prune-floor', kind: 'floor_prune', by: 'hand', does: 'Demote rows the floor refuses' },
+  {
+    pass: 'seed-standing',
+    kind: 'standing_seed',
+    by: 'hand',
+    does: 'Shelve new bodies nobody uses',
+  },
+  {
+    pass: 'retire-absorbed',
+    kind: 'absorbed_retire',
+    by: 'hand',
+    does: 'Fold the duplicates the merge absorbed',
+  },
 ];
 
 /**
@@ -83,11 +95,43 @@ export interface PassOfRunInput {
 }
 
 /**
- * A run's pass: `campaignPass` when stored, else by kind, telling `load-landmarks` from
- * `load-landmark-names` by label for rows before B01-8a. `null` for a kind that is no pass.
- *
- * PLACEHOLDER (B01-8a T0): S2 writes it.
+ * The label `scripts/etl/src/loadLandmarkNames.ts` writes; `load-landmarks` shares its kind
+ * (`landmark_seed`), so a row from before B01-8a (no `campaignPass`) is told apart by it.
  */
-export function passOfRun(_run: PassOfRunInput): CorpusPassName | null {
-  throw new Error('passOfRun is not built yet');
+export const LANDMARK_NAMES_LABEL_PREFIX = 'Corpus place names';
+
+/**
+ * A `retire-absorbed` row written before it had its own kind: `canonical_water`, labeled by
+ * `scripts/etl/src/retireAbsorbed.ts` (the Convex package's `isLegacyRetireRow` reads the same).
+ */
+export const LEGACY_RETIRE_LABEL_PREFIX = 'retire absorbed duplicates';
+
+const PASS_NAMES: ReadonlySet<string> = new Set(CORPUS_RUN_PLAN.map((p) => p.pass));
+
+/**
+ * A run's pass: `campaignPass` when stored (and a pass this plan knows), else by kind, telling
+ * `load-landmarks` from `load-landmark-names` by label, and a legacy `retire-absorbed` row (kind
+ * `canonical_water`) by its label, for rows before B01-8a. `null` for a kind that is no pass (the
+ * campaign row itself, `dedup_resolve`, `seed_destinations`, any other loader).
+ */
+export function passOfRun(run: PassOfRunInput): CorpusPassName | null {
+  if (run.campaignPass !== undefined && PASS_NAMES.has(run.campaignPass)) {
+    return run.campaignPass as CorpusPassName;
+  }
+  if (run.kind === 'landmark_seed') {
+    return run.label.startsWith(LANDMARK_NAMES_LABEL_PREFIX)
+      ? 'load-landmark-names'
+      : 'load-landmarks';
+  }
+  if (run.kind === 'canonical_water' && run.label.startsWith(LEGACY_RETIRE_LABEL_PREFIX)) {
+    return 'retire-absorbed';
+  }
+  return CORPUS_RUN_PLAN.find((p) => p.kind === run.kind)?.pass ?? null;
+}
+
+/** A pass's plan entry. */
+export function planPass(pass: CorpusPassName): CorpusPlanPass {
+  const found = CORPUS_RUN_PLAN.find((p) => p.pass === pass);
+  if (found === undefined) throw new Error(`no corpus pass named ${pass}`);
+  return found;
 }

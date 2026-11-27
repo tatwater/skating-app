@@ -9,8 +9,6 @@
  * *q* ≤ 2*E*, `late` while *q* ≤ 10*E*, else `stalled` — except that a stall inside a wait
  * (`now < stallWaitUntil`) reads `waiting`. A wait never changes `running` or `late`; it ends by
  * itself, and a beat clears the stall on its own. With no *E*, a running row is always `running`.
- *
- * PLACEHOLDER (B01-8a T0): the exports are the seam; the functions' bodies are S2's.
  */
 
 const MINUTE = 60_000;
@@ -64,20 +62,74 @@ export interface RunLivenessInput {
   stallWaitUntil?: number;
 }
 
-/** PLACEHOLDER (B01-8a T0): S2 writes the rule. */
-export function runLiveness(_run: RunLivenessInput, _now: number): RunLiveness {
-  throw new Error('runLiveness is not built yet');
+/** The rung of a live verdict, best first: a campaign takes its worst running pass's. */
+const RANK: Record<Exclude<RunLiveness['state'], 'finished'>, number> = {
+  running: 0,
+  notRecorded: 1,
+  late: 2,
+  waiting: 3,
+  stalled: 4,
+};
+
+/** A kind's expected gap, or `null` for a kind with no verdict (own keys only: never `toString`). */
+export function expectedQuietMs(kind: string): number | null {
+  return Object.hasOwn(RUN_QUIET_MS, kind) ? (RUN_QUIET_MS[kind] ?? null) : null;
+}
+
+export function runLiveness(run: RunLivenessInput, now: number): RunLiveness {
+  if (run.status !== 'running' || (run.markedFailed !== undefined && run.markedFailed !== null)) {
+    return { state: 'finished' };
+  }
+  if (run.progressAt === undefined || !Number.isFinite(run.progressAt)) {
+    return { state: 'notRecorded' };
+  }
+  const quietMs = Math.max(0, now - run.progressAt);
+  const expectedMs = expectedQuietMs(run.kind);
+  if (expectedMs === null) return { state: 'running', quietMs, expectedMs, waitUntil: null };
+  if (quietMs <= RUN_LATE_FACTOR * expectedMs) {
+    return { state: 'running', quietMs, expectedMs, waitUntil: null };
+  }
+  if (quietMs <= RUN_STALLED_FACTOR * expectedMs) {
+    return { state: 'late', quietMs, expectedMs, waitUntil: null };
+  }
+  if (run.stallWaitUntil !== undefined && now < run.stallWaitUntil) {
+    return { state: 'waiting', quietMs, expectedMs, waitUntil: run.stallWaitUntil };
+  }
+  return { state: 'stalled', quietMs, expectedMs, waitUntil: null };
+}
+
+/** Worse first: the higher rung, then the longer quiet. */
+function worse(a: RunLiveness, b: RunLiveness): RunLiveness {
+  if (a.state === 'finished') return b;
+  if (b.state === 'finished') return a;
+  const ra = RANK[a.state];
+  const rb = RANK[b.state];
+  if (ra !== rb) return ra > rb ? a : b;
+  const qa = 'quietMs' in a ? a.quietMs : 0;
+  const qb = 'quietMs' in b ? b.quietMs : 0;
+  return qb > qa ? b : a;
 }
 
 /**
- * A campaign's: its running pass's liveness; between passes, the campaign row's own.
- *
- * PLACEHOLDER (B01-8a T0): S2 writes the rule.
+ * A campaign's: its running pass's liveness (the worst, if a killed pass was left running beside
+ * the live one); between passes, the campaign row's own, quiet since whichever came last — the
+ * campaign's own beat or a pass's last report (a pass's close stamps its `progressAt`), so a merge
+ * that just finished after 45 minutes doesn't leave the campaign reading stalled. A finished or
+ * marked campaign is finished, whatever its passes say.
  */
 export function campaignLiveness(
-  _campaign: RunLivenessInput,
-  _passes: readonly RunLivenessInput[],
-  _now: number,
+  campaign: RunLivenessInput,
+  passes: readonly RunLivenessInput[],
+  now: number,
 ): RunLiveness {
-  throw new Error('campaignLiveness is not built yet');
+  if (runLiveness(campaign, now).state === 'finished') return { state: 'finished' };
+  let live: RunLiveness = { state: 'finished' };
+  for (const pass of passes) live = worse(live, runLiveness(pass, now));
+  if (live.state !== 'finished') return live;
+  let progressAt = campaign.progressAt;
+  for (const pass of passes) {
+    if (pass.progressAt === undefined || !Number.isFinite(pass.progressAt)) continue;
+    progressAt = progressAt === undefined ? pass.progressAt : Math.max(progressAt, pass.progressAt);
+  }
+  return runLiveness(progressAt === undefined ? campaign : { ...campaign, progressAt }, now);
 }
