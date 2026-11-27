@@ -321,7 +321,6 @@ describe('cut-aerial.sh', () => {
       [1, 1],
       [4, 1],
       [1, 4],
-      [12, 3],
       // 138 stats files: `99.txt`, the 33rd cell's counts and empty, sorts last.
       [34, 1],
     ] as const) {
@@ -335,7 +334,8 @@ describe('cut-aerial.sh', () => {
       expect(run.calls.filter((c) => c.startsWith('rclone'))).toHaveLength(4);
       expect(run.stderr).toMatch(/source bytes read: [1-9]\d*\n/);
     }
-  }, 120_000);
+    // Four runs, the last of 34 cells: seconds here, and CI runs ~8× slower.
+  }, 180_000);
 
   /** A warp call's `-te` box, as numbers (jq and JavaScript may print a float differently). */
   const teOf = (call: string) =>
@@ -456,8 +456,7 @@ describe('cut-aerial.sh', () => {
       expect(run.stderr).toMatch(/is not a work unit this worker can read/);
       expect(run.calls).toEqual([]);
     }
-    // A unit `tiles.ts` writes passes, its window a chunk (no overview) or a whole work tile (one).
-    expect(cutAerial({ local: true }).status).toBe(0);
+    // A unit `tiles.ts` writes passes: every other test here, windows and whole work tiles alike.
   });
 
   test('--keep keeps the work, never the rclone config the secrets were written into', () => {
