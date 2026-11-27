@@ -1,27 +1,19 @@
 import type { Id } from '@skating/convex/dataModel';
-import {
-  CORPUS_RUN_PLAN,
-  type RunLiveness,
-  type RunLivenessInput,
-  runLiveness,
-} from '@skating/core';
+import { CORPUS_RUN_PLAN } from '@skating/core';
+import { CORE_RULE, type LivenessRule, livenessAt } from '../liveness';
 import { PASS_STATE_WORDS, RUN_WORDS, STATE_WORDS, TAIL_WORDS } from '../words/runWords';
 import { clock, clockSeconds, everyWords, quietWords } from './runFormat';
 import type { CampaignView, LivenessView, PassRowView, RunView } from './runViews';
 
 /**
  * **What the run pages read off a view** — pure, with the clock passed in, so a story pins every
- * age and every late or stalled mark. Every verdict is core's stall rule (`runLiveness`), the one
- * the server's reads use, re-read against the page's ticking clock so the heartbeat moves between
- * the server's minute-rounded answers; a view the rule can't be re-read for keeps the server's.
+ * age and every late or stalled mark. Every verdict is Machinery's one re-reading of core's stall
+ * rule (`../liveness`), the one the run list reads too, against the page's ticking clock, so the
+ * heartbeat moves between the server's minute-rounded answers; a view the server sent no inputs for
+ * keeps the server's.
  */
 
-/** Core's rule, as the views take it (a story passes the rule's fake until core's lands). */
-export type LivenessRule = (run: RunLivenessInput, now: number) => RunLiveness;
-
-export const CORE_RULE: LivenessRule = runLiveness;
-
-const STALL_STATES = new Set<LivenessView['state']>(['running', 'late', 'stalled', 'waiting']);
+export { CORE_RULE, type LivenessRule };
 
 /**
  * The campaign's running pass: `current` while its run hasn't closed. (`current` is the last pass
@@ -41,51 +33,25 @@ export function kindOfPass(pass: string): string | null {
   return CORPUS_RUN_PLAN.find((p) => p.pass === pass)?.kind ?? null;
 }
 
-/**
- * A campaign's liveness at `now`: its running pass's, re-read by the rule from that pass's last
- * heartbeat (a campaign's is its running pass's); between passes, or with no heartbeat recorded,
- * the server's verdict as it came.
- */
+/** A campaign's liveness at `now`: its row's, re-read as the list re-reads it. */
 export function campaignLivenessAt(
-  view: Pick<CampaignView, 'liveness' | 'current' | 'marked' | 'waiting' | 'passes'>,
+  view: Pick<CampaignView, 'row'>,
   now: number,
   rule: LivenessRule = CORE_RULE,
 ): LivenessView {
-  const current = runningPass(view);
-  if (!STALL_STATES.has(view.liveness.state) || current === null || current.progressAt === null) {
-    return view.liveness;
-  }
-  const kind = kindOfPass(current.pass);
-  if (kind === null) return view.liveness;
-  return rule(
-    {
-      kind,
-      status: 'running',
-      progressAt: current.progressAt,
-      ...(view.marked !== null && { markedFailed: view.marked }),
-      ...(view.waiting !== null && { stallWaitUntil: view.waiting.until }),
-    },
-    now,
-  );
+  return livenessAt(view.row, now, rule);
 }
 
-/** One run's liveness at `now`, re-read from its own row while it runs. */
+/** One run's liveness at `now`, re-read from the inputs the server sent with it. */
 export function runLivenessAt(
-  view: Pick<RunView, 'doc' | 'liveness'>,
+  view: Pick<RunView, 'liveness' | 'livenessInputs'>,
   now: number,
   rule: LivenessRule = CORE_RULE,
 ): LivenessView {
-  const { doc } = view;
-  if (doc.status !== 'running' || !STALL_STATES.has(view.liveness.state)) return view.liveness;
-  return rule(
-    {
-      kind: doc.kind,
-      status: doc.status,
-      ...(doc.progressAt !== undefined && { progressAt: doc.progressAt }),
-      ...(doc.markedFailed !== undefined && { markedFailed: doc.markedFailed }),
-      ...(doc.stallWait !== undefined && { stallWaitUntil: doc.stallWait.until }),
-    },
+  return livenessAt(
+    { kind: 'pass', liveness: view.liveness, livenessInputs: view.livenessInputs ?? null },
     now,
+    rule,
   );
 }
 

@@ -233,6 +233,23 @@ describe('campaignLiveness', () => {
     expect(campaignLiveness(campaign(), [done, merge], NOW)).toEqual(runLiveness(merge, NOW));
   });
 
+  it("reads every row by the rule it is handed (core's by default)", () => {
+    const merge = live({ kind: 'corpus_merge', progressAt: NOW - MINUTE });
+    const seen: RunLivenessInput[] = [];
+    const rule = (run: RunLivenessInput, now: number) => {
+      seen.push(run);
+      return runLiveness(run, now);
+    };
+    expect(campaignLiveness(campaign(), [merge], NOW, rule)).toEqual(
+      campaignLiveness(campaign(), [merge], NOW),
+    );
+    expect(seen).toEqual([campaign(), merge]);
+    const between = live({ kind: 'corpus_merge', status: 'succeeded', progressAt: NOW - MINUTE });
+    seen.length = 0;
+    campaignLiveness(campaign(), [between], NOW, rule);
+    expect(seen.at(-1)).toEqual(campaign({ progressAt: NOW - MINUTE }));
+  });
+
   it('takes the worst of two running passes', () => {
     const fresh = live({ progressAt: NOW });
     const dead = live({ kind: 'corpus_merge', progressAt: NOW - 90 * MINUTE });

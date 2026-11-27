@@ -70,6 +70,13 @@ export type RunRowView = {
   scope: ScopeView;
   startedAt: number;
   finishedAt: number | null;
+  /**
+   * What core's rule reads to say this row's liveness — the row's own input and (a campaign) its
+   * passes' — so a page re-reads it on its own clock by the same rule, and the list and the run page
+   * never disagree. `null` for a row that can't come alive again (ended, marked, or rebuilt), whose
+   * `liveness` is final. Always sent; optional so an older fixture still reads.
+   */
+  livenessInputs?: LivenessInputs | null;
   /** The sub-line's facts; the words are the web's. */
   line:
     | {
@@ -83,6 +90,9 @@ export type RunRowView = {
       }
     | { kind: 'pass'; headline: { name: string; value: number } | null };
 };
+
+/** A row's input to core's rule, and its passes' (a campaign's; none for a pass). */
+export type LivenessInputs = { self: RunLivenessInput; passes: RunLivenessInput[] };
 
 /** The sidebar's tail for one lane. */
 export type LaneTail = {
@@ -160,6 +170,8 @@ export type RunView = {
   /** The run wrote nothing (its notes end with `importRuns`' `DRY_RUN_NOTE`). */
   dryRun?: boolean;
   liveness: LivenessView;
+  /** As a list row's. */
+  livenessInputs?: LivenessInputs | null;
   parent: { id: Id<'importRuns'>; title: string } | null;
   marked: MarkedView | null;
   waiting: WaitingView | null;
@@ -221,6 +233,26 @@ export function livenessInput(run: Run): RunLivenessInput {
     ...(run.progressAt === undefined ? {} : { progressAt: run.progressAt }),
     ...(run.markedFailed === undefined ? {} : { markedFailed: run.markedFailed }),
     ...(run.stallWait === undefined ? {} : { stallWaitUntil: run.stallWait.until }),
+  };
+}
+
+/** The rule's input as the web is sent it: a mark is only its presence. */
+function wireInput(run: Run): RunLivenessInput {
+  const { markedFailed, ...rest } = livenessInput(run);
+  return markedFailed === undefined ? rest : { ...rest, markedFailed: true };
+}
+
+/**
+ * The inputs that re-read to `liveness` ({@link livenessOfRun}, {@link livenessOfCampaign}), or
+ * `null` for a row whose verdict is final: not running, marked, or a rebuilt campaign.
+ */
+export function livenessInputsOf(run: Run, passes: readonly Run[]): LivenessInputs | null {
+  if (run.status !== 'running' || run.markedFailed !== undefined || isReconstructed(run)) {
+    return null;
+  }
+  return {
+    self: wireInput(run),
+    passes: isCampaignRow(run) ? passes.map(wireInput) : [],
   };
 }
 
@@ -370,6 +402,7 @@ export function rowView(run: Run, passes: readonly Run[], now: number): RunRowVi
       ...base,
       kind: 'pass',
       liveness: livenessOfRun(run, now),
+      livenessInputs: livenessInputsOf(run, []),
       line: { kind: 'pass', headline: headlineOf(run) },
     };
   }
@@ -381,6 +414,7 @@ export function rowView(run: Run, passes: readonly Run[], now: number): RunRowVi
     ...base,
     kind: 'campaign',
     liveness: livenessOfCampaign(run, passes, now),
+    livenessInputs: livenessInputsOf(run, passes),
     line: {
       kind: 'campaign',
       passesDone: passes.filter((p) => p.status === 'succeeded' && p.markedFailed === undefined)
@@ -701,14 +735,16 @@ export const run = query({
     const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
     const doc = await ctx.db.get(args.runId);
     if (doc === null) return null;
+    const passes = isCampaignRow(doc) ? await campaignPassesForRow(ctx, doc) : [];
     const liveness = isCampaignRow(doc)
-      ? livenessOfCampaign(doc, await campaignPassesForRow(ctx, doc), now)
+      ? livenessOfCampaign(doc, passes, now)
       : livenessOfRun(doc, now);
     const parentDoc = doc.parentRunId === undefined ? null : await ctx.db.get(doc.parentRunId);
     return {
       doc,
       dryRun: isDryRun(doc),
       liveness,
+      livenessInputs: livenessInputsOf(doc, passes),
       parent: parentDoc === null ? null : { id: parentDoc._id, title: titleOf(parentDoc) },
       marked: await markedOf(ctx, doc),
       waiting: await waitingOf(ctx, doc, now),

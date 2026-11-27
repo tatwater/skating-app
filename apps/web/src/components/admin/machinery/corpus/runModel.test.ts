@@ -1,11 +1,11 @@
+import { runLiveness } from '@skating/core';
 import { describe, expect, test, vi } from 'vitest';
-
+import { livenessAt, rowsAt } from '../liveness';
 import {
   assembledCampaign,
   at,
   boardCampaign,
   boardPasses,
-  fakeRunLiveness,
   LAST_FLUSH,
   LOAD_ID,
   loadDoc,
@@ -54,61 +54,58 @@ const stalled: LivenessView = {
 };
 
 describe('the liveness at the page clock', () => {
-  test('a campaign re-reads its running pass from its last heartbeat', () => {
+  test("a campaign re-reads its row by core's rule, as the list does", () => {
     const view = boardCampaign(NOW_RUNNING);
-    const rule = vi.fn(fakeRunLiveness);
-    expect(campaignLivenessAt(view, NOW_STALLED, rule).state).toBe('stalled');
+    expect(view.row.liveness.state).toBe('running');
+    expect(campaignLivenessAt(view, NOW_STALLED).state).toBe('stalled');
+    expect(campaignLivenessAt(view, NOW_LATE).state).toBe('late');
+    // The list's row and the page's head read one function: the same answer at the same clock.
+    for (const now of [NOW_RUNNING, NOW_LATE, NOW_STALLED]) {
+      expect(campaignLivenessAt(view, now)).toEqual(livenessAt(view.row, now));
+    }
+    const rule = vi.fn(runLiveness);
+    campaignLivenessAt(view, NOW_STALLED, rule);
     expect(rule).toHaveBeenCalledWith(
       { kind: 'canonical_water', status: 'running', progressAt: LAST_FLUSH },
       NOW_STALLED,
     );
-    expect(campaignLivenessAt(view, NOW_LATE, fakeRunLiveness).state).toBe('late');
   });
 
-  test('a wait and a mark reach the rule', () => {
+  test('a wait reaches the rule; a mark ends the re-reading', () => {
     const view = boardCampaign(NOW_STALLED, { waiting: WAITING });
-    expect(campaignLivenessAt(view, NOW_STALLED, fakeRunLiveness)).toMatchObject({
+    expect(campaignLivenessAt(view, NOW_STALLED)).toMatchObject({
       state: 'waiting',
       waitUntil: WAITING.until,
     });
-    const rule = vi.fn(fakeRunLiveness);
-    campaignLivenessAt({ ...view, marked: MARKED }, NOW_STALLED, rule);
-    expect(rule.mock.calls[0]?.[0]).toMatchObject({ markedFailed: MARKED });
-  });
-
-  test('the server verdict stands between passes, without a heartbeat, after an end, or for an unknown pass', () => {
-    const view = boardCampaign(NOW_STALLED);
-    const rule = vi.fn(fakeRunLiveness);
-    expect(campaignLivenessAt({ ...view, current: null }, NOW_RUNNING, rule)).toBe(view.liveness);
-    expect(
-      campaignLivenessAt(
-        {
-          ...view,
-          current: { ...(view.current as NonNullable<typeof view.current>), progressAt: null },
-        },
-        NOW_RUNNING,
-        rule,
-      ),
-    ).toBe(view.liveness);
-    expect(
-      campaignLivenessAt(
-        {
-          ...view,
-          current: { ...(view.current as NonNullable<typeof view.current>), pass: 'nope' },
-        },
-        NOW_RUNNING,
-        rule,
-      ),
-    ).toBe(view.liveness);
-    const done = assembledCampaign();
-    expect(campaignLivenessAt(done, NOW_RUNNING, rule)).toBe(done.liveness);
+    const marked = boardCampaign(NOW_STALLED, { marked: MARKED });
+    const rule = vi.fn(runLiveness);
+    expect(campaignLivenessAt(marked, NOW_STALLED, rule)).toBe(marked.row.liveness);
     expect(rule).not.toHaveBeenCalled();
   });
 
+  test('without inputs (ended, marked, rebuilt, or an older read) the server verdict stands', () => {
+    const view = boardCampaign(NOW_STALLED);
+    const rule = vi.fn(runLiveness);
+    const bare = { ...view, row: { ...view.row, livenessInputs: null } };
+    expect(campaignLivenessAt(bare, NOW_RUNNING, rule)).toBe(view.row.liveness);
+    const { livenessInputs: _, ...older } = view.row;
+    expect(campaignLivenessAt({ row: older }, NOW_RUNNING, rule)).toBe(view.row.liveness);
+    const done = assembledCampaign();
+    expect(campaignLivenessAt(done, NOW_RUNNING, rule)).toBe(done.row.liveness);
+    expect(rule).not.toHaveBeenCalled();
+  });
+
+  test('the list re-reads each row on the same clock', () => {
+    const view = boardCampaign(NOW_RUNNING);
+    const finished = assembledCampaign().row;
+    const [live, ended] = rowsAt([view.row, finished], NOW_STALLED);
+    expect(live?.liveness.state).toBe('stalled');
+    expect(ended).toBe(finished);
+    expect(rowsAt([view.row], NOW_RUNNING)[0]?.liveness).toEqual(view.row.liveness);
+  });
+
   test('a run re-reads its own row while it runs', () => {
-    expect(runLivenessAt(loadView(NOW_RUNNING), NOW_STALLED, fakeRunLiveness).state).toBe(
-      'stalled',
-    );
+    expect(runLivenessAt(loadView(NOW_RUNNING), NOW_STALLED).state).toBe('stalled');
     const waited = loadView(NOW_STALLED, {
       doc: loadDoc({
         stallWait: {
@@ -119,7 +116,7 @@ describe('the liveness at the page clock', () => {
         },
       }),
     });
-    expect(runLivenessAt(waited, NOW_STALLED, fakeRunLiveness).state).toBe('waiting');
+    expect(runLivenessAt(waited, NOW_STALLED).state).toBe('waiting');
     const marked = loadView(NOW_STALLED, {
       doc: loadDoc({
         markedFailed: {
@@ -130,18 +127,12 @@ describe('the liveness at the page clock', () => {
         },
       }),
     });
-    expect(runLivenessAt(marked, NOW_STALLED, fakeRunLiveness).state).toBe('finished');
+    expect(runLivenessAt(marked, NOW_STALLED).state).toBe('finished');
     const noBeat = loadView(NOW_STALLED, { doc: loadDoc({ progressAt: undefined }) });
     expect(noBeat.liveness.state).toBe('notRecorded');
-    expect(runLivenessAt(noBeat, NOW_STALLED, fakeRunLiveness)).toBe(noBeat.liveness);
+    expect(runLivenessAt(noBeat, NOW_STALLED).state).toBe('notRecorded');
     const finished = loadView(NOW_STALLED, { doc: loadDoc({ status: 'succeeded' }) });
-    expect(runLivenessAt(finished, NOW_STALLED, fakeRunLiveness)).toBe(finished.liveness);
-  });
-
-  test('the fake rule, for a kind with no pace', () => {
-    expect(
-      fakeRunLiveness({ kind: 'nope', status: 'running', progressAt: 0 }, 99 * MIN),
-    ).toMatchObject({ state: 'running', expectedMs: null });
+    expect(runLivenessAt(finished, NOW_STALLED)).toBe(finished.liveness);
   });
 
   test('a pass names its kind', () => {
@@ -295,7 +286,6 @@ describe('the tail', () => {
     };
     expect(actionTarget(between)).toEqual({ runId: view.row.id, title: 'a07a-20261012' });
     expect(defaultTailRun(between)).toBe(view.row.id);
-    expect(campaignLivenessAt(between, NOW_RUNNING, fakeRunLiveness)).toBe(between.liveness);
     const ended = { ...between, row: { ...between.row, status: 'succeeded' as const } };
     expect(defaultTailRun(ended)).toBe(LOAD_ID);
   });

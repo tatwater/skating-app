@@ -9,7 +9,7 @@
  *    *Not recorded*.
  *  - **Every read is admin's** and bounded (the harness counts ranges and documents read).
  */
-import { RUN_QUIET_MS } from '@skating/core';
+import { campaignLiveness, RUN_QUIET_MS, runLiveness } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
@@ -940,5 +940,70 @@ describe('where a run was written, and whether it wrote', () => {
     );
     const page = await as.query(api.machineryRuns.campaign, { campaignId: 'c2', now: NOW });
     expect(page).toMatchObject({ deployment: 'dev:agile-bee-397', isProd: false });
+  });
+});
+
+describe('the inputs a page re-reads a row by', () => {
+  const reread = (row: Pick<RunRowView, 'kind' | 'liveness' | 'livenessInputs'>, now: number) => {
+    const inputs = row.livenessInputs;
+    if (inputs == null) return row.liveness;
+    return row.kind === 'campaign'
+      ? campaignLiveness(inputs.self, inputs.passes, now)
+      : runLiveness(inputs.self, now);
+  };
+
+  test('re-read at the same clock, every row says what the server said; later, it moves on', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    await seedCampaign(t, 'c1', 41 * MINUTE);
+    const lone = await seedRun(t, { startedAt: NOW - 5 * MINUTE, progressAt: NOW - MINUTE });
+    await seedRun(t, { status: 'succeeded', startedAt: NOW - 90 * MINUTE, finishedAt: NOW - DAY });
+    const list = await as.query(api.machineryRuns.listPage, {
+      lane: 'corpus',
+      paginationOpts: { numItems: 25, cursor: null },
+      now: NOW,
+    });
+    expect(list.page.length).toBeGreaterThanOrEqual(3);
+    for (const row of list.page) expect(reread(row, NOW)).toEqual(row.liveness);
+    const campaignRow = list.page.find((r) => r.kind === 'campaign') as RunRowView;
+    expect(campaignRow.livenessInputs?.passes.length).toBeGreaterThan(0);
+    expect(list.page.find((r) => r.status === 'succeeded')?.livenessInputs).toBeNull();
+
+    const later = NOW + 60 * MINUTE;
+    vi.setSystemTime(later);
+    const laterList = await as.query(api.machineryRuns.listPage, {
+      lane: 'corpus',
+      paginationOpts: { numItems: 25, cursor: null },
+      now: later,
+    });
+    for (const row of laterList.page) {
+      const before = list.page.find((r) => r.id === row.id) as RunRowView;
+      expect(reread(before, later)).toEqual(row.liveness);
+    }
+
+    vi.setSystemTime(NOW);
+    const page = await as.query(api.machineryRuns.campaign, { campaignId: 'c1', now: NOW });
+    expect(reread(page?.row as RunRowView, NOW)).toEqual(page?.liveness);
+    const run = await as.query(api.machineryRuns.run, { runId: lone, now: NOW });
+    expect(
+      reread(
+        {
+          kind: 'pass',
+          liveness: run?.liveness as RunRowView['liveness'],
+          livenessInputs: run?.livenessInputs ?? null,
+        },
+        NOW,
+      ),
+    ).toEqual(run?.liveness);
+  });
+
+  test('a mark is sent as its presence, never its record', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    const { load } = await seedCampaign(t, 'c1', 41 * MINUTE);
+    await as.mutation(api.machineryWrites.markRunFailed, { runId: load, reason: 'secret words' });
+    const page = await as.query(api.machineryRuns.campaign, { campaignId: 'c1', now: NOW });
+    expect(JSON.stringify(page?.row.livenessInputs)).not.toContain('secret words');
+    expect(page?.row.livenessInputs?.passes.some((p) => p.markedFailed === true)).toBe(true);
   });
 });

@@ -116,20 +116,24 @@ function worse(a: RunLiveness, b: RunLiveness): RunLiveness {
  * campaign's own beat or a pass's last report (a pass's close stamps its `progressAt`), so a merge
  * that just finished after 45 minutes doesn't leave the campaign reading stalled. A finished or
  * marked campaign is finished, whatever its passes say.
+ *
+ * `rule` is the one-run rule it reads each row by: {@link runLiveness}, always, outside a story that
+ * pins its own.
  */
 export function campaignLiveness(
   campaign: RunLivenessInput,
   passes: readonly RunLivenessInput[],
   now: number,
+  rule: (run: RunLivenessInput, now: number) => RunLiveness = runLiveness,
 ): RunLiveness {
-  if (runLiveness(campaign, now).state === 'finished') return { state: 'finished' };
+  if (rule(campaign, now).state === 'finished') return { state: 'finished' };
   let live: RunLiveness = { state: 'finished' };
-  for (const pass of passes) live = worse(live, runLiveness(pass, now));
+  for (const pass of passes) live = worse(live, rule(pass, now));
   if (live.state !== 'finished') return live;
   let progressAt = campaign.progressAt;
   for (const pass of passes) {
     if (pass.progressAt === undefined || !Number.isFinite(pass.progressAt)) continue;
     progressAt = progressAt === undefined ? pass.progressAt : Math.max(progressAt, pass.progressAt);
   }
-  return runLiveness(progressAt === undefined ? campaign : { ...campaign, progressAt }, now);
+  return rule(progressAt === undefined ? campaign : { ...campaign, progressAt }, now);
 }

@@ -1,15 +1,12 @@
 import type { Doc, Id } from '@skating/convex/dataModel';
 import {
   CORPUS_RUN_PLAN,
-  RUN_LATE_FACTOR,
   RUN_QUIET_MS,
-  RUN_STALLED_FACTOR,
   RUN_WAIT_MS,
-  type RunLiveness,
   type RunLivenessInput,
+  runLiveness,
 } from '@skating/core';
 
-import type { LivenessRule } from './runModel';
 import type {
   CampaignView,
   MarkedView,
@@ -39,29 +36,6 @@ export const NOW_RUNNING = at(13, 31, 36);
 export const NOW_LATE = at(13, 38);
 export const NOW_STALLED = at(14, 12);
 export const NOW_MARKED = at(14, 20);
-
-/**
- * **The stall rule's fake**, as the design writes it (core's lands with the server's reads): a row
- * not running, or marked, is finished; no heartbeat is *not recorded*; quiet ≤ 2E running, ≤ 10E
- * late, else stalled — held as waiting inside a wait; a kind with no E is always running.
- */
-export const fakeRunLiveness: LivenessRule = (run: RunLivenessInput, now: number): RunLiveness => {
-  if (run.status !== 'running' || run.markedFailed !== undefined) return { state: 'finished' };
-  if (run.progressAt === undefined) return { state: 'notRecorded' };
-  const quietMs = Math.max(0, now - run.progressAt);
-  const expectedMs = RUN_QUIET_MS[run.kind] ?? null;
-  if (expectedMs === null) return { state: 'running', quietMs, expectedMs, waitUntil: null };
-  if (quietMs <= RUN_LATE_FACTOR * expectedMs) {
-    return { state: 'running', quietMs, expectedMs, waitUntil: null };
-  }
-  if (quietMs <= RUN_STALLED_FACTOR * expectedMs) {
-    return { state: 'late', quietMs, expectedMs, waitUntil: null };
-  }
-  if (run.stallWaitUntil !== undefined && now < run.stallWaitUntil) {
-    return { state: 'waiting', quietMs, expectedMs, waitUntil: run.stallWaitUntil };
-  }
-  return { state: 'stalled', quietMs, expectedMs, waitUntil: null };
-};
 
 const id = <T extends 'importRuns' | 'profiles' | 'moderationActions'>(s: string) => s as Id<T>;
 
@@ -177,7 +151,7 @@ const MERGE_PATH: Doc<'importRuns'>['stages'] = [
   { name: 'mask', detail: 'five-state · built 12:58' },
 ];
 
-/** The board's campaign at `now`, its liveness read by the fake rule. */
+/** The board's campaign at `now`, its liveness read by core's rule. */
 export function boardCampaign(
   now: number,
   {
@@ -190,16 +164,14 @@ export function boardCampaign(
     loadState?: PassRowView['state'];
   } = {},
 ): CampaignView {
-  const liveness = fakeRunLiveness(
-    {
-      kind: 'canonical_water',
-      status: 'running',
-      progressAt: LAST_FLUSH,
-      ...(marked !== null && { markedFailed: marked }),
-      ...(waiting !== null && { stallWaitUntil: waiting.until }),
-    },
-    now,
-  );
+  const load: RunLivenessInput = {
+    kind: 'canonical_water',
+    status: 'running',
+    progressAt: LAST_FLUSH,
+    ...(marked !== null && { markedFailed: true }),
+    ...(waiting !== null && { stallWaitUntil: waiting.until }),
+  };
+  const liveness = runLiveness(load, now);
   const state =
     loadState ??
     (marked !== null
@@ -217,6 +189,11 @@ export function boardCampaign(
       campaignId: 'a07a-20261012',
       status: marked !== null ? 'failed' : 'running',
       liveness,
+      // The inputs core's rule re-reads (the campaign's own row, and its running load).
+      livenessInputs:
+        marked !== null
+          ? null
+          : { self: { kind: 'corpus_campaign', status: 'running' }, passes: [load] },
       dryRun: false,
       marked: marked !== null,
       scope: { pass: 'full-canonical', states: null, complete: true },
@@ -371,18 +348,20 @@ export function loadView(
     waiting = null,
   }: { doc?: Doc<'importRuns'>; marked?: MarkedView | null; waiting?: WaitingView | null } = {},
 ): RunView {
+  const input: RunLivenessInput = {
+    kind: doc.kind,
+    status: doc.status,
+    ...(doc.progressAt !== undefined && { progressAt: doc.progressAt }),
+    ...(doc.markedFailed !== undefined && { markedFailed: true }),
+    ...(doc.stallWait !== undefined && { stallWaitUntil: doc.stallWait.until }),
+  };
   return {
     doc,
-    liveness: fakeRunLiveness(
-      {
-        kind: doc.kind,
-        status: doc.status,
-        ...(doc.progressAt !== undefined && { progressAt: doc.progressAt }),
-        ...(doc.markedFailed !== undefined && { markedFailed: doc.markedFailed }),
-        ...(doc.stallWait !== undefined && { stallWaitUntil: doc.stallWait.until }),
-      },
-      now,
-    ),
+    liveness: runLiveness(input, now),
+    livenessInputs:
+      doc.status === 'running' && doc.markedFailed === undefined
+        ? { self: input, passes: [] }
+        : null,
     parent: { id: CAMPAIGN_ID, title: 'a07a-20261012' },
     marked,
     waiting,

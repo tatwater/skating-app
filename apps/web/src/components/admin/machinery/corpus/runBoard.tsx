@@ -9,7 +9,7 @@ import { type RunServer, type RunWrites, useRunWrites } from '../actions/useRunW
 import { CampaignView, type TailFor } from './CampaignView';
 import { RunTail } from './RunTail';
 import { RunView } from './RunView';
-import { cappedEvents, fakeRunLiveness, loadEvents, ZONE } from './runFixtures';
+import { cappedEvents, loadEvents, ZONE } from './runFixtures';
 import type { CampaignView as CampaignData, RunView as RunData, RunEventView } from './runViews';
 
 /**
@@ -132,7 +132,6 @@ export function RunBoard({
                   tail={tail}
                   writes={readOnly ? null : writes}
                   pane={pane}
-                  rule={fakeRunLiveness}
                 />
               ) : run !== undefined ? (
                 <RunView
@@ -142,7 +141,6 @@ export function RunBoard({
                   tail={tail}
                   writes={readOnly ? null : writes}
                   pane={pane}
-                  rule={fakeRunLiveness}
                   linkToRun={(_id, label) => (
                     <a href="#campaign" className="text-assist text-fg2">
                       {label}
