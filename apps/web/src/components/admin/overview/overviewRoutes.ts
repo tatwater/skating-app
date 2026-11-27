@@ -1,3 +1,5 @@
+import type { Capability } from '@skating/core';
+
 import { taskLaneById } from '../corpus/taskLanes';
 import { type InboxQuery, inboxHref } from '../inbox/inboxSearch';
 import type { FeedTarget } from './overviewData';
@@ -123,7 +125,15 @@ function auditPath(type: string, id: string): string | null {
   }
 }
 
-/** Where a feed row opens, or `null` when no page holds its target yet. */
-export function feedTargetPath(target: FeedTarget): string | null {
+/**
+ * Where a feed row opens, or `null` when no page holds its target yet — or the viewer can't open the
+ * page that does: a moderator reads the trail's Machinery rows (a run marked failed or waited on)
+ * but never opens Machinery, which is admins' alone.
+ */
+export function feedTargetPath(
+  target: FeedTarget,
+  can: (capability: Capability) => boolean = () => true,
+): string | null {
+  if (target.type === 'importRun' && !can('machinery.read')) return null;
   return auditPath(target.type, target.id);
 }

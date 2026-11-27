@@ -1,3 +1,4 @@
+import type { Capability } from '@skating/core';
 import { describe, expect, it } from 'vitest';
 import { routerTarget } from '@/lib/routerTarget';
 import { taskLaneById } from '../corpus/taskLanes';
@@ -208,6 +209,14 @@ describe('the audit feed’s rows', () => {
   it('opens a run on its own page in Machinery › Corpus, the id escaped', () => {
     expect(feedTargetPath({ type: 'importRun', id: 'k1/7', label: 'x' })).toBe(
       '/admin/machinery/corpus?run=k1%2F7',
+    );
+  });
+
+  it('never opens Machinery for a viewer who can’t read it; every other target still opens', () => {
+    const moderator = (capability: Capability) => capability !== 'machinery.read';
+    expect(feedTargetPath({ type: 'importRun', id: 'r1', label: 'x' }, moderator)).toBeNull();
+    expect(feedTargetPath({ type: 'user', id: 'k1', label: 'Rob' }, moderator)).toBe(
+      '/admin/people/k1',
     );
   });
 

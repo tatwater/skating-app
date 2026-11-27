@@ -53,7 +53,7 @@ export function OverviewRoute() {
       support={can('inbox.support.read')}
       linkTo={linkTo}
       onOpenTarget={(target) => {
-        const path = feedTargetPath(target);
+        const path = feedTargetPath(target, can);
         if (path !== null) void navigate(routerTarget(path));
       }}
       onOpenBody={(id) => {
