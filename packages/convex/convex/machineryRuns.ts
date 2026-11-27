@@ -529,7 +529,19 @@ async function isIndexed(ctx: QueryCtx): Promise<boolean> {
     .withIndex('by_listed_started', (q) => q.eq('listedIn', undefined))
     .order('desc')
     .take(INDEXED_PROBE);
-  return !unlisted.some((r) => r.parentRunId === undefined && CORPUS_KINDS.has(r.kind));
+  if (unlisted.some((r) => r.parentRunId === undefined && CORPUS_KINDS.has(r.kind))) return false;
+  // And each corpus kind's oldest row, from before the deploy, which only the backfill lists or
+  // parents: the newest unlisted rows above can all be other pipelines' while that history waits.
+  for (const kind of CORPUS_RUN_KINDS) {
+    const oldest = await ctx.db
+      .query('importRuns')
+      .withIndex('by_kind_started', (q) => q.eq('kind', kind))
+      .first();
+    if (oldest !== null && oldest.parentRunId === undefined && oldest.listedIn === undefined) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /** A page of a lane's runs, newest first, 25 a page; `indexed` false until the backfill has run. */

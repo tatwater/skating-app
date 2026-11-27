@@ -19,6 +19,7 @@ import { lastCampaignRun } from './lib/campaignRuns';
 import { importJobState } from './machinery';
 import {
   CAMPAIGN_PASS_LIMIT,
+  INDEXED_PROBE,
   isAppliedHandPass,
   isReconstructed,
   LIST_PAGE_SIZE,
@@ -487,6 +488,34 @@ describe('listPage', () => {
     expect(withCampaign.page.filter((r) => r.kind === 'campaign').map((r) => r.title)).toEqual([
       'c3',
     ]);
+  });
+
+  test('history waiting for the backfill reads unindexed though newer unlisted runs are others', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    await seedRun(t, {
+      kind: 'corpus_merge',
+      listedIn: undefined,
+      campaignId: 'a07a-20260807',
+      status: 'succeeded',
+      startedAt: NOW - 100 * DAY,
+      finishedAt: NOW - 100 * DAY,
+    });
+    // More of another pipeline's runs, never listed under Corpus, than the newest-first probe reads.
+    for (let n = 0; n <= INDEXED_PROBE; n++) {
+      await seedRun(t, {
+        kind: 'lake_depth',
+        listedIn: undefined,
+        status: 'succeeded',
+        startedAt: NOW - n * MINUTE,
+      });
+    }
+    const read = () =>
+      as.query(api.machineryRuns.listPage, {
+        lane: 'corpus',
+        paginationOpts: { numItems: 25, cursor: null },
+      });
+    expect((await read()).indexed).toBe(false);
   });
 
   test('pages 25 at a time over many campaigns, inside the backend’s limits', async () => {
