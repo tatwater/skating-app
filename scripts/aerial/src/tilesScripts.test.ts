@@ -126,6 +126,8 @@ function cutAerial(
     wholeWorkTile?: boolean;
     /** The bucket holds no done record for the work tile yet (rclone's deletefile answers 4). */
     noDone?: boolean;
+    /** `--keep <dir>/kept`: the work directory stays. */
+    keep?: boolean;
   } = {},
 ) {
   const dir = tmp();
@@ -159,6 +161,7 @@ function cutAerial(
       join(PKG, 'cut-aerial.sh'),
       join(dir, 'unit.json'),
       ...(opts.local ? ['--local', join(dir, 'bucket')] : []),
+      ...(opts.keep ? ['--keep', join(dir, 'kept')] : []),
     ],
     {
       encoding: 'utf8',
@@ -259,6 +262,14 @@ describe('cut-aerial.sh', () => {
       expect(run.stderr).toMatch(/FATAL/);
       expect(run.stderr).not.toContain('SECRETSIG');
     }
+  });
+
+  test('--keep keeps the work, never the rclone config the secrets were written into', () => {
+    const run = cutAerial({ keep: true });
+    expect(run.status).toBe(0);
+    const kept = readdirSync(join(run.dir, 'kept'));
+    expect(kept).toContain('shard');
+    expect(kept).not.toContain('rclone.conf');
   });
 
   test('a failed upload fails the run before the done record', () => {

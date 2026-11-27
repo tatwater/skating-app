@@ -140,6 +140,8 @@ fi
 # are the ones worth keeping (run-corpus.sh's lesson).
 finish() {
   local status=$?
+  # The rclone config holds the R2 secrets: it goes whether or not the work is kept.
+  rm -f "$W/rclone.conf"
   [[ -z "$KEEP" ]] && rm -rf "$W"
   exec 2>&3
   wait "$REDACT_PID" 2>/dev/null || true
