@@ -37,41 +37,6 @@ import {
 } from './machineryWrites';
 import schema from './schema';
 
-/**
- * Core's stall rule lands with S2 (`runLiveness`); until it does, its stub throws. This falls back to
- * the rule as the design writes it only while the real one throws "not built yet", so the suite runs
- * against the real rule the moment it lands.
- */
-vi.mock('@skating/core', async (importOriginal) => {
-  const core = await importOriginal<typeof import('@skating/core')>();
-  const fake: typeof core.runLiveness = (run, now) => {
-    if (run.status !== 'running' || run.markedFailed !== undefined) return { state: 'finished' };
-    if (run.progressAt === undefined) return { state: 'notRecorded' };
-    const quietMs = Math.max(0, now - run.progressAt);
-    const expectedMs = core.RUN_QUIET_MS[run.kind] ?? null;
-    const base = { quietMs, expectedMs, waitUntil: null };
-    if (expectedMs === null || quietMs <= core.RUN_LATE_FACTOR * expectedMs) {
-      return { state: 'running', ...base };
-    }
-    if (quietMs <= core.RUN_STALLED_FACTOR * expectedMs) return { state: 'late', ...base };
-    if (run.stallWaitUntil !== undefined && now < run.stallWaitUntil) {
-      return { state: 'waiting', ...base, waitUntil: run.stallWaitUntil };
-    }
-    return { state: 'stalled', ...base };
-  };
-  return {
-    ...core,
-    runLiveness: (run: Parameters<typeof fake>[0], now: number) => {
-      try {
-        return core.runLiveness(run, now);
-      } catch (e) {
-        if (e instanceof Error && e.message.includes('not built yet')) return fake(run, now);
-        throw e;
-      }
-    },
-  };
-});
-
 const modules = import.meta.glob('./**/*.*s');
 const harness = () => convexTest(schema, modules);
 type T = ReturnType<typeof harness>;

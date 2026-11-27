@@ -10,16 +10,15 @@
  *  - **Every read is admin's** and bounded (the harness counts ranges and documents read).
  */
 import { RUN_QUIET_MS } from '@skating/core';
-import { type Validator, v } from 'convex/values';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
+import { DRY_RUN_NOTE } from './importRuns';
 import { lastCampaignRun } from './lib/campaignRuns';
 import { importJobState } from './machinery';
 import {
   CAMPAIGN_PASS_LIMIT,
-  DRY_RUN_NOTE,
   isReconstructed,
   LIST_PAGE_SIZE,
   type RunRowView,
@@ -42,32 +41,6 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
 });
-
-/**
- * The schema with `importRuns.campaign.reconstructed` (S1's widening for the backfill that writes a
- * campaign row for every campaign from before B01-8a). Where this branch's schema already carries
- * it, the schema itself; otherwise a test-only copy widened by that one optional field, so the
- * reconstructed tests run either way. Indexes are kept: the table is cloned, only its validator
- * swapped.
- */
-const reconstructedSchema = (() => {
-  const table = schema.tables.importRuns as unknown as {
-    validator: { fields: Record<string, unknown> };
-  };
-  const campaign = table.validator.fields.campaign as {
-    fields: Record<string, Validator<unknown>>;
-  };
-  if (campaign.fields.reconstructed !== undefined) return schema;
-  const widened = Object.assign(Object.create(Object.getPrototypeOf(table)), table, {
-    validator: v.object({
-      ...(table.validator.fields as Record<string, Validator<unknown, 'required' | 'optional'>>),
-      campaign: v.optional(
-        v.object({ ...campaign.fields, reconstructed: v.optional(v.boolean()) }),
-      ),
-    }),
-  });
-  return { ...schema, tables: { ...schema.tables, importRuns: widened } } as typeof schema;
-})();
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -756,7 +729,7 @@ describe('campaign', () => {
   });
 
   test('a reconstructed campaign is finished history; its flags and plan not recorded', async () => {
-    const t = convexTest(reconstructedSchema, modules);
+    const t = harness();
     const { as } = await seedUser(t, 'admin');
     // Left `running` by a killed loader in August, with no heartbeat — and its pass too.
     const row = await seedRun(t, {

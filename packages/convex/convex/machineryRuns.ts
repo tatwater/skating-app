@@ -42,6 +42,7 @@ import { type PaginationResult, paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
+import { isDryRunRow } from './importRuns';
 import { requireCapability } from './lib/auth';
 
 type RunState = Doc<'importRuns'>['status'];
@@ -181,12 +182,6 @@ export const INDEXED_PROBE = 25;
 const FAILURE_KEYS = 5;
 /** A writer's clock this far from the server's is named on the page. */
 const CLOCK_SKEW_SHOWN_MS = MINUTE;
-/**
- * The note a dry run's row ends with: `scripts/run-log`'s `DRY_RUN_NOTE`, which this package can't
- * import (a script package). Copied, so the two must change together (a guard in `packages/guards`
- * could hold them in step; none does yet).
- */
-export const DRY_RUN_NOTE = 'dry run — nothing written';
 
 const CORPUS_KINDS: ReadonlySet<string> = new Set(CORPUS_RUN_KINDS);
 const HAND_PASSES: ReadonlySet<string> = new Set(CORPUS_HAND_PASSES);
@@ -196,19 +191,17 @@ const HAND_PASSES: ReadonlySet<string> = new Set(CORPUS_HAND_PASSES);
 type Run = Doc<'importRuns'>;
 
 /**
- * **The fork's switch**: a campaign row the backfill wrote for a campaign from before B01-8a. Read
- * narrowly, so the flag (`importRuns.campaign.reconstructed`, S1's) need not be in this branch's
- * schema to compile.
+ * **The fork's switch**: a campaign row the backfill wrote for a campaign from before B01-8a
+ * (`importRuns.campaign.reconstructed`). Only a stored `true` counts.
  */
 export function isReconstructed(run: Pick<Run, 'campaign'>): boolean {
-  return (run.campaign as { reconstructed?: unknown } | undefined)?.reconstructed === true;
+  return run.campaign?.reconstructed === true;
 }
 
 export const isCampaignRow = (run: Pick<Run, 'kind'>) => run.kind === 'corpus_campaign';
 
-export function isDryRun(run: Pick<Run, 'notes'>): boolean {
-  return run.notes?.includes(DRY_RUN_NOTE) ?? false;
-}
+/** A dry run's row (its notes end with `importRuns`' `DRY_RUN_NOTE`). */
+export const isDryRun = isDryRunRow;
 
 /** What core's rule reads of a row. */
 export function livenessInput(run: Run): RunLivenessInput {
