@@ -170,29 +170,53 @@ async function setup() {
 // ── The gate ───────────────────────────────────────────────────────────────────────────────────────
 
 describe('every write is gated machinery.corpus (admin)', () => {
+  type Admin = Awaited<ReturnType<typeof setup>>['admin'];
+  /** Each write, and a run in the state where an admin's call of it succeeds. */
   const writes = [
-    ['markRunFailed', (id: Id<'importRuns'>) => ({ runId: id, reason: 'gone' })],
-    ['reopenRun', (id: Id<'importRuns'>) => ({ runId: id })],
-    ['waitOnRun', (id: Id<'importRuns'>) => ({ runId: id, now: Date.now() })],
-    ['stopWaitingOnRun', (id: Id<'importRuns'>) => ({ runId: id })],
-    ['requestRunStop', (id: Id<'importRuns'>) => ({ runId: id })],
-    ['withdrawRunStop', (id: Id<'importRuns'>) => ({ runId: id })],
+    ['markRunFailed', async () => {}, (id: Id<'importRuns'>) => ({ runId: id, reason: 'gone' })],
+    [
+      'reopenRun',
+      (a: Admin, id: Id<'importRuns'>) =>
+        a.as.mutation(api.machineryWrites.markRunFailed, { runId: id, reason: 'x' }),
+      (id: Id<'importRuns'>) => ({ runId: id }),
+    ],
+    ['waitOnRun', async () => {}, (id: Id<'importRuns'>) => ({ runId: id, now: Date.now() })],
+    [
+      'stopWaitingOnRun',
+      (a: Admin, id: Id<'importRuns'>) =>
+        a.as.mutation(api.machineryWrites.waitOnRun, { runId: id, now: Date.now() }),
+      (id: Id<'importRuns'>) => ({ runId: id }),
+    ],
+    ['requestRunStop', async () => {}, (id: Id<'importRuns'>) => ({ runId: id })],
+    [
+      'withdrawRunStop',
+      (a: Admin, id: Id<'importRuns'>) =>
+        a.as.mutation(api.machineryWrites.requestRunStop, { runId: id }),
+      (id: Id<'importRuns'>) => ({ runId: id }),
+    ],
   ] as const;
 
   test.each(writes)(
-    '%s refuses a moderator, a member and nobody, and writes nothing',
-    async (name, args) => {
-      const { t } = await setup();
-      const runId = await seedRun(t);
+    '%s refuses a moderator, a member and nobody on a run an admin can act on, writing nothing',
+    async (name, ready, args) => {
+      const { t, admin } = await setup();
+      // Stalled, so every write's own state check would pass: only the gate can refuse.
+      const runId = await seedRun(t, { progressAt: Date.now() - 20 * LOAD_GAP });
+      await ready(admin, runId);
+      const rows = (await auditOf(t, runId)).length;
+      const lines = (await linesOf(t, runId)).length;
       const moderator = await seedPerson(t, 'mod', 'moderator');
       const member = await seedPerson(t, 'mem', 'member');
       const fn = api.machineryWrites[name] as never;
-      for (const who of [moderator.as, member.as, t]) {
-        await expect(who.mutation(fn, args(runId) as never)).rejects.toThrow();
+      for (const who of [moderator.as, member.as]) {
+        await expect(who.mutation(fn, args(runId) as never)).rejects.toThrow('Requires admin role');
       }
-      expect(await auditOf(t, runId)).toEqual([]);
-      expect(await linesOf(t, runId)).toEqual([]);
-      expect((await getRun(t, runId)).status).toBe('running');
+      await expect(t.mutation(fn, args(runId) as never)).rejects.toThrow('Not authenticated');
+      expect(await auditOf(t, runId)).toHaveLength(rows);
+      expect(await linesOf(t, runId)).toHaveLength(lines);
+      // The same call, by an admin, lands: the refusals above were the gate's.
+      await admin.as.mutation(fn, args(runId) as never);
+      expect(await auditOf(t, runId)).toHaveLength(rows + 1);
     },
   );
 

@@ -312,6 +312,20 @@ describe('backfillListed', () => {
     expect((await get(t, late)).parentRunId).toBe(campaign?._id);
   });
 
+  test('a late pass inside what its campaign already proves links, and moves nothing', async () => {
+    const t = convexTest(schema, modules);
+    await oldRun(t, {
+      kind: 'corpus_merge',
+      campaignId: 'c',
+      startedAt: T0,
+      finishedAt: T0 + 3 * HOUR,
+    });
+    await walk(t);
+    await oldRun(t, { kind: 'canonical_water', campaignId: 'c', startedAt: T0 + HOUR });
+    const [again] = await walk(t);
+    expect(again).toMatchObject({ campaignsUpdated: 0, passesLinked: 1 });
+  });
+
   test('a dry run tallies what it would write, counts each campaign once, and writes nothing', async () => {
     const t = convexTest(schema, modules);
     await august(t);
