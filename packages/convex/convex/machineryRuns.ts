@@ -277,13 +277,21 @@ async function passesUnder(ctx: QueryCtx, row: Run): Promise<Run[]> {
     .take(CAMPAIGN_PASS_LIMIT);
 }
 
-/** Every row carrying a campaign's id, oldest first (none when the row has no id). */
-async function runsOfCampaignId(ctx: QueryCtx, campaignId: string | undefined): Promise<Run[]> {
+/**
+ * The rows carrying a campaign row's id that are its own, oldest first: from its start up to the
+ * next campaign row under that id (none when the row has no id). A campaign id can be run again, and
+ * its earlier or later campaigns' by-hand passes are theirs, not this one's: a retire an earlier
+ * campaign ran never reads as this one's.
+ */
+async function runsOfCampaign(ctx: QueryCtx, row: Run): Promise<Run[]> {
+  const { campaignId } = row;
   if (campaignId === undefined) return [];
-  return await ctx.db
+  const rows = await ctx.db
     .query('importRuns')
-    .withIndex('by_campaign', (q) => q.eq('campaignId', campaignId))
+    .withIndex('by_campaign', (q) => q.eq('campaignId', campaignId).gte('startedAt', row.startedAt))
     .take(CAMPAIGN_RUNS_LIMIT);
+  const next = rows.find((r) => r._id !== row._id && isCampaignRow(r));
+  return next === undefined ? rows : rows.filter((r) => r.startedAt < next.startedAt);
 }
 
 /**
@@ -701,7 +709,7 @@ export const campaign = query({
     if (row === null || !isCampaignRow(row)) return null;
 
     const under = await passesUnder(ctx, row);
-    const byId = await runsOfCampaignId(ctx, row.campaignId);
+    const byId = await runsOfCampaign(ctx, row);
     const seen = new Set(under.map((r) => r._id));
     const self = row;
     // Its own passes, then what shares its id without a parent: the by-hand passes (and, for a

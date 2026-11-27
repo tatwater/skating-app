@@ -760,6 +760,47 @@ describe('campaign', () => {
     expect(view?.row.id).toBe(newest);
   });
 
+  test('a campaign id run again keeps each campaign’s by-hand passes its own', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    // An earlier campaign under the same id, which ran an applied retire after its merge.
+    const earlier = await seedRun(t, {
+      kind: 'corpus_campaign',
+      campaignId: 'c1',
+      status: 'succeeded',
+      startedAt: NOW - 20 * DAY,
+      finishedAt: NOW - 20 * DAY + 60 * MINUTE,
+      campaign: { flags: [], plan: PLAN },
+    });
+    const oldRetire = await seedRun(t, {
+      kind: 'absorbed_retire',
+      campaignId: 'c1',
+      status: 'succeeded',
+      startedAt: NOW - 19 * DAY,
+      finishedAt: NOW - 19 * DAY + MINUTE,
+    });
+    const { campaign } = await seedCampaign(t, 'c1');
+    const prune = await seedRun(t, {
+      kind: 'floor_prune',
+      campaignId: 'c1',
+      status: 'succeeded',
+      startedAt: NOW - MINUTE,
+      finishedAt: NOW,
+    });
+    const passOf = (
+      view: { passes: { pass: string; state: string; run: { id: unknown } | null }[] } | null,
+      pass: string,
+    ) => view?.passes.find((p) => p.pass === pass);
+    const now = await as.query(api.machineryRuns.campaign, { runId: campaign, now: NOW });
+    // The earlier campaign's retire is not this one's: its merge's absorbed pairs still want one.
+    expect(passOf(now, 'retire-absorbed')).toMatchObject({ state: 'required', run: null });
+    expect(passOf(now, 'prune-floor')?.run?.id).toBe(prune);
+    const then = await as.query(api.machineryRuns.campaign, { runId: earlier, now: NOW });
+    expect(passOf(then, 'retire-absorbed')?.run?.id).toBe(oldRetire);
+    // The later campaign's prune is not the earlier one's.
+    expect(passOf(then, 'prune-floor')).toMatchObject({ state: 'notRun', run: null });
+  });
+
   test('a recorded campaign is judged by the passes under it, as its list row is', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');
