@@ -53,6 +53,23 @@ async function main(): Promise<number> {
         call: convexRun,
       });
   logger?.start();
+  // A verify that throws (an unreadable record, a malformed shard index, rclone's server failing to
+  // start) fails its row rather than leaving it running: the other stages' rows do the same.
+  try {
+    return await checkAll(args, base, logger);
+  } catch (e) {
+    logger?.failed(e);
+    throw e;
+  }
+}
+
+async function checkAll(
+  args: ReturnType<typeof parseStageArgs>,
+  base: string,
+  logger: RunLogger | null,
+): Promise<number> {
+  const { campaign } = args;
+  const pilot = args.pilot ?? undefined;
   const server = await serveHttp(
     { remote: process.env.R2_REMOTE || 'r2', bucket: need('R2_BUCKET') },
     8789,
