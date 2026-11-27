@@ -24,7 +24,7 @@ import { join } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, test } from 'vitest';
-import { buildWorkUnit } from './tiles';
+import { type AerialWorkUnit, buildWorkUnit } from './tiles';
 
 const PKG = fileURLToPath(new URL('..', import.meta.url));
 /** `tsx`, a devDependency of this package, run by the current Node. */
@@ -82,7 +82,12 @@ esac
     // Its open of the source: the COG's header (16 KB with real GDAL; 100 here).
     `echo "gdalwarp $*" >> "$CALLS"\n[ "\${FAIL_ON:-}" = gdalwarp ] && exit 4\n${fetched(100)}${last}; echo vrt > "$out"\n`,
   );
-  bin(b, 'gdal_translate', `echo "gdal_translate $*" >> "$CALLS"\n${last}; echo tif > "$out"\n`);
+  // A counts alpha reads its warped VRT, so the source (20 here); an overview's reads local tiles.
+  bin(
+    b,
+    'gdal_translate',
+    `echo "gdal_translate $*" >> "$CALLS"\n${fetched(20)}${last}; echo tif > "$out"\n`,
+  );
   // The mosaic opens its warped layers, and each its source's header (10 here).
   bin(
     b,
@@ -121,6 +126,14 @@ if [ -n "\${STRIP:-}" ] && [ "$(jq '.frames | length' "$job")" -gt 1 ]; then
   ${fetched(500)}fi
 `,
   );
+  // The TypeScript half, run for real (`PACK_REAL`) unless its `layers` is to fail.
+  bin(
+    b,
+    'aerial-pack',
+    `[ "\${FAIL_ON:-}" = layers ] && [ "$1" = layers ] && { echo "tilesPackMain: windows refused" >&2; exit 1; }
+exec $PACK_REAL "$@"
+`,
+  );
   bin(
     b,
     'rclone',
@@ -132,6 +145,33 @@ exit 0
 `,
   );
   return b;
+}
+
+type Outline = { minLng: number; minLat: number; maxLng: number; maxLat: number };
+/** Each test cell's outline: the two quarter quads either side of 73.375°W, and `stripCells`'. */
+const CELL_OUTLINES: Record<string, Outline> = {
+  '4407305ne': { minLng: -73.4375, minLat: 44.9375, maxLng: -73.375, maxLat: 45.0 },
+  '4407306nw': { minLng: -73.375, minLat: 44.9375, maxLng: -73.3125, maxLat: 45.0 },
+};
+/**
+ * `n` cells side by side across window 14/4852/5895 (about 1.7 km wide), each `frames` deep. A
+ * single-frame cell is the common real shape: its counts helper runs no strip check, so GDAL prints
+ * no statistics and its stats file is empty.
+ */
+function stripCells(n: number, frames = 1): { key: string; frames: string[] }[] {
+  const [west, east] = [-73.3886, -73.3668];
+  return Array.from({ length: n }, (_, i) => {
+    // A quarter quad's shape (`shard.ts`' CELL_KEY), unique per `n` and `i`; never a real one.
+    const key = `99${String(n).padStart(2, '0')}${String(i).padStart(3, '0')}sw`;
+    const w = (east - west) / n;
+    CELL_OUTLINES[key] = {
+      minLng: west + i * w,
+      minLat: 44.9375,
+      maxLng: west + (i + 1) * w,
+      maxLat: 45.0,
+    };
+    return { key, frames: Array.from({ length: frames }, (_, f) => `ny_m_${key}_f${f}`) };
+  });
 }
 
 function cutAerial(
@@ -146,6 +186,10 @@ function cutAerial(
     keep?: boolean;
     /** The counts stand-in reports a strip only the second frame fills, with its window. */
     strip?: boolean;
+    /** The unit as written, changed (a unit `tiles.ts` would never write). */
+    editUnit?: (unit: AerialWorkUnit) => unknown;
+    /** The unit's cells, in place of the two below (each in `CELL_OUTLINES`). */
+    cells?: { key: string; frames: string[] }[];
   } = {},
 ) {
   const dir = tmp();
@@ -157,7 +201,7 @@ function cutAerial(
       workTile: '11/606/736',
       ...(opts.wholeWorkTile ? {} : { window: '14/4852/5895' }),
       inputHash: 'h1',
-      cells: [
+      cells: opts.cells ?? [
         { key: '4407305ne', frames: ['ny_m_4407305_ne_18_060_20240728'] },
         {
           key: '4407306nw',
@@ -165,12 +209,9 @@ function cutAerial(
         },
       ],
     },
-    (key) =>
-      key === '4407305ne'
-        ? { minLng: -73.4375, minLat: 44.9375, maxLng: -73.375, maxLat: 45.0 }
-        : { minLng: -73.375, minLat: 44.9375, maxLng: -73.3125, maxLat: 45.0 },
+    (key) => CELL_OUTLINES[key] as (typeof CELL_OUTLINES)[string],
   );
-  writeFileSync(join(dir, 'unit.json'), JSON.stringify(unit));
+  writeFileSync(join(dir, 'unit.json'), JSON.stringify(opts.editUnit?.(unit) ?? unit));
   const calls = join(dir, 'calls.txt');
   writeFileSync(calls, '');
   const res = spawnSync(
@@ -188,7 +229,8 @@ function cutAerial(
         PATH: `${b}:${process.env.PATH ?? ''}`,
         CALLS: calls,
         AERIAL_IMAGE: opts.image ?? IMAGE,
-        AERIAL_PACK: `${TSX} ${join(PKG, 'src', 'tilesPackMain.ts')}`,
+        AERIAL_PACK: join(b, 'aerial-pack'),
+        PACK_REAL: `${TSX} ${join(PKG, 'src', 'tilesPackMain.ts')}`,
         AERIAL_PYTHON: 'python3',
         AERIAL_WORKDIR: dir,
         AERIAL_SAS_MARGIN: '60',
@@ -241,12 +283,59 @@ describe('cut-aerial.sh', () => {
       `r2:bucket/${run.unit.keys.index}`,
       `r2:bucket/${run.unit.keys.done}`,
     ]);
-    // Every read of the source: the tiler's 1,000, five warps' opens at 100, the mosaic's 10.
-    expect(run.stderr).toMatch(/source bytes read: 1510\n/);
+    // Every read of the source: the tiler's 1,000, five warps' opens at 100, three counts' alphas'
+    // reads at 20, the mosaic's 10.
+    expect(run.stderr).toMatch(/source bytes read: 1570\n/);
     expect(run.stderr).toMatch(/landed 11\/606\/736: 4 tiles/);
     // The scratch is gone, and the rclone config written into it with it.
     expect(readdirSync(run.dir).filter((n) => n.startsWith('aerial.'))).toEqual([]);
   });
+
+  test('three single-frame cells: no strip check, empty stats files, and still it uploads', () => {
+    // Stats files 3, 6 and 9 are the counts helper's, empty (no check ran); with fewer than 90 the
+    // glob's order ends at `9.txt`. The collector once ended its loop on `[[ -s 9.txt ]] && …`,
+    // whose 1 under `pipefail` and `set -e` stopped the worker after the pack, before the upload —
+    // and again on every retry of the work tile.
+    const run = cutAerial({ cells: stripCells(3), keep: true });
+    expect(run.stderr).not.toMatch(/FATAL/);
+    expect(run.status).toBe(0);
+    const stats = join(run.dir, 'kept', 'stats');
+    const empty = readdirSync(stats).filter((f) => readFileSync(join(stats, f), 'utf8') === '');
+    expect(empty.sort()).toEqual(['3.txt', '6.txt', '9.txt']);
+    expect(readdirSync(stats).sort().at(-1)).toBe('9.txt');
+    expect(run.calls.filter((c) => c.startsWith('rclone')).map((u) => u.split(' ')[3])).toEqual([
+      'deletefile',
+      'copyto',
+      'copyto',
+      'copyto',
+    ]);
+    // Three counts' warps and alphas, three deepest-zoom warps, the mosaic, the tiler.
+    expect(run.stderr).toMatch(/source bytes read: 1670\n/);
+    expect(run.stderr).toMatch(/landed 11\/606\/736/);
+  });
+
+  test('any number of cells, any depth: the worker always reaches the upload', () => {
+    // The stats files' glob order turns on how many there are (`9.txt` sorts last from 10 to 89,
+    // `99.txt` from 99 on), so a collector that trips on an empty one fails only some work tiles.
+    for (const [n, frames] of [
+      [1, 1],
+      [4, 1],
+      [1, 4],
+      [12, 3],
+      // 138 stats files: `99.txt`, the 33rd cell's counts and empty, sorts last.
+      [34, 1],
+    ] as const) {
+      const run = cutAerial({ cells: stripCells(n, frames) });
+      expect({ n, frames, status: run.status, fatal: /FATAL/.test(run.stderr) }).toEqual({
+        n,
+        frames,
+        status: 0,
+        fatal: false,
+      });
+      expect(run.calls.filter((c) => c.startsWith('rclone'))).toHaveLength(4);
+      expect(run.stderr).toMatch(/source bytes read: [1-9]\d*\n/);
+    }
+  }, 120_000);
 
   /** A warp call's `-te` box, as numbers (jq and JavaScript may print a float differently). */
   const teOf = (call: string) =>
@@ -297,10 +386,10 @@ describe('cut-aerial.sh', () => {
       '4407306nw-1-w1.vrt',
       '4407306nw-0.vrt',
     ]);
-    // The check's 500 bytes count with every other read: the tiler's 1,000, six warps' 600, the
-    // mosaic's 10 — in the log and in the figure the warp proof's measurements read.
-    expect(run.stderr).toMatch(/source bytes read: 2110\n/);
-    expect(readFileSync(join(run.dir, 'kept', 'source-bytes'), 'utf8')).toBe('2110\n');
+    // The check's 500 bytes count with every other read: the tiler's 1,000, six warps' 600, three
+    // alphas' 60, the mosaic's 10 — in the log and in the figure the warp proof's measurements read.
+    expect(run.stderr).toMatch(/source bytes read: 2170\n/);
+    expect(readFileSync(join(run.dir, 'kept', 'source-bytes'), 'utf8')).toBe('2170\n');
   });
 
   test('--local writes the shard under its keys; its done record is checked and dated', () => {
@@ -337,6 +426,38 @@ describe('cut-aerial.sh', () => {
       expect(run.stderr).toMatch(/FATAL/);
       expect(run.stderr).not.toContain('SECRETSIG');
     }
+  });
+
+  test('a failed `layers` fails the run: never read as nothing showing, an empty shard landed', () => {
+    const run = cutAerial({ failOn: 'layers' });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/FATAL: the mosaic's layers failed/);
+    expect(run.stderr).not.toMatch(/an empty shard/);
+    expect(run.calls.filter((c) => c.includes(' cubic '))).toEqual([]);
+    expect(run.calls.some((c) => c.startsWith('rclone'))).toBe(false);
+  });
+
+  test('a unit this worker can’t read is refused before anything is read', () => {
+    // Each field is read where `set -e` can't see jq fail, so each would have read as nothing.
+    const edits: ((u: AerialWorkUnit) => unknown)[] = [
+      // Every band warped, the red taken for the alpha.
+      ({ settings, ...u }) => ({ ...u, settings: { ...settings, bands: undefined } }),
+      ({ settings, ...u }) => ({ ...u, settings: { ...settings, bands: [] } }),
+      // The chunk skipped as holding no cell that shows.
+      (u) => ({ ...u, chunks: u.chunks.map(({ cells: _, ...c }) => c) }),
+      (u) => ({ ...u, cells: u.cells.map(({ frames: _, ...c }) => c) }),
+      (u) => ({ ...u, cells: u.cells.map((c) => ({ ...c, extent: c.extent.slice(1) })) }),
+      (u) => ({ ...u, overview: { zooms: { min: 11, max: 12 } } }),
+      (u) => ({ ...u, keys: { ...u.keys, done: undefined } }),
+    ];
+    for (const edit of edits) {
+      const run = cutAerial({ editUnit: edit });
+      expect(run.status).toBe(1);
+      expect(run.stderr).toMatch(/is not a work unit this worker can read/);
+      expect(run.calls).toEqual([]);
+    }
+    // A unit `tiles.ts` writes passes, its window a chunk (no overview) or a whole work tile (one).
+    expect(cutAerial({ local: true }).status).toBe(0);
   });
 
   test('--keep keeps the work, never the rclone config the secrets were written into', () => {

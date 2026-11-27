@@ -120,6 +120,27 @@ fi
 
 command -v jq >/dev/null || die "jq is not installed"
 [[ "$(jq -r .version "$UNIT")" == "1" ]] || die "unit version $(jq -r .version "$UNIT"), this worker reads 1"
+# **The unit's shape, checked once, before anything is read.** Most of the reads of it below sit
+# where `set -e` can't see a failure — a word list (`for id in $(jq …)`), a process substitution
+# (`mapfile < <(jq …)`), a function run under `||` — so a field jq can't read would come back as
+# nothing, not as an error: a unit without `settings.bands` would warp every band and take the red
+# for the alpha; one without a chunk's `cells` would skip the chunk; either shard would land.
+# `tiles.ts` writes the unit; this is the worker's check that it can read what was written.
+jq -e '
+  def box: type == "array" and length == 4 and all(.[]; type == "number");
+  (.workTile | type == "string") and (.window | type == "string" and test("^[0-9]+/[0-9]+/[0-9]+$"))
+  and ([.resolution, .countResolution, .settings.tileSize, .settings.quality] | all(.[]; type == "number"))
+  and ([.settings.resampling, .settings.overviewResampling, .settings.srcNodata] | all(.[]; type == "string"))
+  and (.settings.bands | type == "array" and length > 0 and all(.[]; type == "number"))
+  and (.cells | type == "array" and all(.[]; (.key | type == "string")
+    and (.frames | type == "array" and length > 0 and all(.[]; type == "string"))
+    and (.extent | box) and (.countWindow | box)))
+  and (.chunks | type == "array" and all(.[]; (.cells | type == "array")
+    and ([.zooms.min, .zooms.max, .range.minX, .range.maxX, .range.minY, .range.maxY] | all(.[]; type == "number"))))
+  and (.overview == null or ((.overview.zooms.min | type == "number") and (.overview.zooms.max | type == "number")
+    and (.overview.from | type == "array" and all(.[]; (.tile | type == "string") and (.bounds | box)))))
+  and ([.keys.pack, .keys.index, .keys.done] | all(.[]; type == "string"))
+' "$UNIT" >/dev/null 2>&1 || die "$UNIT is not a work unit this worker can read (tiles.ts' AerialWorkUnit)"
 WORK_TILE="$(jq -r .workTile "$UNIT")"
 WINDOW="$(jq -r .window "$UNIT")"
 IFS=/ read -r _ WX WY <<<"$WINDOW"
@@ -286,7 +307,11 @@ for cell in "${CELLS[@]}"; do
 done
 
 # --- 4–5. Warp what shows, and mosaic it, the pick last ---------------------------------------------
-mapfile -t LAYERS < <($AERIAL_PACK layers --unit "$UNIT" --counts "$W/counts")
+# To a file first: a process substitution's failure never reaches `set -e`, and a `layers` that
+# refused the counts (a window naming a frame that supplies nothing) would read as no frame showing —
+# an empty shard that lands, since the packer doesn't read the windows.
+$AERIAL_PACK layers --unit "$UNIT" --counts "$W/counts" > "$W/layers.tsv" || die "the mosaic's layers failed"
+mapfile -t LAYERS < "$W/layers.tsv"
 : > "$W/mosaic.txt"
 warp_layers() {
   local line cell id rank box out n=0
@@ -404,9 +429,21 @@ timings_json
 $AERIAL_PACK pack --unit "$UNIT" --tiles "$W/tiles" --counts "$W/counts" \
   --timings "$W/timings.json" --out "$W/shard" --image "$AERIAL_IMAGE" >&2 || die "packing failed"
 # Each stats file holds one or more `Network statistics:` JSON blocks (a spawned tiler's children
-# print their own); the top-level GET total of each is what that process fetched.
-SOURCE_BYTES="$(for f in "$W"/stats/*.txt; do [[ -s "$f" ]] && awk '/^Network statistics:/ { on = 1; next } on' "$f"; done \
-  | jq -s 'map(.methods.GET.downloaded_bytes // 0) | add // 0')"
+# print their own); the top-level GET total of each is what that process fetched. **An empty file is
+# the common case, not an error**: a counts helper that ran no strip check read nothing, and GDAL
+# prints nothing. The test is an `if`, so the loop's status is 0 whatever the glob's order puts last
+# (a bare `[[ -s ]] && awk` ended the loop on an empty `9.txt` — `set -e` and `pipefail` then
+# stopped the worker between the pack and the upload, every retry: PR #188's review). A missing
+# glob is the literal pattern, which `-s` also skips.
+source_bytes() {
+  local f
+  for f in "$W"/stats/*.txt; do
+    if [[ -s "$f" ]]; then
+      awk '/^Network statistics:/ { on = 1; next } on' "$f"
+    fi
+  done | jq -s 'map(.methods.GET.downloaded_bytes // 0) | add // 0'
+}
+SOURCE_BYTES="$(source_bytes)" || die "the source bytes' statistics could not be read"
 echo "$SOURCE_BYTES" > "$W/source-bytes"
 log "source bytes read: $SOURCE_BYTES"
 log "timings (ms): $(cat "$W/timings.json")"

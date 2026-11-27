@@ -1142,11 +1142,19 @@ The briefs are §10; this is the roster.
 - **The credit range** (`naipCreditRange`, a property): for any index and any set of keys, the range
   is `null` exactly when no key is indexed, and otherwise every flight of every indexed key lies
   within it, with both ends attained.
-- **The warp stack on real COG windows, locally** (GDAL 3.13.2 on the Mac over `/vsicurl/` with a SAS
+- **The warp stack on real COG windows, locally** (GDAL 3.13.2 on the Mac over `/vsiaz/` with a SAS
   token): a z14 window across the VT/NY line on Champlain and one across 72°W; asserted: alpha 100%
   inside the union of cells, no pixel painted by a neighbor's frame, a straight feature (a road)
   continuous across the cutline to a pixel, a partial frame falling through to its fallback, and the
   per-cell counts naming exactly the frames that show.
+- **The worker, whole, start to upload** (`cutAerialServed.test.ts`, where GDAL's Python bindings
+  are, so not on CI): `cut-aerial.sh` itself with real bash, curl, jq, GDAL, the counts helper and
+  the packer, only the network's edges stood in — a local server answering as Planetary Computer's
+  SAS and STAC endpoints and as the blob store (byte ranges, through GDAL's own `/vsiaz/`), serving
+  synthetic frames, and `--local` for R2. Three shapes, each to the upload and exit 0, the bytes the
+  worker reports equal to the bytes the server sent: three single-frame cells, a pick over a fallback
+  that shows, a strip the counts' grid can't see. On CI the same script runs on stand-ins
+  (`tilesScripts.test.ts`), across cell counts and stack depths that put an empty stats file last.
 - **The assembler:** round trip from synthetic shards plus an old archive: every tile read back by the
   `pmtiles` JS reader byte-equal, clustered order checked, the date index naming every tiled cell,
   `pmtiles verify` clean on the output.
@@ -2077,3 +2085,30 @@ before anything changed; each fix landed with a test (commits on the branch):
   over HTTP holds that; a stand-in test on CI holds the sum). No check fired in the warp proof's
   three windows, so their totals above were short only by those header reads. Nothing drawn changed;
   tiling stays 2.
+- **An empty stats file stopped the worker before its upload** (a fifth comment, on the fix above):
+  real. The collector ended its loop on `[[ -s "$f" ]] && awk …`, so when the glob's last file was
+  empty the loop returned 1, and `pipefail` with `set -e` stopped the worker after the pack, before
+  the upload, silently and on every retry. A counts helper that runs no strip check prints nothing
+  — the common case — and with 10–89 stats files the glob ends at `9.txt`, which is a counts file
+  for three single-frame cells or a four-frame one. Reproduced on real frames (three single-frame
+  cells at Champlain's 44.9375°N corner, work tile 11/606/737: the old worker packed 64 tiles and
+  exited 1 with nothing uploaded; the fixed one landed them, 51.2 MB read). The stand-in tests had
+  missed it twice over: their `gdal_translate` printed no statistics, where the real one reads the
+  source, and their two cells put a deepest-zoom warp, never empty, at `9.txt`. The test is an `if`
+  now, so the loop's status is 0 whatever comes last; the stand-ins print what GDAL prints, and new
+  tests run three single-frame cells and a sweep of cell counts and depths (to 138 files, where
+  `99.txt` sorts last).
+- **The same audit, the whole worker and every script the pipeline ships**, for a failure `set -e`
+  can't see. Two more were real and are fixed, each with a test: the mosaic's layers were read
+  through a process substitution, so a `layers` that refused the counts read as no frame showing and
+  an empty shard would land (the packer doesn't read the windows); and most reads of the unit sit in
+  word lists, process substitutions and functions run under `||`, where a field jq can't read comes
+  back as nothing — no `settings.bands` would warp every band with the red as alpha, no chunk
+  `cells` would skip the chunk — so the unit's shape is now checked once, before any read. Checked
+  and fine: every other `[[ … ]] && …` and `(( … )) && …` (none is a loop's, function's or stage's
+  last statement where its status counts), the counters (`x=$((x + 1))`, never `((x++))`), the
+  SAS, resolve and upload steps (every failure reaches a `|| return 1` or `|| die`), rclone's
+  "not found" on the old done record, the redactor's drain; `spawn.sh` (a spawn failure is logged,
+  not fatal, by design; `seq 1 0` and an unset `live` bite only at zero tries), `run-aerial.sh` (a
+  stage's own status, tested), `assemble-aerial.sh`, `bundle.sh` and the warp proof's driver.
+  `shellcheck` is not installed here and wasn't run. Nothing drawn changed; tiling stays 2.
