@@ -214,103 +214,113 @@ function expectLanded(run: ReturnType<typeof cut>) {
   expect(run.stderr).not.toContain('LOCALSIG');
 }
 
-describe.skipIf(!hasGdal)('cut-aerial.sh, whole, with real GDAL and served frames', () => {
-  it('three single-frame cells: no strip check, empty counts stats, and it lands', () => {
-    // A z16 window, three cells side by side across it, each frame its cell and 50 m more.
-    const window = { x: 606 * 32 + 10, y: 736 * 32 + 10 };
-    const b = tileBounds(16, window.x, window.y);
-    const third = (b[2] - b[0]) / 3;
-    const keys = ['4407305ne', '4407306nw', '4407306ne'];
-    const boxes = keys.map(
-      (_, i): MercatorBounds => [b[0] + i * third, b[1] - 100, b[0] + (i + 1) * third, b[3] + 100],
-    );
-    for (const [i, key] of keys.entries()) {
-      const box = boxes[i] as MercatorBounds;
-      frame(`single-${key}`, [box[0] - 50, box[1] - 50, box[2] + 50, box[3] + 50], 0.6);
-    }
-    const unit = buildWorkUnit(
-      {
-        campaign: 'naip-pilot-20261125',
-        pilot: 'served',
-        workTile: '11/606/736',
-        window: `16/${window.x}/${window.y}`,
-        inputHash: 'h',
-        cells: keys.map((key) => ({ key, frames: [`single-${key}`] })),
-      },
-      (key) => outlineOf(boxes[keys.indexOf(key)] as MercatorBounds),
-    );
-    expect(unit.cells.map((c) => c.key)).toEqual([...keys].sort());
-    const run = cut('singles', unit);
-    expectLanded(run);
-    // Each cell's helper ran no check, so its stats file is empty: 3, 6 and 9, and 9 sorts last.
-    for (const n of [3, 6, 9]) expect(run.stats(n)).toBe('');
-    for (const n of [1, 2, 4, 5, 7, 8]) expect(run.stats(n)).toMatch(/^Network statistics:/m);
-    expect(run.mosaic).toHaveLength(3);
-    expect(Object.keys(run.done.cellCounts).sort()).toEqual([...keys].sort());
-  });
+// Each run is a few seconds alone and over 20 under a whole-repo `pnpm test` (measured): real GDAL.
+describe.skipIf(!hasGdal)(
+  'cut-aerial.sh, whole, with real GDAL and served frames',
+  { timeout: 120_000 },
+  () => {
+    it('three single-frame cells: no strip check, empty counts stats, and it lands', () => {
+      // A z16 window, three cells side by side across it, each frame its cell and 50 m more.
+      const window = { x: 606 * 32 + 10, y: 736 * 32 + 10 };
+      const b = tileBounds(16, window.x, window.y);
+      const third = (b[2] - b[0]) / 3;
+      const keys = ['4407305ne', '4407306nw', '4407306ne'];
+      const boxes = keys.map(
+        (_, i): MercatorBounds => [
+          b[0] + i * third,
+          b[1] - 100,
+          b[0] + (i + 1) * third,
+          b[3] + 100,
+        ],
+      );
+      for (const [i, key] of keys.entries()) {
+        const box = boxes[i] as MercatorBounds;
+        frame(`single-${key}`, [box[0] - 50, box[1] - 50, box[2] + 50, box[3] + 50], 0.6);
+      }
+      const unit = buildWorkUnit(
+        {
+          campaign: 'naip-pilot-20261125',
+          pilot: 'served',
+          workTile: '11/606/736',
+          window: `16/${window.x}/${window.y}`,
+          inputHash: 'h',
+          cells: keys.map((key) => ({ key, frames: [`single-${key}`] })),
+        },
+        (key) => outlineOf(boxes[keys.indexOf(key)] as MercatorBounds),
+      );
+      expect(unit.cells.map((c) => c.key)).toEqual([...keys].sort());
+      const run = cut('singles', unit);
+      expectLanded(run);
+      // Each cell's helper ran no check, so its stats file is empty: 3, 6 and 9, and 9 sorts last.
+      for (const n of [3, 6, 9]) expect(run.stats(n)).toBe('');
+      for (const n of [1, 2, 4, 5, 7, 8]) expect(run.stats(n)).toMatch(/^Network statistics:/m);
+      expect(run.mosaic).toHaveLength(3);
+      expect(Object.keys(run.done.cellCounts).sort()).toEqual([...keys].sort());
+    });
 
-  it('a pick that misses half its cell, over a fallback that shows there', () => {
-    const window = { x: 606 * 32 + 12, y: 736 * 32 + 12 };
-    const b = tileBounds(16, window.x, window.y);
-    const mid = (b[0] + b[2]) / 2;
-    const around: MercatorBounds = [b[0] - 60, b[1] - 60, b[2] + 60, b[3] + 60];
-    frame('partial-pick', around, 0.6, mid);
-    frame('partial-fallback', around, 0.6);
-    const unit = buildWorkUnit(
-      {
-        campaign: 'naip-pilot-20261125',
-        pilot: 'served',
-        workTile: '11/606/736',
-        window: `16/${window.x}/${window.y}`,
-        inputHash: 'h',
-        cells: [{ key: '4407305ne', frames: ['partial-pick', 'partial-fallback'] }],
-      },
-      () => outlineOf([b[0] - 40, b[1] - 40, b[2] + 40, b[3] + 40]),
-    );
-    const run = cut('partial', unit);
-    expectLanded(run);
-    const counts = run.done.cellCounts['4407305ne'];
-    expect(counts['partial-pick']).toBeGreaterThan(0);
-    expect(counts['partial-fallback']).toBeGreaterThan(0);
-    // The fallback is drawn over the whole cell, under the pick.
-    expect(run.mosaic).toEqual(['4407305ne-1.vrt', '4407305ne-0.vrt']);
-    expect(existsSync(join(run.work, 'counts', '4407305ne.windows.json'))).toBe(false);
-  });
+    it('a pick that misses half its cell, over a fallback that shows there', () => {
+      const window = { x: 606 * 32 + 12, y: 736 * 32 + 12 };
+      const b = tileBounds(16, window.x, window.y);
+      const mid = (b[0] + b[2]) / 2;
+      const around: MercatorBounds = [b[0] - 60, b[1] - 60, b[2] + 60, b[3] + 60];
+      frame('partial-pick', around, 0.6, mid);
+      frame('partial-fallback', around, 0.6);
+      const unit = buildWorkUnit(
+        {
+          campaign: 'naip-pilot-20261125',
+          pilot: 'served',
+          workTile: '11/606/736',
+          window: `16/${window.x}/${window.y}`,
+          inputHash: 'h',
+          cells: [{ key: '4407305ne', frames: ['partial-pick', 'partial-fallback'] }],
+        },
+        () => outlineOf([b[0] - 40, b[1] - 40, b[2] + 40, b[3] + 40]),
+      );
+      const run = cut('partial', unit);
+      expectLanded(run);
+      const counts = run.done.cellCounts['4407305ne'];
+      expect(counts['partial-pick']).toBeGreaterThan(0);
+      expect(counts['partial-fallback']).toBeGreaterThan(0);
+      // The fallback is drawn over the whole cell, under the pick.
+      expect(run.mosaic).toEqual(['4407305ne-1.vrt', '4407305ne-0.vrt']);
+      expect(existsSync(join(run.work, 'counts', '4407305ne.windows.json'))).toBe(false);
+    });
 
-  it('a strip the counts’ grid can’t see: the check fires, reads, and the fallback is drawn there', () => {
-    // `aerialCounts.test.ts`' case: the cell's west edge 0.05 m past a z16 line, the pick's data
-    // from 1.1 m inside it, short of the first counted center; the fallback everywhere.
-    const cres = (2 * Math.PI * R) / (512 * 2 ** TILE_SETTINGS.countTileZoom);
-    const [wx0] = tileBounds(11, 606, 736);
-    const line = MERCATOR_ORIGIN + Math.ceil((wx0 + 5000 - MERCATOR_ORIGIN) / cres) * cres;
-    const edge = line + 0.05;
-    const x17 = Math.floor((edge + 100 - MERCATOR_ORIGIN) / ((2 * Math.PI * R) / 2 ** 17));
-    const y17 = 736 * 64 + 20;
-    const b = tileBounds(17, x17, y17);
-    const around: MercatorBounds = [b[0] - 30, b[1] - 30, b[2] + 30, b[3] + 30];
-    frame('strip-pick', around, 0.3, edge + 1.1);
-    frame('strip-fallback', around, 0.3);
-    const unit = buildWorkUnit(
-      {
-        campaign: 'naip-pilot-20261125',
-        pilot: 'served',
-        workTile: '11/606/736',
-        window: `17/${x17}/${y17}`,
-        inputHash: 'h',
-        cells: [{ key: '4407306nw', frames: ['strip-pick', 'strip-fallback'] }],
-      },
-      () => ({ minLng: lngOf(edge), minLat: 44.0, maxLng: lngOf(edge + 50_000), maxLat: 46.0 }),
-    );
-    const run = cut('strip', unit);
-    expectLanded(run);
-    const counts = run.done.cellCounts['4407306nw'];
-    expect(counts['strip-fallback']).toBeGreaterThanOrEqual(1);
-    const windows = JSON.parse(
-      readFileSync(join(run.work, 'counts', '4407306nw.windows.json'), 'utf8'),
-    );
-    expect(windows['strip-fallback'].length).toBeGreaterThan(0);
-    // The check read the source, and that read is counted with the rest.
-    expect(run.stats(5)).toMatch(/^Network statistics:/m);
-    expect(run.mosaic).toEqual(['4407306nw-1-w1.vrt', '4407306nw-0.vrt']);
-  });
-});
+    it('a strip the counts’ grid can’t see: the check fires, reads, and the fallback is drawn there', () => {
+      // `aerialCounts.test.ts`' case: the cell's west edge 0.05 m past a z16 line, the pick's data
+      // from 1.1 m inside it, short of the first counted center; the fallback everywhere.
+      const cres = (2 * Math.PI * R) / (512 * 2 ** TILE_SETTINGS.countTileZoom);
+      const [wx0] = tileBounds(11, 606, 736);
+      const line = MERCATOR_ORIGIN + Math.ceil((wx0 + 5000 - MERCATOR_ORIGIN) / cres) * cres;
+      const edge = line + 0.05;
+      const x17 = Math.floor((edge + 100 - MERCATOR_ORIGIN) / ((2 * Math.PI * R) / 2 ** 17));
+      const y17 = 736 * 64 + 20;
+      const b = tileBounds(17, x17, y17);
+      const around: MercatorBounds = [b[0] - 30, b[1] - 30, b[2] + 30, b[3] + 30];
+      frame('strip-pick', around, 0.3, edge + 1.1);
+      frame('strip-fallback', around, 0.3);
+      const unit = buildWorkUnit(
+        {
+          campaign: 'naip-pilot-20261125',
+          pilot: 'served',
+          workTile: '11/606/736',
+          window: `17/${x17}/${y17}`,
+          inputHash: 'h',
+          cells: [{ key: '4407306nw', frames: ['strip-pick', 'strip-fallback'] }],
+        },
+        () => ({ minLng: lngOf(edge), minLat: 44.0, maxLng: lngOf(edge + 50_000), maxLat: 46.0 }),
+      );
+      const run = cut('strip', unit);
+      expectLanded(run);
+      const counts = run.done.cellCounts['4407306nw'];
+      expect(counts['strip-fallback']).toBeGreaterThanOrEqual(1);
+      const windows = JSON.parse(
+        readFileSync(join(run.work, 'counts', '4407306nw.windows.json'), 'utf8'),
+      );
+      expect(windows['strip-fallback'].length).toBeGreaterThan(0);
+      // The check read the source, and that read is counted with the rest.
+      expect(run.stats(5)).toMatch(/^Network statistics:/m);
+      expect(run.mosaic).toEqual(['4407306nw-1-w1.vrt', '4407306nw-0.vrt']);
+    });
+  },
+);
