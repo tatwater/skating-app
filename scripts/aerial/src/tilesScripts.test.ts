@@ -410,11 +410,26 @@ describe('spawn.sh tiles', () => {
     }
   });
 
-  test('a failed list is read as the cap, so it waits rather than floods', () => {
+  test('a failed list is read as the cap, so it waits rather than floods — and never spawns past it', () => {
     const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
       env: { FLY_LIST_FAIL: '1', CAPACITY_TRIES: '2' },
     });
     expect(run.stderr).toMatch(/still 25 Machines alive after waiting/);
+    // Waiting out the cap is not room under it: the round fails, and the next one resumes.
+    expect(run.status).toBe(1);
+    expect(run.runs).toEqual([]);
+  });
+
+  test('a full app stays full: no spawn while the winter pump holds the cap', () => {
+    const full = JSON.stringify(
+      Array.from({ length: 25 }, (_, i) => ({ name: `granule-s2a-${i}`, state: 'started' })),
+    );
+    const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      lists: [full, full, full],
+      env: { CAPACITY_TRIES: '3' },
+    });
+    expect(run.status).toBe(1);
+    expect(run.runs).toEqual([]);
   });
 
   test('--drain waits until the campaign’s Machines have gone, not the app’s', () => {
@@ -447,6 +462,18 @@ describe('spawn.sh assemble', () => {
     expect(run.runs[0]).toMatch(
       /-- assemble-aerial naip-pilot-20261125 --pilot champlain-nhma-me-ny$/,
     );
+  });
+
+  test('the assembler waits for room under the cap too, and never spawns past it', () => {
+    const full = JSON.stringify(
+      Array.from({ length: 25 }, (_, i) => ({ name: `granule-s2a-${i}`, state: 'started' })),
+    );
+    const run = spawnSh(['assemble', 'naip-20261212'], {
+      lists: [full, full],
+      env: { CAPACITY_TRIES: '2' },
+    });
+    expect(run.status).toBe(1);
+    expect(run.runs).toEqual([]);
   });
 
   test('a failed spawn fails; a stray argument is refused', () => {

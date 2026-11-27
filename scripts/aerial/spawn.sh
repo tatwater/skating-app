@@ -96,7 +96,11 @@ live_machines() {
     || echo "$MAX_PARALLEL"
 }
 
-# Room for a whole batch before spawning it, or the cap is really MAX_PARALLEL + BATCH.
+# Room for a whole batch before spawning it, or the cap is really MAX_PARALLEL + BATCH. **Waiting
+# out the cap is not room under it**: fan-out.sh continues anyway after 20 minutes, which on a list
+# that keeps failing (read as the cap, above) or an app the winter pump keeps full spawns past the
+# cap — so here the round fails instead, nothing more is spawned, and the next round (or a re-run)
+# resumes by done record.
 await_capacity() {
   local live
   for _ in $(seq 1 "$CAPACITY_TRIES"); do
@@ -104,7 +108,8 @@ await_capacity() {
     (( live + BATCH <= MAX_PARALLEL )) && return 0
     sleep "$POLL_SECONDS"
   done
-  echo "[spawn] ⚠ still $live Machines alive after waiting — continuing anyway" >&2
+  echo "[spawn] ⚠ still $live Machines alive after waiting — spawning no more (cap $MAX_PARALLEL)" >&2
+  return 1
 }
 
 # Until none of the Machines named with `prefix` is alive.
@@ -128,6 +133,8 @@ if [[ "$MODE" == assemble ]]; then
   fi
   NAME="aerial-asm-${STAMP}"
   echo "[spawn] assemble $CAMPAIGN -> app=$APP region=$ASSEMBLE_REGION vm=$ASSEMBLE_VM_SIZE/${ASSEMBLE_MEMORY}MB"
+  # One Machine, but under the same cap as every other: the app is shared with the winter pump.
+  BATCH=1 await_capacity || exit 1
   # ⚠ No comments inside this command: a `#` between continuations drops every argument after it.
   timeout "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
     --app "$APP" \
@@ -180,7 +187,10 @@ BATCH=$(( MAX_PARALLEL / 4 ))
 SPAWNED=0
 for tile in "${TILES[@]}"; do
   # `wait` before polling, or spawns since the last poll aren't in the count (fan-out.sh).
-  (( SPAWNED % BATCH == 0 )) && { wait; await_capacity; }
+  if (( SPAWNED % BATCH == 0 )); then
+    wait
+    await_capacity || { echo "[spawn] stopped after $SPAWNED of ${#TILES[@]} spawn calls" >&2; exit 1; }
+  fi
   SPAWNED=$((SPAWNED + 1))
   IFS=/ read -r _ x y <<<"$tile"
   unit="$UNITS/11_${x}_${y}.json"
