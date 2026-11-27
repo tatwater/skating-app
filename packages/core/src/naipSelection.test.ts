@@ -335,6 +335,19 @@ describe('the foliage step', () => {
     expect(offSeason).toEqual([]);
   });
 
+  test('struck frames keep the rule’s order among themselves, under every green one', () => {
+    const sept24 = frame('2024-09-12', 0.6);
+    const july19 = frame('2019-07-01', 0.6);
+    // Given oldest-struck first, so the order can't come from the input.
+    const { picks } = selectNaipPicks(
+      [sept21, sept24, july19, sept25],
+      [],
+      [frameStrike(sept21), frameStrike(sept24), frameStrike(sept25)],
+    );
+    expect(picks[0]?.pick).toBe(july19);
+    expect(picks[0]?.stack).toEqual([sept25, sept24, sept21]);
+  });
+
   test('every leaf-on frame struck: the cell keeps its newest sharpest leaf-on frame (allTurned)', () => {
     // Western Maine: 27 September 2023 at 0.3 m, the October flights, and the 1 m summer of 2015.
     const key = '4407003ne';

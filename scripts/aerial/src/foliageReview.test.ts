@@ -231,6 +231,24 @@ describe('proposeFoliageStrikes', () => {
     ]);
   });
 
+  test('a day exactly half turned is frame entries, not a flight entry', () => {
+    const half = [f('4407239se', '2025-09-23', 0.3), f('4407239sw', '2025-09-23', 0.3)];
+    const scores = new Map([
+      [half[0]?.itemId as string, green(0.1)],
+      [half[1]?.itemId as string, green(0.9)],
+    ]);
+    expect(
+      proposeFoliageStrikes(half, scores, { proposedOn: '2026-11-27', reviewed: [], kept: [] }),
+    ).toEqual([
+      {
+        itemId: half[0]?.itemId,
+        reason: 'turned',
+        reviewedBy: 'proposed',
+        reviewedOn: '2026-11-27',
+      },
+    ]);
+  });
+
   test('never an October frame, a cloud-kept frame, or a day the reviewed list decided', () => {
     const reviewed: NaipFoliageStrike[] = [
       {
