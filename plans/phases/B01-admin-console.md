@@ -337,6 +337,13 @@ placeholder. Tune it once the heartbeat (D218) records per-flush times: take the
 between flushes in runs that finished normally and set the snooze to 2–3× that. Consider letting
 the alarm clear itself on the run's next flush instead of on a fixed timer.
 
+**Amended 2026-11-27 (B01-8, the founder's rulings of 2026-11-26 and 2026-11-27).** `crons.ts` holds
+**52** crons (46 intervals, 6 daily), not thirty. *Cancel* is built and not drawn (D342); the
+snooze is stored on the run and named *Wait 30 minutes* (D342), and it does clear itself on the next
+flush, as above. The cron record is one table for every cron (D343), not a per-pipeline one, and the
+Fly machine log comes from the cutter's own upload and the pump's capture at settle (D344). Machinery
+is built as B01-8, its order and slices in *Machinery (B01-8, the design)* (§12.8, D340).
+
 ### §5.6 — Season
 
 `/admin/season` is this season: the watch (A06i's card), imagery state, field dates, and the
@@ -1074,6 +1081,11 @@ per workstream unless two are small enough to share one; the roadmap entry flips
   scope, heartbeat and event stream; the cron list with last outcome and next due; the cost
   ledger (D219) with the meters generalized and the invoice form; the catalog-coverage card;
   `imageryRuns` and `importRuns` read through one list; stalled runs.
+  **Designed 2026-11-27** as B01-8 (the founder's rulings of 2026-11-26 and 2026-11-27, D340–D346):
+  see *Machinery (B01-8, the design)* in §12.8. Six sequential PRs: the frame and watching the
+  campaign (8a), the cron backbone and Imagery, Weather, the rest of Corpus and Enrichment, Health,
+  the Cost Ledger; Notifications, Rollovers, Analytics and Retention are not in this batch. "All
+  thirty" crons are 52.
 - **§6 — Season.** The season page, the per-season rollup (D220, the §10 pick), the change log,
   past seasons; A06i's components re-homed; the cost summary from the ledger.
 - **§7 — People.** The person's content record (`contentRecord.personVerdicts` and `personWithdrawals` — retired in B01-4m for `personDeleted` — D248, built
@@ -16317,6 +16329,1250 @@ re-measured it at the final head. It wasn't re-run for this record.
   backend.
 - **Territories that overlapped on `lib/corpusTasks.ts` came back as conflicts** when builders
   cherry-picked S1's first merge. Each was resolved by keeping the owner's version.
+
+### Machinery (B01-8, the design)
+
+*Designed 2026-11-27 against `origin/main` at `ac51f02e7` (#187); nothing built.* Machinery (§5.5,
+§8's §5, D218, D219) is the console mode where an operator watches the pipelines work: the corpus
+campaign on the laptop, the imagery and weather crons on Convex, and later notifications, rollovers,
+analytics and retention. The boards are the 26 on the *Machinery* page of *Gli · Admin console ·
+Review 5* (manifest `review10/boards.tsv`, boards 6.0–6.9; HTML in
+`skating-mockups/admin-variants/machinery-*-v5.html`, `ledger-v5.html` and `live-v5.html`'s
+"a run, as it goes quiet"). Paper wins where it and the HTML differ. This design covers the wave's
+shape and its first PR, **B01-8a**, in full; the later PRs are recorded as the founder ruled them and
+are designed in their own sections when their turn comes. Its decisions are **D340–D346**.
+
+#### The founder's rulings (2026-11-26 and 2026-11-27)
+
+Given to the governor on 2026-11-26 and 2026-11-27, in answer to the two inventories it ordered
+(the corpus and enrichment pages; imagery, weather and the shared frame). Recorded here whole,
+including the rulings for later PRs, because they exist nowhere else. The decision each became is
+named; a ruling that only picks a mechanic stays here.
+
+**The wave**
+
+1. **Machinery is B01-8, built as sequential PRs off `origin/main`**, alongside the still-open Corpus
+   wave (B01-7b–7d, another thread). Each PR rebases onto main just before it opens. Its decisions
+   mint from D340 (D340–D359 are reserved for it; the last on main is D313). **D340.**
+2. **Dev deploys are asked of the founder one at a time**: a deploy from this branch would drop the
+   Corpus thread's unmerged indexes. **D340.**
+3. **Only the founder presses real triggers on dev** — *Run now*, *Retry failed*, *Repair gaps now*,
+   starting a campaign. Delegates prove with `convex-test` and a throwaway local backend, and each
+   PR lists the buttons awaiting his first press. **D340.**
+4. **The order, changed by the founder.** PR 1 is the Machinery frame and the "watch the campaign"
+   slice of Machinery › Corpus (B01-8a). Then the cron-run backbone and Imagery; then Weather; then
+   the rest of Corpus and Enrichment; then Health; then the Cost Ledger. Imagery and Weather take
+   two PRs, three if needed. Notifications, Rollovers, Analytics and Retention are not in this batch.
+   **D340.**
+5. **The campaign waits for 8a.** The founder will not run the corpus campaign until 8a is merged,
+   deployed to dev and pulled to his laptop: he wants to watch that campaign on this page. So
+   everything the page needs recorded is written by the ETL and its run logger in 8a — D310's
+   reasoning: a page built later can't replay what the campaign didn't write. **D341.**
+6. **A page joins Machinery's sidebar only when it is built** (the Corpus precedent, no placeholders);
+   `/admin/machinery` opens on the first built page until Health lands. No *Cost ledger* entry and no
+   dollar figure anywhere until the ledger lands. **D340.**
+7. **An old page retires in the PR that replaces it** (D305): `/admin/imports` with Machinery ›
+   Corpus (this design decides which PR: *Legacy retirement*, below); the Open-Meteo meter leaves
+   `/admin/ice-calibration` with Weather; the imagery panel leaves `/admin/seasons` with Imagery (the
+   season settings stay), and the operator emails that send people to the Seasons page are re-pointed.
+
+**The Corpus page (8a)**
+
+8. **The live log**: the run logger sends its own events (start, stage, count, failure, flush, close)
+   to a capped events table at each flush — no loader edits for the log itself. **D341.**
+9. **A row for the campaign itself**, opened and closed by `run-corpus.sh`: its flags, its exit
+   status, and a heartbeat between passes. **D341.**
+10. **The silent passes get progress flushes** — the merge, the landmark match and its export, and any
+    other pass that never flushes — so a stall rule on `progressAt` is honest. **D341.**
+11. **The 30-minute snooze (*Wait 30 minutes*) is stored on the run**, seen by every admin and by the
+    Overview. **D342.**
+12. **Mark failed is a real server write** — who, when, why, an audit row — that a late `finish` from
+    the laptop cannot silently erase. **D342.**
+13. **Cancel: build it and hide it.** The founder expects the campaign to run on Fly eventually. The
+    smallest honest version is built and tested; no control is drawn. Whether it could be shown now
+    for laptop runs is a fork, not an assumption (*Forks*, 1). **D342.**
+
+**Imagery (a later PR; recorded now)**
+
+14. **The Fly machine log comes from both sources.** The cutter uploads its own log to R2
+    incrementally as it runs, so a killed machine leaves all but its last seconds; and the pump
+    captures the machine's exit event and exit code, and Fly's own log lines, at settle — the only
+    place an out-of-memory kill is named (today the exit code is usually lost because the machine is
+    destroyed first, `imageryLive.ts:815-822`). A successful attempt's log is drawn collapsed, a
+    failed one open. An executor delegate may build and pin the new cutter image. **D344.**
+15. **One run-record table for every cron**, not one per pipeline: a heartbeat row per job, plus a
+    compact per-day tick list (the pump ticks 480 times a day; no row per quiet tick); per-run logs
+    in their own capped table with a retention sweep; a new `machinery.weather` capability beside
+    `machinery.imagery`. **D343.**
+16. **Machine-minutes only, no dollars, until the ledger.** *Pause* and *Try again now* stay on the
+    Imagery page though board 6.4 omits them; the waiting state draws no *Run now* on the poll (a
+    poll before *Start* is a silent skip, `imageryLive.ts:629`). **D346.**
+17. **Next-run times.** The daily and weekly weather and watch crons move to fixed UTC times; an
+    interval cron shows its interval and its last run, never a next-run clock time. **D346.**
+
+**Weather (a later PR; recorded now)**
+
+18. **Draw what the pipeline does**: one run, its cells done, its cells failed, and "the gap repair
+    picks these up" — not the board's batch-retry ladder. No change to pipeline behavior. Do add the
+    failures grouped by cause (timeout, rate limit, server error, one sample each): today they are
+    only `console.warn`ed (`weatherArchive.ts:1553`). **D345.**
+19. **Every pipeline page answers, in order**: is it on time; did the last run do its job (its output
+    against what was expected); what is still broken (open gaps, and the oldest); why (failures by
+    cause); what do I press. **D345.**
+20. **A follow-up list**, kept as its own register (*Machinery follow-ups*, below): whether the gap
+    repair actually closed yesterday's gaps; one quick in-run retry for a transient timeout; provider
+    response times; a forecast of when the Open-Meteo quota runs out at the current rate; and what
+    this design's reading found.
+21. **Noted for Health**: `crons.ts` holds 52 crons (46 `crons.interval`, 6 `crons.daily`), where §5.5
+    and D218 say thirty; the plan's count is corrected (§5.5 and D218, amended 2026-11-27).
+22. **After a campaign's pass is marked failed, offer to mark the campaign too** (2026-11-27, Ma14,
+    option (c) of three: (a) mark the campaign with its pass, (b) keep two presses, (c) after the
+    pass is marked, offer *Mark the campaign failed too*). The two marks stay separate and each
+    undoes on its own. **D342** (a mechanic of its *Mark failed*; no new decision).
+
+#### What the code says today
+
+Checked against `origin/main` at `ac51f02e7`. The two inventories' claims were re-read at their
+lines; where they and the code differ, the code is taken.
+
+**The run record (B01-7a built half of what the page needs, D310).**
+
+- `importRuns` (`schema.ts:5419-5521`) holds one row per run: kind, label, `campaignId`, deployment,
+  status (`running | succeeded | failed`, `enums.ts:757`), start and finish, free-form `counts`,
+  `stages` (the path), `failures` (capped at 200, `importRuns.ts:31`) with `failuresTotal`,
+  `coverage`, `error`, `notes`, and since 7a `scope` and `progressAt`. Indexes: `by_started`,
+  `by_kind_started`, `by_campaign`.
+- `importRuns.start` (`:77`) stamps `progressAt` at open; `progress` (`:124`) stamps it on every
+  call; `finish` (`:151`) stamps it and **overwrites `status` unconditionally** (`:175-183`), then
+  schedules the weather-cell reconcile for a succeeded, applied run of an invalidating kind
+  (`:199-209`, `WEATHER_CELL_INVALIDATING_KINDS`, `enums.ts:737`). Nothing in the backend reads
+  `progressAt` except its tests.
+- The writes are `internalMutation`s reached through `pnpm exec convex run` (`run-log/src/convexRun.ts`),
+  a synchronous subprocess per call (about one to three seconds each). The reads `list` (`:286`,
+  whole rows, at most 200, no paging) and `get` (`:328`) gate on `machinery.read` (admin).
+- **No public write touches a run.** There is no capability for one: the map's Machinery lines are
+  `machinery.read`, `machinery.imagery` and `machinery.ledger` (`core/capabilities.ts:160-171`).
+
+**The run logger** (`scripts/run-log/src/runLogger.ts`). `start` (`:84`), `count`, `stage`, `fail`,
+`coverage`, `flush` (`:143`, calls `progress`), `succeed`/`failed` (`:165`, calls `finish`). Every
+call is guarded: bookkeeping never breaks the import (`:207`). It omits `scope` when absent because
+an older deployment's validator refuses an unknown key (`:94-96`) — the compatibility rule 8a
+extends. Nothing it sees is stored as a line of text; the only log is the laptop's
+`.scratch/merge/run-<campaign>.log`.
+
+**Which passes flush.** Verified by grep over `scripts/`:
+
+| Pass (`run-corpus.sh`) | Kind | Flushes | Silent stretch |
+|---|---|---|---|
+| `build-region` | `region_masks` | never (`buildRegion.ts:668-672`) | its whole run (about 4 min) |
+| `merge` | `corpus_merge` | never (start `merge.ts:516`, close `:1044`) | its whole run (the founder's 22–45 min) |
+| `load` | `canonical_water` | every 25 batches (`load.ts:428-434`) | 25 batches: about 95 s on 2026-08-09 (174 batches in about 11 minutes, by the log's and the outputs' file times) |
+| `load-sub-areas` | `sub_area_seed` | never (`loadSubAreas.ts:120`) | its whole run |
+| `landmarks` | `landmark_match` | never (`landmarkCli.ts:244`, `:385`) | its whole run, including the outline export (about 8 min) |
+| `load-landmarks` | `landmark_seed` | never (`loadLandmarks.ts:122`) | its whole run |
+| `load-landmark-names` | `landmark_seed` (the same kind as the line above) | never (`loadLandmarkNames.ts:69`) | its whole run |
+| `prune-floor` (by hand) | `floor_prune` | yes (`pruneFloor.ts:237`) | — |
+| `seed-standing` (by hand) | `standing_seed` | no | — |
+| `retire-absorbed` (by hand) | `absorbed_retire` | yes (`retireAbsorbed.ts:120`) | — |
+
+`load.ts` counts `batchesTotal` only after its loop (`:436-439`), so a live load can't say *66 of
+170*. Two of the script's passes share `landmark_seed`, so a pass can't be told from its kind alone.
+
+**The script** (`scripts/etl/run-corpus.sh`). It logs itself through a process substitution, every
+line stamped since 7a (`:116-135`), and re-raises its own exit status from an `EXIT` trap (`:142-148`)
+— the `| tee` trap in its header. It prints `/admin/imports?campaign=<id>` only at the end (`:228`).
+It writes no row of its own: nothing records the planned passes, a skipped stage (sub-areas with no
+actor, `:191`; landmarks with `--skip-landmarks`, `:204`), or that the script stopped between passes
+(the refused load after a merge without a manifest, `:163-166`).
+
+**The readers a live campaign misleads.**
+
+- `lib/campaignRuns.ts:35` `lastCampaignRun` takes the newest merge-or-load **whatever its status**,
+  so the Overview's Corpus card's *last campaign* (`console.ts:141`) names a campaign the moment its
+  merge starts, while it runs, and after it fails.
+- `machinery.ts:159-169` (`overviewJobs`) leaves a running import out ("nothing yet tells it from a
+  dead one") and shows the newest *finished* one as ok — so while the campaign runs the card shows
+  the previous import as healthy, and `stalled` (`JOB_STATES`, `:29`) is drawn by the card but never
+  produced.
+- `finish` schedules the weather-cell reconcile only on success (`importRuns.ts:199-209`), so a run
+  marked failed by hand would schedule nothing: board 6.2's assist line says so.
+- `bodyConsole.ts:132-141` dates a body's *outline trusted since* from the **first** `importRuns` row
+  of its last campaign (`by_campaign`, ascending). Since 7a that is `build-region`'s row (register
+  Co11); a campaign row opened before every pass would make it the campaign's own.
+- Register Sh5: every `progress` call re-runs the readers of `importRuns` — the Overview's jobs card
+  (`machinery.ts:160`), the last-campaign lookup (`console.ts:141`), the activity feed, and each corpus
+  task view's *Queued by* (`lib/corpusTaskViews.ts:453`).
+
+**The web.** No Machinery mode exists: `CONSOLE_MODES` (`consoleNav.ts:71`) ends at People; the go-key
+`M` is free. `/admin/imports` (`routes/admin.imports.tsx`, 216 lines) lists the last 50 runs with a
+`?campaign=` filter applied in the browser and opens `ImportRunDetail` (`components/admin/ImportRunDetail.tsx`,
+819 lines: `Coverage` `:177`, tallies `:300`, `Path` `:483`, `Failures` `:703`) at `?run=`. It shows
+**every** run kind, the enrichment loaders' (`lake_depth`, `elevation`, `wind_climate`, the
+bathymetry kinds, the access kinds) and the archives' (`raw_archive`, `r2_mirror`) included. The
+kit already has the run log (`kit/log.tsx`: Follow, the Copy split, lines toned ok/warn/bad/stage,
+5,000 lines kept cheap), `Lanes`, `StatTile`, `Meter`, `ActionBar`, `Table`, and the Corpus mode's
+`CorpusLanes`/`useCorpusSidebar` as the pattern for a mode's sidebar.
+
+**Every inbound link** (re-grepped):
+
+| Link | Where | Today | 8a |
+|---|---|---|---|
+| The Overview's Machinery card, *Health* foot | `OverviewCards.tsx:218` → `overviewRoutes.ts:49-50` | `/admin/imports` | `/admin/machinery` (opens Corpus until Health lands) |
+| The same target in the stories' fallback map | `overviewLinks.tsx:60-61` | `/admin/machinery` | unchanged; the two maps now agree |
+| The ledger target | `overviewRoutes.ts` `ledger` → `null`; `overviewLinks.tsx:64-65` → `/admin/machinery/ledger` | Home draws no link while cost is unread | unchanged until the Cost Ledger PR (ruling 6) |
+| A job row on the card | `OverviewCards.tsx` | no link per row | an import row opens its run (`?run=`) |
+| Inbox Zero's *Machinery →* | `InboxZero.tsx:143` (`Elsewhere` with no `to`) | *Coming soon* (D286) | a link to `/admin/machinery`, with a line from `machineryRuns.lanes` (*1 run stalled*); drawn only with `machinery.read` |
+| The palette | `ConsolePalette.tsx:39` reads `CONSOLE_MODES` and `LEGACY_PAGES` | *Imports* under Legacy | *Machinery* as a mode (go `G M`); *Imports* stays under Legacy until it retires |
+| The URL the script prints | `run-corpus.sh:228` | `/admin/imports?campaign=<id>`, at the end | `/admin/machinery/corpus?campaign=<id>`, printed **at the start** and again at the end |
+| Docs and READMEs that name `/admin/imports` | `scripts/etl/README.md`, `scripts/run-log/README.md`, `scripts/lake-depth/README.md`, `scripts/seed-destinations/README.md`, `README.md:183`, `docs/corpus-lifecycle.md:143`, loader comments and log lines (`fetchNhd.ts:215`, `bathymetry/src/fetch.ts:271`, `run-canonical.sh:72`) | the old page | swept in the PR that retires the page (8d), when the URL actually changes; a redirect keeps every old link working meanwhile |
+
+**Plan text that is stale against the code** (amended, dated, where it stands): §5.5's "all thirty"
+crons are 52; §5.5's run page "plus *Cancel* where the runner supports it" is now ruling 13; D218's
+"all thirty" likewise; §8's Machinery bullet lists the work without the order ruled above.
+
+#### The wave
+
+Sequential PRs, each closed at Greptile 5/5 on its own branch (§12.2), each rebased onto main just
+before it opens, each with its dev deploy asked of the founder.
+
+| PR | What it holds | Size (honest: lines with tests and stories, `plans/` excluded) |
+|---|---|---|
+| **B01-8a — The frame, and watching the campaign** | the Machinery mode, route and sidebar (Corpus its only entry); the campaign's live record (events, the campaign row, the silent passes' flushes, the pass names); the stall rule in core; *Mark failed*, *Wait 30 minutes* and the hidden *Stop*; the run list, the campaign page and the re-homed run detail; the Overview's card producing `late`, `stalled` and `running`; Inbox Zero's *Machinery →*; the misleading readers fixed | **~15,000–20,000 over ~120–160 files**, about half tests and stories. Over the guideline: the founder will run the campaign only on this page, and the record and the page review worse apart (the record's every field exists for one drawn element) |
+| **B01-8b — The cron backbone and Imagery** | one run-record table for every cron, its heartbeat row and per-day ticks, per-run logs with their retention sweep, the shared wrapper, `machinery.weather` (D343); board 6.4 and its states: the attempts table, the cutter's R2 log and the pump's exit capture (D344), machine-minutes (D346), the granule list and detail, *Poll now*; the imagery panel leaves `/admin/seasons` and the operator emails are re-pointed; Health's lamp is not yet drawn | ~20,000–26,000; two PRs if the founder prefers the backbone apart (the backbone has no page of its own, so the governor's recommendation is one) |
+| **B01-8c — Weather** | run ids through the three self-scheduling chains, per-run counters and weighted calls, failures by cause (D345), the counter per tier per day, the registry size, the fixed UTC times (D346), *Run now* and *Repair gaps now* under `machinery.weather`, board 6.5; the Open-Meteo meter leaves `/admin/ice-calibration` | ~12,000–16,000 |
+| **B01-8d — The rest of Corpus, and Enrichment** | *Your machine* with the filled-in resume commands, *Afterwards on Convex* (the triggers: sync weather cells, measure catalog coverage, recompute region stats), the diagnosis prompt; board 6.3 (the depth ladder's aggregate, the coverage header, D303's enrichment gaps); `/admin/imports` retired with its docs swept | ~16,000–22,000; the governor may split it at the Corpus/Enrichment line |
+| **B01-8e — Health** | board 6.0: what needs a look, 7-day failures, every job's heartbeat, the shell's machinery lamp; register Sh4 (each job's last run), In26 (parked photo jobs), Co2 (a cross-lake list of hazard merges, with *Unmerge*) | ~12,000–16,000 |
+| **B01-8f — The Cost Ledger** | D219's ledger table, the meters generalized, invoices, rates (boards 6.1); dollars appear only here; the Overview's ledger link | ~15,000–20,000 |
+
+**The batch, honestly: ~90,000–120,000 lines.** The scale is the measured one (*Size, honestly* under
+*Briefs (B01-7a)*): the Inbox wave's designs landed at 4.9× their estimates, 7a at its brief's floor;
+about half of every PR is tests and stories. 8a's figure is built bottom-up in *Briefs (B01-8a)*,
+*Size, honestly*; the later rows are the inventories' estimates at the measured ratio, not checked
+against the code until each is designed. Notifications, Rollovers, Analytics and Retention (boards
+6.6–6.9) are not in this batch (ruling 4).
+
+#### B01-8a — The design
+
+##### What 8a builds, and what it leaves
+
+8a is everything the founder needs to watch a corpus campaign on this page, plus the frame every
+later page sits in. It leaves to 8d: *Your machine* (the copyable resume commands), *Afterwards on
+Convex* (the three triggers), *Copy a diagnosis prompt* in the log's copy menu, Enrichment, and the
+retirement of `/admin/imports`. It leaves to 8b and 8e: the shell's machinery lamp ("Running ·
+imagery pump", which needs the cron backbone), Health, and every non-corpus pipeline.
+
+##### The record: five additions, widen-only
+
+Every new field is optional; every row written before 8a reads *Not recorded* for it. Field names
+are ASCII. No array can grow past a few dozen items (the cap on events lives in its own table). Each
+public read pages with one `.paginate()` or takes a bounded `.take()`.
+
+**1. The events table, `runEvents`** (D341). One row per line of a run's log, written by the run
+logger at each flush, never by a loader directly.
+
+```ts
+  /**
+   * A run's log, line by line (D341, B01-8a): what the run logger saw — start, stages, the counts at
+   * each flush, failures, beats, close — and what the console did to the run (marked failed, waited
+   * on, asked to stop). Written by `runEvents.append` (the logger, at each flush) and by the
+   * machinery writes; read by Machinery's live tail. Capped per run at `MAX_RUN_EVENTS`, with one
+   * `cap` row counting what was not kept; `close`, `mark`, `wait` and `stop` rows are always kept.
+   * Kept as long as the run row is (corpus runs are few); the cron logs' retention sweep (B01-8b,
+   * D343) decides any horizon for them.
+   */
+  runEvents: defineTable({
+    runId: v.id('importRuns'),
+    /** 0-based per run, assigned by the server: the tail's order, whatever the clocks say. */
+    seq: v.number(),
+    /** The server's clock at the append. */
+    at: v.number(),
+    /** The writer's clock when it saw the line (the laptop's): the time the tail shows. */
+    loggedAt: v.number(),
+    kind: literals(RUN_EVENT_KINDS),
+    /** The line, trimmed by the server to `MAX_RUN_EVENT_TEXT` characters. */
+    text: v.string(),
+    /** On the `cap` row only: how many lines past the cap were not kept. */
+    dropped: v.optional(v.number()),
+  }).index('by_run_seq', ['runId', 'seq']),
+```
+
+`RUN_EVENT_KINDS` (`lib/enums.ts`) = `start`, `stage`, `flush`, `beat`, `warn`, `fail`, `close` (the
+logger's), `mark`, `wait`, `stop` (the console's), `cap`. `MAX_RUN_EVENTS` = 2,000 ordinary lines a run;
+`MAX_RUN_EVENT_TEXT` = 500 characters; at most 200 events an append (the argument refused beyond).
+An append reads the run's last row (`by_run_seq`, descending, `first()`) for the next `seq`, so it
+costs one index range, the run, and its inserts. A corpus pass writes tens to a few hundred lines
+(the load: about 10; the merge with its beats: about 50), so the cap is generous and exists for a
+loop gone wrong.
+
+**2. Seven optional fields and two indexes on `importRuns`** (D341, D342):
+
+```ts
+    /** The campaign row this pass ran under (D341): from `RUN_CORPUS_PARENT`, set by run-corpus.sh. */
+    parentRunId: v.optional(v.id('importRuns')),
+    /** run-corpus.sh's name for the pass (`merge`, `load-landmarks`…), from `RUN_CORPUS_PASS`. */
+    campaignPass: v.optional(v.string()),
+    /**
+     * The Machinery list this run is a row of (D341): set by `start` from the kind for a run with no
+     * parent (`corpusRunPlan`'s kinds → 'corpus'); absent on a campaign's own passes, which draw
+     * inside their campaign. Widened as each pipeline's page lands (8d: 'enrichment').
+     */
+    listedIn: v.optional(literals(['corpus'])),
+    /** On a `corpus_campaign` row only: what the script was asked, and how it ended. */
+    campaign: v.optional(
+      v.object({
+        flags: v.array(v.string()),
+        /** The passes in order, as the script will run them; a skipped one says why. */
+        plan: v.array(
+          v.object({
+            pass: v.string(),
+            by: literals(['script', 'hand']),
+            skipped: v.optional(v.string()),
+          }),
+        ),
+        exitCode: v.optional(v.number()),
+        /** The pass that was running when the script exited. */
+        lastPass: v.optional(v.string()),
+      }),
+    ),
+    /** Marked failed in the console (D342): who, when, why, and the audit row that did it. */
+    markedFailed: v.optional(
+      v.object({
+        byUserId: v.id('profiles'),
+        at: v.number(),
+        reason: v.string(),
+        actionId: v.id('moderationActions'),
+      }),
+    ),
+    /** The loader's own close, kept beside a hand mark rather than over it (D342). */
+    loaderFinish: v.optional(
+      v.object({
+        status: literals(['succeeded', 'failed']),
+        at: v.number(),
+        error: v.optional(v.string()),
+        applied: v.optional(v.boolean()),
+      }),
+    ),
+    /** *Wait 30 minutes* (D342): the stalled alarm held until `until`, seen by every admin. */
+    stallWait: v.optional(
+      v.object({
+        until: v.number(),
+        byUserId: v.id('profiles'),
+        at: v.number(),
+        actionId: v.id('moderationActions'),
+      }),
+    ),
+    /** A request to stop (D342, built and not drawn): the logger stops at its next flush. */
+    stopRequest: v.optional(
+      v.object({
+        byUserId: v.id('profiles'),
+        at: v.number(),
+        actionId: v.id('moderationActions'),
+        /** When the run's logger saw it. */
+        seenAt: v.optional(v.number()),
+      }),
+    ),
+  })
+    // …the three existing indexes, then:
+    .index('by_listed_started', ['listedIn', 'startedAt'])
+    .index('by_parent', ['parentRunId', 'startedAt']),
+```
+
+Both indexes are read with `eq` on a defined value only (`eq('listedIn', 'corpus')`,
+`eq('parentRunId', id)`): an index on an optional field is not sparse, so no read may range from its
+start. `listedIn` is a stored field rather than a filter over kinds because the list must be one
+`.paginate()` over one range; it is written by `start` and set on older rows by the backfill below.
+
+**3. A kind for the campaign row**: `corpus_campaign` joins `IMPORT_RUN_KINDS` (`enums.ts:631`) and
+the run logger's `ImportRunKind` (`run-log/src/types.ts`; `importRunVocabulary.test.ts` holds the two
+in step). It is **not** in `WEATHER_CELL_INVALIDATING_KINDS`, `CAMPAIGN_RUN_KINDS` or any reader that
+groups a campaign's loads.
+
+**4. Six audit verbs and a target**: `importRun` joins `MODERATION_TARGET_TYPES`; `mark_run_failed`,
+`reopen_run`, `wait_on_run`, `stop_waiting_on_run`, `request_run_stop` and `withdraw_run_stop` join
+`MODERATION_ACTIONS`, each with its words in `actionLabels.ts` and the Overview's `ACTION_WORDS`.
+
+**5. A capability**: `machinery.corpus` — `write('admin', 'Mark a corpus run failed, wait on a
+stalled one, and ask one to stop (D342).')`. Per pipeline, as ruling 15 sets `machinery.weather`
+beside `machinery.imagery`.
+
+**The backfill, `importRunJobs:backfillListed`** (internal, one `.paginate()` a pass over
+`by_started`, 100 rows a pass, self-scheduling, a dry run first): sets `listedIn` on every row with
+no parent whose kind is a corpus kind. `importRuns` holds a few hundred rows on dev, so it is a
+handful of passes. Until it has run, the list shows only runs started after the deploy, and says
+*Older runs appear once they are indexed* — never an empty history read as complete. Proven on a
+throwaway local backend at its page size before the PR opens (CLAUDE.md: a write whose size scales
+with user data).
+
+##### The run logger's half (D341)
+
+All of it in `@skating/run-log`; no loader changes for the log. Every addition keeps the logger's
+first rule: bookkeeping never breaks the import.
+
+- **Events.** The logger buffers a line for each call it already receives: `start` ("Run started ·
+  full canonical, 5 states · dev · dry run" from its options), `stage` (the stage's name and detail),
+  `fail` (summarized per flush: "3 new failures · e.g. nhd/3290011 · self-intersects after
+  simplify"), `flush` (the counts that changed since the last flush, `name=value` in the order the
+  loader set them, capped at 500 characters), and `close` ("Succeeded", or "Failed: <error>"). At
+  each `flush`, after `importRuns:progress`, it sends the buffer through
+  `runEvents:append` (at most 200 lines; past that it keeps the first 150 and the last 50 and says
+  how many it left out in one `warn` line). At close, after `finish`, the last lines go the same way.
+- **Beats.** A new `beat(label?)`: cheap to call in a hot loop (a clock comparison), it flushes only
+  when `beatMs` (default 60 s) has passed since the logger last reached Convex, and adds a `beat` line
+  with the label if one is given ("matching · 12,000 of 40,000 groups"). The silent passes call it
+  (ruling 10, *Which passes get which flushes*, below).
+- **Directives.** `append` returns `{ stop, markedFailed, stored, dropped }`. On `markedFailed` the
+  logger writes one line to the terminal ("This run was marked failed in the console at 14:20;
+  carrying on, and its own close will be kept beside the mark") once. On `stop` (built, not drawn):
+  the logger appends a `stop` line, closes the run as failed with "Stopped on request", and exits the
+  process with status 130 through an injectable `onStop` (tests replace it). Every corpus pass is
+  safe to stop between flushes: the loads are idempotent upserts, the merge writes its manifest last
+  (so the script refuses to load a half merge), and `prune-floor` and `retire-absorbed` re-run.
+- **The pass and its parent, from the environment.** The constructor reads `RUN_CORPUS_PASS` and
+  `RUN_CORPUS_PARENT` (set by `run-corpus.sh` for each pass) and sends them at `start` as
+  `campaignPass` and `parentRunId`. A loader run by hand has neither, and lists on its own.
+- **Compatibility with a dev that has or hasn't been deployed** (the rule `:94-96` already follows):
+  - *Dev without 8a, laptop with 8a:* `start` with 8a's keys is refused by the old validator; the
+    logger retries once without them (`parentRunId`, `campaignPass`) and the row is written as 7a
+    wrote it. `runEvents:append` doesn't exist: the first refusal ("Could not find …") turns events
+    off for the run with one warning. A `corpus_campaign` start is refused: the campaign CLI warns
+    and the script carries on with no campaign row. The import runs exactly as today.
+  - *Dev with 8a, laptop without it:* every new field is optional, so the old logger's rows are 7a's
+    rows; they list once `start` derives `listedIn` from the kind.
+  - The founder deploys from main and pulls before the campaign (*After merge*), so both halves are
+    8a's when it matters; the fallbacks exist so a mistake in that order loses lines, never the run.
+
+**The campaign row and its CLI** (D341). A new `src/campaign.ts`, run as
+`pnpm --filter @skating/run-log campaign <verb>`:
+
+- `open <campaignId> --flags=<…> --plan=<pass,pass,…> [--hand=<pass,…>] [--skipped=<pass>:<why>,…]` —
+  `importRuns:start` with `kind: 'corpus_campaign'`, `label: 'Corpus campaign <id>'`, the campaign id,
+  the scope (`full-canonical`, the five states, `complete: true`: a campaign's intent is always the
+  whole corpus; what it achieved is its passes' rows), and `campaign: { flags, plan }`; prints the
+  new run's id on stdout, nothing else.
+- `pass <runId> <pass>` — a beat on the campaign row (`progress`) and a `stage` line "Pass <pass>
+  started"; prints `stop` if the row (or nothing) asks it to stop, else nothing.
+- `skip <runId> <pass> <why>` — a `stage` line "Pass <pass> skipped: <why>".
+- `close <runId> --exit=<code> [--last-pass=<pass>]` — `finish` with `succeeded` for exit 0, else
+  `failed` with "Stopped at <pass> (exit <code>)", and `campaign.exitCode` and `lastPass`.
+- Every verb exits 0 whatever Convex says (the receipt rule of `cli.ts`): the campaign must never
+  fail because its row couldn't be written.
+
+**`run-corpus.sh`** gains, inside its existing structure:
+
+- After the logging is set up: `CAMPAIGN_RUN="$(… campaign open …)" || CAMPAIGN_RUN=""`, the plan
+  built from the flags it parsed (sub-areas and landmarks marked skipped exactly where the script
+  will skip them), and `export RUN_CORPUS_PARENT="$CAMPAIGN_RUN"`; then the console URL,
+  `/admin/machinery/corpus?campaign=<id>`, printed first thing.
+- Before each pass: `CURRENT_PASS=<pass>`, `export RUN_CORPUS_PASS=<pass>`, and `campaign pass`; if it
+  printed `stop`, the script says so and exits 130.
+- In `finish()`, **before** the descriptors close and without touching `$status`: `campaign close
+  --exit=$status --last-pass=$CURRENT_PASS`, its failure ignored. The `EXIT` trap runs on an error, on
+  `exit`, and on Ctrl-C; a laptop that sleeps or a `kill -9` runs nothing, which is what the stall
+  rule is for.
+- The end's URL moves to Machinery; the by-hand commands stay printed.
+- `runCorpus.test.ts` (7a's harness, which runs the file against a failing pass) gains: the status
+  still re-raised when the campaign CLI fails or is missing; `close` called with the failing pass's
+  name and exit code; a `stop` from `pass` exits 130 before the next pass runs.
+
+**Which passes get which flushes** (ruling 10). The beats are the ETL builder's to place; the
+cadence is the logger's (`beatMs`), so a beat in a tight loop costs a clock read.
+
+| Pass | Where it beats |
+|---|---|
+| `merge` | each catalog's line loop (`loadOsm`, `loadNhd`, `loadThreeDhp`, through their `readLines`), after GNIS, boundaries, towns and elevation load, inside `buildMasterList`'s per-group loops (a `beat` callback passed in; `masterList.ts` stays pure), the emit loop, and each output written; plus `count('absorbedPairs', …)` (`merge.ts:834`), which the page reads to mark `retire-absorbed` *required* |
+| `landmarks` | the outline export's page loop (`landmarkCli.ts:102`), each state's candidate loop (`:264`), the corpus match |
+| `build-region` | after each layer it builds (states, counties, the masks, each output) |
+| `load` | unchanged every 25 batches, plus a `beat` each batch (so a slow batch run still beats once a minute); `batchesTotal` counted **before** the loop, so a live load reads *66 of 170* |
+| `load-sub-areas`, `load-landmarks`, `load-landmark-names` | a `flush` after each batch they send |
+| `seed-standing` | a `flush` after each batch (`seed-destinations/src/standing.ts`) |
+
+What no beat can cover: a single synchronous step longer than a minute (one Convex batch that hangs,
+one `JSON.parse` of a huge file). The stall rule's expected gaps (below) carry a margin for it, and
+they are **provisional** until the campaign's own events measure the real gaps: no builder may run the
+merge to measure them (it would overwrite the founder's only merge output, D310's step 7), so the
+first campaign tunes them (register Ma1).
+
+##### The stall rule (core, D341)
+
+`packages/core/src/runLiveness.ts`, pure, used by the server's reads (the sidebar tail, the
+Overview's card, Inbox Zero's line) and by the web (the ticking heartbeat), so the two can't disagree:
+
+```ts
+export const RUN_LATE_FACTOR = 2; // late past 2× the expected gap (board live-v5, "late")
+export const RUN_STALLED_FACTOR = 10; // stalled past 10× ("won't recover without a person")
+export const RUN_WAIT_MS = 30 * 60_000; // *Wait 30 minutes* (§5.5, 2026-10-17: a placeholder)
+
+/**
+ * The longest quiet a healthy run of each kind is expected to keep between beats. Provisional:
+ * set from the beat cadence (60 s) plus a margin for one long step, and from the one measured
+ * load (about 95 s per 25 batches, 2026-08-09); tuned from the first campaign's events (Ma1).
+ * A kind with no entry gets no verdict: its heartbeat is shown, never called late.
+ */
+export const RUN_QUIET_MS: Readonly<Record<string, number>> = { // keyed by `importRuns.kind`
+  corpus_campaign: 3 * MINUTE, // between passes: a pnpm start and a Convex call
+  region_masks: 2 * MINUTE,
+  corpus_merge: 3 * MINUTE,
+  canonical_water: 3 * MINUTE,
+  sub_area_seed: 2 * MINUTE,
+  landmark_match: 3 * MINUTE,
+  landmark_seed: 2 * MINUTE,
+  floor_prune: 3 * MINUTE,
+  standing_seed: 3 * MINUTE,
+  absorbed_retire: 3 * MINUTE,
+};
+
+export type RunLiveness =
+  | { state: 'finished' }
+  | { state: 'notRecorded' } // running, but no `progressAt` (a row from before 7a)
+  | {
+      state: 'running' | 'late' | 'stalled' | 'waiting';
+      quietMs: number; // now − progressAt, never negative (a clock ahead of the server reads 0)
+      expectedMs: number | null; // null: no verdict for this kind
+      waitUntil: number | null; // set while `waiting`
+    };
+
+export function runLiveness(
+  run: { kind: string; status: 'running' | 'succeeded' | 'failed'; progressAt?: number;
+         markedFailed?: unknown; stallWaitUntil?: number },
+  now: number,
+): RunLiveness;
+
+/** A campaign's: its running pass's liveness; between passes, the campaign row's own. */
+export function campaignLiveness(
+  campaign: Parameters<typeof runLiveness>[0],
+  passes: readonly Parameters<typeof runLiveness>[0][],
+  now: number,
+): RunLiveness;
+```
+
+The rule: a row not `running`, or marked failed, is `finished`. A running row without `progressAt`
+is `notRecorded`. With an expected gap *E* and quiet *q*: `running` while *q* ≤ 2*E*, `late` while
+*q* ≤ 10*E*, else `stalled` — except that a stall inside a wait (`now < stallWait.until`) reads
+`waiting`. A wait never changes `running` or `late`; it ends by itself, and a beat clears the stall
+on its own (the §5.5 amendment's "clear itself on the run's next flush"). With no *E*, a running row
+is always `running`.
+
+**Property tests (`fast-check`)**: monotone in time (with `progressAt` fixed, the state never moves
+back down the ladder as `now` grows, until a wait or a beat); never `stalled` inside 10*E* and never
+`late` inside 2*E*; a finished or marked row is never late or stalled whatever its clock; a wait only
+ever turns `stalled` into `waiting`, and after `until` the answer is the unwaited one; a `progressAt`
+after `now` reads `running` with a quiet of 0; `campaignLiveness` is never better than its running
+pass's, and between passes uses the campaign row's own gap. Mutation-checked (§12.5): the factors
+swapped, the wait's comparison flipped, the clamp dropped.
+
+##### The writes (D342)
+
+In `convex/machineryWrites.ts`, each gated `machinery.corpus` through `requireCapability` (D217),
+each writing one audit row (`writeAudit`, target `importRun`) and one `runEvents` line, each refusal a
+thrown sentence the web shows as a toast (D268). Each has an inverse in the undo registry (D226):
+
+| Write | Refused when | What it does | Its inverse |
+|---|---|---|---|
+| `markRunFailed({ runId, reason })` | the run isn't `running`; already marked; reason empty (it's the record's *why*, asked in a dialog) | `status: 'failed'`, `finishedAt`, `markedFailed`, a `mark` line; **schedules the weather-cell reconcile** when the run had changed bodies (`markChangedBodies`; fork 2, ruled (b)) | `reopenRun`: clears the mark; the status becomes the loader's late close if one came (`loaderFinish`), else `running` again; refused if the run was marked again since (a later write) |
+| `waitOnRun({ runId, now })` | the run isn't stalled by the server's clock; already waiting | `stallWait: { until: now + 30 min, … }`, a `wait` line | `stopWaitingOnRun`: clears it; refused once it has expired (nothing to undo) |
+| `requestRunStop({ runId })` (not drawn) | the run isn't `running`; already asked | `stopRequest`, a `stop` line; `append` returns `stop` to the run, or to every pass whose `parentRunId` is it | `withdrawRunStop`: clears it; refused once `seenAt` is set (the run has stopped) |
+
+**A late finish never erases a mark** (ruling 12). `importRuns.finish` on a marked run stores its
+outcome as `loaderFinish` and a `close` line ("The loader closed the run itself: succeeded"), and
+leaves `status`, `finishedAt` and the mark alone; the page reads "Marked failed by Teagan · the loader
+later reported it succeeded" and offers the undo. `progress` on a marked run still stamps
+`progressAt` and merges counts — a run that was alive after all says so on the page. The weather-cell
+reconcile keys on the **loader's** outcome, never on the mark: a late successful close of an
+invalidating kind schedules it as today, because the bodies did change.
+
+Every writer of the new fields joins `auditWriters`' inventory; the web's hooks join `adminWriters`;
+`capabilityGates` holds each to `machinery.corpus`.
+
+##### The reads
+
+In `convex/machineryRuns.ts`, each gated `machinery.read` (a moderator's read throws, as every
+admin-only read does; the rail never draws the mode for them), each taking the caller's `now`
+through `callerNow` (minute-rounded, clamped), as `overviewJobs` does:
+
+- **`lanes({ now })`** → `{ corpus: { state, at } }` — the sidebar's tail: the newest `listedIn:
+  'corpus'` row (`by_listed_started`, `first()`) and, if it is a campaign, its running pass
+  (`by_parent`, `take(20)`), through `campaignLiveness`. One entry per built page; 8a's only key is
+  `corpus` (ruling 6).
+- **`listPage({ lane: 'corpus', paginationOpts, now })`** → a page of run rows, newest first, 25 a
+  page, one `.paginate()` over `by_listed_started`. Each row: id, kind (`campaign` or `pass`), title
+  (the campaign id, or the pass's name from `corpusRunPlan`), status, liveness, dry run (the notes'
+  `DRY_RUN_NOTE`), marked, the scope, the facts its sub-line needs (for a campaign: passes done of
+  planned, the running or stopping pass, the bodies loaded; for a pass: its headline count), and
+  `startedAt`. A campaign row reads its passes with one `by_parent` range (`take(20)`); 25 rows a page
+  is at most 26 ranges.
+- **`campaign({ runId } | { campaignId }, now)`** → the campaign page: the campaign row; its passes
+  (`by_parent`, `take(20)`), merged with the plan into one ordered table — each planned pass with its
+  run (or *waiting*, or *skipped* with why); the by-hand passes (the same `campaignId`, no parent,
+  `by_campaign`, `take(50)`) matched by kind; *required* on `retire-absorbed` when the merge's
+  `absorbedPairs` count is over zero and no applied `absorbed_retire` row exists; the running pass's
+  counts for *Outcome so far* and *Batches*; and `campaignLiveness`. For a campaign with **no
+  campaign row** (every one before 8a, or a run whose CLI failed): the same view assembled from its
+  runs by `campaignId` alone, the plan reconstructed from the kinds it finds, saying *The campaign's
+  own record wasn't kept* (fork 3).
+- **`run({ runId, now })`** → one run, whole, as `importRuns.get` returns it, plus its liveness, its
+  parent's id and title, and the mark, wait and stop facts with the people as lockups.
+- **`events({ runId, paginationOpts })`** → the run's lines, newest first (`by_run_seq` descending),
+  200 a page, one `.paginate()`; the web reverses each page and loads older pages as the reader
+  scrolls up ("Scroll up for full log output").
+
+`corpusRunPlan` (`packages/core/src/corpusRunPlan.ts`): the script's seven passes and the three by
+hand, each with its kind and the board's *What it does*, `CORPUS_RUN_KINDS` (what lists under
+Corpus: the campaign and its passes, `dedup_resolve`, `standing_seed`, `seed_destinations`, and
+`run-canonical.sh`'s single-state loads), and `passOfRun(run)` — `campaignPass` when stored, else by
+kind, telling `load-landmarks` from `load-landmark-names` by label for rows before 8a.
+
+##### What misleads during a live run, and what 8a does about each
+
+| What misleads | 8a |
+|---|---|
+| `lastCampaignRun` names a running or failed campaign as the last | `lib/campaignRuns.ts`: the Overview's *last campaign* reads the newest **succeeded** merge-or-load; `campaignRunOf` (a task's *Queued by*) is unchanged — it names the campaign that raised the task, which is true while it runs |
+| The Overview's card never produces `stalled`, and shows the previous import as ok while this one runs | `JOB_STATES` gains `running` (between `retried` and `ok`); the card's import row becomes the newest **listed** corpus run whatever its status, its state from `runLiveness` (`running`, `late`, `stalled`, `waiting` read as late, `failed`, `ok`), its link the run's page |
+| A hand-marked failure schedules no weather-cell reconcile | fork 2, ruled (b): *Mark failed* schedules it (debounced, as `finish` does) when the run is of an invalidating kind, not a dry run, and applied at least one batch (`importRuns.markChangedBodies`); the mark's note on the page says so, and the weekly reconcile cron remains the net |
+| Co11: a body's *outline trusted since* dates from the campaign's first row | `bodyConsole.ts`' lookup takes the first row of the campaign that `isCampaignRun` (the merge or the load), through `lib/campaignRuns.ts`; Co11 closes |
+| Sh5: each flush re-runs every reader of `importRuns` | measured, not redesigned: the beats add about one patch a minute to one row for two hours, so the readers above re-run about 120 more times a campaign; the events live in their own table and invalidate only the tail. Sh5 stays open with this arithmetic, for Health (8e) to revisit if the jobs card grows |
+| A row from before 7a left `running` by a killed loader reads *running* forever | `notRecorded`: the page says *No heartbeat recorded* and offers *Mark failed* |
+| The tail's times are the laptop's, the heartbeat the server's | the tail shows `loggedAt`; the heartbeat and every verdict use the server's `progressAt`; a laptop clock off by more than a minute is named on the page (*Your machine's clock is 4 min ahead*), from the newest line's `loggedAt − at` |
+| Two script passes share `landmark_seed` | `campaignPass` from 8a on; by label before |
+
+##### The web
+
+**The route and the mode.** `CONSOLE_MODES` gains `{ id: 'machinery', name: 'Machinery', to:
+'/admin/machinery', goKey: 'M', capability: 'machinery.read' }` after People, so the palette lists it
+and the rail draws it for admins only (`live-v5`'s *4*: a rail item never leads to a page that says
+no). Routes: `routes/admin.machinery.tsx` (the layout: the sidebar beside an outlet),
+`admin.machinery.index.tsx` (a redirect to `/admin/machinery/corpus` until Health lands, ruling 6),
+`admin.machinery.corpus.tsx` (the page; its search validated, never trusted: `campaign` — a campaign
+id; `run` — an `importRuns` id; anything else dropped). `/admin/machinery` is in no
+`OLD_SHELL_TREES` entry, so `usesOldShell`, `AuthGate`'s wrap and `lib/theme.ts`' init script already
+give it the console shell and `data-surface="admin"`; nothing is narrowed in 8a, because
+`/admin/imports` stays (*Legacy retirement*). `AdminLayout.tsx` is untouched.
+
+**The sidebar** (`MachineryLanes`, on the kit's `Lanes`, as `CorpusLanes` is): one group, *Pipelines*,
+one lane, *Corpus*, with its *Local* tag and its tail (the board's `stalled` red, `failed` red,
+`late` amber, `running`, else *ok* and how long ago), from `machineryRuns.lanes`. No *Machinery*
+group, no *Health*, no *Cost ledger*, no other pipeline until each is built (ruling 6).
+
+**Three columns** on the console's one narrow rule (`useColumnsFit`, `usePaneFocus`): the lanes at
+236, the run list, the detail the rest.
+
+- **The run list** (board 6.2's middle column): *Corpus · Runs · newest first*, month dividers, each
+  row its state badge (*stalled*, *late*, *running*, *failed*, *succeeded*, *dry run*, *applied*) and
+  kind (*campaign*, *single pass*), the title, the sub-line, the age; infinite scroll on
+  `listPage`, ending in the list-end mark (*All 41*). ⏎ or Space opens a row and moves focus to the
+  detail.
+- **The campaign page** (board 6.2's right column): the head (the campaign id; *Campaign · full
+  canonical · dev*; the state badge, *Stalled · 41 min quiet*); the four stats (*Passes* with the
+  stage bar and *2 done · load stalled · 7 waiting*; *Batches* *66 / 170*; *Elapsed*, ticking;
+  *Heartbeat*, ticking, with *Reports about every 3 min* from `RUN_QUIET_MS`); *Passes*, the merged
+  table with the by-hand rows under their sub-head (*required* in amber on `retire-absorbed` when
+  the merge absorbed pairs); *Live tail* on the kit's `Log` — the running pass's lines, Follow while
+  it writes, the Copy split with *Copy log* and *Copy warnings & errors* (the diagnosis prompt is
+  8d's), a row click in *Passes* switching the tail to that pass; *What to check* (the three
+  checks, as words, with the log file's path filled in); *Outcome so far* (the running pass's
+  counts, its failures stored and their first keys); *Path* (the merge's stages, re-homed from
+  `ImportRunDetail`'s `Path`).
+- **The run page** (a single pass, or a pass opened from a campaign): `ImportRunDetail` re-homed and
+  re-skinned in the kit — the head and liveness as above, *Coverage* (with its *unexplained*
+  arithmetic kept), the tallies, *Path*, *Failures*, the notes, and the pass's own tail. Its old
+  component stays for `/admin/imports` until that page retires (8d); nothing is shared between the two
+  so the old one can be deleted whole then.
+- **The action bar** (the floating `ActionBar`): drawn on a running run or campaign that is late,
+  stalled or waiting. *Mark failed* (M) on every such run; *Wait 30 minutes* (W) only while
+  stalled and not waiting. *Mark failed* opens a dialog asking why (a reason is required; ⌘⏎
+  confirms); both report through `said` and offer *Undo* in the console's undo toast
+  (`useUndo`), which runs the inverse. A waiting run's head reads *Waiting until 14:42 · Teagan*.
+  A marked run's head reads *Marked failed · 14:20*, with the person on their own line and the
+  reason quoted. No *Stop* is drawn anywhere (ruling 13). A moderator never reaches the page.
+
+**Inbound links**, as the table in *What the code says today*: the Overview's card foot and its
+import row; Inbox Zero's *Machinery →* (with `notInInbox.machinery` from `lanes`: *1 run stalled*, or
+nothing). A moderator can't open Machinery, so their *Not in the inbox* drops the Machinery line
+rather than linking to a page that refuses them (D217). Then the palette, and the script's URL.
+
+**Under `apps/web/src/components/admin/machinery/`:**
+
+```
+MachineryRoute.tsx        the layout: the lanes, the outlet, the columns rule
+MachineryLanes.tsx        the sidebar on the kit's Lanes
+machinerySearch.ts        `campaign` and `run`, validated
+corpus/CorpusRunsRoute.tsx the list and the detail, wired to the reads
+corpus/RunList.tsx        rows, dividers, the list end; drawn from props
+corpus/CampaignView.tsx   the campaign page, from props (stories and the board compare)
+corpus/RunView.tsx        the run page: the re-skinned run detail, from props
+corpus/PassesTable.tsx    the plan merged with the runs
+corpus/RunTail.tsx        the kit Log over `events`, paging older lines on scroll
+actions/useRunWrites.ts   the six writes through `said`, and their undo receipts
+actions/MarkFailedDialog.tsx
+words/machineryWords.ts   every word no board supplied, in one module for the copy pass
+liveness.ts               the web's ticking clock over core's `runLiveness`
+```
+
+**Kit candidates** (one writer promotes, §12.3): `StageBar` (the passes as segments, done, running,
+late, stalled, waiting, dead — boards 6.2 and `live-v5`), `HeartbeatStat` (a `StatTile` whose value
+ticks and whose tone follows the liveness), `RunRow` (a run list row: badge, kind, title, sub-line,
+age — every later pipeline's runs drawer reuses it, `machinery-lanes-v5.js`' `runsRows`).
+
+##### The boards, mapped
+
+| Board element (6.2, `live-v5` §1) | Read | Write |
+|---|---|---|
+| The lanes: *Corpus* · *Local* · tail | `lanes` | — |
+| Runs, newest first; month dividers; state and kind chips; sub-line; age | `listPage` | — |
+| Head: id, *Campaign · full canonical · dev*, *Stalled · 41 min quiet* | `campaign` (scope, deployment) + `campaignLiveness` | — |
+| *Passes* stat: the stage bar, *2 done · load stalled · 7 waiting* | `campaign` (plan × passes) | — |
+| *Batches 66 / 170* | the load's `batchesApplied` / `batchesTotal` (counted before the loop from 8a) | — |
+| *Elapsed*, *Started 12:58* | `startedAt`, the web's clock | — |
+| *Heartbeat 41 min quiet*, *Commits a batch every ~1.7 min* | `progressAt`, `RUN_QUIET_MS` | — |
+| *Passes* table: pass, what it does, state, in / up, failed, started, took | `campaign` + `corpusRunPlan` | — |
+| *By hand, after the campaign*: *not run*, *required* | `campaign` (by-hand rows; `absorbedPairs`) | — |
+| *Live tail* with Follow and the Copy split | `events` | — |
+| *What to check* | words; the log path from the campaign id | — |
+| *Outcome so far*, *Last flush 13:31* | the running pass's counts and `progressAt` | — |
+| *Path* | the merge's `stages` | — |
+| *Mark failed* (M), *Wait 30 minutes* (W) | `run`/`campaign` liveness | `markRunFailed`, `waitOnRun`; undo `reopenRun`, `stopWaitingOnRun` |
+| `live-v5` §1: running, late (2×), stalled (10×), marked failed with *By hand* and the reason | `runLiveness`, `markedFailed` | — |
+| `live-v5` §1: "If the loader's own finish arrives later, it's kept beside this — and Undo reopens it" | `loaderFinish` | `reopenRun` |
+| *Your machine*, *Copy* | — (8d) | — |
+| *Afterwards on Convex* | — (8d) | — |
+| The status bar's machinery lamp and counts | — (8b/8e) | — |
+
+**Where the boards and this design differ** (later standing rules win; for the founder's look):
+
+- *If nothing is running*, the action bar's kicker, is an explaining line, which the action-bar rule
+  of Reviews 4–7 forbids: it becomes the buttons' tooltips.
+- *Commits a batch every ~1.7 min* is a measured rate nothing records; the heartbeat's sub-line says
+  the expected gap, *Reports about every 3 min*, until the campaign's events measure one (Ma1).
+- The tail has no line per batch (*batch 1/170 … 18 ms/body*) and no *warn … name conflicts with
+  nhd* line: the logger records flushes, stages, failures and beats, not the loaders' own stderr
+  (ruling 8: no loader edits for the log). The terminal and the log file keep every line.
+- The board's *stalled* tail line ("no flush since 13:31:18 · … ~24 missed") is drawn by the page from
+  the liveness, not stored as an event.
+- *Your machine*, *Afterwards on Convex* and the diagnosis prompt are 8d's; until then the right
+  column ends after *Outcome so far* and *Path*.
+- The status bar keeps the console's existing items: the machinery lamp needs the cron backbone (8b)
+  and lands with Health (8e).
+- The board's sidebar lists every pipeline and Health; 8a's lists Corpus alone (ruling 6).
+- Every refusal (a mark on a run that has finished meanwhile, a wait on one that is no longer
+  stalled) is a toast, never inline (D268).
+
+##### Legacy retirement
+
+`/admin/imports` retires in **B01-8d**, not 8a (D305: a page stays while it serves something no
+page has replaced). It lists every run kind, and the enrichment loaders' and archives' runs have no
+Machinery home until Enrichment (board 6.3) lands; 8a's list is the corpus kinds only. 8a moves every
+corpus-campaign link off it (the Overview's card, the script's URL); 8d deletes the route, the
+`OLD_SHELL_TREES` and `LEGACY_PAGES` entries, `lib/theme.ts`' copy, `AdminLayout.tsx`'s `NAV` and
+`ADMIN_ONLY_PREFIXES` entries, `ImportRunDetail.tsx` and their tests and stories, and sweeps the docs
+that name the page. Nothing else retires in 8a.
+
+##### Every schema change, and its rollout
+
+| Table | Change | Rollout |
+|---|---|---|
+| `runEvents` | new | deploy; written from the next run |
+| `importRuns` | `parentRunId?`, `campaignPass?`, `listedIn?`, `campaign?`, `markedFailed?`, `loaderFinish?`, `stallWait?`, `stopRequest?`; `by_listed_started`, `by_parent` | widen only; deploy, then `importRunJobs:backfillListed` (dry, then applied) |
+| `importRuns.kind` | `corpus_campaign` | widen only |
+| `moderationActions` | six verbs; target `importRun` | widen only |
+
+No field is narrowed and no index dropped. `plans/06-data-model.md` gains `runEvents` and the new
+fields (its register test).
+
+##### After merge, on dev, and on the founder's laptop
+
+1. **The deploy, asked of the founder** (ruling 2): `convex dev --once` from main at the squash,
+   codegen first. Widen-only.
+2. `convex run importRunJobs:backfillListed '{"dryRun":true}'`, then without: the history lists.
+3. **The page, read only**: `/admin/machinery` opens Corpus; the history shows the August campaigns
+   assembled from their runs (*The campaign's own record wasn't kept*); a past run opens with its
+   coverage, path and failures as on `/admin/imports`; the Overview's *Health* link and an import
+   row open Machinery; Inbox Zero's *Machinery →* opens it; `G M` and the palette reach it.
+4. **The record path without a campaign** (the founder's, since it runs a pass): a dry `prune-floor
+   --campaign=machinery-check` (dry by default; it writes only its own row and lines) shows its row
+   listed, its tail filling, its heartbeat moving, and its close. Optional: start a second dry run,
+   suspend it (Ctrl-Z) and watch it go late at 6 minutes, then press *Mark failed* and its *Undo*,
+   then resume it (`fg`) and watch its own close land beside the mark.
+5. **The buttons awaiting his first press on dev**: *Mark failed*, its *Undo*; *Wait 30 minutes*, its
+   *Undo*. (*Stop* is not drawn.)
+6. **On the laptop**: `git pull` on main and `pnpm install`, so `run-corpus.sh`, the logger and the
+   campaign CLI are 8a's.
+7. **The campaign's own preconditions** (the founder's, D310 and D311, unchanged by 8a): dev deployed
+   from main (step 1, which carries 7a's and every later merged PR's server); nobody settles a Class
+   conflict before it; `scripts/etl/.scratch/merge/` copied aside; **a Convex snapshot export of dev**
+   — a must (D311).
+8. **The campaign**: `./run-corpus.sh <id> …`; open the URL it prints first.
+9. **Afterwards**: every pass has its row under the campaign row (`parentRunId`, `campaignPass`), the
+   campaign row closed with its exit code, each run's lines in its tail, and `absorbedPairs` on the
+   merge's row; then the quiet gaps measured from the events, and `RUN_QUIET_MS` tuned (Ma1).
+
+##### Acceptance
+
+- [ ] The mode: the rail item for admins only, `G M`, the palette; `/admin/machinery` lands on Corpus;
+      the sidebar holds Corpus alone with its tail.
+- [ ] The list pages over every corpus run, newest first, with the August campaigns assembled; the
+      backfill proven at its page size on a throwaway backend.
+- [ ] A campaign run against a throwaway local backend (a script harness with stubbed passes) draws
+      its plan, each pass under it, the tail, the heartbeat; a pass made quiet goes late at 2× and
+      stalled at 10× its expected gap, on the page and on the Overview's card.
+- [ ] *Mark failed* and *Wait 30 minutes* write, audit, show to a second admin's view at once, and
+      undo; a late `finish` lands beside a mark and never over it; a late successful close of an
+      invalidating kind schedules the reconcile; every refusal is a toast.
+- [ ] *Stop*: `requestRunStop` and `withdrawRunStop` tested; the logger stops at the next flush and
+      closes the run; the script exits 130 between passes; nothing is drawn.
+- [ ] The logger against an old deployment's validator: the run still recorded, the events off with
+      one warning; the script's exit status unchanged when the campaign CLI fails.
+- [ ] `runLiveness` and `campaignLiveness` property-tested and mutation-checked.
+- [ ] The Overview's *last campaign* reads a succeeded run; Co11 closed; every inbound link as the
+      table says; `/admin/imports` still works.
+- [ ] Every board element above rendered beside `machinery-v5.html` and `live-v5.html` at 1440 × 900,
+      both modes, each difference fixed or listed above; no decision number, section mark or phase
+      token in any UI text; US spellings.
+- [ ] Types, lint, the full suites uncached, CI's time-zone job and codegen-verify, before the PR.
+
+#### Briefs (B01-8a)
+
+Written 2026-11-27 against `origin/main` at `ac51f02e7`. The governor wraps each with §12.4's
+invariants (and the harness differences 7a's *How this harness differs from §12* recorded, if the
+same harness runs); this section is what a builder needs beyond them. The branch is
+`phase-b01-machinery`, cut from `origin/main`; the worktree has its dependencies installed.
+
+##### Territories (disjoint)
+
+| Builder | Owns | Asks for, never edits |
+|---|---|---|
+| **X — the seams (T0, first)** | `packages/convex/convex/schema.ts` (the `runEvents` table; `importRuns`' fields and indexes); `lib/enums.ts` (`corpus_campaign`, `RUN_EVENT_KINDS`, the six verbs, `importRun`); `lib/undoPolicy.ts` (six placeholder rows); `packages/core/src/capabilities.ts` (`machinery.corpus`); typed stubs, bodies marked `PLACEHOLDER`: `convex/runEvents.ts`, `convex/machineryRuns.ts`, `convex/machineryWrites.ts`, `core/src/runLiveness.ts`, `core/src/corpusRunPlan.ts` and their `index.ts` lines; `scripts/run-log/src/types.ts` (the kind); `apps/web/src/components/admin/shell/consoleNav.ts` (the mode, and `ConsoleMode['id']`), `consoleNav.test.ts`; the three route files as shells and `routeTree.gen.ts`; `shell/actionLabels.ts` and `overview/overviewData.ts`' `ACTION_WORDS` (the six verbs' words); `convex/_generated`; `plans/06-data-model.md` | — |
+| **S1 — the record and the writes** | `convex/importRuns.ts` (`start`, `progress`, `finish` widened; the mark rule in `finish`); `convex/runEvents.ts` (replacing the stub: `append`, `events`'s helper); `convex/machineryWrites.ts` (replacing the stub); `lib/undoHandlersMachinery.ts` (new) and its line in the undo dispatch; `lib/undoPolicy.ts` (the six rows, final); `convex/importRunJobs.ts` (new: `backfillListed`); the guards `auditWriters`, `capabilityGates` inventories; their tests, the real-backend proofs | `schema.ts`, `enums.ts` (X's) |
+| **S2 — the reads and the rule** | `packages/core/src/runLiveness.ts`, `corpusRunPlan.ts` (replacing the stubs) and their property tests; `convex/machineryRuns.ts` (replacing the stub); `convex/machinery.ts` (`overviewJobs`, `JOB_STATES`); `lib/campaignRuns.ts` (`lastCampaignRun` succeeded-only); `bodyConsole.ts`' `outlineTrustedSince` lookup only (Co11); their tests | `importRuns.ts` (S1's); `console.ts` and `lib/corpusTaskViews.ts` (the Corpus thread's; no change needed) |
+| **L — the logger and the script** | `scripts/run-log/` (`runLogger.ts`: events, `beat`, directives, the env pass and parent, the start fallback; `campaign.ts` new and its `package.json` script; README); `scripts/etl/run-corpus.sh`, `runCorpus.test.ts`; the beats and flushes in `scripts/etl/src/merge.ts`, `masterList.ts` (a `beat` callback parameter only), `landmarkCli.ts`, `load.ts` (`batchesTotal` and the per-batch beat), `loadSubAreas.ts`, `loadLandmarks.ts`, `loadLandmarkNames.ts`; `scripts/admin-areas/src/buildRegion.ts`; `scripts/seed-destinations/src/standing.ts`; their tests | `types.ts`' kind (X's) |
+| **W1 — the frame and the list** | `apps/web/src/components/admin/machinery/` but `corpus/CampaignView.tsx`, `corpus/RunView.tsx`, `corpus/PassesTable.tsx`, `corpus/RunTail.tsx` and `actions/`; the three route files' bodies (after X); `admin/overview/` (`overviewRoutes.ts`' `machinery` target, the card's import row and its link, their tests and stories); `admin/inbox/list/InboxZero.tsx`'s Machinery line, `inbox/InboxRoute.tsx`'s `notInInbox.machinery`, their tests; `shell/ConsoleShell.stories.tsx` (the new rail item) | `kit/` (promotions are the governor's); `consoleNav.ts` (X's) |
+| **W2 — the run pages and the actions** | `machinery/corpus/CampaignView.tsx`, `RunView.tsx`, `PassesTable.tsx`, `RunTail.tsx`, `machinery/actions/`, `machinery/words/machineryWords.ts`' run-page words; the kit candidates `StageBar`, `HeartbeatStat` beside them; their stories (four-up, both modes) and tests | W1's files; `ImportRunDetail.tsx` (read and port, never edit: it stays for `/admin/imports`) |
+| **Executor — integration** | merges each builder's work in the order below; the full gates after each; the codegen-verify step; the throwaway-backend proofs' runs; the kit promotions the governor rules | — |
+
+`machineryWords.ts` is W1's file; W2 adds its run-page words in a second module,
+`machinery/words/runWords.ts`, so the two never edit one file.
+
+**Coordination with the Corpus thread** (7b–7d run alongside, on their own branch): the files both
+waves touch are `schema.ts`, `lib/enums.ts`, `lib/undoPolicy.ts`, `core/capabilities.ts`,
+`consoleNav.ts`, `overviewRoutes.ts`, `OverviewCards.tsx`, `InboxZero.tsx`, `InboxRoute.tsx`,
+`actionLabels.ts`, `routeTree.gen.ts`, `convex/_generated` and `plans/`. Each 8a change there is a
+small additive hunk; whichever PR merges second rebases onto the first and regenerates the route tree
+and codegen. Neither wave edits the other's lanes or reads.
+
+##### The seams (X, merged before anyone else starts)
+
+**1. `schema.ts`**: the `runEvents` table and the `importRuns` hunks exactly as *The record*, above.
+
+**2. The writes' contract** (S1 builds; W2 and L build against it):
+
+```ts
+// convex/runEvents.ts
+export const append = internalMutation({
+  args: {
+    runId: v.id('importRuns'),
+    events: v.array(
+      v.object({
+        kind: literals(['start', 'stage', 'flush', 'beat', 'warn', 'fail', 'close']),
+        text: v.string(),
+        loggedAt: v.number(),
+      }),
+    ), // at most MAX_RUN_EVENT_APPEND (200); refused beyond
+  },
+  returns: v.object({
+    stop: v.boolean(), // the run, or its parent campaign, was asked to stop (stamps `seenAt`)
+    markedFailed: v.boolean(),
+    stored: v.number(),
+    dropped: v.number(), // past MAX_RUN_EVENTS; counted on the run's `cap` row
+  }),
+});
+
+// convex/importRuns.ts — added to `start`'s args (each optional):
+//   parentRunId: v.optional(v.id('importRuns')), campaignPass: v.optional(v.string()),
+//   campaign: v.optional(<the campaign object, without exitCode and lastPass>)
+// added to `finish`'s args: campaign: v.optional(v.object({ exitCode: v.number(), lastPass: v.optional(v.string()) }))
+// `start` derives `listedIn` from the kind (`corpusRunPlan.CORPUS_RUN_KINDS`) when `parentRunId` is absent.
+
+// convex/machineryWrites.ts — every one `mutation`, `requireCapability(ctx, 'machinery.corpus')`
+export const markRunFailed: (args: { runId: Id<'importRuns'>; reason: string }) => { actionId: Id<'moderationActions'> };
+export const reopenRun: (args: { runId: Id<'importRuns'> }) => { actionId: Id<'moderationActions'> };
+export const waitOnRun: (args: { runId: Id<'importRuns'>; now: number }) => { actionId: Id<'moderationActions'>; until: number };
+export const stopWaitingOnRun: (args: { runId: Id<'importRuns'> }) => { actionId: Id<'moderationActions'> };
+export const requestRunStop: (args: { runId: Id<'importRuns'> }) => { actionId: Id<'moderationActions'> };
+export const withdrawRunStop: (args: { runId: Id<'importRuns'> }) => { actionId: Id<'moderationActions'> };
+```
+
+**3. The reads' contract** (S2 builds; W1 and W2 build against it; the web derives its types from
+`api`, so the stubs return these shapes):
+
+```ts
+// packages/core/src/runLiveness.ts — as *The stall rule*, above (exports exact).
+
+// convex/machineryRuns.ts — every one `query`, `requireCapability(ctx, 'machinery.read')`
+type RunState = 'running' | 'succeeded' | 'failed';
+type LivenessView = RunLiveness; // core's union, verbatim
+type PersonView = { id: Id<'profiles'>; name: string; avatarUrl: string | null };
+type ScopeView = { pass: string; states: string[] | null; complete: boolean } | null;
+
+type RunRowView = {
+  id: Id<'importRuns'>;
+  kind: 'campaign' | 'pass';
+  title: string; // the campaign id, or the pass's name
+  campaignId: string | null;
+  status: RunState;
+  liveness: LivenessView;
+  dryRun: boolean;
+  marked: boolean;
+  scope: ScopeView;
+  startedAt: number;
+  finishedAt: number | null;
+  /** The sub-line's facts; the words are the web's. */
+  line:
+    | { kind: 'campaign'; passesDone: number; passesPlanned: number | null; current: string | null; stoppedAt: string | null; bodiesLoaded: number | null; recorded: boolean }
+    | { kind: 'pass'; headline: { name: string; value: number } | null };
+};
+
+export const lanes: (args: { now?: number }) => { corpus: { state: LivenessView['state'] | 'failed' | 'ok' | 'never'; at: number | null } };
+export const listPage: (args: { lane: 'corpus'; paginationOpts: PaginationOptions; now?: number }) => PaginationResult<RunRowView> & { indexed: boolean };
+
+type PassRowView = {
+  pass: string; // `corpusRunPlan`'s name
+  does: string; // the board's *What it does*
+  by: 'script' | 'hand';
+  state: 'done' | 'running' | 'late' | 'stalled' | 'waiting' | 'failed' | 'skipped' | 'notRun' | 'required' | 'dryRun';
+  skipped: string | null;
+  run: { id: Id<'importRuns'>; startedAt: number; finishedAt: number | null; inUp: { in: number; up: number } | null; failed: number } | null;
+};
+export const campaign: (args: { runId?: Id<'importRuns'>; campaignId?: string; now?: number }) => {
+  row: RunRowView;
+  recorded: boolean; // false: assembled from its runs (fork 3)
+  flags: string[] | null;
+  passes: PassRowView[];
+  liveness: LivenessView;
+  current: { runId: Id<'importRuns'>; pass: string; counts: { name: string; value: number }[]; progressAt: number | null; batches: { applied: number; total: number | null } | null; failures: { stored: number; total: number; keys: string[] } } | null;
+  path: Doc<'importRuns'>['stages']; // the merge's
+  marked: { by: PersonView; at: number; reason: string; loaderFinish: Doc<'importRuns'>['loaderFinish'] | null } | null;
+  waiting: { by: PersonView; at: number; until: number } | null;
+  clockSkewMs: number | null; // newest line's loggedAt − at, when over a minute
+} | null;
+
+export const run: (args: { runId: Id<'importRuns'>; now?: number }) => {
+  doc: Doc<'importRuns'>;
+  liveness: LivenessView;
+  parent: { id: Id<'importRuns'>; title: string } | null;
+  marked: …; waiting: …; // as `campaign`
+} | null;
+
+type RunEventView = { seq: number; loggedAt: number; kind: string; text: string; dropped: number | null };
+export const events: (args: { runId: Id<'importRuns'>; paginationOpts: PaginationOptions }) => PaginationResult<RunEventView>;
+```
+
+Where a snippet here and the landed file differ, the file wins; S1 and S2 say so in their reports.
+
+**4. The logger's contract** (L builds; documented in `scripts/run-log/README.md`):
+
+```ts
+interface RunLoggerOptions {
+  // …today's, plus:
+  /** The longest the logger lets pass without reaching Convex while `beat()` is being called. */
+  beatMs?: number; // default 60_000
+  /** What a stop directive does once the row is closed. Default: process.exit(130). */
+  onStop?: () => never;
+}
+class RunLogger {
+  beat(label?: string): void;
+}
+// env read by the constructor: RUN_CORPUS_PASS, RUN_CORPUS_PARENT
+```
+
+##### The order
+
+1. **X** (T0); merged and gated before anyone else starts.
+2. **S1, S2, L, W1, W2** start together on X's stubs.
+3. The executor merges **S2** first (core's rule is what everyone's tests import for real), then
+   **S1**, then **L** (its tests use a fake caller; its integration proof runs against S1's server
+   on a throwaway local backend), then **W1**, then **W2**, with the full gates after each.
+4. Before the PR: the throwaway-backend proofs (the backfill at its page size; an append at 200
+   events and at the cap; a scripted campaign with stubbed passes, start to close, one pass
+   suspended into `stalled` and marked failed, then its late close), the render-compare of every
+   board element, `/code-review xhigh --fix` over `main...phase-b01-machinery`.
+
+##### Definitions of done
+
+- **X**: the seams compile with every stub; `importRunVocabulary`, `dataModelRegister`,
+  `undoPolicy`'s exhaustiveness and `capabilityGates` green.
+- **S1**: a `convex-test` per write and its inverse (the refusals included); `finish` on a marked
+  run keeps the mark and stores `loaderFinish`, and schedules the reconcile on the loader's own
+  succeeded, applied, invalidating close; `append`'s cap, its reserved kinds, its directives (the
+  parent's stop reaching a pass); `start`'s `listedIn` derivation; the backfill idempotent and
+  resumable; all inside the harness's transaction limits; the real-backend proofs above.
+- **S2**: the property tests and their mutations named; every read bounded (the ranges counted
+  under the harness); the assembled campaign for rows with no campaign row; `lanes` and
+  `overviewJobs` agreeing with `runLiveness` for the same rows at the same `now`; Co11's test.
+- **L**: the logger's events, beats, directives, start fallback and env reading with a fake caller;
+  `campaign.ts`'s four verbs; `runCorpus.test.ts` as *The run logger's half* says; every pass's
+  beats exercised by a test that drives it with small inputs (or, for the merge's inner loops, the
+  callback asserted to be called), never by running the merge on real archives.
+- **W1**, **W2**: wiring tests on the reads' shapes; stories four-up in both modes for every state
+  in `live-v5` §1 (running, late, stalled, waiting, marked failed, marked with a late close) and for
+  a campaign with no record; the render-compare; the refusal toasts; the undo toast running each
+  inverse; `adminWriters` holding the new hooks.
+
+##### Size, honestly
+
+Bottom-up, at the measured share of tests and stories (about half), checked against 7a's landed
+24,979 lines for a frame plus two lanes:
+
+| Builder | Lines | Of which tests and stories |
+|---|---|---|
+| X | ~800 | ~200 |
+| S1 | ~4,000 | ~2,300 (the writes' refusals, the cap, the proofs) |
+| S2 | ~3,200 | ~1,900 (the property tests, the assembled campaign) |
+| L | ~2,800 | ~1,500 |
+| W1 | ~3,000 | ~1,600 |
+| W2 | ~4,500 | ~2,400 (the run detail's port, the states' stories) |
+| **8a** | **~18,000** (a range of ~15,000–20,000) over ~120–160 files | ~9,900 |
+
+The inventory's guess was 10,000–14,000; 7a's measured ratio and its frame-plus-two-lanes size say
+the higher figure. About four times the ~5,000-line guideline as one PR: the founder's order puts
+the frame and the campaign page first, and he runs the campaign only on the page (ruling 5).
+
+#### Forks
+
+The genuine founder decisions this design found, each with the whole question. **The founder's**
+first; then the calls left to the governor.
+
+1. **Could *Stop* be shown now, for laptop runs?** The founder ruled it built and hidden, expecting
+   the campaign to move to Fly. As designed it would honestly work on the laptop today: the run's
+   logger sees the request at its next flush (at most about a minute, with the beats) and stops
+   between batches, closing its row; the script stops between passes. What it can't do: reach a
+   laptop that slept, or stop inside one long step. Options: **(a)** keep it hidden, as ruled — the
+   founder is at the terminal, where Ctrl-C is quicker; **(b)** show it on a running pass and on the
+   campaign, worded *Stop at the next flush*; **(c)** show it only on the campaign, stopping between
+   passes. **Recommend (a):** on a laptop run the terminal is in reach and faster, and a button that
+   waits up to a minute invites a second press; show it when the runner moves off the laptop.
+2. **Should *Mark failed* schedule the weather-cell reconcile?** Today only a succeeded, applied run
+   of an invalidating kind does (`importRuns.ts:199-209`), on the reasoning that a failed run is
+   retried and the retry's success fires it. A load marked failed by hand has usually applied part of
+   its batches, so the registry may be stale until the weekly reconcile (up to a week); the board
+   says it isn't scheduled and offers *Sync weather cells* by hand (8d). Options: **(a)** as the
+   board: nothing, the page says so, the weekly cron is the net; **(b)** *Mark failed* schedules it
+   (debounced, as `finish` does) when the run is of an invalidating kind and applied at least one
+   batch; **(c)** (a) until 8d's button lands, then the button. **Recommend (b):** the bodies did
+   change, the walk is debounced and costs about 170 MB of reads, and a week of a body missing from
+   weather discovery is the error D152 calls worse.
+3. **Campaigns from before 8a in the list.** None has a campaign row. Options: **(a)** assemble each
+   from its runs at read (by `campaignId`), shown as a campaign with *The campaign's own record
+   wasn't kept* and its plan reconstructed from the kinds found; **(b)** a backfill writes a
+   reconstructed campaign row for each, marked as reconstructed; **(c)** list their passes singly,
+   each naming its campaign. **Recommend (a):** the board draws them as campaigns, and assembling
+   at read writes nothing into the history that wasn't there.
+
+**The governor's calls** (each with the design's pick):
+
+- **The events live in their own table, written by a separate `append`**, not in a widened
+  `progress`: an old deployment then refuses only the lines, never the counts. One more subprocess
+  per flush (about a second, about once a minute).
+- **One events table for every run later**: 8b widens `runEvents` with an optional `cronRunId` rather
+  than making a second log table (ruling 15 asks for per-run logs in their own capped table; this is
+  that table).
+- **Corpus run events have no retention horizon in 8a**: bounded by the cap, kept with their run; 8b's
+  sweep decides one.
+- **The capability is `machinery.corpus`** (admin), per pipeline as ruling 15 sets
+  `machinery.weather`.
+- ***Mark failed* requires a reason.** D226's reason rule is about what skaters lose; this one is the
+  founder's ruling 12 ("who, when, why").
+- **The action bar appears from late on**, *Wait 30 minutes* only while stalled.
+- **`JOB_STATES` gains `running`**, so the Overview's card shows the campaign while it runs.
+- **`/admin/imports` retires in 8d** (*Legacy retirement*).
+- **8a is one PR** at ~15,000–20,000 lines (*Size, honestly*); splitting the record from the page
+  would put two reviews on one feature the campaign needs whole.
+- **The stall rule's gaps ship provisional** and are tuned from the campaign's events (Ma1).
+- **Sh5 stays open with its arithmetic** rather than splitting the heartbeat from the row now.
+
+#### What B01-8a's build found
+
+Built on `phase-b01-machinery` (2026-11-27) off `origin/main` at `ac51f02e7`: the seams (X), S1, S2,
+L, W1 and W2 integrated in the brief's order, then the pre-PR review (`/code-review xhigh --fix` over
+`origin/main...phase-b01-machinery`, and a pass for the recurring defect classes), each fix its own
+commit with its test, mutation-checked.
+
+##### Where the build departed from the design, and why
+
+- **The seams were hand-written, then verified.** X wrote `convex/_generated/api.d.ts`' three new
+  modules by hand, in the CLI's order, so every builder could start on the stubs at once. CI's
+  codegen step, run as CI runs it (`CONVEX_AGENT_MODE=anonymous`, `convex init`, `convex dev --once`
+  on a throwaway local backend), regenerates it with no diff at the review's head.
+- **The server sends the rule's inputs, so the list and the pages share one rule.** Every running
+  row's verdict carries `livenessInputs` (the row's own and, for a campaign, its passes'); the web's
+  `machinery/liveness.ts` re-reads them by core's `runLiveness` / `campaignLiveness` each second. The
+  run list, the campaign page and the run page read every row through it. The review added the
+  sidebar's tail: it carries its inputs too and re-reads on the same clock, so it never says
+  *running* beside a list row already *late*. The Overview's card stays on the server's
+  minute-rounded verdict; it is never drawn beside the list.
+- **The backfill's page size is 50, not 100.** On a throwaway local backend, the first page over a
+  history of 100 campaigns at the 60-row bound, with one pass of each on the page, was refused: "Too
+  many reads in a single function execution (limit: 4096)", 100 × (1 read + 60 linking patches). At
+  50 it is 50 × 61 = 3,050 ranges, under 4,096 with the start cost. A `convex-test` over that worst
+  page passes at 50 and throws at 100. On the backend the worst page wrote 50 campaign rows and
+  linked 3,000 passes in one transaction, and the chained walk finished a 6,162-row table with no
+  corpus row left unlisted and unparented.
+- **The kept `stop` line.** The logger's own words about stopping arrive as a `warn`, which the
+  2,000-line cap drops, so a run stopped late in a long log lost the moment it stopped. `append`'s
+  stop directive now writes one `stop` line (always kept) on the run it told, when it first stamps
+  `seenAt`.
+- **The founder's rulings on the forks (2026-11-27)**, as built:
+  - **Stop stays hidden** (fork 1, (a)). `requestRunStop` and `withdrawRunStop` are built and
+    tested, and nothing draws them.
+  - ***Mark failed* schedules the weather-cell reconcile** (fork 2, (b)), when the run is of an
+    invalidating kind, isn't a dry run, and applied at least one batch (`markChangedBodies`). The
+    marked run's note says so.
+  - ***Mark the campaign failed too*** (Ma14, (c); ruling 22). Core's `offersCampaignMark` is the
+    one rule: the campaign row still open (running, not marked), its newest pass under it (by
+    start) marked failed, and nothing after the mark (no beat or late close on that pass, no beat
+    on the campaign, which the script stamps as it begins the next pass). `machineryRuns` sends it
+    as `campaignToo` on the campaign page's read and on that pass's own run read; `actionsShown`
+    draws it whenever it is sent, in place of the campaign's own *Mark failed*. It sends the
+    existing `markRunFailed` on the campaign with `afterPass`, and the server re-reads the same rule
+    inside the write (one indexed `.first()`), refusing as a toast once the script has moved on. A
+    plain *Mark failed* on a campaign is unchanged: the server never required a stall for it. The
+    two marks are two audit rows and two `mark_run_failed` undos, each reopening its own run:
+    undoing the campaign's brings the offer back while the pass is still marked; undoing the pass's
+    leaves the campaign marked, so the pass may read running under a marked campaign, as any hand
+    mark beside a live loader does.
+  - **Older campaigns are backfilled** (fork 3, (b), the founder's departure from the design's (a)).
+    `importRunJobs:backfillListed` writes one reconstructed campaign row per campaign from before
+    8a, marked as reconstructed. It reads as finished history, *Rebuilt from its runs*, with no
+    flags and no plan.
+
+##### What the review fixed
+
+- **A recorded campaign is judged by the passes under it.** The page also took any row sharing the
+  campaign's id without a parent as one of its passes, while the list read only the rows under it.
+  So a by-hand re-run of a script pass, or a row an earlier campaign left running, could make the
+  page read *no heartbeat* while the list read *running*.
+- **A campaign id run again.** The id is the operator's own word. The page read the id's oldest 50
+  rows, so `?campaign=<id>` could open an older campaign. It could also show an earlier campaign's
+  retire as this one's, and read *retire-absorbed* as done when it was still required. It now opens
+  the newest campaign, and reads only the rows from that campaign's start up to the next campaign
+  under the same id.
+- **The backfill tells a script pass by its pass, not its kind.** A `retire-absorbed` row from
+  before it had its own kind is `canonical_water`, and was being folded under the reconstructed
+  campaign.
+- **`indexed` can't clear early.** It probed only the 25 newest unlisted rows, which other
+  pipelines' runs can fill. It also reads each corpus kind's oldest row now.
+- **The web's smaller fixes:**
+  - the marked run's note matched fork 2;
+  - a campaign quiet between passes names when it was last heard from;
+  - a log that was empty when it opened still pages older lines on scroll-up;
+  - a loader's failed late close beside a mark is red;
+  - a log line trimmed to the server's length never splits an emoji;
+  - a moderator's audit feed never opens Machinery, which the rail never draws for them.
+- **The PR's first review (Greptile, three notes):**
+  - a campaign row in the list opens by its own run id. Opening it by its campaign id showed the
+    id's newest campaign, so an older row read another campaign's passes. `?campaign=` stays the
+    script's printed link;
+  - the *Waiting* note follows the rule's reading. The wait's record outlives a flush or a close
+    that ends it early;
+  - *Mark failed*'s receipt says when it asked for the weather-cell sync (`markRunFailed` answers
+    `cellSync`), where it always said nothing was scheduled.
+- **Other pipelines' runs under a campaign id.** The summer aerial's build (#188) logs
+  `aerial_select`, `aerial_tiles` and `aerial_assemble`, grouped by its own `naip-<date>` campaign
+  id. None is a corpus kind, so `listedInOf` lists them nowhere yet, the backfill never folds them
+  into a reconstructed corpus campaign (it starts only from a corpus script pass), and the stall
+  rule gives them no verdict (no `RUN_QUIET_MS` entry). They row under Imagery when 8b lands. A test
+  holds the backfill's half.
+
+##### The scripted campaign, end to end
+
+Run on a throwaway local backend made as CI's codegen step makes one, never against dev. A stand-in
+`pnpm` on `PATH` replaced each pass with a stub driving the real `RunLogger`, and passed the campaign
+CLI and every `convex run` through. A temporary proof module, since removed, supplied an admin
+profile and pushed a heartbeat into the past. That stood in for a pass going quiet, without editing
+`RUN_QUIET_MS`. What each step showed:
+
+1. **Open.** The campaign row opened, listed, with its plan. *load-sub-areas* was skipped (no
+   actor), each pass's row sat under it, and the script printed the Machinery URL first.
+2. **The load quiet 7 minutes.** The campaign page, the sidebar's tail and the Overview's card all
+   read *late*. *Wait 30 minutes* was refused ("This run isn't stalled").
+3. **Quiet 32 minutes.** All three read *stalled*. *Wait* was then accepted, and the campaign read
+   *waiting* (the card reads *late*, as designed).
+4. ***Mark failed*** on the load. The pass read *failed*, and the campaign went back to its own
+   heartbeat between passes.
+5. **The loader's late close.** Released, the stub closed itself as succeeded. The row kept the mark,
+   with `loaderFinish` beside it, and the log shows the server's *The loader closed the run itself:
+   succeeded* after the mark line. The logger carried on, and the script ran the next pass.
+6. **Undo of the mark.** The load read *succeeded*, closed at the loader's own close, and the
+   campaign counted three passes done.
+7. **A stop requested on the campaign** while *landmarks* beat. It was honored at the pass's next
+   flush, about 25 seconds later on this backend. The pass closed *Stopped on request*, and the
+   script exited 130. The campaign closed failed, *Stopped at landmarks (exit 130)*, with `seenAt`
+   stamped.
+8. **A failing pass.** A second campaign's merge failed. The script exited 3, and the campaign row
+   closed failed, *Stopped at merge (exit 3)*.
+
+The page itself was read through its stories on these states, not live: a live page needs a Clerk
+session the throwaway backend can't issue.
+
+##### Provisional, and not measured
+
+- **The stall gaps are provisional** (Ma1). `RUN_QUIET_MS` is 2–3 minutes a kind, from the design's
+  reading of the code. The first campaign's events measure the real gaps.
+- **The silent stretches inside one step are not measured** (Ma13). The beats cover each pass's
+  loops, but one long call between two beats can still read late. Examples: a single large file
+  read, one Convex call, or the merge's file writes.
+
+##### Board differences kept
+
+As *Where the boards and this design differ*, above, none reversed. The heartbeat's sub-line says
+the expected gap, not a measured rate. The tail draws the logger's lines, not the loaders' stderr.
+The quiet line is the page's own, never stored. The right column ends after *Outcome so far* and
+*Path* until 8d. The sidebar lists Corpus alone. Every refusal is a toast.
+
+##### Owed to 8d
+
+*Your machine* and *Copy*, *Afterwards on Convex*, the diagnosis prompt, *Sync weather cells* by
+hand, and retiring `/admin/imports` with everything *Legacy retirement* lists.
+
+##### After merge: dev, then the founder's laptop, in order
+
+1. Deploy dev from main at the squash (`convex dev --once`, codegen first). It is widen-only.
+2. Run `convex run importRunJobs:backfillListed '{"dryRun":true}'` and read the tally, then run it
+   without `dryRun`. The history lists; the note *Older runs appear once they're indexed* goes away.
+3. On the laptop: `git pull` on main, `pnpm install`, Node 26 (`nvm use`).
+4. **The D311 snapshot export of dev**, a must before the campaign. Copy
+   `scripts/etl/.scratch/merge/` aside too.
+5. `./run-corpus.sh <id> …`, then open the URL it prints first.
+
+##### Buttons awaiting the founder's first press on dev
+
+Only he presses real triggers:
+
+- *Mark failed*, and its *Undo* (the receipt's and History's);
+- *Mark the campaign failed too*, after a pass is marked, and its *Undo*;
+- *Wait 30 minutes*, and its *Undo*;
+- *Stop* isn't drawn, so there is nothing to press.
+
+#### Machinery follow-ups (the register)
+
+Ruling 20's list, with what this design's reading added. Each row says where it would land.
+
+| # | Item | Found | Lands | Status |
+|---|---|---|---|---|
+| Ma1 | Tune `RUN_QUIET_MS` from the first campaign's events: the longest quiet gap of each pass, times two or three (§5.5, 2026-10-17); and the *Wait 30 minutes* length with it | this design | after the campaign, a one-line change in core | open |
+| Ma2 | Whether the gap repair actually closed yesterday's gaps: the repair's own before-and-after count, read the next morning | ruling 20 | Weather (8c) or after | open |
+| Ma3 | One quick in-run retry for a transient timeout on a weather cell (a pipeline change, so not in 8c's visibility-only scope) | ruling 20 | after 8c | open |
+| Ma4 | Provider response times (Open-Meteo, NWS, Fly's API, ORS) per run | ruling 20 | 8b/8c's run records, or Health | open |
+| Ma5 | A forecast of when the Open-Meteo quota runs out at the current rate (no quota constant exists in code; the board's *of 10,000 free · paid past 7,000* is invented) | ruling 20 | Weather (8c) | open |
+| Ma6 | The imagery cutter's run pinned in the record: `cutterImage` and when it was pinned (`seasonWatch.ts:1126` says it isn't recorded) | the imagery inventory | Imagery (8b) | open |
+| Ma7 | An empty cut's reason (*Nothing to cut · 98% cloud*) lives only in R2's marker (`imageryLive.ts:811`); copy it onto the granule at settle | the imagery inventory | Imagery (8b) | open |
+| Ma8 | The weather archive's chain (`refreshTierDays`, `weatherArchive.ts:1526`) carries no run id, and the `maybe*` wrappers' results are dropped | the imagery inventory | Weather (8c) | open |
+| Ma9 | `load.ts`' `main()` runs on import, so its lines stay untested (register Co9); L's `batchesTotal` change is in the same file | 7a's *Known and left* | 8a if L can move `main` behind `import.meta.main`, else open | open |
+| Ma10 | The logger's per-call subprocess (`pnpm exec convex run`, one to three seconds) bounds how often any pass can beat; a hosted runner would hold a client | this design | the hosted runner (the roadmap's deferred register) | open |
+| Ma11 | Health's count of crons and their next due: 52 crons, 46 of them intervals whose phase is set at deploy, so no next-run time can be read (ruling 17) | ruling 21 | Health (8e) | open |
+| Ma12 | A laptop campaign that sleeps reads *stalled* though nothing failed; a *paused* state would need the laptop to say so before it sleeps, which it can't | this design | — (the stall is the honest reading) | wontfix |
+| Ma13 | The silent stretches inside one step (a single long read, one Convex call, the merge's file writes) aren't measured; a long one between two beats can read late | 8a's build | with Ma1, from the campaign's events | open |
+| Ma14 | *Mark failed* on a campaign's running pass marks that pass only: the campaign row stays running on its own heartbeat, and a dead laptop's campaign then asks for a second *Mark failed* on the campaign itself | 8a's review (the scripted proof) | ruled (c) by the founder, 2026-11-27: after the pass is marked, the campaign page and the pass's page offer *Mark the campaign failed too* while the campaign is open and nothing came after the mark; built in 8a (ruling 22, *What B01-8a's build found*) | done |
+| Ma15 | A transient failure of one `append` drops that batch of log lines (the terminal and the log file keep them); a lost `close` line is the one that matters | 8a's review (the scripted proof) | a later logger change: requeue a failed batch once | open |
+| Ma16 | The pages re-read liveness on the browser's clock; a browser clock minutes off shows *late* or *Wait* early, and the server refuses the press (a toast) | 8a's review | a later change: a server-clock offset on the web | open |
+| Ma17 | A stop honored between passes closes the campaign as *Stopped at <the pass that last ran>* (designed, tested): it reads as if that pass was cut, though it finished | 8a's review | the copy pass, if *Stop* is ever drawn | open |
 
 ## Ruled out
 

@@ -6895,6 +6895,11 @@ progress report and at finish, never sent by a loader — a `running` row silent
 loader's flush interval reads *stalled*. Both fields are absent on every row written before B01-7a,
 which reads as *not recorded*.
 
+**Amended 2026-11-27 (B01-8, the founder's rulings; D340–D346).** There are **52** crons, not thirty
+(46 intervals, 6 daily). The event stream is built in B01-8a as the run logger's own lines (D341),
+the stall rule is twice and ten times a kind's expected gap (D341), and the cron list's record is one
+table for every cron (D343).
+
 **Related:** D37, A06c §6.2, A06i, D214, D310.
 
 ## D219 — A cost ledger: every third party, every day, in its own unit, with dollars where a rate is known (B01)
@@ -9682,3 +9687,132 @@ Maine and a city in July, so a person looks, by the flight day he can recognize.
 summer photograph, its date shown (D318), never a claim about ice.
 
 **Related:** D3, D314, D315, D318, [`phase-B05`](./phases/B05-summer-aerial.md) §2.1.4.
+
+## D340 — Machinery is built as B01-8: sequential PRs, watching the campaign first, a page in the sidebar only once built, real triggers pressed only by the founder (B01)
+
+**Decided (2026-11-26 and 2026-11-27, founder).** Machinery (§5.5, D218, D219) is the wave B01-8,
+built alongside the Corpus wave's last PRs (B01-7b–7d).
+- **Sequential PRs off `origin/main`**, each rebased onto main just before it opens. **The order:**
+  the Machinery frame and the "watch the campaign" slice of Machinery › Corpus (B01-8a); the cron-run
+  backbone and Imagery; Weather; the rest of Corpus and Enrichment; Health; the Cost Ledger. Imagery
+  and Weather take two PRs, three if needed. Notifications, Rollovers, Analytics and Retention are
+  not in this batch.
+- **A page joins Machinery's sidebar only when it is built** (the Corpus precedent, D300); until
+  Health lands, `/admin/machinery` opens on the first built page. No *Cost ledger* entry and no
+  dollar figure anywhere until the ledger lands.
+- **Dev deploys are asked of the founder one at a time** (a deploy from this wave's branch would drop
+  the Corpus wave's unmerged indexes), and **only the founder presses a real trigger on dev** — *Run
+  now*, *Retry failed*, *Repair gaps now*, starting a campaign. Delegates prove with `convex-test` and
+  a throwaway local backend, and each PR lists the buttons awaiting his first press.
+- An old page retires in the PR that replaces it (D305): `/admin/imports` with the rest of Corpus and
+  Enrichment (B01-8d, since it also lists the enrichment runs); the Open-Meteo meter on
+  `/admin/ice-calibration` with Weather; the imagery panel on `/admin/seasons` with Imagery, the season
+  settings staying and the operator emails re-pointed.
+
+**Why:** the founder wants to watch the next corpus campaign on the console, so the page that shows
+it comes first; and two waves sharing one dev deployment can't each push when they like.
+
+**Related:** D218, D219, D300, D305, D310, [`phase-B01`](./phases/B01-admin-console.md) *Machinery
+(B01-8, the design)*.
+
+## D341 — The corpus campaign's live record: its run logger's lines, a row for the campaign, beats from every silent pass, and one stall rule (B01-8a)
+
+**Decided (2026-11-26 and 2026-11-27, founder; the mechanics are the design's).** The founder runs the
+next corpus campaign only after B01-8a is merged, deployed to dev and pulled to his laptop, to watch
+it on Machinery › Corpus. So everything that page draws is written by the campaign itself, from 8a
+(D310's reasoning: a page built later can't replay what a campaign didn't write):
+- **The live log**: the run logger sends its own lines — start, stages, the counts at each flush,
+  failures, close — to a capped table (`runEvents`) at each flush. No loader is edited for the log.
+- **A row for the campaign itself** (`importRuns` kind `corpus_campaign`), opened and closed by
+  `run-corpus.sh`: its flags, its planned passes, its exit status and the pass it stopped at, and a
+  heartbeat between passes. Each pass records the campaign row as its parent.
+- **The silent passes beat**: the merge, the landmark match and its export, the region masks and
+  the small loads get progress flushes, about once a minute, so a stall rule on `progressAt` is
+  honest.
+- **One stall rule, in core** (`runLiveness`): late past twice a run kind's expected quiet gap,
+  stalled past ten times it (board `live-v5`). The gaps are provisional until the campaign's own
+  lines measure them.
+- Every addition degrades on a dev that hasn't been deployed: the run is recorded as before, and
+  only the new lines or the campaign row are lost, with a warning.
+
+**Why:** today a campaign leaves a log file on the laptop and rows that say `running` after the
+process died; the merge, the longest pass, says nothing for its whole run.
+
+**Related:** D218, D310, D342, [`phase-B01`](./phases/B01-admin-console.md) *Machinery (B01-8, the
+design)*.
+
+## D342 — Mark failed and Wait 30 minutes are stored server writes, each with an undo; Stop is built and not drawn (B01-8a)
+
+**Decided (2026-11-26 and 2026-11-27, founder).**
+- **Mark failed** is a real write under a new capability (`machinery.corpus`, admin): who, when and
+  why, an audit row, and an undo that reopens the run. **A late `finish` from the laptop never
+  erases it**: the loader's own close is kept beside the mark, and the undo restores it.
+- **Wait 30 minutes** (the stalled alarm held for half an hour; §5.5's "Keep waiting", renamed by the
+  boards) is stored on the run, so every admin and the Overview see it; its undo ends the wait.
+- **Stop** (the plan's *Cancel*) is built and hidden: a request stored on the run, which the run
+  logger sees at its next flush and stops on, closing its row; no control is drawn. The founder
+  expects the campaign to run on Fly eventually.
+
+**Why:** a mark made on one admin's screen that another can't see, or that the laptop can overwrite
+later, would be a second, quieter version of the problem the page exists to solve.
+
+**Related:** D217, D226, D341, [`phase-B01`](./phases/B01-admin-console.md) *Machinery (B01-8, the
+design)*.
+
+## D343 — One run record for every cron: a heartbeat per job, a compact day of ticks, and per-run logs in their own capped table (B01-8b)
+
+**Decided (2026-11-26 and 2026-11-27, founder).** Not one table per pipeline. Each cron keeps a
+heartbeat row and a compact per-day list of its ticks (the imagery pump ticks 480 times a day; no
+row is written per quiet tick); a run that did work gets a run row, and its log lives in a capped
+table with a retention sweep. A new capability, `machinery.weather`, sits beside `machinery.imagery`
+for the weather triggers.
+
+**Why:** every pipeline page and Health read one shape; register Sh4 (a job's last run) is paid by
+the same table.
+
+**Related:** D218, D340, [`phase-B01`](./phases/B01-admin-console.md) *Machinery (B01-8, the
+design)*.
+
+## D344 — An imagery cutter's log comes from both the cutter and the pump (B01-8b)
+
+**Decided (2026-11-26 and 2026-11-27, founder).** The cutter uploads its own log to R2 as it runs, so
+a killed machine leaves all but its last seconds; and the pump captures the machine's exit event and
+exit code, and Fly's own log lines, when it settles the cut — the only place an out-of-memory kill is
+named (today the exit code is usually lost, because the machine is destroyed first). A succeeded
+attempt's log is drawn collapsed and a failed one open. An executor delegate may build and pin the
+new cutter image.
+
+**Why:** either source alone misses a failure the other sees: the cutter can't report its own kill,
+and Fly's logs age out within hours.
+
+**Related:** A06i, D214, D343.
+
+## D345 — A pipeline page draws what the pipeline does, and answers five questions in order (B01-8c)
+
+**Decided (2026-11-26 and 2026-11-27, founder).** Weather draws one run as the code runs it — cells
+done, cells failed, and that the gap repair picks the failures up — not the board's batch-retry
+ladder; no pipeline behavior changes for the page. It adds the failures grouped by cause (timeout,
+rate limit, server error, one sample each), which today are only written to the logs. Every
+pipeline page answers, in order: is it on time; did the last run do its job (output against what
+was expected); what is still broken (open gaps, and the oldest); why (failures by cause); what do I
+press. What the founder wants beyond visibility is kept as a follow-up register.
+
+**Why:** a page that draws machinery the code doesn't have would mislead the person reading it at
+the moment it matters.
+
+**Related:** D3, D218, [`phase-B01`](./phases/B01-admin-console.md) *Machinery follow-ups*.
+
+## D346 — Machine-minutes before dollars, and next-run times only where a cron has a fixed time (B01-8b, B01-8c)
+
+**Decided (2026-11-26 and 2026-11-27, founder).**
+- Fly's cost is shown as machine-minutes, with no dollar figure, until the Cost Ledger lands (D219's
+  "never invent a dollar").
+- The daily and weekly weather and watch crons move to fixed UTC times, so their next run can be
+  shown; an interval cron shows its interval and its last run, never a next-run clock time (an
+  interval's phase is set at deploy and no function can read it).
+- *Pause* and *Try again now* stay on the Imagery page, though its board omits them; the waiting
+  state draws no *Run now* on the poll, which does nothing before imagery is started.
+
+**Why:** each is the honest version of what the boards drew.
+
+**Related:** D219, D340, D343.

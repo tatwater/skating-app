@@ -434,6 +434,33 @@ export interface MatchLaneOptions {
    * far as any fixture is concerned, and "never invoked" and "broken" look identical from here.
    */
   progressEvery?: number;
+  /** Called once per target: the run logger's beat, counted by {@link beatEvery} (D341). */
+  onTarget?: () => void;
+}
+
+/**
+ * Items between the beats a long loop offers the run logger. Its own clock decides whether a beat
+ * reports (at most once a minute), so this only bounds the cost of building the label.
+ */
+export const BEAT_EVERY = 250;
+
+/**
+ * A counter offering `beat` a label — `stage 2: OSM ↔ NHD · 12,000 of 40,000` — every
+ * {@link BEAT_EVERY} items. With no `beat` it is a no-op, which keeps this module pure: the merge
+ * passes its run logger in, a test passes a spy.
+ */
+export function beatEvery(
+  beat: ((label: string) => void) | undefined,
+  label: string,
+  total: number,
+): () => void {
+  if (beat === undefined) return () => undefined;
+  let n = 0;
+  return () => {
+    if (++n % BEAT_EVERY === 0) {
+      beat(`${label} · ${n.toLocaleString('en-US')} of ${total.toLocaleString('en-US')}`);
+    }
+  };
 }
 
 /**
@@ -469,6 +496,7 @@ export function matchLane(
   let done = 0;
   for (const target of targets) {
     if (++done % progressEvery === 0) onProgress?.(done, targets.length);
+    options.onTarget?.();
     const nearby = new Map<string, Feature>();
     for (const cell of cellsFor(target.bbox)) {
       for (const c of grid.get(cell) ?? []) nearby.set(c.id, c);
@@ -553,6 +581,11 @@ export interface MasterListInput {
    * this function never consults would read as though it did.
    */
   log?: (message: string) => void;
+  /**
+   * The run logger's beat (D341): offered a label at each stage and every {@link BEAT_EVERY} items
+   * of each long loop, so a merge that never flushed stays visibly alive. Optional, like `log`.
+   */
+  beat?: (label: string) => void;
 }
 
 /**
@@ -566,12 +599,19 @@ export function buildMasterList(input: MasterListInput): MasterList {
   const { gnisGrid, boundaryGrid, downstate } = input;
   const elevation = input.elevation ?? new Map<string, number>();
   const log = input.log ?? (() => undefined);
+  const beat = input.beat;
+  /** A stage's line, which is also a beat. */
+  const stage = (label: string) => {
+    log(label);
+    beat?.(label);
+  };
 
   // ── Stage 0: the gazetteer settles the IDS, before anything matches ───────
   //
   // **Ids only, never names** — the naming lane still runs after the merge, where its ambiguity rule
   // can compare bodies rather than features. See `attachGazetteerIds` for why the two halves cannot
   // run at the same time, and for the 126 pairs the old ordering cost.
+  beat?.('stage 0: GNIS ids from the gazetteer');
   const osmIds = attachGazetteerIds(input.osm, gnisGrid);
   const nhdIds = attachGazetteerIds(input.nhd, gnisGrid);
   const dhpIds = attachGazetteerIds(input.dhp, gnisGrid);
@@ -587,12 +627,18 @@ export function buildMasterList(input: MasterListInput): MasterList {
   // ── Stage 1–3: the geometric lanes ────────────────────────────────────────
   // The federal pair first: 3DHP re-publishes NHD across the whole Northeast, so collapsing them
   // before either meets OSM is what keeps `independentVoices` from counting one source twice.
-  log('stage 1: NHD ↔ 3DHP…');
-  const federal = matchLane(dhp, nhd, (d, t) => log(`  3dhp→nhd: ${d} / ${t}`));
-  log('stage 2: OSM ↔ NHD…');
-  const osmNhd = matchLane(osm, nhd, (d, t) => log(`  osm→nhd: ${d} / ${t}`));
-  log('stage 3: OSM ↔ 3DHP…');
-  const osmDhp = matchLane(osm, dhp, (d, t) => log(`  osm→3dhp: ${d} / ${t}`));
+  stage('stage 1: NHD ↔ 3DHP…');
+  const federal = matchLane(dhp, nhd, (d, t) => log(`  3dhp→nhd: ${d} / ${t}`), {
+    onTarget: beatEvery(beat, 'stage 1: NHD ↔ 3DHP', dhp.length),
+  });
+  stage('stage 2: OSM ↔ NHD…');
+  const osmNhd = matchLane(osm, nhd, (d, t) => log(`  osm→nhd: ${d} / ${t}`), {
+    onTarget: beatEvery(beat, 'stage 2: OSM ↔ NHD', osm.length),
+  });
+  stage('stage 3: OSM ↔ 3DHP…');
+  const osmDhp = matchLane(osm, dhp, (d, t) => log(`  osm→3dhp: ${d} / ${t}`), {
+    onTarget: beatEvery(beat, 'stage 3: OSM ↔ 3DHP', osm.length),
+  });
 
   // ── Stage 3b: OSM against itself, at a much higher bar ────────────────────
   //
@@ -600,18 +646,19 @@ export function buildMasterList(input: MasterListInput): MasterList {
   // lake published twice, and no cross-catalog lane sees it when NHD carries no counterpart —
   // which is the normal case for wetland, and every pair this found is wetland. See
   // `SAME_SOURCE_MIN_IOU` for why the bar is 0.9 rather than 0.5, and why the GNIS bar moves with it.
-  log('stage 3b: OSM ↔ OSM (same-source duplicates)…');
+  stage('stage 3b: OSM ↔ OSM (same-source duplicates)…');
   const osmSelf = matchLane(osm, osm, (d, t) => log(`  osm→osm: ${d} / ${t}`), {
     minIou: SAME_SOURCE_MIN_IOU,
     minIouWithGnis: SAME_SOURCE_MIN_IOU,
     excludeSelf: true,
+    onTarget: beatEvery(beat, 'stage 3b: OSM ↔ OSM', osm.length),
   });
   log(`  ${osmSelf.pairs.length.toLocaleString()} same-source pair(s) collapse into one body`);
 
   // ── Stage 4: the name lane ────────────────────────────────────────────────
   // What the area-ratio ceiling cannot reach. See `nameMatchPairs` — overlap is still required, so a
   // Mud Pond in Maine can never match a Mud Pond in New York.
-  log('stage 4: OSM ↔ NHD by name…');
+  stage('stage 4: OSM ↔ NHD by name…');
   const geometricallyMatched = new Set(osmNhd.pairs.map(([a]) => a));
   const named = nameMatchPairs(osm, osmNhd.grid, geometricallyMatched, sameName);
   log(`  ${named.pairs.length.toLocaleString()} name matches the geometry bar had refused`);
@@ -746,7 +793,9 @@ export function buildMasterList(input: MasterListInput): MasterList {
   });
 
   const merged: Merged[] = [];
+  const mergeBeat = beatEvery(beat, 'merging groups', groups.size);
   for (const members of groups.values()) {
+    mergeBeat();
     const { body, reason } = mergeGroupWithReason(members);
     if (body !== null) {
       merged.push(body);
@@ -823,7 +872,9 @@ export function buildMasterList(input: MasterListInput): MasterList {
   const greatLakeGrid = index(greatLakes);
   log(`  ${greatLakes.length} Great Lake polygons for the arm rule`);
 
+  const vetoBeat = beatEvery(beat, 'the region, salt and bay rules', merged.length);
   for (const group of merged) {
+    vetoBeat();
     let cls = group.cls;
     // A bay is an arm OF something. With a parent it is a sub-area (A02); without one we cannot
     // support the claim at all, so it is demoted and queued — Half Moon Cove is the fixture.
@@ -932,13 +983,16 @@ export function buildMasterList(input: MasterListInput): MasterList {
   // ambiguity rule only caught *many points → one body*; the mirror case let one point in a cluster
   // of ponds name each of them independently, and the run found **963 GNIS ids on more than one body
   // under the same name** — six different ponds all called "Twinings Pond". See `resolveGnisNames`.
+  beat?.('naming from the gazetteer');
   const gnisNames = resolveGnisNames(
     survivors.filter((s) => s.group.name.length === 0).map((s) => s.group),
     gnisGrid,
   );
 
   // ── Phase 03: the admission floor, and what survives it ────────────────────
+  const floorBeat = beatEvery(beat, 'the admission floor', survivors.length);
   for (const { group, cls, bayWithoutParent, parent } of survivors) {
+    floorBeat();
     let name = group.name;
     let namedByGnis = false;
     let gnisIdFromGazetteer: string | undefined;
@@ -1185,12 +1239,19 @@ export const EMIT_FAILURE_SAMPLE_CAP = 10;
  * exactly what the first audit found broken (`states` was emitted, declared, and absent from the
  * validator, so every batch would have been rejected).
  */
-export function emitCanonicalBodies(kept: readonly KeptBody[], towns: TownLayer): EmitResult {
+export function emitCanonicalBodies(
+  kept: readonly KeptBody[],
+  towns: TownLayer,
+  /** The run logger's beat (D341), offered every {@link BEAT_EVERY} bodies. */
+  beat?: (label: string) => void,
+): EmitResult {
   const emitted: CanonicalBody[] = [];
   const emittedKeys = new Set<string>();
   const failures = new Map<string, number>();
   const failureKeys: string[] = [];
+  const emitBeat = beatEvery(beat, 'emitting bodies', kept.length);
   for (const k of kept) {
+    emitBeat();
     try {
       const record = toCanonicalBody({
         source: k.geometrySource as 'osm' | 'nhd' | '3dhp',

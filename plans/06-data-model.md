@@ -89,7 +89,8 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `imageryUnreadable` | the manifests the index build could not read, one row each until it reads: read last by the next build, least recently tried first, so a stalling few hold back neither good frames nor a repaired one — D214 |
 | `imageryCounts` | the granule ledger's totals per season, kept beside every status change — D214 |
 | `dailyThrottle` | once per key per New York day (operator alerts), or busy until a time (the full history fill) — A06i |
-| `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; what it set out to cover (`scope`: its pass, its states, whether that was the whole pass — intent, not outcome) and its heartbeat (`progressAt`, stamped by the server, so a dead run reads *stalled*) — D218, D310; `/admin/imports` — A06c §6.2 |
+| `importRuns` | one row per ETL run — match rates, rejects, coverage — the durable version of a terminal summary; what it set out to cover (`scope`: its pass, its states, whether that was the whole pass — intent, not outcome) and its heartbeat (`progressAt`, stamped by the server, so a dead run reads *stalled*) — D218, D310; `/admin/imports` — A06c §6.2. Since B01-8a: the campaign's own row (`corpus_campaign`, its flags, plan and exit in `campaign`), each pass's `parentRunId` and `campaignPass`, the Machinery list it rows in (`listedIn`), and the console's *Mark failed* (`markedFailed`, the loader's late close kept beside it as `loaderFinish`), *Wait 30 minutes* (`stallWait`) and stop request (`stopRequest`) — D341, D342 |
+| `runEvents` | a run's log, line by line: what its run logger saw (start, stages, the counts at each flush, failures, beats, close) and what the console did to it (marked, waited on, asked to stop); capped per run, with one `cap` row counting the rest — Machinery's live tail — D341 |
 
 ### Access
 

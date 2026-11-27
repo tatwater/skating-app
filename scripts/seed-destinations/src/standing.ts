@@ -111,6 +111,11 @@ async function main() {
       for (const [k, v] of Object.entries(page.kept)) totals.kept[k] = (totals.kept[k] ?? 0) + v;
       seedCursor = page.cursor;
       seedDone = page.isDone;
+      // Visible while it runs (D341): the running totals, reported at most once a minute. Only an
+      // applied run has a row; a dry one writes nothing.
+      logger?.count('scanned', totals.scanned);
+      logger?.count('demoted', totals.demoted);
+      logger?.beat(`${totals.scanned.toLocaleString('en-US')} bodies scanned`);
       process.stderr.write(`[standing] …${totals.scanned} scanned, ${totals.demoted} to shelve\r`);
     }
   } catch (err) {

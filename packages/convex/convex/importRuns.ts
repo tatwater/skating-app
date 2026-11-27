@@ -10,13 +10,15 @@
  * See the `importRuns` table comment in `schema.ts` for the shape and why it is one row per run.
  */
 
-import { v } from 'convex/values';
+import { CORPUS_RUN_KINDS } from '@skating/core';
+import { ConvexError, v } from 'convex/values';
 import { internal } from './_generated/api';
-import type { Doc } from './_generated/dataModel';
-import { internalMutation, internalQuery, query } from './_generated/server';
+import type { Doc, Id } from './_generated/dataModel';
+import { internalMutation, internalQuery, type MutationCtx, query } from './_generated/server';
 import { requireCapability } from './lib/auth';
 import { IMPORT_RUN_KINDS, IMPORT_RUN_SCOPES, WEATHER_CELL_INVALIDATING_KINDS } from './lib/enums';
 import { literals } from './lib/validators';
+import { insertRunLines } from './runEvents';
 import { RECONCILE_DEBOUNCE_MS } from './weatherArchive';
 
 /**
@@ -68,6 +70,87 @@ const scopeValidator = v.object({
 });
 
 /**
+ * The note a dry run's row ends with (`scripts/run-log`'s `DRY_RUN_NOTE`, the same words): the
+ * server's one way to tell a run that wrote nothing.
+ */
+export const DRY_RUN_NOTE = 'dry run — nothing written';
+
+/** Whether a run row is a dry run (it changed nothing, so it invalidates nothing). */
+export const isDryRunRow = (run: Pick<Doc<'importRuns'>, 'notes'>): boolean =>
+  (run.notes ?? []).includes(DRY_RUN_NOTE);
+
+/** A campaign's flags and planned passes, bounded at the write (no array past a few dozen). */
+export const MAX_CAMPAIGN_FLAGS = 64;
+export const MAX_CAMPAIGN_PLAN = 32;
+/** A flag's, a pass name's and a skip reason's length. */
+export const MAX_CAMPAIGN_WORD = 200;
+
+/** What `run-corpus.sh` was asked, stated once at `start` (D341); its close comes at `finish`. */
+const campaignStartValidator = v.object({
+  flags: v.array(v.string()),
+  plan: v.array(
+    v.object({
+      pass: v.string(),
+      by: literals(['script', 'hand']),
+      skipped: v.optional(v.string()),
+    }),
+  ),
+});
+
+/** How a campaign ended: the script's exit status and the pass it was in. */
+const campaignCloseValidator = v.object({
+  exitCode: v.number(),
+  lastPass: v.optional(v.string()),
+});
+
+function checkCampaignWords(campaign: {
+  flags: string[];
+  plan: { pass: string; skipped?: string }[];
+}) {
+  if (campaign.flags.length > MAX_CAMPAIGN_FLAGS) {
+    throw new ConvexError(`A campaign records at most ${MAX_CAMPAIGN_FLAGS} flags.`);
+  }
+  if (campaign.plan.length > MAX_CAMPAIGN_PLAN) {
+    throw new ConvexError(`A campaign records at most ${MAX_CAMPAIGN_PLAN} passes.`);
+  }
+  const words = [
+    ...campaign.flags,
+    ...campaign.plan.flatMap((p) => [p.pass, ...(p.skipped !== undefined ? [p.skipped] : [])]),
+  ];
+  if (words.some((w) => w.length > MAX_CAMPAIGN_WORD)) {
+    throw new ConvexError(
+      `A campaign's flags and pass names are at most ${MAX_CAMPAIGN_WORD} characters.`,
+    );
+  }
+}
+
+/**
+ * The campaign a pass ran under, as `start` keeps it: the row named, if it exists and is a campaign.
+ * A parent that is gone or isn't a campaign is dropped, so the pass lists on its own rather than
+ * hiding inside nothing.
+ */
+async function parentCampaign(
+  ctx: MutationCtx,
+  parentRunId: Id<'importRuns'> | undefined,
+): Promise<Id<'importRuns'> | undefined> {
+  if (parentRunId === undefined) return undefined;
+  const parent = await ctx.db.get(parentRunId);
+  return parent?.kind === 'corpus_campaign' ? parent._id : undefined;
+}
+
+/**
+ * The Machinery list a run with no parent is a row of (D341): `corpus` for a corpus kind
+ * (`CORPUS_RUN_KINDS`), else none yet — each pipeline's page widens it as it lands.
+ */
+export function listedInOf(
+  kind: string,
+  parentRunId: Id<'importRuns'> | undefined,
+): 'corpus' | undefined {
+  if (parentRunId !== undefined) return undefined;
+  return CORPUS_RUN_KINDS.includes(kind) ? 'corpus' : undefined;
+}
+
+/**
  * Open a run.
  *
  * Written **before** the first batch rather than after the last, which is the whole difference
@@ -85,9 +168,26 @@ export const start = internalMutation({
     notes: v.optional(v.array(v.string())),
     /** What the run set out to cover — stated once, here, by the writer that knows it (D218). */
     scope: v.optional(scopeValidator),
+    /** The campaign row this pass runs under (D341, `RUN_CORPUS_PARENT`). */
+    parentRunId: v.optional(v.id('importRuns')),
+    /** `run-corpus.sh`'s name for the pass (D341, `RUN_CORPUS_PASS`). */
+    campaignPass: v.optional(v.string()),
+    /** On a `corpus_campaign` row only: the flags and the planned passes (D341). */
+    campaign: v.optional(campaignStartValidator),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
+    if (args.campaign !== undefined) {
+      if (args.kind !== 'corpus_campaign') {
+        throw new ConvexError('Only a corpus campaign row records flags and a plan.');
+      }
+      checkCampaignWords(args.campaign);
+    }
+    if (args.campaignPass !== undefined && args.campaignPass.length > MAX_CAMPAIGN_WORD) {
+      throw new ConvexError(`A pass name is at most ${MAX_CAMPAIGN_WORD} characters.`);
+    }
+    const parentRunId = await parentCampaign(ctx, args.parentRunId);
+    const listedIn = listedInOf(args.kind, parentRunId);
     return await ctx.db.insert('importRuns', {
       kind: args.kind,
       label: args.label,
@@ -104,6 +204,10 @@ export const start = internalMutation({
       failuresTotal: 0,
       notes: args.notes,
       ...(args.scope !== undefined && { scope: args.scope }),
+      ...(parentRunId !== undefined && { parentRunId }),
+      ...(args.campaignPass !== undefined && { campaignPass: args.campaignPass }),
+      ...(listedIn !== undefined && { listedIn }),
+      ...(args.campaign !== undefined && { campaign: args.campaign }),
     });
   },
 });
@@ -164,23 +268,91 @@ export const finish = internalMutation({
      * scheduled for it. Absent means a run that applied what it did, as every loader's does.
      */
     applied: v.optional(v.boolean()),
+    /** On a `corpus_campaign` row: the script's exit status and the pass it was in (D341). */
+    campaign: v.optional(campaignCloseValidator),
   },
   handler: async (
     ctx,
-    { runId, status, counts, stages, failures, failuresTotal, coverage, error, notes, applied },
+    {
+      runId,
+      status,
+      counts,
+      stages,
+      failures,
+      failuresTotal,
+      coverage,
+      error,
+      notes,
+      applied,
+      campaign,
+    },
   ) => {
     const run = await ctx.db.get(runId);
     if (!run) throw new Error(`importRuns row ${runId} not found`);
+    if (campaign?.lastPass !== undefined && campaign.lastPass.length > MAX_CAMPAIGN_WORD) {
+      throw new ConvexError(`A pass name is at most ${MAX_CAMPAIGN_WORD} characters.`);
+    }
     const now = Date.now();
-    await ctx.db.patch(runId, {
-      ...mergeInto(run, { counts, stages, failures, failuresTotal, coverage }),
-      status,
-      finishedAt: now,
-      // The last beat is the close: a finished row's heartbeat never trails its finish.
-      progressAt: now,
-      error,
-      notes: notes ?? run.notes,
-    });
+    // The script's close lands on the campaign object it opened with. A row that has none (a
+    // campaign opened before `start` took one) keeps its exit status only in its close line: an
+    // empty plan written here would read as a campaign that planned nothing.
+    const campaignPatch =
+      campaign !== undefined && run.campaign !== undefined
+        ? {
+            campaign: {
+              ...run.campaign,
+              exitCode: campaign.exitCode,
+              ...(campaign.lastPass !== undefined && { lastPass: campaign.lastPass }),
+            },
+          }
+        : {};
+    const merged = mergeInto(run, { counts, stages, failures, failuresTotal, coverage });
+
+    if (run.markedFailed !== undefined) {
+      // ⚠ **A late finish never erases a hand mark** (D342, ruling 12). The run was marked failed in
+      // the console; the loader's own close is kept beside the mark as `loaderFinish` — the status,
+      // the finish time and the mark stay as the person left them, and the page says what the loader
+      // reported. Its counts and path still merge, and its heartbeat still moves: a run that was
+      // alive after all says so. *Undo* on the mark (`reopenRun`) puts this close in its place.
+      await ctx.db.patch(runId, {
+        ...merged,
+        progressAt: now,
+        notes: notes ?? run.notes,
+        ...campaignPatch,
+        loaderFinish: {
+          status,
+          at: now,
+          ...(error !== undefined && { error }),
+          ...(applied !== undefined && { applied }),
+        },
+      });
+      await insertRunLines(
+        ctx,
+        runId,
+        [
+          {
+            kind: 'close',
+            text:
+              status === 'succeeded'
+                ? 'The loader closed the run itself: succeeded'
+                : `The loader closed the run itself: failed${error ? `: ${error}` : ''}`,
+            loggedAt: now,
+          },
+        ],
+        now,
+      );
+    } else {
+      await ctx.db.patch(runId, {
+        ...merged,
+        status,
+        finishedAt: now,
+        // The last beat is the close: a finished row's heartbeat never trails its finish.
+        progressAt: now,
+        error,
+        notes: notes ?? run.notes,
+        ...campaignPatch,
+      });
+    }
 
     // ⚠ **A finished corpus import is what invalidates the weather cell registry (A06h / D152).**
     //
@@ -196,19 +368,42 @@ export const finish = internalMutation({
     //
     // Success only. A failed run is retried, and the retry's success fires this; firing on failure
     // would spend a walk per attempt on a loader stuck in a retry loop.
+    //
+    // Keyed on the **loader's** outcome, never on a hand mark (D342): a marked run whose loader later
+    // closes it succeeded did change the bodies, so it schedules the walk as any success does.
     if (
       status === 'succeeded' &&
       applied !== false &&
       WEATHER_CELL_INVALIDATING_KINDS.includes(run.kind)
     ) {
-      await ctx.scheduler.runAfter(
-        RECONCILE_DEBOUNCE_MS,
-        internal.weatherArchive.maybeSyncWeatherCells,
-        { requestedAt: Date.now() },
-      );
+      await requestCellReconcile(ctx);
     }
   },
 });
+
+/** Ask for the debounced weather-cell walk (`maybeSyncWeatherCells`): see `finish`'s note. */
+export async function requestCellReconcile(ctx: MutationCtx): Promise<void> {
+  await ctx.scheduler.runAfter(
+    RECONCILE_DEBOUNCE_MS,
+    internal.weatherArchive.maybeSyncWeatherCells,
+    { requestedAt: Date.now() },
+  );
+}
+
+/**
+ * **Whether a run marked failed by hand changed the bodies** (D342, the founder's ruling on fork 2):
+ * a kind that invalidates the weather cells, not a dry run, and at least one batch applied. A load
+ * counts its batches (`batchesApplied`); a kind that counts none is taken to have applied what it
+ * did — the error the enum's note says to make (a spurious walk is cheap; a missed one is a week).
+ */
+export function markChangedBodies(
+  run: Pick<Doc<'importRuns'>, 'kind' | 'notes' | 'counts'>,
+): boolean {
+  if (!WEATHER_CELL_INVALIDATING_KINDS.includes(run.kind)) return false;
+  if (isDryRunRow(run)) return false;
+  const batches = run.counts.find((c) => c.name === 'batchesApplied');
+  return batches === undefined || batches.value > 0;
+}
 
 /**
  * Correct a run's timestamps after the fact.

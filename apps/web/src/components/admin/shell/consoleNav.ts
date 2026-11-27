@@ -51,7 +51,7 @@ export function usesOldShell(path: string): boolean {
 
 /** A mode the console has built: one rail item, one letter after G. */
 export type ConsoleMode = {
-  id: 'overview' | 'inbox' | 'corpus' | 'people';
+  id: 'overview' | 'inbox' | 'corpus' | 'people' | 'machinery';
   /** The rail's name for it, capitalized. */
   name: string;
   to: string;
@@ -109,6 +109,18 @@ export const CONSOLE_MODES: readonly ConsoleMode[] = [
     goKey: 'P',
     // Every People read gates on `people.read` (`people.lanes`, `people.listPage`, `people.person`).
     capability: 'people.read',
+  },
+  {
+    // The pipelines at work (D218, D340): the corpus campaign first; each pipeline's page joins the
+    // mode's sidebar only once it is built, and `/admin/machinery` opens on the first built page
+    // until Health lands. Admins only: the rail never draws an item whose page would refuse.
+    id: 'machinery',
+    name: 'Machinery',
+    to: '/admin/machinery',
+    goKey: 'M',
+    // Every Machinery read gates on `machinery.read` (`machineryRuns.lanes`, `listPage`, `campaign`,
+    // `run`, `events`); the writes on a corpus run add `machinery.corpus`.
+    capability: 'machinery.read',
   },
 ];
 

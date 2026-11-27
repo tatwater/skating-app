@@ -2,6 +2,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import {
   faArrowUpRightFromSquare,
   faBoxArchive,
+  faEngine,
   faInbox,
   faMapLocationDot,
   faTachographDigital,
@@ -63,6 +64,7 @@ const MODE_ICON: Record<ConsoleMode['id'], IconDefinition> = {
   inbox: faInbox,
   corpus: faMapLocationDot,
   people: faUsers,
+  machinery: faEngine,
 };
 
 /** A built mode as the rail draws it. */

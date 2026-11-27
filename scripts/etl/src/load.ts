@@ -157,7 +157,7 @@ interface TransformSummaryFile {
   errors?: { externalId?: string; message: string }[];
 }
 
-function main(): void {
+export function main(): void {
   const args = process.argv.slice(2);
   const allowNonDev = args.includes('--prod');
   // **`--state=` is retired (D266).** It tagged a batch with its extract's state and filled in any
@@ -351,6 +351,9 @@ function main(): void {
   let consecutiveFailures = 0;
   let aborted: Error | undefined;
 
+  // Counted before the loop (B01-8a), so a live load reads "66 of 170" rather than a bare 66.
+  logger.count('batchesTotal', batches.length);
+
   for (const [index, batch] of batches.entries()) {
     try {
       const result = runImport(
@@ -425,13 +428,14 @@ function main(): void {
       }
     }
 
-    if ((index + 1) % 25 === 0) {
-      logger.count('inserted', inserted);
-      logger.count('updated', updated);
-      logger.count('batchesApplied', applied);
-      logger.count('batchesFailed', failedBatches);
-      logger.flush();
-    }
+    logger.count('inserted', inserted);
+    logger.count('updated', updated);
+    logger.count('batchesApplied', applied);
+    logger.count('batchesFailed', failedBatches);
+    if ((index + 1) % 25 === 0) logger.flush();
+    // **And a beat every batch** (D341): a flush every 25 batches is ~95 s when batches are quick,
+    // but a run of slow ones would go quiet for far longer. The beat reports at most once a minute.
+    else logger.beat(`batch ${index + 1} of ${batches.length}`);
   }
 
   logger.count('bodiesRead', lines.length);
@@ -551,4 +555,6 @@ function main(): void {
   }
 }
 
-main();
+// Behind `import.meta.main` so a test can import the loader and drive `main` against a fake
+// deployment, rather than running it at import.
+if (import.meta.main) main();

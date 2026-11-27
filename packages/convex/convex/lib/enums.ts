@@ -456,6 +456,16 @@ export const MODERATION_ACTIONS = [
   // which puts the question back. A decision that changes the body writes that change's own verb.
   'settle_review_reason',
   'unsettle_review_reason',
+  // ── Machinery (B01-8a, D342) ─────────────────────────────────────────────────────────────────────
+  // A corpus run the console marked failed (who, when, why; a late close from the laptop is kept
+  // beside the mark, never over it) and its undo; *Wait 30 minutes* on a stalled run and its undo;
+  // a request to stop (built, not drawn) and its withdrawal. Each on the `importRun` target.
+  'mark_run_failed',
+  'reopen_run',
+  'wait_on_run',
+  'stop_waiting_on_run',
+  'request_run_stop',
+  'withdraw_run_stop',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -481,6 +491,7 @@ export const MODERATION_TARGET_TYPES = [
   'bodyLandmark', // D202: a named point on a lake — an island, a point, a bridge
   'corpusPlaceName', // D202: a name the corpus uses that no landmark took — placed or dismissed
   'supportTicket', // B01-5f (D284): a ticket's notes, replies, resolve and reopen
+  'importRun', // B01-8a (D342): a run marked failed, waited on, or asked to stop, in Machinery
 ] as const;
 
 /** In-app support inbox (D37). */
@@ -692,6 +703,11 @@ export const IMPORT_RUN_KINDS = [
   // as a campaign's load (the Overview's last campaign). Its own kind because it folds rows away
   // rather than loading them, the same reason `dedup_resolve` is not the load.
   'absorbed_retire',
+  // `scripts/etl/run-corpus.sh`'s own row (D341, B01-8a), opened before its first pass and closed
+  // with its exit status: the flags, the planned passes (a skipped one says why), and a heartbeat
+  // between passes. Each pass's row points at it (`parentRunId`). Never a load: it is in no list that
+  // groups a campaign's loads (`CAMPAIGN_RUN_KINDS`) and invalidates no weather cell.
+  'corpus_campaign',
   // scripts/aerial (B05) — the summer aerial's region-wide NAIP archive, a row per stage of a build,
   // grouped by its campaign (`naip-<YYYYMMDD>`): the frame rule and manifest, the work tiles cut on
   // Fly, and the archive's assembly with its date index and verify. None writes a body.
@@ -761,6 +777,39 @@ export const WEATHER_CELL_INVALIDATING_KINDS: readonly (typeof IMPORT_RUN_KINDS)
  * the failure mode a printed-to-stderr summary could never record.
  */
 export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
+
+/**
+ * **A line of a run's log** (`runEvents.kind`, D341, B01-8a). The run logger's own: `start`,
+ * `stage`, `flush` (the counts that changed), `beat` (a silent pass's progress), `warn`, `fail`
+ * (failures summarized per flush) and `close`. The console's, written by the Machinery writes: `mark`
+ * (marked failed, or reopened), `wait` (*Wait 30 minutes*, or its undo) and `stop` (a request to
+ * stop, or its withdrawal). And `cap`: the one row counting the lines a run wrote past
+ * `MAX_RUN_EVENTS`. `close`, `mark`, `wait` and `stop` are always kept, past the cap too.
+ */
+export const RUN_EVENT_KINDS = [
+  'start',
+  'stage',
+  'flush',
+  'beat',
+  'warn',
+  'fail',
+  'close',
+  'mark',
+  'wait',
+  'stop',
+  'cap',
+] as const;
+
+/** The kinds a run's logger may send through `runEvents.append`; the rest are the server's. */
+export const RUN_EVENT_LOGGER_KINDS = [
+  'start',
+  'stage',
+  'flush',
+  'beat',
+  'warn',
+  'fail',
+  'close',
+] as const satisfies readonly (typeof RUN_EVENT_KINDS)[number][];
 
 /**
  * The recurring jobs whose failing work lives in `jobFailures` (D258) — work with no row of its own

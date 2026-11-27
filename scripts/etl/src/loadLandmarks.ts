@@ -183,6 +183,12 @@ function main(): void {
         );
       }
     }
+    // Visible while it runs (D341): the running totals, reported at most once a minute.
+    logger.count('created', totals.created);
+    logger.count('updated', totals.updated);
+    logger.count('dropped', totals.dropped);
+    logger.count('batchesFailed', failedBatches);
+    logger.beat(`batch ${i + 1} of ${batches.length}`);
     if ((i + 1) % 10 === 0 || i + 1 === batches.length) {
       process.stderr.write(
         `[landmarks] ${i + 1}/${batches.length} batches — ${totals.created} created · ${totals.updated} updated · ${totals.dropped} dropped\n`,

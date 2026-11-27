@@ -123,6 +123,7 @@ function main(): void {
   let created = 0;
   let refused = 0;
   let failedBatches = 0;
+  logger.count('baysRead', rows.length);
   for (let i = 0; i < rows.length; i += MAX_BATCH) {
     const batch = rows.slice(i, i + MAX_BATCH);
     // **One bad batch is not the run** — the same rule `load.ts` follows, and it was missing here.
@@ -172,6 +173,12 @@ function main(): void {
           `BATCH FAILED (${batch.map((r) => r.name).join(', ')}): ${message}\n`,
       );
     }
+    // Visible while it runs (D341): the running totals, reported at most once a minute — a flush
+    // after every one-bay batch would double the pass's subprocess calls.
+    logger.count('created', created);
+    logger.count('refused', refused);
+    logger.count('batchesFailed', failedBatches);
+    logger.beat(`bay ${Math.min(i + MAX_BATCH, rows.length)} of ${rows.length}`);
   }
 
   logger.count('baysRead', rows.length);

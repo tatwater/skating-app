@@ -39,7 +39,7 @@ import {
   renameSync,
   writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import process from 'node:process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
@@ -71,9 +71,18 @@ const BODIES_META = join(SCRATCH, 'bodies.meta.json');
  */
 const ALL_STATES = EXTRACT_SOURCES.map((s) => s.state.toLowerCase());
 
+/**
+ * A line of the match's report — **and a beat** (D341): the match never flushed, so its row was
+ * silent for its whole run, the outline export included. The run logger reports at most once a
+ * minute and otherwise a beat costs a clock read.
+ */
 function log(message: string): void {
   process.stderr.write(`[landmarks] ${message}\n`);
+  activeLogger?.beat(message);
 }
+
+/** Lines between the beats a file read offers — the logger's clock decides whether one reports. */
+const BEAT_LINES = 1_000;
 
 function flag(args: string[], name: string): string | undefined {
   return args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3);
@@ -81,7 +90,12 @@ function flag(args: string[], name: string): string | undefined {
 
 async function readLines(path: string, onLine: (line: string) => void): Promise<void> {
   const rl = createInterface({ input: createReadStream(path), crlfDelay: Infinity });
-  for await (const line of rl) if (line.trim()) onLine(line);
+  let n = 0;
+  for await (const line of rl) {
+    if (++n % BEAT_LINES === 0)
+      activeLogger?.beat(`reading ${basename(path)} · ${n.toLocaleString('en-US')} lines`);
+    if (line.trim()) onLine(line);
+  }
 }
 
 /** Page every listed body's outline out of the deployment, once, into the cache. */
@@ -101,6 +115,10 @@ function exportBodies(): void {
     );
     for (const body of page.bodies) lines.push(JSON.stringify(body));
     pages++;
+    // A page is one `convex run` (1–3 s), so the export beats at the logger's cadence, not per page.
+    activeLogger?.beat(
+      `exporting outlines · ${pages} pages, ${lines.length.toLocaleString('en-US')} bodies`,
+    );
     if (pages % 50 === 0) log(`bodies: ${pages} pages, ${lines.length.toLocaleString()} listed`);
     if (page.isDone) break;
     cursor = page.cursor;
@@ -161,6 +179,8 @@ function osmFeatureFile(state: string, refresh: boolean): string {
   const filtered = join(SCRATCH, `osm-${state}.partial.pbf`);
   const partial = join(SCRATCH, `osm-${state}.partial.geojsonseq`);
   log(`${state}: filtering landmark features…`);
+  // ⚠ Two synchronous osmium runs: no beat reaches the row until they return (first run or
+  // `--refresh` only; a cached extract skips them).
   const step1 = spawnSync('osmium', osmLandmarkFilterArgs(join(dir, filename), filtered), {
     encoding: 'utf8',
   });
@@ -194,7 +214,8 @@ function gnisCandidates(state: string): LandmarkCandidate[] {
   const columns = gnisColumnIndexes((header ?? '').split('|'));
   if (!columns) throw new Error(`${state}: the GNIS header lacks a column the pass reads`);
   const found: LandmarkCandidate[] = [];
-  for (const row of rows) {
+  for (const [i, row] of rows.entries()) {
+    if ((i + 1) % BEAT_LINES === 0) activeLogger?.beat(`reading GNIS ${state} · ${i + 1} rows`);
     const c = parseGnisLandmark(row.split('|'), columns);
     if (c) found.push(c);
   }
@@ -273,6 +294,8 @@ async function main(): Promise<void> {
   }
 
   const started = Date.now();
+  // ⚠ One synchronous call: no beat reaches the row until it returns (its time is logged below).
+  log(`placing ${candidates.length.toLocaleString('en-US')} candidates on the bodies…`);
   const { byBody, counts, overIdTotal } = placeLandmarks(candidates, index);
   log(`placed in ${((Date.now() - started) / 1000).toFixed(1)} s`);
   // Checked at the source: a stitched waterway whose ids pass what a landmark keeps (B01-3j).
@@ -285,6 +308,7 @@ async function main(): Promise<void> {
   let corpus: ReturnType<typeof applyCorpus> | undefined;
   if (mentionsPath) {
     const places = parseMentions(readFileSync(mentionsPath, 'utf8'));
+    log(`matching ${places.length} corpus places…`);
     corpus = applyCorpus(byBody, new Map(bodies.map((b) => [b.id, b])), places);
     log(
       `corpus: ${places.length} places — ${corpus.matched} matched, ${corpus.ambiguous.length} ambiguous, ${corpus.unmatched.length} unmatched`,

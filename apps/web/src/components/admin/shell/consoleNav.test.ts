@@ -128,6 +128,29 @@ describe('the built modes', () => {
     expect(LEGACY_PAGES.some((p) => p.to.startsWith('/admin/users'))).toBe(false);
   });
 
+  it('finds Machinery at its page and every page under it, and nowhere that only shares a prefix', () => {
+    expect(modeAt('/admin/machinery')?.id).toBe('machinery');
+    expect(modeAt('/admin/machinery/')?.id).toBe('machinery');
+    expect(modeAt('/admin/machinery/corpus')?.id).toBe('machinery');
+    expect(modeAt('/admin/machineryx')).toBeUndefined();
+    // The old Imports page stands until Enrichment replaces it: still the old shell, not the mode.
+    expect(modeAt('/admin/imports')).toBeUndefined();
+    expect(usesOldShell('/admin/imports')).toBe(true);
+    expect(usesOldShell('/admin/machinery/corpus')).toBe(false);
+  });
+
+  it('gates Machinery on reading the machinery, an admin line, last on the rail, on G then M', () => {
+    const machinery = CONSOLE_MODES.find((m) => m.id === 'machinery');
+    expect(machinery).toMatchObject({
+      name: 'Machinery',
+      to: '/admin/machinery',
+      goKey: 'M',
+      capability: 'machinery.read',
+    });
+    expect(CAPABILITIES['machinery.read'].role).toBe('admin');
+    expect(CONSOLE_MODES.at(-1)?.id).toBe('machinery');
+  });
+
   it('never sends a tree a mode owns to the old shell', () => {
     for (const mode of CONSOLE_MODES) {
       for (const tree of mode.also ?? []) expect(usesOldShell(`${tree}/x`)).toBe(false);

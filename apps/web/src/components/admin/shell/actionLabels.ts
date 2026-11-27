@@ -30,6 +30,7 @@ const TARGET: Record<AuditTarget, string> = {
   bodyLandmark: 'a landmark',
   corpusPlaceName: 'a place name',
   supportTicket: 'a support ticket',
+  importRun: 'an import run',
 };
 
 /** `{t}` is the target's words; a verb with no `{t}` names its subject itself. */
@@ -116,6 +117,14 @@ const VERB: Record<AuditAction, string> = {
   // Invented, for the copy pass.
   settle_review_reason: 'Settled {t}’s review question',
   unsettle_review_reason: 'Reopened {t}’s review question',
+  // Machinery (B01-8a): a corpus run marked failed, waited on, or asked to stop, and each undo.
+  // Invented, for the copy pass.
+  mark_run_failed: 'Marked {t} failed',
+  reopen_run: 'Reopened {t}',
+  wait_on_run: 'Waited 30 minutes on {t}',
+  stop_waiting_on_run: 'Stopped waiting on {t}',
+  request_run_stop: 'Asked {t} to stop',
+  withdraw_run_stop: 'Withdrew the request to stop {t}',
 };
 
 /** The row's sentence: "Hid a report", "Approved a request". */

@@ -73,6 +73,11 @@ export type ImportRunKind =
    * Logged as `canonical_water` before B01-7a, which made it read as a campaign's load.
    */
   | 'absorbed_retire'
+  /**
+   * `scripts/etl/run-corpus.sh`'s own row (D341, B01-8a), opened before its first pass by the
+   * campaign CLI and closed with the script's exit status; each pass's row points at it.
+   */
+  | 'corpus_campaign'
   // `scripts/aerial` (B05) — the summer aerial's NAIP archive, one kind per stage of a build.
   /** `select` — the frame rule over the whole catalog, and the build's manifest. */
   | 'aerial_select'

@@ -67,6 +67,7 @@ function main(): void {
     dryRun: !apply,
   });
   logger.start();
+  logger.count('namesRead', names.length);
   const totals: Counts = { created: 0, refreshed: 0, unchanged: 0, decidedHeld: 0 };
   try {
     for (let i = 0; i < names.length; i += BATCH) {
@@ -76,6 +77,9 @@ function main(): void {
         dryRun: !apply,
       });
       for (const key of Object.keys(totals) as (keyof Counts)[]) totals[key] += counts[key];
+      // Visible while it runs (D341): the running totals, reported at most once a minute.
+      for (const [key, value] of Object.entries(totals)) logger.count(key, value);
+      logger.beat(`names ${Math.min(i + BATCH, names.length)} of ${names.length}`);
     }
   } catch (error) {
     logger.failed(error);

@@ -208,6 +208,43 @@ describe('OverviewHome', () => {
     });
   });
 
+  it('opens an import row’s run in Machinery, and draws a run reporting on time as running', () => {
+    render(
+      <OverviewHome
+        data={{
+          machinery: {
+            jobs: [
+              {
+                id: 'import',
+                name: 'Corpus · load',
+                state: 'running',
+                at: NOW - 60_000,
+                runId: 'k1/7',
+              },
+              { id: 'imagery-poll', name: 'Imagery poll', state: 'ok', at: NOW - 60_000 },
+            ],
+            more: 0,
+            moreAllOk: true,
+          },
+        }}
+        now={NOW}
+      />,
+    );
+    const imports = must(rowNamed('Corpus · load'));
+    expect(imports).toHaveAttribute('data-state', 'running');
+    expect(within(imports).getByText('running')).toBeInTheDocument();
+    const link = imports.closest('a') ?? imports.querySelector('a');
+    expect(link).toHaveAttribute('href', '/admin/machinery/corpus?run=k1%2F7');
+    // A job with no run of its own opens nothing.
+    const poll = must(rowNamed('Imagery poll'));
+    expect(poll.closest('a') ?? poll.querySelector('a')).toBeNull();
+    // The foot opens the mode itself, never the old Imports page.
+    expect(screen.getByRole('link', { name: /Health/ })).toHaveAttribute(
+      'href',
+      '/admin/machinery',
+    );
+  });
+
   it('says when every job is listed, and a list with some not ok', () => {
     render(
       <OverviewHome
