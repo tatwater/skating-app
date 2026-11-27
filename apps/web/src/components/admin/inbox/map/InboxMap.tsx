@@ -11,6 +11,7 @@ import { LINE_STYLES, OUTLINE_STYLES, tokenVar } from '../../body/map/bodyMapPal
 import { type DrawnScene, drawScene, layerSwitches } from '../../body/map/bodyScene';
 import { type AerialLoad, aerialCredit, useStillAerialLoad } from '../../body/map/consoleAerial';
 import type { BodyMapLayer, BodyMapScene } from '../../body/map/mapDescriptors';
+import { mapInkStyle } from '../../body/map/mapInks';
 import { useBodyMapCanvas } from '../../body/map/useBodyMapCanvas';
 import type { InboxLegendRow, InboxMapView } from './inboxMapScene';
 
@@ -94,8 +95,13 @@ export function legendItem(row: InboxLegendRow): MapLegendItem {
   };
 }
 
-/** What sits in the corner: the legend plate, then the caption under it; nothing with neither. */
-function embedPlate(view: InboxMapView): ReactNode {
+/**
+ * What sits in the corner: the legend plate, then the caption under it; nothing with neither. The
+ * legend is chrome on its own plate, in the page's theme; the caption is words on the map, so over
+ * the summer aerial it takes the map's inks (`mapInks`) — the page's light-theme ink would be dark
+ * on the photograph's dark ground.
+ */
+function embedPlate(view: InboxMapView, overAerial: boolean): ReactNode {
   if (view.legend.length === 0 && view.caption === null) return null;
   return (
     <div className="flex min-w-0 flex-col items-start gap-(--space-2)">
@@ -103,6 +109,7 @@ function embedPlate(view: InboxMapView): ReactNode {
       {view.caption !== null && (
         <span
           data-slot="inbox-map-caption"
+          style={mapInkStyle(overAerial)}
           className="block max-w-full truncate text-kick leading-none font-medium tracking-kick text-fg2 uppercase"
         >
           {view.caption}
@@ -176,7 +183,8 @@ export function InboxMap({
         drawn={drawn}
         rack={false}
         foot={foot}
-        plate={embedPlate(view)}
+        plate={embedPlate(view, aerial)}
+        overAerial={aerial}
         credit={canvas.aerialCredit}
         aerialLoad={canvas.aerialLoad}
         onZoomIn={canvas.zoomIn}
@@ -240,7 +248,8 @@ export function InboxMapStill({
         drawn={drawn}
         rack={false}
         foot={foot}
-        plate={embedPlate(view)}
+        plate={embedPlate(view, aerial)}
+        overAerial={aerial}
         credit={aerial ? aerialCredit(aerialCapturedAt) : null}
         aerialLoad={load}
         onZoomIn={() => setZoomStep((z) => z + 1)}

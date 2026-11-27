@@ -155,13 +155,15 @@ const shell = vi.hoisted(() => ({
   live: false,
   onLoad: null as ((m: FakeMap) => void) | null,
   maxBounds: null as unknown,
+  flavor: null as string | null,
 }));
 
 vi.mock('@/lib/mapCanvas', () => ({
   MAP_CONTAINER_CLASS: 'size-full',
-  useMapCanvas: (opts: { onLoad: (m: FakeMap) => void; maxBounds?: unknown }) => {
+  useMapCanvas: (opts: { onLoad: (m: FakeMap) => void; maxBounds?: unknown; flavor: string }) => {
     shell.onLoad = opts.onLoad;
     shell.maxBounds = opts.maxBounds;
+    shell.flavor = opts.flavor;
     const live = shell.live;
     const map = shell.map;
     // A fresh identity per readiness, as the real accessor has.
@@ -195,7 +197,11 @@ vi.mock('./consoleAerial', async (importOriginal) => ({
   useAerialCredit: (on: boolean) => (on ? 'Aerial · NAIP' : null),
 }));
 
-const { FIT_PADDING: FIT_PADDING_FOR_TEST, useBodyMapCanvas } = await import('./useBodyMapCanvas');
+const {
+  AERIAL_GROUND_LAYER,
+  FIT_PADDING: FIT_PADDING_FOR_TEST,
+  useBodyMapCanvas,
+} = await import('./useBodyMapCanvas');
 
 /** Imagery's lit pass, as its scene hands it to the frame. */
 const PASS: NonNullable<DrawnScene['raster']> = {
@@ -234,6 +240,7 @@ function Harness({
       data-credit={canvas.aerialCredit ?? undefined}
       data-aerial-load={canvas.aerialLoad?.load}
       data-aerial-pending={canvas.aerialLoad?.pending ? '' : undefined}
+      data-inks={canvas.inks}
     >
       {canvas.surface ? 'live' : 'waiting'}
       {canvas.aerialLoad?.onRetry && (
@@ -593,13 +600,77 @@ describe('the summer aerial', () => {
     expect(at).toBeGreaterThan(order.indexOf('body-console-fill-body'));
     expect(order[at + 1]).toBe('body-console-field-dots');
     expect(at).toBeLessThan(order.indexOf('body-console-outline-body'));
-    expect(aerialLayer(map)?.paint).toMatchObject(AERIAL_PAINT.dark);
+    expect(aerialLayer(map)?.paint).toMatchObject(AERIAL_PAINT);
   });
 
-  it('in the light, lifted instead', async () => {
+  it('in the light, the same paint: the inks over it are light in both themes', async () => {
     const map = loadLive({ mode: 'light', aerial: true });
     await waitFor(() => expect(aerialLayer(map)).toBeDefined());
-    expect(aerialLayer(map)?.paint).toMatchObject(AERIAL_PAINT.light);
+    expect(aerialLayer(map)?.paint).toMatchObject(AERIAL_PAINT);
+  });
+
+  it('in the light theme, the map draws in the dark map’s inks while it is on, the page’s off', async () => {
+    const map = shell.map as FakeMap;
+    const view = render(<Harness mode="light" aerial />);
+    map.loaded = true;
+    shell.onLoad?.(map);
+    shell.live = true;
+    view.rerender(<Harness mode="light" aerial />);
+    const shore = () => map.layers.get('body-console-outline-body')?.paint['line-color'];
+    const ground = () => map.layers.get(AERIAL_GROUND_LAYER);
+    expect(shore()).toBe(adminToken('dark', 'fg1'));
+    expect(view.getByTestId('zoom').dataset.inks).toBe('dark');
+    // A dark ground under the console's layers, so a cell still loading (or one that didn't come)
+    // leaves dark ground under the light inks; the basemap stays the page's, so nothing re-creates.
+    expect(ground()?.paint['background-color']).toBe(adminToken('dark', 'map-earth'));
+    const order = map.getLayersOrder();
+    expect(order.indexOf(AERIAL_GROUND_LAYER)).toBeLessThan(
+      order.indexOf('body-console-fill-body'),
+    );
+    expect(shell.flavor).toBe('white');
+    // Off: the page's own inks come straight back, and the ground comes up.
+    view.rerender(<Harness mode="light" aerial={false} />);
+    expect(shell.flavor).toBe('white');
+    expect(shore()).toBe(adminToken('light', 'fg1'));
+    expect(ground()).toBeUndefined();
+    expect(view.getByTestId('zoom').dataset.inks).toBe('light');
+  });
+
+  it('keeps the dark map’s inks and ground while it loads and when it didn’t load — never light on light', async () => {
+    tiles.load.mockResolvedValue(null as unknown as ImageBitmap);
+    const map = shell.map as FakeMap;
+    const view = render(<Harness mode="light" aerial />);
+    // Loading: the map is coming up, nothing is in.
+    expect(view.getByTestId('zoom').dataset.aerialLoad).toBe('loading');
+    expect(view.getByTestId('zoom').dataset.inks).toBe('dark');
+    map.loaded = true;
+    shell.onLoad?.(map);
+    shell.live = true;
+    view.rerender(<Harness mode="light" aerial />);
+    await waitFor(() => expect(view.getByTestId('zoom').dataset.aerialLoad).toBe('failed'));
+    expect(view.getByTestId('zoom').dataset.inks).toBe('dark');
+    expect(map.layers.has(AERIAL_GROUND_LAYER)).toBe(true);
+    expect(map.layers.get('body-console-outline-body')?.paint['line-color']).toBe(
+      adminToken('dark', 'fg1'),
+    );
+  });
+
+  it('leaves a winter pass where it was in the light theme too: over the photograph', async () => {
+    const map = loadLive({ mode: 'light', raster: PASS, aerial: true });
+    await waitFor(() => expect(aerialLayer(map)).toBeDefined());
+    const order = map.getLayersOrder();
+    expect(order.indexOf('imagery-raster')).toBeLessThan(
+      order.indexOf(freezeUpLaneIds('primary', 0).layerId),
+    );
+  });
+
+  it('in the dark theme, nothing changes but the photograph and its ground', () => {
+    const map = loadLive({ mode: 'dark', aerial: true });
+    expect(shell.flavor).toBe('dark');
+    expect(map.layers.has(AERIAL_GROUND_LAYER)).toBe(true);
+    expect(map.layers.get('body-console-outline-body')?.paint['line-color']).toBe(
+      adminToken('dark', 'fg1'),
+    );
   });
 
   it('goes under a winter pass already up, never over it', async () => {

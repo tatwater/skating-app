@@ -10,7 +10,6 @@ import {
   useImageryReveal,
 } from '../../../useImageryReveal';
 import { AERIAL_LOAD_WORDS } from '../consoleWords';
-import type { BodyMapMode } from './bodyMapPalette';
 import { rasterAnchor } from './glLayers';
 
 /**
@@ -30,24 +29,47 @@ import { rasterAnchor } from './glLayers';
  *   marks draw on it. Under any winter pass already up (Imagery's), never over it.
  * - **No zoom floor.** The console's camera is fenced to one body, so its widest view still wants
  *   the photograph; the grid steps down a level rather than asking for more cells.
- * - **Dimmed toward the ground** ({@link AERIAL_PAINT}): the console's inks are grays, so the dark
- *   mode darkens the photograph and the light mode lifts it, each a step toward gray, and the shore,
- *   the bays and the marks keep their contrast over it.
+ * - **Full color, lightly dimmed** ({@link AERIAL_PAINT}): the layer is there to place and check
+ *   marks against the real ground, so the photograph has to read as one. It takes the top off the
+ *   brightest pixels, a short step toward the dark map's ground.
+ * - **Under the dark map's inks in either theme** (`mapInks`): a photograph is dark ground, so
+ *   while it is on, the map draws its own lines and words light on dark over a dark ground; the
+ *   marks and the chrome on their plates keep the page's theme.
  *
  * NAIP is a summer photograph on a two-to-three-year cycle. It can never show ice, and nothing here
  * says it does: its credit names the program and the month it was flown.
  */
 
 /**
- * The photograph's paint by mode — MapLibre's raster adjustments, toward the console's ground: in
- * the dark, its brightest pixel under half (so `fg1`'s shore stays the brightest line); in the
- * light, its darkest lifted past half (so the dark inks read). Both a step toward gray. Measured on
- * the painted pixels of Mascoma and Groton (NAIP June 2023): the shore's `fg1` holds at least 5:1
- * against the brightest (dark) or darkest (light) twentieth of the photograph.
+ * The photograph's paint — MapLibre's raster adjustments: full color (no saturation change), its
+ * brightest pixel 0.85 of full, a quarter of the way the gray paint it replaced went (founder,
+ * 2026-11-25: that read as "super faded out"). One paint in both themes, since the inks over it
+ * are the dark map's in both (`mapInks`, founder, 2026-11-26): lifting its shadows instead (the
+ * light theme's old floor, 0.15) would gray the ground under light lines — the shore's `fg1` then
+ * holds 1.5–1.8:1 against the photograph's brightest twentieth and 2.5–2.8:1 at its median, where
+ * this paint holds 2.3–3.0:1 and 4.3–4.9:1.
+ *
+ * What it leaves the inks, measured on Mascoma and Groton (NAIP June 2023; MapLibre's raster math
+ * over the cells the live map fetched, and the rendered console at 1440 × 900, the same in both
+ * themes since the inks and the paint are):
+ *
+ * - **The shore's `fg1` against the photograph as a whole:** 2.3–3.0:1 against its brightest
+ *   twentieth, 4.3–5.0:1 against its median. The gray paint held 6.8–8.0:1 at that twentieth.
+ * - **Beside Mascoma's shore:** 6.2:1 at the median, 3.4:1 at the worst tenth; 9.4:1 on the water
+ *   side, 4.3:1 on the land side.
+ * - **The quieter `fg2`** (bays, dividers, tracks): 1.3–1.7:1 against that twentieth, 3.6:1 at the
+ *   median beside the shore.
+ * - **The words, against the ground in their own boxes (median, worst tenth):** the scene's labels
+ *   3.4:1 and 1.6:1, the graticule's 1.8:1 and 1.5:1 — under the 4.5:1 text wants. Bare, the
+ *   credit read 3.0–3.6:1 and 2.4–2.6:1 and the scale 3.1:1 and 2.1:1, so both sit on an opaque
+ *   plate while the photograph is on: `fg2` on `panel`, 8.0:1 in both themes, whatever the ground.
+ *
+ * If that proves too little to place marks by, the fallback is the photograph at full strength and
+ * the lines edged.
  */
-export const AERIAL_PAINT: Readonly<Record<BodyMapMode, Readonly<Record<string, number>>>> = {
-  dark: { 'raster-brightness-max': 0.42, 'raster-saturation': -0.4 },
-  light: { 'raster-brightness-min': 0.58, 'raster-saturation': -0.4 },
+export const AERIAL_PAINT: Readonly<Record<string, number>> = {
+  'raster-brightness-max': 0.85,
+  'raster-saturation': 0,
 };
 
 /**
@@ -136,12 +158,10 @@ export function useConsoleAerial({
   liveMap,
   on,
   bbox,
-  mode,
 }: {
   liveMap: () => maplibregl.Map | null;
   on: boolean;
   bbox: BBoxLike;
-  mode: BodyMapMode;
 }): AerialLoadView | null {
   const { minLng, minLat, maxLng, maxLat } = bbox;
   const masks = useMemo(
@@ -156,7 +176,7 @@ export function useConsoleAerial({
     if (next === null || next.phase !== 'loading') setPending(false);
   }, []);
   // The live map or nothing, re-read every render: a theme switch's new map gets the layer anew,
-  // with the new mode's paint, and the old one's teardown never writes to a removed map.
+  // and the old one's teardown never writes to a removed map.
   const live = liveMap();
   const { retry } = useImageryReveal({
     map: live,
@@ -165,7 +185,7 @@ export function useConsoleAerial({
     unmasked: true,
     minZoom: 0,
     anchor: anchorOn,
-    paint: AERIAL_PAINT[mode],
+    paint: AERIAL_PAINT,
     progressive: true,
     onStatusChange,
   });

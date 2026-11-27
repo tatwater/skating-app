@@ -105,6 +105,8 @@ vi.mock('../map/useBodyMapCanvas', () => ({
       atMaxZoom: false,
       aerialCredit: options.aerial ? 'Aerial · NAIP' : null,
       liveMap: () => null,
+      // The map's ink mode (`mapInks`): what a tool's palette is built from.
+      inks: 'dark' as const,
     };
   },
 }));

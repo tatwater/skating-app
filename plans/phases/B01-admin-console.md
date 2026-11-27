@@ -13125,6 +13125,17 @@ skater's report naming a put-in counts as a use, so its undo is refused (`report
 280-character cap on a known feature's note stays (the founder was ambivalent, so the build's
 default holds).
 
+**An ask closed while its shape was drawn (founder, 2026-11-25):** a bay or landmark saved for an
+ask that closed meanwhile still answers the others asking for the same place. Taking an ask back
+closes only that one, so the asks grouped with it were left open. The save now decides the first of
+them the saver didn't file (a script's ask counts as nobody's), which closes the rest with it, and
+says `answered_others` — the asks a decision on the closed one would have closed, so a landmark
+placed off the skaters' spot still answers them. A decision the rule refuses (the saver's own ask
+among them, D289) answers none, and the shape stands as `already_decided` rather than rolling
+back. Every
+receipt, the old editor's banners included, now words itself from what the server returned rather
+than from what the card last saw.
+
 The frame's contract gains two engines — a **point** (`lib/pointDraw.ts`: click to place, drag the
 mark, an optional edge snap shown as a ghost) and a **line** (`createLineDraw`, terra-draw's line
 mode from the ring's chunk) — and a draft that is any geometry (points draw as hollow rings).
@@ -13321,8 +13332,8 @@ and Co13–Co20 came from the round that built them (*The last round*).
 | Co13 | *Nearest* is the closest of the **touching** neighbors (outlines within 30 m), so board 4.3's *"Osmore Pond · 1.1 mi north"* for a body that touches nothing, and its off-frame pointer, can't be drawn: they need a new stored fact, the nearest named body touching or not (computed by `bodyGeo`), and the map reporting its visible frame | *The last round* (7a) | a build (schema, a `bodyGeo` recompute) | nothing | open |
 | Co14 | Class conflicts' board gaps left out of 7a by the founder's (b): the silent-catalog column and the second (NHD) outline (not stored: a body keeps one outline), and, which (b) didn't name, the rows' per-name catalog tags, the *Acres* sort and the *Filter* menu | *Ruled on 2026-11-25, second batch*; *Board differences* | a build (the outline: a stored fact) | nothing | open |
 | Co15 | The summer aerial's cold first view takes over 45 s (each new grid cell is a fresh render; a repeat is the CDN's). 7a adds a loading and a failed state; a faster or tiled source is owed | *The last round* (7a); D312 | Phase B05 (D314) | nothing | moved 2026-11-25 to Phase B05: our own region-wide NAIP archive, about a second for a first view; closes when B05's app PR merges |
-| Co16 | The map's quiet labels read ~2.4–2.8:1 over the summer aerial | *The last round* (7a); D312 | a build | nothing | open — unchanged by Phase B05, which swaps the aerial's source, not its layering or paint |
-| Co17 | The basemap's roads and labels are hidden under the summer aerial | *The last round* (7a); D312 | a build | nothing | open — unchanged by Phase B05 (the same) |
+| Co16 | The map's quiet labels over the summer aerial. Under the dark map's inks (D312, amended 2026-11-26) the scene's labels read 3.4:1 at the median and 1.6:1 at the worst tenth, the graticule's 1.8:1 and 1.5:1 (Mascoma, both themes; were ~2.4–2.8:1). The credit and the scale moved onto plates (8.0:1). Halos or edged labels: the founder's deferred fallback | *The last round* (7a); D312 | the founder (a look), then a build | nothing | open — unchanged by Phase B05, which swaps the aerial's source, not its layering or paint |
+| Co17 | The basemap's roads and labels are hidden under the summer aerial; since 2026-11-26 the dark ground laid under it while it is on hides them where a cell hasn't arrived as well (D312, amended) | *The last round* (7a); D312 | a build | nothing | open — unchanged by Phase B05 (the same) |
 | Co18 | The summer aerial's flight date is sometimes missing: the identify call comes back without CORS headers and the browser refuses it, so the credit reads *Aerial · NAIP* alone | *The last round* (7a); D312 | Phase B05 (D314) | nothing | moved 2026-11-25 to Phase B05: the date comes from the archive's per-cell date index, which dates the whole view on every map that draws it (D318), no identify call; closes when B05's app PR merges |
 | Co19 | The skater app's `useImageryReveal` gained three optional parameters for the console (`minZoom`, `anchor`, `paint`), defaults unchanged: an admin PR touching a skater-side seam | *The last round* (7a) | Phase B05 | nothing | moved 2026-11-25: Phase B05 deletes `useImageryReveal` (since B03-4 no skater surface calls it; its last callers are the console aerial and the old lake editor); closes when B05's app PR merges |
 | Co20 | No board draws the narrow consequence ladder (under a 36rem inspector) or the Body console's rack at 9rem with its *Summer aerial* row | *The last round* (7a) | the founder (a look, or boards) | nothing | open |
@@ -16218,7 +16229,8 @@ guideline, as one PR (D300, amended).
   - **a cold first view takes over 45 s** (the service renders each new cell on demand; a repeat is
     the CDN's). 7a adds a loading and a failed state before its PR; a faster or tiled source is
     owed (Co15);
-  - **the quiet labels read ~2.4–2.8:1 over the photograph** (Co16);
+  - **the quiet labels read ~2.4–2.8:1 over the photograph** (Co16; after the founder's rulings of
+    2026-11-26, D312 amended, the scene's labels 3.4:1 at the median and the graticule's 1.8:1);
   - **the basemap's roads and labels are hidden under it** (Co17);
   - **the flight date is sometimes missing:** the identify call comes back without CORS headers, the
     browser refuses it, and the credit reads *Aerial · NAIP* alone (Co18);
@@ -16231,6 +16243,18 @@ guideline, as one PR (D300, amended).
 - **The Google Maps row (D312).** The interior point, the box's middle without one (never
   `centroid` or `representativePoint`, which sit on the shore of a curved lake), at the zoom that
   frames the whole body; its line reads *"The interior point, the whole lake · Staff only"*.
+- **After the merge (2026-11-26): the founder's rulings on the summer aerial** (D312, amended) —
+  full color lightly dimmed, the dark map's inks over it in both themes over a dark ground, the
+  credit and the scale on plates — and **the theme-switch hang**. The founder had seen a map hang
+  after a theme switch in a real browser; headless Chromium hung on every flip of a looped probe
+  (80 of 80, aerial on and off; 0 of 200 after the fix). The
+  re-created map's style and sources were all in, yet `load` never fired and no frame was pending:
+  a source whose metadata fails (the archive's fetch refused) is marked loaded with an `error` and
+  no data event, so when that failure lands after the map's last frame nothing asks for another,
+  and `load` — fired from a frame — never comes. The shared shell (`lib/mapCanvas.ts`, so the skater
+  map, the lake editor and the console alike) now asks for one frame on an error before `load`,
+  and logs the error as MapLibre would have. Toggling the summer aerial no longer re-creates the
+  map at all (the basemap stays the page's).
 
 ##### The load proof
 

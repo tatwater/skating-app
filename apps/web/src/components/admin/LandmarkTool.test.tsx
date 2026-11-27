@@ -3,10 +3,13 @@ import { fireEvent, render, screen, waitFor, within } from '@testing-library/rea
 import { ConvexError } from 'convex/values';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { calls, refusal, useMutation } = vi.hoisted(() => {
+const { answers, calls, refusal, useMutation } = vi.hoisted(() => {
   const calls: { name: string; args: unknown }[] = [];
   const refusal: { next: Error | null } = { next: null };
+  /** What a mutation returns, by name; `create` answers as the server's does with no ask behind it. */
+  const answers: Record<string, unknown> = {};
   return {
+    answers,
     calls,
     refusal,
     // One spy per mutation, named by the reference the mocked `api` hands it.
@@ -19,6 +22,7 @@ const { calls, refusal, useMutation } = vi.hoisted(() => {
           throw error;
         }
         calls.push({ name, args });
+        return answers[name] ?? (name === 'create' ? { landmarkId: 'lm-new' } : undefined);
       };
     }),
   };
@@ -113,6 +117,7 @@ function renderTool(props: Partial<Parameters<typeof LandmarkTool>[0]> = {}) {
 beforeEach(() => {
   calls.length = 0;
   refusal.next = null;
+  for (const key of Object.keys(answers)) delete answers[key];
   for (const key of Object.keys(queryResults)) delete queryResults[key];
   // A pick's requests stand until a test says otherwise (`useReviewWatch`).
   queryResults.reviewState = { requests: [] };
@@ -632,6 +637,51 @@ describe('LandmarkTool', () => {
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls[1]).toEqual({ name: 'approve', args: { requestId: 'req2' } });
   });
+
+  it.each([
+    ['approved', 'Added “Bird Poop Rock” and answered the skaters who named it.'],
+    [
+      'already_decided',
+      'Added “Bird Poop Rock”. That ask was already closed, so this didn’t answer it.',
+    ],
+    [
+      'answered_others',
+      'Added “Bird Poop Rock”. That ask was already closed, but this answered the others who asked for it.',
+    ],
+  ])(
+    'the banner says what the save did with the ask (%s), never what the card last saw',
+    async (request, said) => {
+      answers.create = { landmarkId: 'lm-new', request };
+      const proposal = {
+        requestId: 'req1',
+        name: 'Bird Poop Rock',
+        coord: { lat: 44.31, lng: -73.21 },
+        askers: 2,
+        reportIds: [],
+        createdAt: 0,
+      };
+      queryResults.openLandmarkRequestsForBody = { proposals: [proposal], more: false };
+      const props = {
+        waterBodyId: BODY,
+        landmarks: [],
+        armed: false,
+        onArm: vi.fn(),
+        onClearPoint: vi.fn(),
+        onFocus: vi.fn(),
+        onPromote: vi.fn(),
+        onPlacePoint: vi.fn(),
+        onReview: vi.fn(),
+        onResult: vi.fn(),
+      };
+      const { rerender } = render(<LandmarkTool {...props} point={null} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Add as landmark' }));
+      rerender(<LandmarkTool {...props} point={proposal.coord} />);
+      fireEvent.click(screen.getByRole('button', { name: 'Save landmark' }));
+      await waitFor(() => expect(calls).toHaveLength(1));
+      expect(calls[0]?.args).toMatchObject({ requestId: 'req1' });
+      await waitFor(() => expect(props.onResult).toHaveBeenCalledWith({ tone: 'ok', text: said }));
+    },
+  );
 
   it('keeps the form when a colleague declines its proposal, says so, and saves it as the moderator’s own', async () => {
     const proposal = {

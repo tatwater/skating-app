@@ -251,7 +251,23 @@ export function useMapCanvas(options: MapCanvasOptions): MapCanvas {
       });
     };
 
+    // ⚠ **A source that fails before `load` must ask for a frame.** MapLibre fires `load` from a
+    // rendered frame once the style and every source are in, and a source whose metadata fails (an
+    // archive the browser refuses) is marked loaded with an `error` and no data event — so nothing
+    // asks for another frame. When that failure is the last thing the style waits on and lands
+    // after the last frame, `load` never fires: the map is drawn but never live, and a caller's
+    // layers never arrive. It showed after a theme switch (the re-created map's archive fetch
+    // racing its first frames): a headless browser hung on every flip of a looped probe, and the
+    // founder saw it in a real one. A listener takes MapLibre's own logging of the error away, so
+    // it logs it as MapLibre would.
+    let live = false;
+    map.on('error', (event) => {
+      console.error(event.error);
+      if (!live) map.triggerRepaint();
+    });
+
     map.on('load', () => {
+      live = true;
       // Re-measure the container. A cheap guard, not a fix for an observed bug.
       //
       // MapLibre sizes its canvas **once, synchronously, in the constructor**, falling back to

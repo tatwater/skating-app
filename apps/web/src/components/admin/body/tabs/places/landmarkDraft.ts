@@ -1,6 +1,6 @@
 import type { LandmarkKind, LatLng } from '@skating/core';
 
-import { ASK_ALREADY_CLOSED } from '../../consoleWords';
+import { askClosedLine, type SavedAskOutcome } from '../../consoleWords';
 
 /**
  * **A landmark being dropped** (B01-6b): the one piece of state the Places tab holds while the map
@@ -123,7 +123,7 @@ export function dropNote(draft: LandmarkDraft): string | null {
 export function droppedReceipt(
   draft: LandmarkDraft,
   /** What the save did to the ask it answers (`landmarks.create`'s `request`). */
-  request?: 'approved' | 'already_decided',
+  request?: SavedAskOutcome,
 ): { title: string; description?: string } {
   const name = draft.name.trim();
   switch (draft.target.kind) {
@@ -134,10 +134,7 @@ export function droppedReceipt(
     case 'proposal':
       return {
         title: `Added · ${name}`,
-        description:
-          request === 'already_decided'
-            ? ASK_ALREADY_CLOSED
-            : 'The skaters who asked for it are answered.',
+        description: askClosedLine(request) ?? 'The skaters who asked for it are answered.',
       };
   }
 }

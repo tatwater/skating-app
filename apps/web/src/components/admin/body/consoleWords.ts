@@ -142,3 +142,22 @@ export const AERIAL_LOAD_WORDS = {
  * so the receipt mustn't say this save answered it, nor that anyone did.
  */
 export const ASK_ALREADY_CLOSED = 'That ask was already closed, so this didn’t answer it.';
+
+/**
+ * The same save when others were asking for the same place: the closed ask keeps how it closed, and
+ * theirs are answered in its stead.
+ */
+export const ASK_CLOSED_OTHERS_ANSWERED =
+  'That ask was already closed, but this answered the others who asked for it.';
+
+/** What a save did with the ask it was made for (`subAreas.create`'s and `landmarks.create`'s `request`). */
+export type SavedAskOutcome = 'approved' | 'answered_others' | 'already_decided';
+
+/** The receipt line for an ask the save didn't answer itself; none when it did, or had none. */
+export function askClosedLine(request: SavedAskOutcome | undefined): string | undefined {
+  return request === 'already_decided'
+    ? ASK_ALREADY_CLOSED
+    : request === 'answered_others'
+      ? ASK_CLOSED_OTHERS_ANSWERED
+      : undefined;
+}

@@ -2,7 +2,7 @@ import { distanceToPolygonMeters, snapToEdge } from '@skating/core';
 import type * as maplibregl from 'maplibre-gl';
 import { useEffect, useRef } from 'react';
 import { type ChordDrawControl, type ChordMap, createChordDraw } from '@/lib/chordDraw';
-import { createPointDraw } from '@/lib/pointDraw';
+import { createPointDraw, type PointDrawControl } from '@/lib/pointDraw';
 import {
   createLineDraw,
   createPolygonDraw,
@@ -33,6 +33,15 @@ const DRAFT_LINE = 'body-console-tool-draft-line';
 const DRAFT_POINTS = 'body-console-tool-draft-points';
 const EMPTY: GeoJSON.FeatureCollection = { type: 'FeatureCollection', features: [] };
 
+/** The draft's inks, layer by layer, as the layers below are added with: what a repaint sets. */
+function draftPaint(palette: BodyMapPalette) {
+  return [
+    [DRAFT_FILL, 'fill-color', palette.lit.fill ?? palette.lit.line],
+    [DRAFT_LINE, 'line-color', palette.lit.line],
+    [DRAFT_POINTS, 'circle-stroke-color', palette.lit.line],
+  ] as const;
+}
+
 function draftData(draft: MapToolClaim['draft']): GeoJSON.FeatureCollection {
   return draft
     ? {
@@ -62,6 +71,11 @@ export function useMapToolEngine(
     const source = map.getSource(DRAFT_SOURCE) as maplibregl.GeoJSONSource | undefined;
     if (source) {
       source.setData(draftData(draft));
+      // The inks can change under a held tool without the map being re-created (the summer aerial
+      // switched: `mapInks`), so the draft is repainted in place, never left in the old ink.
+      for (const [layer, prop, value] of draftPaint(palette)) {
+        if (map.getLayer(layer)) map.setPaintProperty(layer, prop, value);
+      }
       return;
     }
     if (!held) return;
@@ -116,6 +130,18 @@ export function useMapToolEngine(
       );
     }
   }, [session, liveMap]);
+
+  // The point engine's mark takes the lit ink, and follows it in place when the inks change under a
+  // held tool (the summer aerial switched), as the draft does: the engine isn't re-attached for it.
+  const ink = palette.lit.line;
+  const inkRef = useRef(ink);
+  inkRef.current = ink;
+  const pointRef = useRef<{ control: PointDrawControl; map: maplibregl.Map } | null>(null);
+  useEffect(() => {
+    // On the live map only: a theme switch changes the inks in the commit that removes the old map.
+    const held = pointRef.current;
+    if (held !== null && liveMap() === held.map) held.control.setColor(ink);
+  }, [ink, liveMap]);
 
   // The engine, per session and per map.
   // biome-ignore lint/correctness/useExhaustiveDependencies: re-attached only when the session, its kind or the map moves.
@@ -206,13 +232,15 @@ export function useMapToolEngine(
                   : snapToEdge(p, parent as never),
             }
           : {}),
-        color: palette.lit.line,
+        color: inkRef.current,
         onPick: (p, scale) => {
           const live = claimRef.current?.engine;
           if (live?.kind === 'point') live.onPick(p, scale);
         },
       });
+      pointRef.current = { control, map };
       return () => {
+        if (pointRef.current?.control === control) pointRef.current = null;
         try {
           control.destroy();
         } catch {

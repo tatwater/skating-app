@@ -20,6 +20,7 @@ import {
 } from '@/components/kit/map-controls';
 import { MapGraticule } from '@/components/kit/map-graticule';
 import { MARK_BOX } from '@/components/kit/map-marks';
+import { Plate } from '@/components/kit/plate';
 import { SwitchRow } from '@/components/kit/switch';
 import type { MapSurface } from '@/lib/mapSurface';
 import { cn } from '@/lib/utils';
@@ -31,6 +32,7 @@ import type { DrawnScene } from './bodyScene';
 import type { AerialLoadView } from './consoleAerial';
 import { fieldOpacity } from './hazardField';
 import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescriptors';
+import { mapInkStyle } from './mapInks';
 
 /**
  * The console map's chrome, drawn from props over whatever draws the map itself (`ground`: the
@@ -56,6 +58,11 @@ import type { BodyMapLayer, MapLabel, MapLineStyle, MapPoint } from './mapDescri
  *   viewer's own switch, kept by the frame. While it is on, its credit (`credit`) sits in the dock
  *   before the scale, as board 4.3 draws it, saying while the photograph loads or didn't all come
  *   (`aerialLoad`, `AerialCredit`).
+ * - **Over the summer aerial (`overAerial`) the map's own inks are the dark map's** in either
+ *   theme (`mapInks`): the graticule and its labels, the scene's labels, dimension lines. The
+ *   chrome on its own plate — the rack, the key, the zoom pair, the plate, the marks, the hover
+ *   plate, the mode bar, *Try again*, and the credit and the scale, each on a plate while the
+ *   photograph is under them — keeps the page's.
  */
 
 /** A credit with no state handed: the photograph is in. */
@@ -111,6 +118,11 @@ export interface BodyMapPaneProps {
   plate?: ReactNode;
   /** The summer aerial's switch, as the rack's last row (a map with a rack only). */
   aerial?: { on: boolean; onChange: (on: boolean) => void };
+  /**
+   * The summer aerial is on under the map: the inks the browser draws on it take the dark map's
+   * colors (`mapInkStyle`), as the canvas's own do (`mapInkMode`).
+   */
+  overAerial?: boolean;
   /** The summer aerial's credit while it is on, in the dock before the scale. */
   credit?: string | null;
   /** Where the summer aerial stands (loading, in, or not all of it came); in, unless said. */
@@ -148,11 +160,13 @@ export function BodyMapPane({
   foot,
   plate,
   aerial,
+  overAerial = false,
   credit = null,
   aerialLoad = null,
   tool = null,
   className,
 }: BodyMapPaneProps) {
+  const inks = mapInkStyle(overAerial);
   const paneRef = useRef<HTMLDivElement | null>(null);
   const [pointerHover, setPointerHover] = useState<string | null>(null);
   // A mark that leaves the scene under the pointer (its layer switched off) never hears the pointer
@@ -212,7 +226,12 @@ export function BodyMapPane({
     >
       {ground}
       {surface !== null && graticule !== null && (
-        <MapGraticule layout={graticule} width={surface.width} height={surface.height} />
+        <MapGraticule
+          layout={graticule}
+          width={surface.width}
+          height={surface.height}
+          style={inks}
+        />
       )}
       {surface !== null && (
         <div data-slot="body-map-overlay" className="pointer-events-none absolute inset-0">
@@ -223,6 +242,7 @@ export function BodyMapPane({
               width={surface.width}
               height={surface.height}
               className="absolute top-0 left-0 overflow-visible"
+              style={inks}
             >
               {drawn.dimensions.map((d) => (
                 <DimensionLine
@@ -236,7 +256,13 @@ export function BodyMapPane({
             </svg>
           )}
           {drawn.labels.map((l) => (
-            <SceneLabel key={l.id} label={l} at={surface.project(l.at)} lit={l.id === drawn.lit} />
+            <SceneLabel
+              key={l.id}
+              label={l}
+              at={surface.project(l.at)}
+              lit={l.id === drawn.lit}
+              inks={inks}
+            />
           ))}
           {drawn.points.map((p) => (
             <ScenePoint
@@ -308,12 +334,23 @@ export function BodyMapPane({
       )}
       <MapDock>
         {credit !== null && <AerialCredit credit={credit} state={aerialLoad ?? LOADED} />}
-        {surface !== null && (
-          <MapScaleBar
-            metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
-            format={formatDistance}
-          />
-        )}
+        {surface !== null &&
+          (overAerial ? (
+            // Over the photograph the scale sits on its own plate, as the credit does: chrome, in
+            // the page's theme, readable whatever the ground.
+            // It keeps its width on a narrow map (the credit beside it wraps instead).
+            <Plate variant="plate" data-map-plate="scale" className="shrink-0">
+              <MapScaleBar
+                metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
+                format={formatDistance}
+              />
+            </Plate>
+          ) : (
+            <MapScaleBar
+              metersPerPixel={metersPerPixel(surface.center.lat, surface.zoom)}
+              format={formatDistance}
+            />
+          ))}
         <MapZoom onZoomIn={onZoomIn} onZoomOut={onZoomOut} atMin={atMinZoom} atMax={atMaxZoom} />
       </MapDock>
       {foot != null && (
@@ -462,10 +499,13 @@ function SceneLabel({
   label,
   at,
   lit,
+  inks,
 }: {
   label: MapLabel;
   at: { x: number; y: number };
   lit: boolean;
+  /** The map's inks over the summer aerial (`mapInkStyle`); the page's otherwise. */
+  inks: CSSProperties | undefined;
 }) {
   return (
     <span
@@ -478,6 +518,7 @@ function SceneLabel({
         lit && 'text-fg',
       )}
       style={{
+        ...inks,
         transform: `translate(${at.x}px, ${at.y}px) translate(-50%, -50%) rotate(${label.angle ?? 0}deg)`,
       }}
     >
