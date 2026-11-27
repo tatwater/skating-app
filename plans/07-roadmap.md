@@ -993,7 +993,7 @@ aerial on any lake and it is there in a second, with the months it was flown.*
 
 #### Owed
 - **The founder's foliage review, before the full run** (D319): confirm the proposal by flight day on the sheet (`scripts/aerial/review/naip-20261127-foliage-proposed.json`, the sheet beside the campaign), the confirmed entries committed to `NAIP_FOLIAGE_STRIKES`; then read the applied run's cloud sheet (one new pick over 3% white, a likely false positive)
-- B05-1 is built and integrated (2026-11-26) but not yet open as a PR: the pilot (F-9 ruled (c): Champlain's north end, the NH–MA strip, the Maine cells north of Rumford and a New York 2024/2019 join, ~63 cells) comes first, gated on the governor's go — the image pushed under its own label, the run rows to a throwaway local backend — then `/code-review`, the PR, and the founder's go for the full region run (~16 h on Fly, ~$30–40, the plan's §6.1)
+- B05-1 is built, integrated and piloted (`naip-pilot-20261126`, 65 cells on Fly and R2, verified and looked at, its rows on a throwaway local backend) but not yet open as a PR: the independent review, then the PR, then the founder's go for the full region run (~16 h on Fly, ~$30–40, the plan's §6.1)
 - The archive measured larger than designed: ~550 GB, ~$8 a month (~$100 a year against the ~$70 accepted), because the design's 387 GB left out the pyramid's upper levels — for the founder's go/no-go with the pilot's numbers
 - G-6 answered at build start: `skating-imagery`, whose public host already serves the winter archive and which the app's staged R2 token writes — no new credential
 - `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, and `NAIP_MANIFEST_URL` on Convex dev, once the archive exists
