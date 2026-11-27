@@ -4,6 +4,7 @@
  * its passes prove — idempotent, resumable, bounded, and never touching a campaign with its own row.
  */
 
+import { CORPUS_RUN_KINDS } from '@skating/core';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
@@ -12,7 +13,8 @@ import { aggregateOfPasses, BACKFILL_CAMPAIGN_READ } from './importRunJobs';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
-type T = ReturnType<typeof convexTest>;
+const harness = () => convexTest(schema, modules);
+type T = ReturnType<typeof harness>;
 
 const HOUR = 3_600_000;
 const T0 = Date.UTC(2026, 7, 9, 12);
@@ -141,6 +143,36 @@ describe('backfillListed', () => {
     expect((await get(t, ids.prune)).parentRunId).toBeUndefined();
     expect((await get(t, ids.single)).listedIn).toBe('corpus');
     expect((await get(t, ids.depth)).listedIn).toBeUndefined();
+  });
+
+  test('after a full walk no corpus row is left with neither a listing nor a parent', async () => {
+    const t = convexTest(schema, modules);
+    await august(t);
+    await oldRun(t, { kind: 'corpus_merge', campaignId: 'solo', startedAt: T0 + 9 * HOUR });
+    await oldRun(t, {
+      kind: 'corpus_campaign',
+      campaignId: 'live',
+      startedAt: T0 + 10 * HOUR,
+      campaign: { flags: [], plan: [] },
+    });
+    await oldRun(t, { kind: 'corpus_merge', campaignId: 'live', startedAt: T0 + 11 * HOUR });
+    for (let i = 0; i <= BACKFILL_CAMPAIGN_READ; i++) {
+      await oldRun(t, {
+        kind: 'canonical_water',
+        campaignId: 'huge',
+        startedAt: T0 + 12 * HOUR + i,
+      });
+    }
+    for (const pageSize of [1, 3]) {
+      await walk(t, pageSize);
+      const unindexed = (await all(t)).filter(
+        (r) =>
+          CORPUS_RUN_KINDS.includes(r.kind) &&
+          r.listedIn === undefined &&
+          r.parentRunId === undefined,
+      );
+      expect(unindexed).toEqual([]);
+    }
   });
 
   test('a second run writes nothing', async () => {

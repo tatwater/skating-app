@@ -19,7 +19,8 @@ import {
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
-type T = ReturnType<typeof convexTest>;
+const harness = () => convexTest(schema, modules);
+type T = ReturnType<typeof harness>;
 
 const start = (t: T, args: Record<string, unknown> = {}) =>
   t.mutation(internal.importRuns.start, {

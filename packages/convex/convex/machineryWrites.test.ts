@@ -5,6 +5,7 @@
  */
 
 import { RUN_QUIET_MS, RUN_WAIT_MS } from '@skating/core';
+import type { FunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
@@ -72,7 +73,8 @@ vi.mock('@skating/core', async (importOriginal) => {
 });
 
 const modules = import.meta.glob('./**/*.*s');
-type T = ReturnType<typeof convexTest>;
+const harness = () => convexTest(schema, modules);
+type T = ReturnType<typeof harness>;
 
 const NOTIF_PREFS = {
   activityDetected: true,
@@ -207,7 +209,7 @@ describe('every write is gated machinery.corpus (admin)', () => {
       const lines = (await linesOf(t, runId)).length;
       const moderator = await seedPerson(t, 'mod', 'moderator');
       const member = await seedPerson(t, 'mem', 'member');
-      const fn = api.machineryWrites[name] as never;
+      const fn = api.machineryWrites[name] as unknown as FunctionReference<'mutation'>;
       for (const who of [moderator.as, member.as]) {
         await expect(who.mutation(fn, args(runId) as never)).rejects.toThrow('Requires admin role');
       }
@@ -567,6 +569,18 @@ describe('waitOnRun and its undo', () => {
     await expect(
       admin.as.mutation(api.machineryWrites.waitOnRun, { runId, now: Date.now() }),
     ).rejects.toThrow(WAIT_FINISHED);
+  });
+
+  test('a campaign row between passes is waited on and marked by its own gap', async () => {
+    const { t, admin } = await setup();
+    const runId = await seedRun(t, { kind: 'corpus_campaign' });
+    vi.advanceTimersByTime(10 * (RUN_QUIET_MS.corpus_campaign as number) + MINUTE);
+    await admin.as.mutation(api.machineryWrites.waitOnRun, { runId, now: Date.now() });
+    await admin.as.mutation(api.machineryWrites.markRunFailed, { runId, reason: 'slept' });
+    expect((await auditOf(t, runId)).map((r) => r.action)).toEqual([
+      'wait_on_run',
+      'mark_run_failed',
+    ]);
   });
 
   test('a run stalled again after its wait ran out can be waited on again', async () => {

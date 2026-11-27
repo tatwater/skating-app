@@ -141,8 +141,10 @@ async function backfillCampaign(
   const agg = aggregateOfPasses(passes);
   let campaignRunId: Id<'importRuns'> | null = existing?._id ?? null;
   if (existing === null) {
-    // Written by the page that holds its first pass, so a dry run counts each campaign once too.
-    if (!page.has((passes[0] as Doc<'importRuns'>)._id)) return 'rebuilt';
+    // A dry run writes nothing, so it would meet the same campaign on every page that holds one of
+    // its passes: it counts the campaign on the page that holds its first. A real run writes it on
+    // the first page that reaches it, whichever pass that is.
+    if (dryRun && !page.has((passes[0] as Doc<'importRuns'>)._id)) return 'rebuilt';
     tally.campaignsCreated++;
     if (!dryRun) {
       campaignRunId = await ctx.db.insert('importRuns', {
