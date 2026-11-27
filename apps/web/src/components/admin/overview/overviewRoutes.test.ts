@@ -27,6 +27,7 @@ const TARGET_TYPES = [
   'bodyLandmark',
   'corpusPlaceName',
   'supportTicket',
+  'importRun',
 ] as const satisfies readonly ActionRow['targetType'][];
 const allListed: Exclude<ActionRow['targetType'], (typeof TARGET_TYPES)[number]> extends never
   ? true
@@ -166,6 +167,8 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('corpus');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
+      else if (type === 'importRun')
+        expect(modeAt(routerTarget(path).to)?.id).toBe('machinery');
       else if (INBOX_TARGETS.has(type)) expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
@@ -184,6 +187,12 @@ describe('the audit feed’s rows', () => {
     );
     for (const type of ['report', 'post', 'comment', 'photo', 'hazard'] as const)
       expect(feedTargetPath({ type, id: 'jd7c1', label: 'x' })).toBe('/admin/inbox?lane=decided');
+  });
+
+  it('opens a run on its own page in Machinery › Corpus, the id escaped', () => {
+    expect(feedTargetPath({ type: 'importRun', id: 'k1/7', label: 'x' })).toBe(
+      '/admin/machinery/corpus?run=k1%2F7',
+    );
   });
 
   it('opens an ask on its own Inbox item', () => {

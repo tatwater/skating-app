@@ -101,6 +101,9 @@ function auditPath(type: string, id: string): string | null {
       return inboxPath({ item: `ticket:${id}` });
     case 'corpusPlaceName':
       return '/admin/water/place-names';
+    case 'importRun':
+      // A run marked failed, waited on or asked to stop: its own page in Machinery › Corpus.
+      return `/admin/machinery/corpus?run=${encodeURIComponent(id)}`;
     case 'waterBodySubArea':
     case 'putIn':
     case 'parkingArea':

@@ -423,6 +423,13 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   // the copy pass.
   settle_review_reason: 'Kept as it is',
   unsettle_review_reason: 'Reopened a kept question',
+  // Machinery (B01-8a): a corpus run's mark, wait and stop, and each undo. Words for the copy pass.
+  mark_run_failed: 'Marked run failed',
+  reopen_run: 'Reopened run',
+  wait_on_run: 'Waited on stalled run',
+  stop_waiting_on_run: 'Stopped waiting on run',
+  request_run_stop: 'Asked run to stop',
+  withdraw_run_stop: 'Withdrew stop request',
 };
 
 /**
@@ -458,6 +465,7 @@ const TARGET_WORDS: Record<AuditTarget, string> = {
   bodyLandmark: 'Landmark',
   corpusPlaceName: 'Place name',
   supportTicket: 'Support ticket',
+  importRun: 'Import run',
 };
 
 /**
