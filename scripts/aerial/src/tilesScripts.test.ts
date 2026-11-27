@@ -423,7 +423,8 @@ describe('spawn.sh tiles', () => {
     expect(run.runs).toHaveLength(2);
     for (const r of run.runs) {
       expect(r).toContain(`fly machine run ${IMAGE} --app skating-imagery --region ams`);
-      expect(r).toContain('--vm-size shared-cpu-4x --vm-memory 2048 --detach --rm --restart no');
+      // performance-4x by default: the pilot's shared-cpu-4x throttled to under half a core.
+      expect(r).toContain('--vm-size performance-4x --vm-memory 8192 --detach --rm --restart no');
       expect(r).toContain('--metadata aerial=naip-20261212');
       expect(r).toContain(`--env AERIAL_IMAGE=${IMAGE}`);
       expect(r).toMatch(

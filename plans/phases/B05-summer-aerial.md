@@ -985,7 +985,10 @@ fully covered ones × 140–185 MB a shard (the pilot's mixed mean 146 MB; its l
 `shared-cpu-4x` **does** throttle: its burst balance (19,342) drained in about three minutes, after
 which the Machine ran at ~0.44 of a core with 28% steal; on `performance-4x` no tile throttled at all
 (throttle counter 0), used 318 CPU-seconds a tile on average (227–400: ~1.2 cores of 4 busy), and peaked
-under 0.6 GB of its 8 GB. Read with §6.1's older columns as history.
+under 0.6 GB of its 8 GB. So **`spawn.sh` spawns work tiles on `performance-4x` with 8192 MB by
+default** (the governor, 2026-11-27; performance sizes need 2 GB a CPU), the size every figure above
+assumes; the assembler stays on `shared-cpu-4x` (97 s in the pilot). Read with §6.1's older columns as
+history.
 
 **What the foliage review changes (2026-11-27, D319): nothing material.** The archive is z18
 everywhere, so the tile count is the same whatever the picks; the first proposal changes 1,074 of

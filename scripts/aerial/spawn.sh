@@ -25,7 +25,7 @@
 #   FLY_REGION           default ams — the tiles read Planetary Computer's COGs in Azure West Europe
 #   FLY_ASSEMBLE_REGION  default iad — the assembler reads and writes only R2 (see the README)
 #   MAX_PARALLEL         default 25 live Machines on the app, the winter pump's included
-#   FLY_VM_SIZE / FLY_VM_MEMORY             default shared-cpu-4x / 2048 (a work tile)
+#   FLY_VM_SIZE / FLY_VM_MEMORY             default performance-4x / 8192 (a work tile; see below)
 #   FLY_ASSEMBLE_VM_SIZE / FLY_ASSEMBLE_MEMORY  default shared-cpu-4x / 4096 (P measured ~2 GB)
 set -euo pipefail
 
@@ -44,8 +44,12 @@ ASSEMBLE_REGION="${FLY_ASSEMBLE_REGION:-iad}"
 MAX_PARALLEL="${MAX_PARALLEL:-25}"
 # ⚠ `fly machine run` ignores fly.toml's [[vm]] block, and `--vm-size` sets CPUs, not memory: both
 # flags, always (the imagery README's traps 5 and "three more flags").
-VM_SIZE="${FLY_VM_SIZE:-shared-cpu-4x}"
-VM_MEMORY="${FLY_VM_MEMORY:-2048}"
+# A work tile runs on `performance-4x` (the governor's ruling, 2026-11-27): the pilot's `shared-cpu-4x`
+# drained its burst balance in ~3 minutes and ran at ~0.44 of a core after, while `performance-4x`
+# never throttled (256 s a work tile). Performance sizes need 2 GB a CPU, hence 8192 MB; a tile used
+# under 0.6 GB. The assembler's stays shared (`FLY_ASSEMBLE_*`): it streams, it doesn't decode.
+VM_SIZE="${FLY_VM_SIZE:-performance-4x}"
+VM_MEMORY="${FLY_VM_MEMORY:-8192}"
 ASSEMBLE_VM_SIZE="${FLY_ASSEMBLE_VM_SIZE:-shared-cpu-4x}"
 ASSEMBLE_MEMORY="${FLY_ASSEMBLE_MEMORY:-4096}"
 SPAWN_TIMEOUT="${SPAWN_TIMEOUT:-120}"

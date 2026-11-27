@@ -24,12 +24,13 @@ all apply here — each costs money silently. The six that bite this directory:
 3. **`--rm --restart no` on every Machine** (`spawn.sh` always passes them): flyctl's default
    `on-failure` crash-loops a failing work tile on the bill.
 4. **`fly machine run` ignores `fly.toml`'s `[[vm]]` block, and `--vm-size` sets CPUs, not memory.**
-   `spawn.sh` passes both: `shared-cpu-4x` with 2048 MB for a work tile, 4096 MB for the assembler
-   (its region layout measured ~1.4 GB RSS, ~2 GB with buffers).
+   `spawn.sh` passes both: `performance-4x` with 8192 MB for a work tile (performance sizes need 2 GB
+   a CPU), `shared-cpu-4x` with 4096 MB for the assembler (its region layout measured ~1.4 GB RSS,
+   ~2 GB with buffers; the pilot's ran in 97 s).
    ⚠ **A `shared-cpu-4x` throttles a work tile** (the pilot, 2026-11-26): its burst balance drained in
-   about three minutes and it ran at ~0.44 of a core after. The pilot's tiles ran on
-   `FLY_VM_SIZE=performance-4x` with `FLY_VM_MEMORY=8192` (performance sizes need 2 GB a CPU): 256 s a
-   work tile, no throttling, under 0.6 GB used. Which size the full run takes is the founder's go.
+   about three minutes and it ran at ~0.44 of a core after. On `performance-4x`: 256 s a work tile,
+   no throttling, under 0.6 GB used — so it is the work tiles' default (the governor, 2026-11-27);
+   `FLY_VM_SIZE`/`FLY_VM_MEMORY` override it.
 5. **No comment between backslash-continuations** — it ends the command and drops every argument
    after it, silently (twenty winter Machines once ran with no granule).
 6. **The live-Machine cap is shared with the winter pump.** `spawn.sh` counts every live Machine on
