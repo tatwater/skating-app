@@ -128,9 +128,14 @@ export async function insertRunLines(
   return { stored, dropped };
 }
 
+/** The kept line the server writes on a run the first time it hands that run's logger a stop. */
+export const RUN_STOP_HANDED_TEXT = 'Told the run to stop, as asked in the console';
+
 /**
  * The stop a run should obey, if any: its own request, else its campaign's. Stamps `seenAt` on the
- * request it answers (the first time), so a withdrawal is refused once the run has acted on it.
+ * request it answers (the first time), so a withdrawal is refused once the run has acted on it, and
+ * then writes a `stop` line on the run it told — a kept kind, so the moment survives past the cap
+ * (the logger's own words about stopping arrive as `warn`, which the cap drops).
  */
 async function stopDirective(
   ctx: MutationCtx,
@@ -142,6 +147,12 @@ async function stopDirective(
     if (request === undefined) return false;
     if (request.seenAt === undefined) {
       await ctx.db.patch(row._id, { stopRequest: { ...request, seenAt: at } });
+      await insertRunLines(
+        ctx,
+        run._id,
+        [{ kind: 'stop', text: RUN_STOP_HANDED_TEXT, loggedAt: at }],
+        at,
+      );
     }
     return true;
   };

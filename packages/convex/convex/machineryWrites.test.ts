@@ -35,6 +35,7 @@ import {
   WAIT_NONE,
   WAIT_NOT_STALLED,
 } from './machineryWrites';
+import { MAX_RUN_EVENTS, RUN_EVENT_CAP_TEXT, RUN_STOP_HANDED_TEXT } from './runEvents';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -644,6 +645,49 @@ describe('requestRunStop, the logger’s directive, and the withdrawal', () => {
     ).toBe(true);
     // The campaign's request was obeyed by its pass: it can no longer be withdrawn.
     expect((await getRun(t, campaign)).stopRequest?.seenAt).toBeGreaterThanOrEqual(Date.now());
+  });
+
+  test('handing the stop over writes one kept stop line on the run told, past the cap too', async () => {
+    const { t, admin } = await setup();
+    const runId = await seedRun(t);
+    // A log already at its cap: the logger's own words about stopping (a `warn`) are dropped.
+    await t.run(async (ctx) => {
+      for (let seq = 0; seq < MAX_RUN_EVENTS; seq++) {
+        await ctx.db.insert('runEvents', {
+          runId,
+          seq,
+          at: 0,
+          loggedAt: 0,
+          kind: 'flush',
+          text: '',
+        });
+      }
+    });
+    await admin.as.mutation(api.machineryWrites.requestRunStop, { runId });
+    const answer = await t.mutation(internal.runEvents.append, { runId, events: [line] });
+    expect(answer).toMatchObject({ stop: true, dropped: 1 });
+    await t.mutation(internal.runEvents.append, {
+      runId,
+      events: [{ kind: 'warn', text: 'Asked to stop in the console; stopping here', loggedAt: 0 }],
+    });
+    const kept = (await linesOf(t, runId)).filter((l) => l.seq >= MAX_RUN_EVENTS);
+    expect(kept.map((l) => [l.kind, l.text])).toEqual([
+      ['cap', RUN_EVENT_CAP_TEXT],
+      ['stop', expect.stringContaining('asked the run to stop')],
+      ['stop', RUN_STOP_HANDED_TEXT],
+    ]);
+    expect(kept[0]?.dropped).toBe(2);
+  });
+
+  test("a campaign's stop handed to its pass is written on the pass, once", async () => {
+    const { t, admin } = await setup();
+    const campaign = await seedRun(t, { kind: 'corpus_campaign' });
+    const pass = await seedRun(t, { parentRunId: campaign });
+    await admin.as.mutation(api.machineryWrites.requestRunStop, { runId: campaign });
+    await t.mutation(internal.runEvents.append, { runId: pass, events: [line] });
+    await t.mutation(internal.runEvents.append, { runId: pass, events: [line] });
+    const handed = (await linesOf(t, pass)).filter((l) => l.kind === 'stop');
+    expect(handed.map((l) => l.text)).toEqual([RUN_STOP_HANDED_TEXT]);
   });
 
   test('the withdrawal clears it before it is seen, as the request’s undo too', async () => {
