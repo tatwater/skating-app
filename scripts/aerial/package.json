@@ -9,6 +9,7 @@
     "test": "vitest run --coverage",
     "test:watch": "vitest",
     "select": "tsx src/cli/select.ts",
+    "foliage": "tsx src/cli/foliage.ts",
     "tiles": "tsx src/cli/tiles.ts",
     "assemble": "tsx src/cli/assemble.ts",
     "verify": "tsx src/cli/verify.ts",

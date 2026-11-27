@@ -17,6 +17,7 @@ export default defineConfig({
       exclude: [
         'src/**/*.test.ts',
         'src/cli/select.ts',
+        'src/cli/foliage.ts',
         'src/cli/tiles.ts',
         'src/cli/assemble.ts',
         'src/cli/verify.ts',
