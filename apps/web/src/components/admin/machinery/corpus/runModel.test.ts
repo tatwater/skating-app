@@ -1,6 +1,6 @@
 import { runLiveness } from '@skating/core';
 import { describe, expect, test, vi } from 'vitest';
-import { livenessAt, rowsAt } from '../liveness';
+import { laneTailAt, livenessAt, rowsAt } from '../liveness';
 import {
   assembledCampaign,
   at,
@@ -102,6 +102,26 @@ describe('the liveness at the page clock', () => {
     expect(live?.liveness.state).toBe('stalled');
     expect(ended).toBe(finished);
     expect(rowsAt([view.row], NOW_RUNNING)[0]?.liveness).toEqual(view.row.liveness);
+  });
+
+  test('the sidebar’s tail re-reads on the list’s clock, and agrees with the list row', () => {
+    const view = boardCampaign(NOW_RUNNING);
+    const inputs = view.row.livenessInputs ?? undefined;
+    const tail = {
+      state: view.row.liveness.state,
+      at: LAST_FLUSH,
+      kind: 'campaign' as const,
+      ...(inputs !== undefined && { livenessInputs: inputs }),
+    };
+    expect(tail.state).toBe('running');
+    for (const now of [NOW_RUNNING, NOW_LATE, NOW_STALLED]) {
+      expect(laneTailAt(tail, now).state).toBe(rowsAt([view.row], now)[0]?.liveness.state);
+    }
+    expect(laneTailAt(tail, NOW_STALLED).state).toBe('stalled');
+    // Unchanged, the same object; a finished tail (no inputs) keeps the server's word.
+    expect(laneTailAt(tail, NOW_RUNNING)).toBe(tail);
+    const ok = { state: 'ok' as const, at: 1 };
+    expect(laneTailAt(ok, NOW_STALLED)).toBe(ok);
   });
 
   test('a run re-reads its own row while it runs', () => {

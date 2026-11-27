@@ -4,9 +4,11 @@ import { createContext, type ReactNode, useContext } from 'react';
 
 import { useRole } from '@/lib/useRole';
 
+import { useTickingNow } from '../body/tabs/tabParts';
 import { isFailed, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
 import { useHeldRead, useMinuteNow } from '../shell/presence';
+import { laneTailAt } from './liveness';
 import { type MachineryLaneId, MachineryLanes } from './MachineryLanes';
 import type { MachineryLanesView } from './machineryTypes';
 import { LANES_FAILED } from './words/machineryWords';
@@ -44,10 +46,12 @@ export function MachinerySidebarProvider({ children }: { children: ReactNode }) 
   });
   const state = reads.lanes;
   const shown = useHeldRead<MachineryLanesView>(loaded(state), !canRead || isFailed(state));
+  // The tail re-read on the list's clock, from the inputs a live tail carries (`laneTailAt`).
+  const tick = useTickingNow(TAIL_TICK_MS);
   const sidebar: SidebarFor = (selected) => (
     <>
       <MachineryLanes
-        tails={shown === undefined ? {} : { corpus: shown.corpus }}
+        tails={shown === undefined ? {} : { corpus: laneTailAt(shown.corpus, tick) }}
         selected={selected}
         now={now}
         link={laneLink}
@@ -63,6 +67,9 @@ export function MachinerySidebarProvider({ children }: { children: ReactNode }) 
   );
   return <SidebarContext.Provider value={sidebar}>{children}</SidebarContext.Provider>;
 }
+
+/** How often a live tail is re-read: each second, as the list's rows are. */
+const TAIL_TICK_MS = 1_000;
 
 export function MachineryRoute() {
   return (

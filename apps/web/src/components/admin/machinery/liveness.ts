@@ -5,7 +5,7 @@ import {
   runLiveness,
 } from '@skating/core';
 
-import type { RunRowView } from './machineryTypes';
+import type { LaneTailView, RunRowView } from './machineryTypes';
 
 /**
  * **Machinery's one re-reading of core's stall rule.** The server answers every read with its
@@ -45,4 +45,24 @@ export function rowsAt<R extends Rereadable>(rows: readonly R[], now: number): R
     const liveness = livenessAt(row, now);
     return liveness === row.liveness ? row : { ...row, liveness };
   });
+}
+
+/**
+ * A sidebar tail at `now`: a live one re-read from the inputs it carries, by the rule the list reads
+ * its rows by, so the tail and the list beside it change on the same second. A finished tail (ok,
+ * failed, never) keeps the server's word.
+ */
+export function laneTailAt(
+  tail: LaneTailView,
+  now: number,
+  rule: LivenessRule = CORE_RULE,
+): LaneTailView {
+  const inputs = tail.livenessInputs;
+  if (inputs === undefined) return tail;
+  const liveness =
+    tail.kind === 'campaign'
+      ? campaignLiveness(inputs.self, inputs.passes, now, rule)
+      : rule(inputs.self, now);
+  if (liveness.state === 'finished' || liveness.state === tail.state) return tail;
+  return { ...tail, state: liveness.state };
 }

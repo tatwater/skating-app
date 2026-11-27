@@ -36,6 +36,11 @@ const DAY = 24 * 60 * MINUTE;
 const NOW = Date.UTC(2026, 10, 27, 14, 0);
 const E_LOAD = RUN_QUIET_MS.canonical_water as number;
 
+function must<V>(value: V | undefined | null): V {
+  if (value === undefined || value === null) throw new Error('expected a value');
+  return value;
+}
+
 beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
@@ -225,10 +230,12 @@ describe('lanes', () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');
     await seedRun(t, { progressAt: NOW - 2 * E_LOAD - 2 * MINUTE });
-    expect((await as.query(api.machineryRuns.lanes, { now: NOW })).corpus).toEqual({
-      state: 'late',
-      at: NOW - 2 * E_LOAD - 2 * MINUTE,
-    });
+    const tail = (await as.query(api.machineryRuns.lanes, { now: NOW })).corpus;
+    expect(tail).toMatchObject({ state: 'late', at: NOW - 2 * E_LOAD - 2 * MINUTE, kind: 'pass' });
+    // A live tail carries its inputs, which core's rule re-reads to the server's own verdicts.
+    const self = must(tail.livenessInputs).self;
+    expect(runLiveness(self, NOW).state).toBe('late');
+    expect(runLiveness(self, NOW + 10 * E_LOAD).state).toBe('stalled');
     vi.setSystemTime(NOW + 10 * E_LOAD);
     expect((await as.query(api.machineryRuns.lanes, { now: NOW + 10 * E_LOAD })).corpus.state).toBe(
       'stalled',
@@ -277,7 +284,13 @@ describe('lanes', () => {
     const { as } = await seedUser(t, 'admin');
     const { campaign, load } = await seedCampaign(t, 'c1', 41 * MINUTE);
     const lanes = await as.query(api.machineryRuns.lanes, { now: NOW });
-    expect(lanes.corpus).toEqual({ state: 'stalled', at: NOW - 46 * MINUTE });
+    expect(lanes.corpus).toMatchObject({
+      state: 'stalled',
+      at: NOW - 46 * MINUTE,
+      kind: 'campaign',
+    });
+    const inputs = must(lanes.corpus.livenessInputs);
+    expect(campaignLiveness(inputs.self, inputs.passes, NOW).state).toBe('stalled');
     const card = await as.query(api.machinery.overviewJobs, { now: NOW });
     expect(card?.jobs.find((j) => j.id === 'import')).toEqual({
       id: 'import',

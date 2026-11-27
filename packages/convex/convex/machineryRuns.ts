@@ -94,10 +94,16 @@ export type RunRowView = {
 /** A row's input to core's rule, and its passes' (a campaign's; none for a pass). */
 export type LivenessInputs = { self: RunLivenessInput; passes: RunLivenessInput[] };
 
-/** The sidebar's tail for one lane. */
+/**
+ * The sidebar's tail for one lane. A live tail carries the inputs its verdict was read from, as a
+ * list row does, so the sidebar re-reads them on the list's clock and never says *running* beside a
+ * list row already *late*.
+ */
 export type LaneTail = {
   state: LivenessView['state'] | 'failed' | 'ok' | 'never';
   at: number | null;
+  kind?: RunRowView['kind'];
+  livenessInputs?: LivenessInputs;
 };
 
 /** A row of the campaign page's *Passes* table: a planned pass merged with its run. */
@@ -481,26 +487,38 @@ async function waitingOf(ctx: QueryCtx, run: Run, now: number): Promise<WaitingV
 export async function corpusTail(
   ctx: QueryCtx,
   now: number,
-): Promise<{ run: Run; liveness: RunLiveness } | null> {
+): Promise<{ run: Run; passes: Run[]; liveness: RunLiveness } | null> {
   const run = await ctx.db
     .query('importRuns')
     .withIndex('by_listed_started', (q) => q.eq('listedIn', 'corpus'))
     .order('desc')
     .first();
   if (run === null) return null;
+  const passes = isCampaignRow(run) ? await campaignPassesForRow(ctx, run) : [];
   const liveness = isCampaignRow(run)
-    ? livenessOfCampaign(run, await campaignPassesForRow(ctx, run), now)
+    ? livenessOfCampaign(run, passes, now)
     : livenessOfRun(run, now);
-  return { run, liveness };
+  return { run, passes, liveness };
 }
 
-/** A tail from a run and its verdict: a finished run is failed (a mark included) or ok. */
-export function laneTailOf(run: Run, liveness: RunLiveness): LaneTail {
+/**
+ * A tail from a run and its verdict: a finished run is failed (a mark included) or ok; a live one
+ * carries its inputs ({@link LaneTail}).
+ */
+export function laneTailOf(run: Run, liveness: RunLiveness, passes: readonly Run[] = []): LaneTail {
   if (liveness.state === 'finished') {
     const failed = run.status === 'failed' || run.markedFailed !== undefined;
     return { state: failed ? 'failed' : 'ok', at: run.finishedAt ?? run.startedAt };
   }
-  return { state: liveness.state, at: run.progressAt ?? run.startedAt };
+  const inputs = livenessInputsOf(run, passes);
+  return {
+    state: liveness.state,
+    at: run.progressAt ?? run.startedAt,
+    ...(inputs !== null && {
+      kind: isCampaignRow(run) ? ('campaign' as const) : ('pass' as const),
+      livenessInputs: inputs,
+    }),
+  };
 }
 
 // ── The reads ──────────────────────────────────────────────────────────────────────────────────
@@ -513,7 +531,10 @@ export const lanes = query({
     const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
     const tail = await corpusTail(ctx, now);
     return {
-      corpus: tail === null ? { state: 'never', at: null } : laneTailOf(tail.run, tail.liveness),
+      corpus:
+        tail === null
+          ? { state: 'never', at: null }
+          : laneTailOf(tail.run, tail.liveness, tail.passes),
     };
   },
 });
