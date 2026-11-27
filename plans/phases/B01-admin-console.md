@@ -16429,6 +16429,12 @@ named; a ruling that only picks a mechanic stays here.
     option (c) of three: (a) mark the campaign with its pass, (b) keep two presses, (c) after the
     pass is marked, offer *Mark the campaign failed too*). The two marks stay separate and each
     undoes on its own. **D342** (a mechanic of its *Mark failed*; no new decision).
+23. **The backbone's recording stays well inside Convex's free plan** (2026-11-27, B01-8b's fork 1,
+    option (c)): every cron is recorded from 8b-1, but the five that tick every one to three minutes
+    record their failures and work as they happen and their quiet ticks once an hour. **D347**.
+24. **A cut's log in the public bucket** (2026-11-27, B01-8b's fork 2): (b), a founder-set rule
+    blocking `/logs/*`, where the bucket's public base is a Cloudflare custom domain; otherwise (a),
+    the object living minutes with a 30-day lifecycle rule as the net. 8b-2 checks which, read-only.
 
 #### What the code says today
 
@@ -17786,6 +17792,20 @@ the three parents is set on a row, enforced by its only writers and a test. Ever
 optional field is read with `eq` on a defined value, or with `gt('keepUntil', 0)` as the range's
 floor, never a bare range (a corpus run's lines have no `keepUntil` and are never swept).
 
+**Recording mode** (a registry value; fork 1, ruled *(c)* by the founder 2026-11-27). Each
+`CRON_JOBS` entry carries `record: 'every' | 'sparse'`. `every`: each tick patches the heartbeat and
+appends to its bucket row, and a tick that worked or failed also writes its run row and lines.
+`sparse`: a tick that failed, was killed or reported work is recorded exactly as under `every`; a
+quiet `ok` tick is recorded only when it is the job's first in its UTC hour, so the quiet ticks cost
+at most one heartbeat write and one tick write an hour (the heartbeat's `lastTickAt` lags a quiet job
+by up to an hour; the strip shows one quiet tick an hour; failures and work are never lost). The five
+crons that tick every one to three minutes (the notification flush, the bodies library drain, and the
+bodies library, inbox and corpus tasks drift repairs) are `sparse` through one named constant,
+`FREQUENT_CRON_RECORD`; every other cron is `every`. The imagery pump (every 3 minutes) stays `every`:
+its quiet ticks are its drawer's folded *quiet checks* line. The recorder (S1) implements both modes;
+`cronLiveness` (S2) must not read a sparse job's hour-old quiet `lastTickAt` as late (its *E* is
+minutes, so its late and stalled thresholds take the hour's lag as their floor).
+
 **Who writes each field, and when.** Only the dispatchers (`cronRuns.ts`'s `record`, `begin`,
 `finish`) write `cronHeartbeats`, `cronTicks` and `cronRuns`, and the cron lines of `runEvents`;
 `cronRunJobs.prune` deletes. A tick: read the heartbeat (`by_job`) and the bucket (`by_job_bucket`,
@@ -17810,6 +17830,14 @@ kept: ~300 tick rows a day (11 hourly jobs × 24 + 41 daily), ~10,500 at 35 days
 never near: a tick row holds at most 60 entries. Against Convex's published allowances these are
 under 1 % of Pro's 25 M calls and 50 GB of bandwidth a month; on the free plan's 1 M calls and 1 GB
 they would be about a fifth and a quarter. The plan dev is on is not recorded in the repo: *Forks*, 1.
+
+*Under the ruling (fork 1, (c)):* the five frequent crons tick ~4,560 times a day, which `sparse`
+records as ~120 (one quiet tick an hour each, plus any failure). Recorded ticks fall to **about 1,700
+a day, ~3,400 document writes and ~2.5 MB of database I/O** (~75 MB a month, under a tenth of the
+free plan's bandwidth). Function calls do not fall with it: every tick still runs through its
+dispatcher, so if a nested `ctx.runMutation` is billed as a call the ~6,800 extra calls a day (about a
+fifth of the free plan's million a month) stand; whether it is, and what to do if so, is register
+Ma26.
 
 **The liveness rule** (core, `packages/core/src/cronLiveness.ts`, pure; the server's reads and the
 web's ticking clock both call it, so the lane, the cards, the Overview and later Health can't
@@ -18194,6 +18222,18 @@ export const tryAgainNow: (args: {}) => { actionId: Id<'moderationActions'> };
 
 Where a snippet and the landed file differ, the file wins; each builder says so in its report.
 
+**What X1 landed, where it differs** (2026-11-27). The registry has 52 entries in the old order, 38
+mutation jobs and 14 action jobs (13 action functions; `bodyGeo.computeDue` runs twice), not the
+design's 39 and 13. An entry holds `fn`, the registered reference, for both kinds: the action
+handlers don't exist until S1 extracts them, so `tickAction` resolves an action entry's handler from
+`fn` in `cronRuns.ts` (or S1 asks for a `handler` field). `cronRunJobs.prune` is not yet an entry
+(the seams keep exactly the 52 names); registering it is a one-entry change S1 asks for. `cronRuns`
+gains `copiedFrom?` (the copy's idempotence key). `runEvents` gains `runId?`, `cronRunId?`,
+`keepUntil?`, kind `line`, `by_cron_run_seq` and `by_keep_until` now; `attemptId?`, `origin?` and
+`by_attempt_seq` wait for 8b-2, beside `imageryAttempts`. The dispatcher stubs only run their job
+(nothing recorded), so the move changes no cron's behavior on its own; `cronJobs.test.ts` pins the
+52 names, schedules, functions and arguments against a literal table.
+
 ##### Briefs (B01-8b)
 
 The governor wraps each with §12.4's invariants and 7a's harness notes; what follows is what a
@@ -18333,6 +18373,19 @@ first real attempt's log read on the page.
    touches the path every cron runs on and reviews best alone, it starts recording a day sooner, and
    each PR ships alone; (c) would split the capture from the only page that shows it.
 
+**How the forks were ruled (2026-11-27).**
+
+1. **Fork 1: (c), the founder.** The app aims to stay well inside Convex's free plan: all 52 crons
+   are recorded from 8b-1, but the five that tick every one to three minutes record their failures
+   and work as they happen and their quiet ticks once an hour (*Recording mode*, above). Whether the
+   dispatcher's nested call is itself billed is measured by S1 (Ma26).
+2. **Fork 2: (b) where the bucket's public base is a Cloudflare custom domain** (the founder sets a
+   rule blocking `/logs/*` on it), **otherwise (a)**, the founder. 8b-2's S3 checks which, read-only.
+3. **Fork 3: (a), the governor.** Machines are created with `auto_destroy: false` and kept until the
+   pump reads them, then destroyed, with the stopped-Machine sweep while listing.
+4. **Fork 4: (b), the governor.** Two PRs: 8b-1 the backbone, then 8b-2 Imagery. (D349 is not
+   minted; the split is recorded here.)
+
 **The design's own calls, which the governor may overturn:**
 
 - A registry and two dispatchers rather than a wrapper at each definition: the guard can prove a
@@ -18410,6 +18463,7 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma23 | The Overview's Machinery card keeps its tracked set; reading every cron from the backbone drops its *untracked* count to zero | B01-8b's design | Health (8e) | open |
 | Ma24 | The backbone's cost measured on dev against the design's count (~6,800 calls and ~9 MB of I/O a day) | B01-8b's design | a day after 8b-1 deploys | open |
 | Ma25 | Stopped cut Machines left by a pump that was down are cleared on its next tick, but nothing shows how many wait meanwhile | B01-8b's design | Health (8e) | open |
+| Ma26 | Measure whether the dispatcher's nested `ctx.runMutation` is billed as a function call; if so, decide whether the frequent crons keep the wrapper (it doubles their calls, though `sparse` cuts their writes) | the founder's fork 1 ruling | 8b-1 (S1 measures it on the throwaway backend's usage, or from Convex's docs) | open |
 
 ## Ruled out
 

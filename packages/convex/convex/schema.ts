@@ -90,6 +90,9 @@ import {
   BOUNTY_STATUSES,
   CANONICAL_SOURCES,
   COMMENT_SOURCES,
+  CRON_OUTCOMES,
+  CRON_RUN_OUTCOMES,
+  CRON_TRIGGERS,
   DATA_EXPORT_STATUSES,
   DEDUP_STATUSES,
   DORMANCY_REASONS,
@@ -5603,9 +5606,19 @@ export default defineSchema({
    * `cap` row counting what was not kept; `close`, `mark`, `wait` and `stop` rows are always kept.
    * Kept as long as the run row is (corpus runs are few); the cron logs' retention sweep (B01-8b,
    * D343) decides any horizon for them.
+   *
+   * **Since B01-8b (D343, D347), a cron run's log too**: a row has exactly one parent — `runId` (an
+   * import run) or `cronRunId` (a cron run) — set by its only writers (`runEvents.ts`, and the cron
+   * dispatchers in `cronRuns.ts`). A cron line carries `keepUntil` and is swept by
+   * `cronRunJobs.prune`; an import run's lines carry none and are never swept. Every index here leads
+   * with an optional field, so none is sparse: each is read with `eq` on a defined value, and
+   * `by_keep_until` with `gt('keepUntil', 0)` as its floor, never a bare range.
    */
   runEvents: defineTable({
-    runId: v.id('importRuns'),
+    /** The import run (D341). Absent on a cron run's line. */
+    runId: v.optional(v.id('importRuns')),
+    /** The cron run (D347). Absent on an import run's line. */
+    cronRunId: v.optional(v.id('cronRuns')),
     /** 0-based per run, assigned by the server: the tail's order, whatever the clocks say. */
     seq: v.number(),
     /** The server's clock at the append. */
@@ -5617,7 +5630,81 @@ export default defineSchema({
     text: v.string(),
     /** On the `cap` row only: how many lines past the cap were not kept. */
     dropped: v.optional(v.number()),
-  }).index('by_run_seq', ['runId', 'seq']),
+    /** When the retention sweep may delete it (cron lines only). */
+    keepUntil: v.optional(v.number()),
+  })
+    .index('by_run_seq', ['runId', 'seq'])
+    .index('by_cron_run_seq', ['cronRunId', 'seq'])
+    .index('by_keep_until', ['keepUntil']),
+
+  // ── B01-8b: the cron backbone (D343, D347) ──────────────────────────────────────────────────────
+
+  /**
+   * **One row per cron** (D343, D347): its last word — when it last ticked and how that ended, its
+   * last good and last failed tick, the last error, how long the last tick took, whether an
+   * announcing action is running now, and its last run row. Written by the dispatchers only
+   * (`cronRuns.ts`); read by Machinery's cards and lanes, the Overview and Health through core's
+   * `cronLiveness`. Bounded by the registry (one row per `CRON_JOBS` name), never swept.
+   */
+  cronHeartbeats: defineTable({
+    /** The cron's registered name (`cronJobs.ts`). */
+    job: v.string(),
+    lastTickAt: v.optional(v.number()),
+    lastOutcome: v.optional(literals(CRON_OUTCOMES)),
+    lastOkAt: v.optional(v.number()),
+    lastFailedAt: v.optional(v.number()),
+    /** Trimmed to 500 characters. */
+    lastError: v.optional(v.string()),
+    lastMs: v.optional(v.number()),
+    /** Set by `begin` (announcing actions only), cleared by `finish`; a stale one reads killed. */
+    runningSince: v.optional(v.number()),
+    lastRunId: v.optional(v.id('cronRuns')),
+  }).index('by_job', ['job']),
+
+  /**
+   * **A cron's ticks, one row per job per bucket** (D343's "compact day of ticks", D347): a UTC hour
+   * for a job that ticks more often than every 30 minutes, a UTC day otherwise — at most 60 ticks a
+   * row, far under the array cap. Written by the dispatchers only; read by the tick strip and
+   * Health's failures. Swept by `cronRunJobs.prune` past `keepUntil`.
+   */
+  cronTicks: defineTable({
+    job: v.string(),
+    bucketStart: v.number(),
+    bucketMs: v.number(),
+    /** Per tick, packed: seconds into the bucket × 8 + the outcome's code (core's `packTick`). */
+    ticks: v.array(v.number()),
+    /** Per tick, its duration in ms, in step with `ticks`. */
+    ms: v.array(v.number()),
+    keepUntil: v.number(),
+  })
+    .index('by_job_bucket', ['job', 'bucketStart'])
+    .index('by_keep_until', ['keepUntil']),
+
+  /**
+   * **A cron tick that did work or failed** (D343, D347): what a cron's runs drawer lists, with its
+   * log in `runEvents` (`cronRunId`). A quiet tick has no row. Written by the dispatchers only (and
+   * once by `cronRunJobs.copyImageryRuns`, which carries `imageryRuns`' history over); swept by
+   * `cronRunJobs.prune` past `keepUntil`.
+   */
+  cronRuns: defineTable({
+    job: v.string(),
+    startedAt: v.number(),
+    finishedAt: v.number(),
+    outcome: literals(CRON_RUN_OUTCOMES),
+    trigger: literals(CRON_TRIGGERS),
+    /** Who pressed it (a `manual` run only). */
+    byUserId: v.optional(v.id('profiles')),
+    season: v.optional(v.string()),
+    detail: v.optional(v.string()),
+    error: v.optional(v.string()),
+    counts: v.optional(v.record(v.string(), v.number())),
+    /** The `imageryRuns` row this was copied from (`copyImageryRuns` only): its idempotence key. */
+    copiedFrom: v.optional(v.id('imageryRuns')),
+    keepUntil: v.number(),
+  })
+    .index('by_job_started', ['job', 'startedAt'])
+    .index('by_job_outcome_started', ['job', 'outcome', 'startedAt'])
+    .index('by_keep_until', ['keepUntil']),
 
   // ── B01 server reads: colleague presence ──────────────────────────────────────────────────────
 
