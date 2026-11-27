@@ -314,6 +314,16 @@ describe('assemble refuses, and publishes nothing, when', () => {
     await expect(assemble(build.manifest, depsFor().deps)).rejects.toThrow('already exists');
   });
 
+  it('an earlier assembly that stopped before its manifest says how to recover', async () => {
+    const build = await setup();
+    await assemble(build.manifest, depsFor().deps);
+    // The archive and its index went up; the manifest — the last word, which names them — did not.
+    await rm(join(root, manifestKey(build.manifest.campaign, build.manifest.pilot ?? undefined)));
+    await expect(assemble(build.manifest, depsFor().deps)).rejects.toThrow(
+      /an earlier assembly stopped before its manifest: nothing names .* delete .* by hand and assemble again/,
+    );
+  });
+
   it('the manifest is inconsistent with itself', async () => {
     const build = await setup();
     await expect(assemble({ ...build.manifest, pilot: 'x' }, depsFor().deps)).rejects.toThrow(

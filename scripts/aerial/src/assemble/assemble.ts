@@ -518,9 +518,22 @@ async function run(
     index: indexKey(campaign, pilot),
     manifest: manifestKey(campaign, pilot),
   };
-  for (const key of Object.values(keys)) {
-    if (await deps.store.exists(key))
-      refuse(`${key} already exists: a published key is never overwritten`);
+  const present = new Map<string, boolean>();
+  for (const key of Object.values(keys)) present.set(key, await deps.store.exists(key));
+  // The manifest is written last and is the only thing that names the other two, so an archive or
+  // an index without it is an assembly that stopped part way (an upload failed, the Machine died):
+  // never verified, never handed to the web. Still never overwritten here — the operator removes
+  // what it left, having looked, and assembles again.
+  if (!present.get(keys.manifest)) {
+    const left = [keys.archive, keys.index].filter((k) => present.get(k));
+    if (left.length > 0) {
+      refuse(
+        `an earlier assembly stopped before its manifest: nothing names ${left.join(' or ')} — delete ${left.length === 1 ? 'it' : 'them'} by hand and assemble again`,
+      );
+    }
+  }
+  for (const [key, exists] of present) {
+    if (exists) refuse(`${key} already exists: a published key is never overwritten`);
   }
   if (planOnly) {
     return {

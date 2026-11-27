@@ -78,7 +78,10 @@ From a process runner whose stdout is a pipe or socket (an agent's shell), send 
 file and read the status: `scripts/aerial/run-aerial.sh … > /dev/null 2>&1; echo $?`, then the log.
 
 The laptop orchestrates for the build's wall time: run under `caffeinate -i`. Every stage resumes —
-a done record whose input hash is the manifest's is landed, anything else is re-spawned.
+a done record whose input hash is the manifest's is landed, anything else is re-spawned. The one
+exception is an assembly that stops after its archive (or index) went up but before its manifest,
+the last write: the published keys are never overwritten, so it refuses again, naming what it left —
+nothing names those objects, nothing has served them; `rclone deletefile` them and assemble again.
 
 ### Before a full build: the foliage review (D319)
 
