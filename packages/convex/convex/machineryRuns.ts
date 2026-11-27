@@ -671,13 +671,18 @@ async function clockSkewOf(ctx: QueryCtx, runId: Id<'importRuns'>): Promise<numb
   return Math.abs(skew) > CLOCK_SKEW_SHOWN_MS ? skew : null;
 }
 
-/** The campaign row a campaign id names: its newest, when the script was run twice under one id. */
+/**
+ * The campaign row a campaign id names: its newest, when the script was run more than once under one
+ * id. Read newest first: a re-run campaign id gathers rows run after run, and the oldest
+ * {@link CAMPAIGN_RUNS_LIMIT} would hold only its first campaigns.
+ */
 async function campaignRowById(ctx: QueryCtx, campaignId: string): Promise<Run | null> {
-  const rows = await runsOfCampaignId(ctx, campaignId);
-  let found: Run | null = null;
-  for (const r of rows)
-    if (isCampaignRow(r) && (found === null || r.startedAt >= found.startedAt)) found = r;
-  return found;
+  const rows = await ctx.db
+    .query('importRuns')
+    .withIndex('by_campaign', (q) => q.eq('campaignId', campaignId))
+    .order('desc')
+    .take(CAMPAIGN_RUNS_LIMIT);
+  return rows.find(isCampaignRow) ?? null;
 }
 
 /** The campaign page, by its row or by its campaign id. `null` for no such campaign row. */

@@ -729,6 +729,37 @@ describe('campaign', () => {
     expect(await as.query(api.machineryRuns.campaign, { runId: gone })).toBeNull();
   });
 
+  test('a campaign id run again and again opens its newest campaign', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    // Eight runs of one id, eight rows each: the newest is past the oldest 50 rows the id holds.
+    let newest: Id<'importRuns'> | null = null;
+    for (let n = 0; n < 8; n++) {
+      const startedAt = NOW - (8 - n) * DAY;
+      newest = await seedRun(t, {
+        kind: 'corpus_campaign',
+        campaignId: 'again',
+        status: 'succeeded',
+        startedAt,
+        finishedAt: startedAt + MINUTE,
+        campaign: { flags: [], plan: PLAN },
+      });
+      for (let p = 0; p < 7; p++) {
+        await seedRun(t, {
+          kind: 'corpus_merge',
+          campaignId: 'again',
+          parentRunId: newest,
+          listedIn: undefined,
+          status: 'succeeded',
+          startedAt: startedAt + p + 1,
+          finishedAt: startedAt + MINUTE,
+        });
+      }
+    }
+    const view = await as.query(api.machineryRuns.campaign, { campaignId: 'again', now: NOW });
+    expect(view?.row.id).toBe(newest);
+  });
+
   test('a recorded campaign is judged by the passes under it, as its list row is', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');
