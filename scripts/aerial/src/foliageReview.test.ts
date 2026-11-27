@@ -1,9 +1,15 @@
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import type { NaipCandidate, NaipExclusion, NaipFoliageStrike } from '@skating/core';
+import {
+  type NaipCandidate,
+  type NaipExclusion,
+  type NaipFoliageStrike,
+  naipFoliageStruck,
+} from '@skating/core';
+import fc from 'fast-check';
 import { afterEach, describe, expect, test } from 'vitest';
-import type { FoliageScore } from './foliage';
+import { type FoliageScore, foliageVerdict } from './foliage';
 import {
   costOf,
   FoliageRefusal,
@@ -266,6 +272,76 @@ describe('proposeFoliageStrikes', () => {
     expect(ids).toEqual(['VT 2023-09-27', fSept.itemId]);
     expect(ids).not.toContain('VT 2025-09-22');
     expect(ids).not.toContain(kSept.itemId);
+  });
+
+  test('as the selection reads it, the proposal strikes exactly what it says (a property)', () => {
+    // One rule, two answers: the screen proposes by flight day with `keep` lists, the selection
+    // reads them through `naipFoliageStruck`. Over random days, scores, reviewed entries and kept
+    // frames, what ends up struck is exactly the reviewed strikes plus every turned, leaf-on frame
+    // that isn't cloud-kept or on a day the reviewed list decided — never a kept or green one.
+    const days = ['2025-09-20', '2025-09-27', '2023-09-27', '2024-10-02'];
+    const cells = ['4407236se', '4407236sw', '4407236ne', '4407236nw', '4407237se', '4407237sw'];
+    const pool = cells.flatMap((key) => days.map((day) => f(key, day, 0.3)));
+    fc.assert(
+      fc.property(
+        // A share, too little vegetation (`null`), or no thumbnail at all (`undefined`: unscored).
+        fc.array(
+          fc.oneof(
+            fc.double({ min: 0, max: 1, noNaN: true }),
+            fc.constant(null),
+            fc.constant(undefined),
+          ),
+          { minLength: pool.length, maxLength: pool.length },
+        ),
+        fc.subarray(pool.map((p) => p.itemId)),
+        fc.subarray(pool.map((p) => p.itemId)),
+        fc.subarray(days.slice(0, 3)),
+        (shares, kept, reviewedFrames, reviewedDays) => {
+          const scores = new Map(
+            pool.flatMap((p, i) =>
+              shares[i] === undefined
+                ? []
+                : [[p.itemId, green(shares[i] as number | null)] as const],
+            ),
+          );
+          const reviewed: NaipFoliageStrike[] = [
+            ...reviewedFrames.slice(0, 3).map((itemId) => ({
+              itemId,
+              reason: 'turned' as const,
+              reviewedBy: 'founder' as const,
+              reviewedOn: '2026-11-28',
+            })),
+            ...reviewedDays.map((acquired) => ({
+              flight: { state: 'VT' as const, acquired },
+              keep: pool
+                .filter((p) => p.acquired === acquired)
+                .map((p) => p.itemId)
+                .slice(0, 2),
+              reason: 'turned' as const,
+              reviewedBy: 'founder' as const,
+              reviewedOn: '2026-11-28',
+            })),
+          ];
+          const proposal = proposeFoliageStrikes(pool, scores, {
+            proposedOn: '2026-11-27',
+            reviewed,
+            kept,
+          });
+          const before = naipFoliageStruck(reviewed);
+          const after = naipFoliageStruck([...reviewed, ...proposal]);
+          const decided = new Set(reviewedDays);
+          for (const p of pool) {
+            const turned = foliageVerdict(scores.get(p.itemId)) === 'turned';
+            const proposable =
+              p.acquired.slice(5) <= '09-30' &&
+              !decided.has(p.acquired) &&
+              !kept.includes(p.itemId);
+            expect(after(p)).toBe(before(p) || (proposable && turned));
+          }
+        },
+      ),
+      { numRuns: 300 },
+    );
   });
 
   test('a stricter threshold proposes more; the defaults are the committed lists and 0.6', () => {
