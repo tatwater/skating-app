@@ -519,9 +519,10 @@ export const lanes = query({
 });
 
 /**
- * Whether the listing backfill has run: no row among the newest unlisted ones is a corpus run with
- * no parent (every run started after the deploy is listed by `start`; every older one by the
- * backfill, which leaves an old pass either listed or under its reconstructed campaign).
+ * Whether the listing backfill has run: no row among the newest unlisted ones, and no corpus kind's
+ * oldest row, is a corpus run with no parent (every run started after the deploy is listed by
+ * `start`; every older one by the backfill, which leaves an old pass either listed or under its
+ * reconstructed campaign).
  */
 async function isIndexed(ctx: QueryCtx): Promise<boolean> {
   const unlisted = await ctx.db
@@ -535,7 +536,7 @@ async function isIndexed(ctx: QueryCtx): Promise<boolean> {
   for (const kind of CORPUS_RUN_KINDS) {
     const oldest = await ctx.db
       .query('importRuns')
-      .withIndex('by_kind_started', (q) => q.eq('kind', kind))
+      .withIndex('by_kind_started', (q) => q.eq('kind', kind as Run['kind']))
       .first();
     if (oldest !== null && oldest.parentRunId === undefined && oldest.listedIn === undefined) {
       return false;
