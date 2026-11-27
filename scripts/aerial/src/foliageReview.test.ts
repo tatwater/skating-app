@@ -597,6 +597,10 @@ describe('writeFoliageSheet', () => {
     // A struck frame is demoted, not dropped: the sheet never tells him a cell can't show one.
     expect(page).not.toContain('never falls onto');
     expect(page).toContain('only where nothing green has pixels');
+    // A day strike reaches frames the catalog adds to that day later (accepted: same flight).
+    expect(page).toContain(
+      'A struck day also strikes any frame the catalog adds to that day later, such as a reprocessed one under a new id: same flight, same foliage.',
+    );
     expect(page).toContain('<title>Summer aerial foliage review</title>');
     expect(page).toContain('Vermont · 20 Sep 2025 · 0.3 m');
     expect(page).toContain("strike the whole day, keeping the 1 frames that don't read turned");

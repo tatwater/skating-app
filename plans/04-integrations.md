@@ -183,7 +183,7 @@ demonstrably missed. Full entry: [`research/imagery-and-weather-vendors.md`](./r
 § 16. **Esri World Imagery**
 (off-platform use restricted), **Mapbox / Maxar** (metered per tile), **state orthoimagery** (five
 integrations for a marginal gain over 0.3 m), **tasked commercial imagery** (~$200–400 per body per
-capture). The physics is the real limit (D147): NAIP will never show ice, and 10 m Sentinel can't show
+capture). The physics is the real limit (D147): NAIP is never evidence about ice, and 10 m Sentinel can't show
 a 1–3 m ridge.
 
 ### Drive time (Phase 04)

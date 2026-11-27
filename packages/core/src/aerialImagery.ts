@@ -36,7 +36,7 @@
  * ⚠ **Call this with a grid cell's box and `AERIAL_TILE_PX`, not with a live camera's.** The URL is
  * the cache key, so a bbox derived from `map.getBounds()` guarantees a miss — that is the 350×.
  *
- * ## D147 — this imagery can never show ice
+ * ## D147 — this imagery is never evidence about ice
  *
  * NAIP is flown by aircraft on a **2–3 year per-state cycle, deliberately in mid-summer**, for the
  * USDA's crop program. Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer

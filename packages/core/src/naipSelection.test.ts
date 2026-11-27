@@ -297,6 +297,13 @@ describe('naipFoliageStruck', () => {
     expect([a, b, ny, other].map(turned)).toEqual([true, false, false, false]);
   });
 
+  test('a flight strike also takes a frame the catalog adds to that day later (accepted: same flight)', () => {
+    const turned = naipFoliageStruck([dayStrike('VT', '2025-09-20', [b.itemId])]);
+    const reprocessed = frame('2025-09-20', 0.3);
+    expect(reprocessed.itemId).not.toBe(a.itemId);
+    expect(turned(reprocessed)).toBe(true);
+  });
+
   test('a frame strike takes that frame, on a day not struck', () => {
     const turned = naipFoliageStruck([frameStrike(other)]);
     expect([a, other].map(turned)).toEqual([false, true]);

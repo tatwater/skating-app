@@ -4784,7 +4784,10 @@ the live services 2026-08-21:
 - **NAIP is aerial photography, not satellite** — 0.3 m via `USGSNAIPPlus`, but flown on a **2–3 year
   per-state cycle, deliberately in mid-summer** for the USDA's crop program. There is no winter NAIP and
   there never will be. Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
-  solstice, 2023.
+  solstice, 2023. *(Corrected 2026-11-27, B05: the catalog dates some NAIP outside summer — frames
+  of New Hampshire's and Vermont's 2018 programs in January 2019, and October flights in Maine, New
+  York and New Hampshire. What holds is that NAIP is never evidence about ice (D3), not that it can't
+  show any.)*
 - **Sentinel-2 is 10 m**, ~2–3 days at 44°N. **Sentinel-1 SAR is 10–20 m**, cloud- and night-proof.
 - **A pressure ridge is 1–3 m wide**: legible at 0.3 m, a smudge at 3 m, **nonexistent at 10 m**.
 
@@ -9403,7 +9406,7 @@ there's a good chance I just don't want the average skater to see it"*.
 console's daily work, and the vector basemap can't show where a path meets the water; the old lake
 editor already drew NAIP unmasked for that. D146 is untouched: the skater apps still reveal imagery
 one body at a time, clipped to it, and nothing a skater sees changes. NAIP is a summer photograph on a
-two-to-three-year cycle and can never show ice (D147); the layer and its credit say only what was
+two-to-three-year cycle and never evidence about ice (D147); the layer and its credit say only what was
 flown and when (D3). Both asides were built in B01-7a, the governor's call, since they sit in the
 Corpus domain and the aerial was already joining 7a for board 4.3.
 

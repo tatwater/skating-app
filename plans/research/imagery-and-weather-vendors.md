@@ -60,7 +60,7 @@ Founder ask: record cost, benefit and setup for the providers we evaluated durin
   as a cheap low-zoom floor.
 - **NAIP is an airplane, not a satellite,** and this is the fact that shapes the phase: flown on a
   **2–3 year per-state cycle, deliberately in mid-summer** for the USDA's crop program. **No NAIP frame
-  will ever show ice.** Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
+  is ever evidence about ice.** Burlington's current scene is `m_4407339_ne_18_030_20230621` — the summer
   solstice, 2023.
 - **The acquisition date is queryable per water body**, which is what makes an honest date stamp possible:
   `USGSNAIPPlus/ImageServer/identify?…&returnCatalogItems=true` returns the source scene with
