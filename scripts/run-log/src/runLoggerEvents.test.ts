@@ -492,6 +492,9 @@ describe('the line helpers', () => {
     const long = eventText('x'.repeat(MAX_EVENT_TEXT + 10));
     expect(long).toHaveLength(MAX_EVENT_TEXT);
     expect(long.endsWith('…')).toBe(true);
+    // An emoji across the cut goes whole, never half: no lone surrogate reaches the deployment.
+    const emoji = eventText(`${'x'.repeat(MAX_EVENT_TEXT - 2)}🧊${'y'.repeat(10)}`);
+    expect(emoji).toBe(`${'x'.repeat(MAX_EVENT_TEXT - 2)}…`);
   });
 
   it('bounds an append, keeping the start and the end', () => {

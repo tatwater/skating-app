@@ -110,9 +110,16 @@ export function readDirectives(result: unknown): { stop: boolean; markedFailed: 
   return { stop: r.stop === true, markedFailed: r.markedFailed === true };
 }
 
-/** A line trimmed to what the server keeps, so the argv never carries what it would cut. */
+/**
+ * A line trimmed to what the server keeps, so the argv never carries what it would cut — never
+ * through a surrogate pair: half an emoji is a lone surrogate, which is half a character stored at
+ * best, and at worst a string the deployment refuses, with every line of that append.
+ */
 export function eventText(text: string): string {
-  return text.length > MAX_EVENT_TEXT ? `${text.slice(0, MAX_EVENT_TEXT - 1)}…` : text;
+  if (text.length <= MAX_EVENT_TEXT) return text;
+  const cut = text.slice(0, MAX_EVENT_TEXT - 1);
+  const last = cut.charCodeAt(cut.length - 1);
+  return `${last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut}…`;
 }
 
 /**
