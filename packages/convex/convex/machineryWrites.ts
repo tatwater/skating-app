@@ -29,6 +29,9 @@ import { insertRunLines } from './runEvents';
 /** Every write's answer: the audit row it wrote, which its undo receipt names. */
 export type RunWriteResult = { actionId: Id<'moderationActions'> };
 
+/** *Mark failed*'s answer: also whether it asked for the weather-cell sync, which its receipt says. */
+export type MarkResult = RunWriteResult & { cellSync: boolean };
+
 /** How far the caller's clock may sit from the server's for a wait's end. */
 const CLOCK_SLACK_MS = 60_000;
 
@@ -103,7 +106,7 @@ export async function markRunFailedImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
   args: { runId: Id<'importRuns'>; reason: string; afterPass?: Id<'importRuns'> },
-): Promise<RunWriteResult> {
+): Promise<MarkResult> {
   const run = await runOf(ctx, args.runId);
   if (run.markedFailed !== undefined) throw new ConvexError(RUN_ALREADY_MARKED);
   if (run.status !== 'running') throw new ConvexError(RUN_NOT_RUNNING);
@@ -145,8 +148,9 @@ export async function markRunFailedImpl(
   });
   // The founder's ruling on fork 2: a run that changed the bodies before it was marked asks for
   // the weather-cell walk, debounced as a loader's close is (`importRuns.finish`).
-  if (markChangedBodies(run)) await requestCellReconcile(ctx);
-  return { actionId };
+  const cellSync = markChangedBodies(run);
+  if (cellSync) await requestCellReconcile(ctx);
+  return { actionId, cellSync };
 }
 
 /**
@@ -310,7 +314,7 @@ export const markRunFailed = mutation({
     /** *Mark the campaign failed too*: the campaign's pass already marked, which must still be its newest. */
     afterPass: v.optional(v.id('importRuns')),
   },
-  handler: async (ctx, args): Promise<RunWriteResult> => {
+  handler: async (ctx, args): Promise<MarkResult> => {
     const actor = await requireCapability(ctx, 'machinery.corpus');
     return markRunFailedImpl(ctx, actor, args);
   },

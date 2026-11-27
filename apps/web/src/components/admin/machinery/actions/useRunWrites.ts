@@ -99,7 +99,7 @@ export function useRunWrites({
         options,
       );
       if (!sent.landed) return false;
-      receipt(target, sent.value.actionId, W.marked, W.markedLine);
+      receipt(target, sent.value.actionId, W.marked, W.markedLine(sent.value.cellSync));
       return true;
     },
     [server, options, receipt],

@@ -34,7 +34,7 @@ function fakeServer(calls: BoardCalls, refuse: boolean): RunServer {
     markRunFailed: async (args) => {
       calls.marks.push(args);
       if (refuse) throw REFUSED;
-      return { actionId: 'act_mark' as never };
+      return { actionId: 'act_mark' as never, cellSync: false };
     },
     waitOnRun: async (args) => {
       calls.waits.push(args);

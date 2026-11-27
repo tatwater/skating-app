@@ -287,10 +287,15 @@ describe('markRunFailed', () => {
     ])('%s → %s', async (_what, fields, schedules) => {
       const { t, admin } = await setup();
       const runId = await seedRun(t, fields);
-      await admin.as.mutation(api.machineryWrites.markRunFailed, { runId, reason: 'gone' });
+      const { cellSync } = await admin.as.mutation(api.machineryWrites.markRunFailed, {
+        runId,
+        reason: 'gone',
+      });
       expect((await scheduledNames(t)).includes('weatherArchive:maybeSyncWeatherCells')).toBe(
         schedules,
       );
+      // The answer says what was asked for, so the receipt can't say otherwise.
+      expect(cellSync).toBe(schedules);
     });
   });
 });

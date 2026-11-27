@@ -218,7 +218,11 @@ export const ACTION_WORDS = {
   confirm: 'Mark failed',
 
   marked: 'Marked failed',
-  markedLine: "Nothing was scheduled. If the loader's own close comes, it's kept beside the mark.",
+  /** `cellSync`: the server asked for the weather-cell sync (the run had already changed bodies). */
+  markedLine: (cellSync: boolean) =>
+    cellSync
+      ? "It had already changed bodies, so a weather-cell sync was asked for. If the loader's own close comes, it's kept beside the mark."
+      : "Nothing was scheduled. If the loader's own close comes, it's kept beside the mark.",
   waited: 'Waiting 30 minutes',
   waitedLine: (clock: string) => `The stalled alarm is held until ${clock}`,
   stopAsked: 'Asked to stop',

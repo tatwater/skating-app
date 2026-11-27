@@ -10,7 +10,7 @@ import { type RunServer, useRunWrites } from './useRunWrites';
 const TARGET = { runId: LOAD_ID, title: 'load' };
 const UNTIL = Date.UTC(2026, 9, 12, 18, 42);
 
-function setup(fail?: unknown) {
+function setup(fail?: unknown, cellSync = false) {
   const manager = createToastManager();
   const added: { title?: unknown; description?: unknown; timeout?: unknown }[] = [];
   const add = manager.add.bind(manager);
@@ -24,7 +24,7 @@ function setup(fail?: unknown) {
       return value;
     });
   const server = {
-    markRunFailed: answer({ actionId: 'act_mark' }),
+    markRunFailed: answer({ actionId: 'act_mark', cellSync }),
     waitOnRun: answer({ actionId: 'act_wait', until: UNTIL }),
     requestRunStop: answer({ actionId: 'act_stop' }),
   } as unknown as RunServer & Record<keyof RunServer, ReturnType<typeof vi.fn>>;
@@ -50,6 +50,18 @@ describe('the run writes', () => {
       undoNeedsReason: false,
     });
     expect(added).toHaveLength(0);
+  });
+
+  test('a mark that asked for the weather-cell sync says so in its receipt', async () => {
+    const { writes, announce } = setup(undefined, true);
+    expect(await writes.markFailed(TARGET, 'Laptop slept')).toBe(true);
+    expect(announce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Marked failed',
+        description:
+          "It had already changed bodies, so a weather-cell sync was asked for. If the loader's own close comes, it's kept beside the mark.",
+      }),
+    );
   });
 
   test('Mark the campaign failed too sends the campaign’s mark naming the pass it follows', async () => {
