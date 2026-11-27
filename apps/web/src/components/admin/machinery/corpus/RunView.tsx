@@ -173,6 +173,7 @@ export function RunView({
         {quiet && (
           <Section data-slot="what-to-check" title={W.whatToCheck} level={3}>
             <FactList
+              className="grid-cols-[7.5rem_minmax(0,1fr)]"
               rows={[
                 { label: W.checkTerminal, value: W.checkTerminalBody },
                 {

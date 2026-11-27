@@ -126,7 +126,7 @@ export function CampaignView({
           data-slot="passes"
           title={W.passesSection}
           level={3}
-          end={<End>{W.onYourMachine}</End>}
+          {...(!narrow && { end: <End>{W.onYourMachine}</End> })}
         >
           {!view.recorded && <Note data-slot="not-recorded-campaign">{W.notRecordedCampaign}</Note>}
           {view.recorded && view.flags !== null && view.flags.length > 0 && (
@@ -353,6 +353,7 @@ function Quiet({
       {quiet && (
         <Section data-slot="what-to-check" title={W.whatToCheck} level={3}>
           <FactList
+            className="grid-cols-[7.5rem_minmax(0,1fr)]"
             rows={[
               { label: W.checkTerminal, value: W.checkTerminalBody },
               {

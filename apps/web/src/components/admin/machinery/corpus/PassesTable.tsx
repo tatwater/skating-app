@@ -74,18 +74,20 @@ export function PassesTable({
         >
           {state.words}
         </TableCell>
-        <TableCell align="end" mono>
+        <TableCell align="end" mono className="whitespace-nowrap">
           {run === null
             ? ''
             : run.inUp === null
               ? '—'
               : `${count(run.inUp.in)} / ${count(run.inUp.up)}`}
         </TableCell>
-        <TableCell align="end" mono>
+        <TableCell align="end" mono className="whitespace-nowrap">
           {run === null ? '' : count(run.failed)}
         </TableCell>
-        <TableCell mono>{run === null ? '' : clock(run.startedAt, timeZone)}</TableCell>
-        <TableCell align="end" mono>
+        <TableCell mono className="whitespace-nowrap">
+          {run === null ? '' : clock(run.startedAt, timeZone)}
+        </TableCell>
+        <TableCell align="end" mono className="whitespace-nowrap">
           {run === null
             ? ''
             : run.finishedAt === null
@@ -96,7 +98,8 @@ export function PassesTable({
     );
   };
   return (
-    <Table data-slot="passes-table">
+    // Its columns never squeeze to a phone: below its width the table scrolls in its own box.
+    <Table data-slot="passes-table" className="min-w-[46rem]">
       <TableHeader>
         <TableRow>
           <TableHead className="w-(--space-4) pe-0">
