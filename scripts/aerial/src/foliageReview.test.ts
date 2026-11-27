@@ -594,6 +594,9 @@ describe('writeFoliageSheet', () => {
     writeFileSync(join(thumbs, `${aSept25.itemId}.jpg`), 'jpeg');
     const html = writeFoliageSheet(join(dir, 'sheet'), thumbs, r);
     const page = readFileSync(html, 'utf8');
+    // A struck frame is demoted, not dropped: the sheet never tells him a cell can't show one.
+    expect(page).not.toContain('never falls onto');
+    expect(page).toContain('only where nothing green has pixels');
     expect(page).toContain('<title>Summer aerial foliage review</title>');
     expect(page).toContain('Vermont · 20 Sep 2025 · 0.3 m');
     expect(page).toContain("strike the whole day, keeping the 1 frames that don't read turned");

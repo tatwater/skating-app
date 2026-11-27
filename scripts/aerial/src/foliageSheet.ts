@@ -205,7 +205,7 @@ ${review.borderline
 <p>Picks that still read turned after the proposal: ${review.stillTurned.length} (${review.stillTurned.filter((t) => t.why === 'allTurned').length} all turned, ${review.stillTurned.filter((t) => t.why === 'noLeafOn').length} never leaf-on${unexplained.length > 0 ? `, and ${unexplained.length} otherwise: ${unexplained.map((t) => `${esc(t.key)} (${t.why === 'cloudKept' ? 'kept by the cloud review' : 'not proposed'})`).join(', ')}` : ''}).</p>
 
 <h2>Proposed, changing no pick (${review.quietDays.length})</h2>
-<p>Turned frames that only sit in fallback stacks today. Struck, they move below every green frame, so a cell never falls onto them.</p>
+<p>Turned frames that only sit in fallback stacks today. Struck, they move below every green frame: a cell shows one only where nothing green has pixels (a partial pick's gap), never as its pick while a green frame is left.</p>
 <table><tr><th>Flight day</th><th>Turned</th><th>Proposal</th></tr>
 ${review.quietDays.map((d) => `<tr><td>${esc(d.state)} ${longDay(d.acquired)}</td><td>${d.counts.turned} of ${d.counts.turned + d.counts.borderline + d.counts.green + d.counts.noVerdict}</td><td>${esc(proposalLine(d))}</td></tr>`).join('\n')}
 </table>
