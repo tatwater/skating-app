@@ -143,7 +143,8 @@ else
 fi
 
 # The logger ignores Ctrl-C: the interrupt is the script's to handle, and a `tee` killed by it would
-# lose the last lines — the campaign row's close among them — exactly when they matter.
+# lose the last lines — the campaign row's close among them — exactly when they matter. (Bash already
+# has a script's background jobs ignore SIGINT; this says so rather than relying on it.)
 exec > >(trap '' INT; stamp_lines | tee "$LOG") 2>&1
 TEE_PID=$!
 
