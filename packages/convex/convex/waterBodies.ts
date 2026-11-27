@@ -9135,6 +9135,8 @@ export const sweepAllBodySummaries = internalAction({
   handler: async (ctx): Promise<{ swept: number; pages: number }> => walkAllBodySummaries(ctx),
 });
 
+const sweepDueBodySummariesArgs = {};
+
 /**
  * The cron entry point: refresh the cards that time has changed — **and only those.**
  *
@@ -9143,33 +9145,40 @@ export const sweepAllBodySummaries = internalAction({
  * first tick walks everything (recording the run that marks the backfill done), a tick that finds
  * that walk still running — or failed within the last six hours — sweeps what is already due, and
  * every tick after a successful walk reads only due rows.
+ *
+ * (Its body is exported as `sweepDueBodySummariesHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
+export async function sweepDueBodySummariesHandler(
+  ctx: ActionCtx,
+): Promise<{ mode: 'walk' | 'due'; refreshed: number; batches: number }> {
+  const state = await ctx.runQuery(internal.waterBodies.summaryBackfillState, {});
+  if (state === 'needed') {
+    const { swept, pages } = await walkAllBodySummaries(ctx);
+    return { mode: 'walk', refreshed: swept, batches: pages };
+  }
+  let refreshed = 0;
+  let batches = 0;
+  let more = true;
+  // The run's cutoff (D258): a card that fails is moved just past it, so the run tries it once.
+  const cutoff = Date.now();
+  // Each batch moves every row it read past `cutoff`, so this ends; the guard is for a bug, not a
+  // budget — 200 batches is 10,000 cards due in one hour, fifty times today's whole set.
+  while (more && batches < 200) {
+    const batch: { refreshed: number; more: boolean } = await ctx.runMutation(
+      internal.waterBodies.refreshDueBodySummaries,
+      { cutoff },
+    );
+    refreshed += batch.refreshed;
+    more = batch.more;
+    batches++;
+  }
+  return { mode: 'due', refreshed, batches };
+}
+
 export const sweepDueBodySummaries = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ mode: 'walk' | 'due'; refreshed: number; batches: number }> => {
-    const state = await ctx.runQuery(internal.waterBodies.summaryBackfillState, {});
-    if (state === 'needed') {
-      const { swept, pages } = await walkAllBodySummaries(ctx);
-      return { mode: 'walk', refreshed: swept, batches: pages };
-    }
-    let refreshed = 0;
-    let batches = 0;
-    let more = true;
-    // The run's cutoff (D258): a card that fails is moved just past it, so the run tries it once.
-    const cutoff = Date.now();
-    // Each batch moves every row it read past `cutoff`, so this ends; the guard is for a bug, not a
-    // budget — 200 batches is 10,000 cards due in one hour, fifty times today's whole set.
-    while (more && batches < 200) {
-      const batch: { refreshed: number; more: boolean } = await ctx.runMutation(
-        internal.waterBodies.refreshDueBodySummaries,
-        { cutoff },
-      );
-      refreshed += batch.refreshed;
-      more = batch.more;
-      batches++;
-    }
-    return { mode: 'due', refreshed, batches };
-  },
+  args: sweepDueBodySummariesArgs,
+  handler: sweepDueBodySummariesHandler,
 });
 
 /**

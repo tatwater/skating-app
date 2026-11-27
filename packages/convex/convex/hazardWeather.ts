@@ -196,81 +196,88 @@ export const storeHazardWeather = internalMutation({
   },
 });
 
+const refreshHazardWeatherArgs = {};
+
 /**
  * Refresh weather-adjusted decay for every active hazard due a refresh. Runs hourly; per-hazard cadence is
  * gated by `WEATHER_REFRESH_MIN_INTERVAL_HOURS`. The shared `resolveWeatherSince` cache means many hazards
  * on the same body/window fold into one Open-Meteo fetch.
+ *
+ * (Its body is exported as `refreshHazardWeatherHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
-export const refreshHazardWeather = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ refreshed: number; failed: number }> => {
-    const now = Date.now();
-    const minIntervalMs = WEATHER_REFRESH_MIN_INTERVAL_HOURS * HOUR_MS;
-    const lookbackMs = HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS;
+export async function refreshHazardWeatherHandler(
+  ctx: ActionCtx,
+): Promise<{ refreshed: number; failed: number }> {
+  const now = Date.now();
+  const minIntervalMs = WEATHER_REFRESH_MIN_INTERVAL_HOURS * HOUR_MS;
+  const lookbackMs = HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS;
 
-    const { jobs, deferred }: { jobs: HazardWeatherJob[]; deferred: Id<'hazards'>[] } =
-      await ctx.runQuery(internal.hazardWeather.listActiveHazardsForWeather, {});
-    // Rotate the ones we declined out of the queue's front before doing any work, so a tick that
-    // fails partway through still leaves the backlog draining rather than stuck.
-    if (deferred.length > 0) {
-      await ctx.runMutation(internal.hazardWeather.deferHazardWeather, {
-        hazardIds: deferred,
-        weatherAdjustedAt: now,
-      });
+  const { jobs, deferred }: { jobs: HazardWeatherJob[]; deferred: Id<'hazards'>[] } =
+    await ctx.runQuery(internal.hazardWeather.listActiveHazardsForWeather, {});
+  // Rotate the ones we declined out of the queue's front before doing any work, so a tick that
+  // fails partway through still leaves the backlog draining rather than stuck.
+  if (deferred.length > 0) {
+    await ctx.runMutation(internal.hazardWeather.deferHazardWeather, {
+      hazardIds: deferred,
+      weatherAdjustedAt: now,
+    });
+  }
+  // Which hazards were failing, so a success clears only those (D258).
+  const { keys: failingKeys }: { keys: string[] } = await ctx.runQuery(
+    internal.recurringJobs.failingKeys,
+    { job: 'hazardWeather' },
+  );
+  const wasFailing = new Set(failingKeys);
+  const failed: { key: string; errorClass: string }[] = [];
+  const recovered: string[] = [];
+  let refreshed = 0;
+  for (const job of jobs) {
+    if (job.weatherAdjustedAt !== undefined && now - job.weatherAdjustedAt < minIntervalMs) {
+      continue; // refreshed recently enough — the effective cadence gate
     }
-    // Which hazards were failing, so a success clears only those (D258).
-    const { keys: failingKeys }: { keys: string[] } = await ctx.runQuery(
-      internal.recurringJobs.failingKeys,
-      { job: 'hazardWeather' },
-    );
-    const wasFailing = new Set(failingKeys);
-    const failed: { key: string; errorClass: string }[] = [];
-    const recovered: string[] = [];
-    let refreshed = 0;
-    for (const job of jobs) {
-      if (job.weatherAdjustedAt !== undefined && now - job.weatherAdjustedAt < minIntervalMs) {
-        continue; // refreshed recently enough — the effective cadence gate
-      }
-      // Isolate each hazard: an unexpected throw from the resolver/mutation (e.g. a transient OCC or cache
-      // write conflict) skips just this hazard, not the whole tick. `fetchOpenMeteoHourly` already swallows
-      // network/HTTP errors into `null`; this catches everything else so one bad job can't starve the rest.
-      // Fail-open: a skipped hazard keeps its last-good multiplier (or none ⇒ 1); an empty fetch retries
-      // next tick, a throw after the cadence gate (below).
-      try {
-        const stored = await asItem(job.hazardId, () =>
-          refreshOneHazard(ctx, job, now, lookbackMs),
-        );
-        if (stored) refreshed++;
-        // A fetch that came back empty is a blip, not progress: a count stands until a refresh lands.
-        if (stored && wasFailing.has(job.hazardId)) recovered.push(job.hazardId);
-      } catch (err) {
-        // `asItem` has logged it; only its class is kept here.
-        failed.push({ key: job.hazardId, errorClass: errorClassOf(err) });
-      }
+    // Isolate each hazard: an unexpected throw from the resolver/mutation (e.g. a transient OCC or cache
+    // write conflict) skips just this hazard, not the whole tick. `fetchOpenMeteoHourly` already swallows
+    // network/HTTP errors into `null`; this catches everything else so one bad job can't starve the rest.
+    // Fail-open: a skipped hazard keeps its last-good multiplier (or none ⇒ 1); an empty fetch retries
+    // next tick, a throw after the cadence gate (below).
+    try {
+      const stored = await asItem(job.hazardId, () => refreshOneHazard(ctx, job, now, lookbackMs));
+      if (stored) refreshed++;
+      // A fetch that came back empty is a blip, not progress: a count stands until a refresh lands.
+      if (stored && wasFailing.has(job.hazardId)) recovered.push(job.hazardId);
+    } catch (err) {
+      // `asItem` has logged it; only its class is kept here.
+      failed.push({ key: job.hazardId, errorClass: errorClassOf(err) });
     }
-    // **A hazard whose refresh throws goes to the back** (D258). It used to stay at the front of the
-    // stalest-first read, un-stamped, so enough of them would fill every tick's page. Now it is
-    // stamped as tried — keeping its last good multiplier, so nothing about the hazard changes, and a
-    // stale one stays exactly as it was — and comes round again after the cadence gate. Each failure
-    // is counted (never parked: the gate already spaces its tries), and a success clears it.
-    if (failed.length > 0) {
-      await ctx.runMutation(internal.hazardWeather.deferHazardWeather, {
-        hazardIds: failed.map((f) => f.key as Id<'hazards'>),
-        weatherAdjustedAt: now,
-      });
-    }
-    if (failed.length > 0 || recovered.length > 0) {
-      await ctx.runMutation(internal.recurringJobs.settle, {
-        job: 'hazardWeather',
-        failed,
-        succeeded: recovered,
-        park: false,
-      });
-    }
-    // Hazards whose multiplier was stored this tick — not the ones the gate passed over, came back
-    // empty or threw.
-    return { refreshed, failed: failed.length };
-  },
+  }
+  // **A hazard whose refresh throws goes to the back** (D258). It used to stay at the front of the
+  // stalest-first read, un-stamped, so enough of them would fill every tick's page. Now it is
+  // stamped as tried — keeping its last good multiplier, so nothing about the hazard changes, and a
+  // stale one stays exactly as it was — and comes round again after the cadence gate. Each failure
+  // is counted (never parked: the gate already spaces its tries), and a success clears it.
+  if (failed.length > 0) {
+    await ctx.runMutation(internal.hazardWeather.deferHazardWeather, {
+      hazardIds: failed.map((f) => f.key as Id<'hazards'>),
+      weatherAdjustedAt: now,
+    });
+  }
+  if (failed.length > 0 || recovered.length > 0) {
+    await ctx.runMutation(internal.recurringJobs.settle, {
+      job: 'hazardWeather',
+      failed,
+      succeeded: recovered,
+      park: false,
+    });
+  }
+  // Hazards whose multiplier was stored this tick — not the ones the gate passed over, came back
+  // empty or threw.
+  return { refreshed, failed: failed.length };
+}
+
+export const refreshHazardWeather = internalAction({
+  args: refreshHazardWeatherArgs,
+  handler: refreshHazardWeatherHandler,
 });
 
 /**

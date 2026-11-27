@@ -75,7 +75,7 @@ import {
   type WeatherTier,
   weatherCellFor,
 } from '@skating/core';
-import { v } from 'convex/values';
+import { type ObjectType, v } from 'convex/values';
 import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx, MutationCtx } from './_generated/server';
@@ -900,6 +900,23 @@ export function reconcileSatisfiedBy(
  */
 export const RECONCILE_DEBOUNCE_MS = 10 * 60 * 1000;
 
+const maybeSyncWeatherCellsArgs = {
+  /**
+   * When the reconcile was *asked for*. Present only on the import-triggered path.
+   *
+   * ⚠ **The debounce turns on one invariant: a walk that STARTED at S has seen every body written
+   * before S.** So a request is satisfied by any run that began at or after it, whichever import
+   * made it — which is what lets a five-loader campaign collapse into a single walk without
+   * tracking who wrote what.
+   *
+   * It previously said *completes* rather than *starts*, and that was a real bug, not a wording
+   * slip: a paginated walk finishing after an import may have paged past those rows long before
+   * they were written, so the import's changes went unregistered until the weekly cron. See
+   * `reconcileSatisfiedBy` and the `weatherCellSyncs` schema comment.
+   */
+  requestedAt: v.optional(v.number()),
+};
+
 /**
  * Re-derive both tiers' cells from the corpus.
  *
@@ -928,41 +945,31 @@ export const RECONCILE_DEBOUNCE_MS = 10 * 60 * 1000;
  * exchange the tick reports what it actually did instead of only that it asked. The scheduled shape
  * was tried first and made the wiring untestable, which is the second time this phase has learned
  * that lesson.
+ *
+ * (Its body is exported as `maybeSyncWeatherCellsHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
+export async function maybeSyncWeatherCellsHandler(
+  ctx: ActionCtx,
+  { requestedAt }: ObjectType<typeof maybeSyncWeatherCellsArgs>,
+): Promise<{ skipped?: 'already reconciled'; tiers: { tier: string; pruned: number }[] }> {
+  if (requestedAt !== undefined) {
+    const states = await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
+    if (reconcileSatisfiedBy(states, requestedAt, Date.now())) {
+      return { skipped: 'already reconciled', tiers: [] };
+    }
+  }
+  const tiers: { tier: string; pruned: number }[] = [];
+  for (const tier of WEATHER_TIERS) {
+    const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier });
+    tiers.push({ tier, pruned: res.pruned });
+  }
+  return { tiers };
+}
+
 export const maybeSyncWeatherCells = internalAction({
-  args: {
-    /**
-     * When the reconcile was *asked for*. Present only on the import-triggered path.
-     *
-     * ⚠ **The debounce turns on one invariant: a walk that STARTED at S has seen every body written
-     * before S.** So a request is satisfied by any run that began at or after it, whichever import
-     * made it — which is what lets a five-loader campaign collapse into a single walk without
-     * tracking who wrote what.
-     *
-     * It previously said *completes* rather than *starts*, and that was a real bug, not a wording
-     * slip: a paginated walk finishing after an import may have paged past those rows long before
-     * they were written, so the import's changes went unregistered until the weekly cron. See
-     * `reconcileSatisfiedBy` and the `weatherCellSyncs` schema comment.
-     */
-    requestedAt: v.optional(v.number()),
-  },
-  handler: async (
-    ctx,
-    { requestedAt },
-  ): Promise<{ skipped?: 'already reconciled'; tiers: { tier: string; pruned: number }[] }> => {
-    if (requestedAt !== undefined) {
-      const states = await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
-      if (reconcileSatisfiedBy(states, requestedAt, Date.now())) {
-        return { skipped: 'already reconciled', tiers: [] };
-      }
-    }
-    const tiers: { tier: string; pruned: number }[] = [];
-    for (const tier of WEATHER_TIERS) {
-      const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier });
-      tiers.push({ tier, pruned: res.pruned });
-    }
-    return { tiers };
-  },
+  args: maybeSyncWeatherCellsArgs,
+  handler: maybeSyncWeatherCellsHandler,
 });
 
 /** One registered cell as a registry walk reports it — the row shape `upsertWeatherCells` takes. */
@@ -1876,63 +1883,70 @@ export const isSweepSeasonOpen = internalQuery({
   },
 });
 
+const maybeRefreshFilterTierArgs = {};
+
 /**
  * The daily Tier-B tick: gate on the season, then start the batched sweep.
  *
  * Thin on purpose. The sweep itself (`refreshTierDays`) knows nothing about seasons, so it stays
  * callable by hand for an operator backfill out of season.
+ *
+ * (Its body is exported as `maybeRefreshFilterTierHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
-export const maybeRefreshFilterTier = internalAction({
-  args: {},
-  handler: async (
-    ctx,
-  ): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> => {
-    const now = Date.now();
-    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
-    if (!gate.open) {
-      return {
-        started: false,
-        season: gate.season,
-        reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
-      };
-    }
+export async function maybeRefreshFilterTierHandler(
+  ctx: ActionCtx,
+): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> {
+  const now = Date.now();
+  const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
+  if (!gate.open) {
+    return {
+      started: false,
+      season: gate.season,
+      reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
+    };
+  }
 
-    // ⚠ **Self-heal an empty registry before sweeping it.** `refreshTierDays` pages `weatherCells`,
-    // so on a fresh deployment — or any deployment where the weekly reconciler has not run yet — it
-    // would page zero cells, return `done: true`, and report a perfectly healthy tick that fetched
-    // nothing at all. Waiting up to a week for `maybeSyncWeatherCells` would mean a week of an empty
-    // archive at the exact moment the season opens.
+  // ⚠ **Self-heal an empty registry before sweeping it.** `refreshTierDays` pages `weatherCells`,
+  // so on a fresh deployment — or any deployment where the weekly reconciler has not run yet — it
+  // would page zero cells, return `done: true`, and report a perfectly healthy tick that fetched
+  // nothing at all. Waiting up to a week for `maybeSyncWeatherCells` would mean a week of an empty
+  // archive at the exact moment the season opens.
+  if (await ctx.runQuery(internal.weatherArchive.tierRegistryEmpty, { tier: 'filter' })) {
+    console.warn(
+      '[weatherArchive] filter registry empty at sweep time — backfilling cells inline. ' +
+        'This should normally have been done by the weekly maybeSyncWeatherCells.',
+    );
+    await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
     if (await ctx.runQuery(internal.weatherArchive.tierRegistryEmpty, { tier: 'filter' })) {
-      console.warn(
-        '[weatherArchive] filter registry empty at sweep time — backfilling cells inline. ' +
-          'This should normally have been done by the weekly maybeSyncWeatherCells.',
-      );
-      await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier: 'filter' });
-      if (await ctx.runQuery(internal.weatherArchive.tierRegistryEmpty, { tier: 'filter' })) {
-        // A corpus with no listed bodies is the only honest way to reach here, and it is worth
-        // saying out loud rather than sweeping zero cells in silence every day for ever.
-        console.error('[weatherArchive] registry still empty after backfill — corpus has no cells');
-        return { started: false, season: gate.season, reason: 'cell registry empty' };
-      }
+      // A corpus with no listed bodies is the only honest way to reach here, and it is worth
+      // saying out loud rather than sweeping zero cells in silence every day for ever.
+      console.error('[weatherArchive] registry still empty after backfill — corpus has no cells');
+      return { started: false, season: gate.season, reason: 'cell registry empty' };
     }
+  }
 
-    // Cold start? Yesterday is the newest day the sweep would ever have completed, so its absence
-    // means this tier holds nothing current — a season that just opened, or a sweep that has been
-    // down long enough for the gap ladder not to help. Reach back a fortnight instead of three days,
-    // which costs the same single Open-Meteo billing unit. See `SEASON_OPEN_PAST_DAYS`.
-    const cold = !(await ctx.runQuery(internal.weatherArchive.tierHasDay, {
-      tier: 'filter',
-      dayMs: todayKey(now) - DAY_MS,
-    }));
-    const pastDays = cold ? SEASON_OPEN_PAST_DAYS : APPEND_PAST_DAYS;
+  // Cold start? Yesterday is the newest day the sweep would ever have completed, so its absence
+  // means this tier holds nothing current — a season that just opened, or a sweep that has been
+  // down long enough for the gap ladder not to help. Reach back a fortnight instead of three days,
+  // which costs the same single Open-Meteo billing unit. See `SEASON_OPEN_PAST_DAYS`.
+  const cold = !(await ctx.runQuery(internal.weatherArchive.tierHasDay, {
+    tier: 'filter',
+    dayMs: todayKey(now) - DAY_MS,
+  }));
+  const pastDays = cold ? SEASON_OPEN_PAST_DAYS : APPEND_PAST_DAYS;
 
-    // **Runs the first batch inline rather than scheduling it.** The sweep reschedules its own
-    // remaining batches either way, so this costs exactly one batch of the same work the scheduled
-    // version would have done — and in exchange the tick reports what actually happened instead of
-    // only that it asked for something to happen.
-    await ctx.runAction(internal.weatherArchive.refreshTierDays, { tier: 'filter', pastDays });
-    return { started: true, season: gate.season, pastDays };
-  },
+  // **Runs the first batch inline rather than scheduling it.** The sweep reschedules its own
+  // remaining batches either way, so this costs exactly one batch of the same work the scheduled
+  // version would have done — and in exchange the tick reports what actually happened instead of
+  // only that it asked for something to happen.
+  await ctx.runAction(internal.weatherArchive.refreshTierDays, { tier: 'filter', pastDays });
+  return { started: true, season: gate.season, pastDays };
+}
+
+export const maybeRefreshFilterTier = internalAction({
+  args: maybeRefreshFilterTierArgs,
+  handler: maybeRefreshFilterTierHandler,
 });
 
 /**
@@ -1953,6 +1967,8 @@ export const tierHasDay = internalQuery({
   },
 });
 
+const maybeSweepGapsArgs = {};
+
 /**
  * The daily gap sweep, same gate and same reasoning.
  *
@@ -1966,23 +1982,28 @@ export const tierHasDay = internalQuery({
  * It costs little: the sweep skips any cell it has never fetched for
  * (`present.length === 0 && missing.length === 0`), and a `browse` cell only ever has rows because a
  * person opened that lake. So the browse half is proportional to attention, not to the corpus.
+ *
+ * (Its body is exported as `maybeSweepGapsHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
+export async function maybeSweepGapsHandler(
+  ctx: ActionCtx,
+): Promise<{ started: boolean; season: string; repaired?: Record<string, number> }> {
+  const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, {
+    nowMs: Date.now(),
+  });
+  if (!gate.open) return { started: false, season: gate.season };
+  const repaired: Record<string, number> = {};
+  for (const tier of WEATHER_TIERS) {
+    const res = await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, { tier });
+    repaired[tier] = res.repaired;
+  }
+  return { started: true, season: gate.season, repaired };
+}
+
 export const maybeSweepGaps = internalAction({
-  args: {},
-  handler: async (
-    ctx,
-  ): Promise<{ started: boolean; season: string; repaired?: Record<string, number> }> => {
-    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, {
-      nowMs: Date.now(),
-    });
-    if (!gate.open) return { started: false, season: gate.season };
-    const repaired: Record<string, number> = {};
-    for (const tier of WEATHER_TIERS) {
-      const res = await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, { tier });
-      repaired[tier] = res.repaired;
-    }
-    return { started: true, season: gate.season, repaired };
-  },
+  args: maybeSweepGapsArgs,
+  handler: maybeSweepGapsHandler,
 });
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -2724,31 +2745,38 @@ export const refreshBayDays = internalAction({
   },
 });
 
+const maybeRefreshBayTierArgs = {};
+
 /**
  * The daily bay tick (A09 / Workstream 7): gate on the same season-open signal as Tier B (D161),
  * then start the batched bay append. Cold-start reaches back a fortnight, judged by whether the
  * *browse* tier holds yesterday at all — the same test `maybeRefreshFilterTier` makes on its tier.
+ *
+ * (Its body is exported as `maybeRefreshBayTierHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
+export async function maybeRefreshBayTierHandler(
+  ctx: ActionCtx,
+): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> {
+  const now = Date.now();
+  const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
+  if (!gate.open) {
+    return {
+      started: false,
+      season: gate.season,
+      reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
+    };
+  }
+  const cold = !(await ctx.runQuery(internal.weatherArchive.tierHasDay, {
+    tier: 'browse',
+    dayMs: todayKey(now) - DAY_MS,
+  }));
+  const pastDays = cold ? SEASON_OPEN_PAST_DAYS : APPEND_PAST_DAYS;
+  await ctx.runAction(internal.weatherArchive.refreshBayDays, { pastDays });
+  return { started: true, season: gate.season, pastDays };
+}
+
 export const maybeRefreshBayTier = internalAction({
-  args: {},
-  handler: async (
-    ctx,
-  ): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> => {
-    const now = Date.now();
-    const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
-    if (!gate.open) {
-      return {
-        started: false,
-        season: gate.season,
-        reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
-      };
-    }
-    const cold = !(await ctx.runQuery(internal.weatherArchive.tierHasDay, {
-      tier: 'browse',
-      dayMs: todayKey(now) - DAY_MS,
-    }));
-    const pastDays = cold ? SEASON_OPEN_PAST_DAYS : APPEND_PAST_DAYS;
-    await ctx.runAction(internal.weatherArchive.refreshBayDays, { pastDays });
-    return { started: true, season: gate.season, pastDays };
-  },
+  args: maybeRefreshBayTierArgs,
+  handler: maybeRefreshBayTierHandler,
 });

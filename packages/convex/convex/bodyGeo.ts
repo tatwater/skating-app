@@ -22,7 +22,7 @@ import {
   REACH_PAD_DEG,
   townKindOf,
 } from '@skating/core';
-import { ConvexError, v } from 'convex/values';
+import { ConvexError, type ObjectType, v } from 'convex/values';
 import type { MultiPolygon, Polygon } from 'geojson';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -1197,6 +1197,8 @@ const CONCURRENCY = 6;
 /** A run hands over before an action's limit. */
 const RUN_MS = 4 * 60_000;
 
+const computeDueArgs = { parked: v.optional(v.boolean()), chain: v.optional(v.boolean()) };
+
 /**
  * **Recompute the due bodies**: up to {@link RUN_BATCH} a pass, {@link CONCURRENCY} at a time, each
  * isolated — a body that fails is recorded (`lib/attempts.ts`) and the rest go on; parked bodies wait
@@ -1211,57 +1213,59 @@ const RUN_MS = 4 * 60_000;
  * (without `chain`, and never for the daily retry, which walks every parked body while its time
  * lasts), or every due body it can see ({@link DUE_WINDOW}) already failed in this run — the next run
  * (the cron's, or the day's) takes them, a fresh attempt each.
+ *
+ * (Its body is exported as `computeDueHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
-export const computeDue = internalAction({
-  args: { parked: v.optional(v.boolean()), chain: v.optional(v.boolean()) },
-  handler: async (
-    ctx,
-    { parked = false, chain = false },
-  ): Promise<{ computed: number; failed: number; done: boolean; namesRead: number }> => {
-    const started = Date.now();
-    let computed = 0;
-    let failed = 0;
-    const tried = new Set<string>();
-    const names = new NamesakeReads();
-    for (;;) {
-      const ask = Math.min(DUE_WINDOW, RUN_BATCH + tried.size);
-      const seen: Id<'waterBodies'>[] = await ctx.runQuery(internal.bodyGeo.due, {
-        limit: ask,
-        parked,
-      });
-      const ids = seen.filter((id) => !tried.has(id)).slice(0, RUN_BATCH);
-      if (ids.length === 0) {
-        return { computed, failed, done: seen.length < ask, namesRead: names.reads };
-      }
-      for (let i = 0; i < ids.length; i += CONCURRENCY) {
-        const slice = ids.slice(i, i + CONCURRENCY);
-        for (const id of slice) tried.add(id);
-        const results = await Promise.allSettled(slice.map((id) => computeOne(ctx, id, names)));
-        for (const [j, r] of results.entries()) {
-          if (r.status === 'fulfilled') {
-            computed++;
-          } else {
-            failed++;
-            await ctx.runMutation(internal.bodyGeo.recordFailure, {
-              waterBodyId: slice[j] as Id<'waterBodies'>,
-              errorClass: errorClassOf(r.reason),
-              byDailyRetry: parked,
-            });
-          }
+export async function computeDueHandler(
+  ctx: ActionCtx,
+  { parked = false, chain = false }: ObjectType<typeof computeDueArgs>,
+): Promise<{ computed: number; failed: number; done: boolean; namesRead: number }> {
+  const started = Date.now();
+  let computed = 0;
+  let failed = 0;
+  const tried = new Set<string>();
+  const names = new NamesakeReads();
+  for (;;) {
+    const ask = Math.min(DUE_WINDOW, RUN_BATCH + tried.size);
+    const seen: Id<'waterBodies'>[] = await ctx.runQuery(internal.bodyGeo.due, {
+      limit: ask,
+      parked,
+    });
+    const ids = seen.filter((id) => !tried.has(id)).slice(0, RUN_BATCH);
+    if (ids.length === 0) {
+      return { computed, failed, done: seen.length < ask, namesRead: names.reads };
+    }
+    for (let i = 0; i < ids.length; i += CONCURRENCY) {
+      const slice = ids.slice(i, i + CONCURRENCY);
+      for (const id of slice) tried.add(id);
+      const results = await Promise.allSettled(slice.map((id) => computeOne(ctx, id, names)));
+      for (const [j, r] of results.entries()) {
+        if (r.status === 'fulfilled') {
+          computed++;
+        } else {
+          failed++;
+          await ctx.runMutation(internal.bodyGeo.recordFailure, {
+            waterBodyId: slice[j] as Id<'waterBodies'>,
+            errorClass: errorClassOf(r.reason),
+            byDailyRetry: parked,
+          });
         }
       }
-      if (Date.now() - started > RUN_MS) {
-        if (chain) await ctx.scheduler.runAfter(0, internal.bodyGeo.computeDue, { parked, chain });
-        return { computed, failed, done: false, namesRead: names.reads };
-      }
-      // The cron's run stops at a batch; the daily retry walks every parked body while its time lasts
-      // (one it fails is re-stamped to the back, so each pass's due list starts with untried ones).
-      if (!chain && !parked && computed + failed >= RUN_BATCH) {
-        return { computed, failed, done: false, namesRead: names.reads };
-      }
     }
-  },
-});
+    if (Date.now() - started > RUN_MS) {
+      if (chain) await ctx.scheduler.runAfter(0, internal.bodyGeo.computeDue, { parked, chain });
+      return { computed, failed, done: false, namesRead: names.reads };
+    }
+    // The cron's run stops at a batch; the daily retry walks every parked body while its time lasts
+    // (one it fails is re-stamped to the back, so each pass's due list starts with untried ones).
+    if (!chain && !parked && computed + failed >= RUN_BATCH) {
+      return { computed, failed, done: false, namesRead: names.reads };
+    }
+  }
+}
+
+export const computeDue = internalAction({ args: computeDueArgs, handler: computeDueHandler });
 
 /** Every stale body, chained until none is due — the backfill's second step. */
 export const computeAll = internalAction({

@@ -610,14 +610,20 @@ export function slotOf(granuleId: string): { slot: string; mission: StacMission 
 
 // ─── 1. Poll ────────────────────────────────────────────────────────────────────────────────────
 
-export const poll = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ outcome: Outcome; detail?: string }> => {
-    const startedAt = Date.now();
-    // The pump's own 3-minute tick picks up whatever this queues.
-    return await pollOnce(ctx, archiveSeasonAt(startedAt), startedAt);
-  },
-});
+const pollArgs = {};
+
+/**
+ *
+ * (Its body is exported as `pollHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
+ */
+export async function pollHandler(ctx: ActionCtx): Promise<{ outcome: Outcome; detail?: string }> {
+  const startedAt = Date.now();
+  // The pump's own 3-minute tick picks up whatever this queues.
+  return await pollOnce(ctx, archiveSeasonAt(startedAt), startedAt);
+}
+
+export const poll = internalAction({ args: pollArgs, handler: pollHandler });
 
 async function pollOnce(
   ctx: ActionCtx,
@@ -881,46 +887,52 @@ interface RunOutcome {
   blindTicks?: number;
 }
 
-export const pump = internalAction({
-  args: {},
-  handler: async (ctx): Promise<PumpCounts | { skipped: string }> => {
-    const startedAt = Date.now();
-    const season = archiveSeasonAt(startedAt);
-    // Most ticks: nothing queued or cutting — one read, no lease, no write.
-    if (!(await ctx.runQuery(internal.imageryLive.hasWork, { season }))) {
-      return { skipped: 'nothing to do' };
-    }
-    const token = crypto.randomUUID();
-    const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'pump', token });
-    if (!begun.ok) return { skipped: begun.reason };
-    // ⚠ A run that throws backs off, leaves a run row, and tells the admins — the same as any
-    // other failure, rather than a silent gap.
-    let outcome: RunOutcome = { backoff: true };
-    try {
-      const result = await pumpOnce(ctx, season, begun.refusalStreak, begun.blindTicks);
-      outcome = result.outcome;
-      return result.counts;
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      await ctx.runMutation(internal.imageryLive.recordRun, {
-        season,
-        kind: 'pump',
-        startedAt,
-        outcome: 'failed',
-        detail: `threw: ${detail} — backing off 30 minutes unless an admin says try again`,
-      });
-      await ctx.runMutation(internal.imageryLive.alertAdmins, {
-        key: 'imagery-pump-error',
-        season,
-        problem: 'The imagery pump hit an error',
-        detail: `${detail}. It backs off for half an hour and tries again.`,
-      });
-      throw error;
-    } finally {
-      await ctx.runMutation(internal.imageryLive.end, { key: 'pump', token, ...outcome });
-    }
-  },
-});
+const pumpArgs = {};
+
+/**
+ *
+ * (Its body is exported as `pumpHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
+ */
+export async function pumpHandler(ctx: ActionCtx): Promise<PumpCounts | { skipped: string }> {
+  const startedAt = Date.now();
+  const season = archiveSeasonAt(startedAt);
+  // Most ticks: nothing queued or cutting — one read, no lease, no write.
+  if (!(await ctx.runQuery(internal.imageryLive.hasWork, { season }))) {
+    return { skipped: 'nothing to do' };
+  }
+  const token = crypto.randomUUID();
+  const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'pump', token });
+  if (!begun.ok) return { skipped: begun.reason };
+  // ⚠ A run that throws backs off, leaves a run row, and tells the admins — the same as any
+  // other failure, rather than a silent gap.
+  let outcome: RunOutcome = { backoff: true };
+  try {
+    const result = await pumpOnce(ctx, season, begun.refusalStreak, begun.blindTicks);
+    outcome = result.outcome;
+    return result.counts;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    await ctx.runMutation(internal.imageryLive.recordRun, {
+      season,
+      kind: 'pump',
+      startedAt,
+      outcome: 'failed',
+      detail: `threw: ${detail} — backing off 30 minutes unless an admin says try again`,
+    });
+    await ctx.runMutation(internal.imageryLive.alertAdmins, {
+      key: 'imagery-pump-error',
+      season,
+      problem: 'The imagery pump hit an error',
+      detail: `${detail}. It backs off for half an hour and tries again.`,
+    });
+    throw error;
+  } finally {
+    await ctx.runMutation(internal.imageryLive.end, { key: 'pump', token, ...outcome });
+  }
+}
+
+export const pump = internalAction({ args: pumpArgs, handler: pumpHandler });
 
 async function pumpOnce(
   ctx: ActionCtx,
@@ -1246,47 +1258,51 @@ export function frameFromManifest(manifestKey: string, m: FrameManifest, etag?: 
   };
 }
 
+const buildIndexArgs = {};
+
 /**
  * Rebuild this season's index when a frame has landed — under its own lease, because two builds
  * writing `index/<season>.json` out of order would let an older listing overwrite a newer one.
  * **Compare-and-clear**: the request it satisfies is marked built only after the build succeeds, so
  * a failed build — or one killed by the action limit — leaves it standing for the next tick.
+ *
+ * (Its body is exported as `buildIndexHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
-export const buildIndex = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ frames: number } | null> => {
-    const seq = await ctx.runQuery(internal.imageryLive.indexOutstanding, { now: Date.now() });
-    if (seq === null) return null;
-    const token = crypto.randomUUID();
-    const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'index', token });
-    if (!begun.ok) return null;
-    try {
-      const result = await buildIndexOnce(ctx);
-      if (result === null) return null;
-      // Built even with a manifest it could not read, so a frame landing later is not held back;
-      // what it could not read is retried after a wait that doubles while it keeps failing. With
-      // readable manifests still unread (the read budget ran out) the request stands, and the next
-      // tick goes on — the unreadable ones get their wait and alert all the same.
-      const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
-        seq,
-        unreadable: result.unreadable,
-        complete: result.deferred === 0,
+export async function buildIndexHandler(ctx: ActionCtx): Promise<{ frames: number } | null> {
+  const seq = await ctx.runQuery(internal.imageryLive.indexOutstanding, { now: Date.now() });
+  if (seq === null) return null;
+  const token = crypto.randomUUID();
+  const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'index', token });
+  if (!begun.ok) return null;
+  try {
+    const result = await buildIndexOnce(ctx);
+    if (result === null) return null;
+    // Built even with a manifest it could not read, so a frame landing later is not held back;
+    // what it could not read is retried after a wait that doubles while it keeps failing. With
+    // readable manifests still unread (the read budget ran out) the request stands, and the next
+    // tick goes on — the unreadable ones get their wait and alert all the same.
+    const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
+      seq,
+      unreadable: result.unreadable,
+      complete: result.deferred === 0,
+    });
+    if (retryInMs !== null) {
+      const n = result.unreadable;
+      await ctx.runMutation(internal.imageryLive.alertAdmins, {
+        key: 'imagery-index-unreadable',
+        season: result.season,
+        problem: 'Some cut frames cannot be read into the imagery index',
+        detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read: a new frame stays off the public timeline until it reads, and a recut one keeps its old details. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
       });
-      if (retryInMs !== null) {
-        const n = result.unreadable;
-        await ctx.runMutation(internal.imageryLive.alertAdmins, {
-          key: 'imagery-index-unreadable',
-          season: result.season,
-          problem: 'Some cut frames cannot be read into the imagery index',
-          detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read: a new frame stays off the public timeline until it reads, and a recut one keeps its old details. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
-        });
-      }
-      return { frames: result.frames };
-    } finally {
-      await ctx.runMutation(internal.imageryLive.end, { key: 'index', token });
     }
-  },
-});
+    return { frames: result.frames };
+  } finally {
+    await ctx.runMutation(internal.imageryLive.end, { key: 'index', token });
+  }
+}
+
+export const buildIndex = internalAction({ args: buildIndexArgs, handler: buildIndexHandler });
 
 async function buildIndexOnce(
   ctx: ActionCtx,
