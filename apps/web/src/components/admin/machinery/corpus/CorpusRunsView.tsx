@@ -185,7 +185,7 @@ export function CorpusRunsView({
           backToList();
         }}
         className={cn(
-          'relative flex min-h-0 min-w-0 flex-col outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
+          'relative flex min-h-0 min-w-0 flex-col overflow-hidden outline-none focus-visible:shadow-[inset_0_0_0_var(--stroke-hair)_var(--fg)]',
           shown === 'detail' ? 'flex-1' : shown === 'list' && 'hidden',
         )}
       >
@@ -199,8 +199,10 @@ export function CorpusRunsView({
             </Button>
           </div>
         )}
-        {/* A run page lays out its own head, scroll and action bar in this column; it reads the
-            column (its pane, and whether the page is one pane at a time) from the context. */}
+        {/* A run page lays out its own head, scroll and action bar in this column, clipped here: the
+            floating action bar's layers reach below the frame, and on a phone the page would scroll
+            around the run page's own scroll. The page reads the column (its pane, and whether the
+            page is one pane at a time) from the context. */}
         <InspectorProvider value={{ pane, decidedOnOpen: false, now, timeZone, narrow }}>
           <RunDetail state={detail} pages={pages} />
         </InspectorProvider>

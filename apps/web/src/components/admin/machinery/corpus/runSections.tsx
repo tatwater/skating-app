@@ -7,6 +7,7 @@ import { Meter } from '@/components/kit/meter';
 import { Section } from '@/components/kit/section-slug';
 import { cn } from '@/lib/utils';
 
+import { useInspectorContext } from '../../inspector/inspectorContext';
 import { RUN_WORDS as W } from '../words/runWords';
 import {
   type Count,
@@ -191,17 +192,22 @@ export function PathSection({
   stages: readonly Stage[];
   className?: string;
 }) {
+  // One pane at a time (a phone, beside the console's rail): the slug's long end would push the
+  // page sideways, so it is left off, as the Passes section's is.
+  const narrow = useInspectorContext().narrow === true;
   return (
     <Section
       data-slot="path"
       title={W.path}
       level={3}
       className={className}
-      end={
-        <span className="text-kick leading-none font-medium tracking-kick text-fg3 uppercase">
-          {W.pathEnd}
-        </span>
-      }
+      {...(!narrow && {
+        end: (
+          <span className="text-kick leading-none font-medium tracking-kick text-fg3 uppercase">
+            {W.pathEnd}
+          </span>
+        ),
+      })}
     >
       {stages.length === 0 ? (
         <NotRecorded />

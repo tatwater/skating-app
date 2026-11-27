@@ -206,4 +206,13 @@ export const Phone: Story = {
 export const PhoneLight: Story = {
   args: { initialOpen: STALLED_CAMPAIGN.id, className: 'h-[50rem] w-[22.5rem]' },
   globals: { surface: 'admin', mode: 'light' },
+  play: async ({ canvasElement }) => {
+    const page = slot(canvasElement, 'machinery-corpus-page');
+    await waitFor(() => expect(page).toHaveAttribute('data-narrow', ''));
+    // The open campaign, its action bar floating: only the run page scrolls, never the page around it.
+    await waitFor(() => expect(slot(canvasElement, 'run-actions')).toBeVisible());
+    await expect(page.scrollHeight).toBeLessThanOrEqual(page.clientHeight + 1);
+    // Nothing scrolls sideways but the passes table, in its own box by design.
+    await expectNoSidewaysScroll(page, { except: ['passes-scroll'] });
+  },
 };
