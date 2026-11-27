@@ -167,8 +167,7 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('corpus');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
-      else if (type === 'importRun')
-        expect(modeAt(routerTarget(path).to)?.id).toBe('machinery');
+      else if (type === 'importRun') expect(modeAt(routerTarget(path).to)?.id).toBe('machinery');
       else if (INBOX_TARGETS.has(type)) expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
