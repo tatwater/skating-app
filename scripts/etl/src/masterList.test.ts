@@ -11,10 +11,12 @@
  */
 
 import type { MultiPolygon, Polygon } from 'geojson';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   ABSORBED_FEATURES_MAX,
   absorbedFeaturesOf,
+  BEAT_EVERY,
+  beatEvery,
   buildMasterList,
   CLASS_REFUSALS_MAX,
   elevationKeyFor,
@@ -1464,5 +1466,79 @@ describe('absorbedFeatures: what the merge folded in, emitted on the survivor (D
     expect(ABSORBED_FEATURES_MAX).toBe(32);
     expect(out).toHaveLength(ABSORBED_FEATURES_MAX);
     expect(out[0]).toEqual({ source: 'osm', externalId: 'way/1', areaSqM: 1 });
+  });
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The merge's beats (D341): a pass that never flushed stays visibly alive
+// ─────────────────────────────────────────────────────────────────────────────
+
+describe('the merge’s beats', () => {
+  /** Enough named ponds across Maine for every long loop to reach a beat. */
+  const ponds = Array.from({ length: BEAT_EVERY + 50 }, (_, i) =>
+    feat('osm', `way/${i}`, {
+      name: `Pond ${i}`,
+      polygon: square(-70.9 + (i % 20) * 0.1, 43.1 + Math.floor(i / 20) * 0.1, sideForAcres(40)),
+    }),
+  );
+
+  it('offers a label every BEAT_EVERY items, and nothing with no beat', () => {
+    const beat = vi.fn();
+    const tick = beatEvery(beat, 'merging groups', 2 * BEAT_EVERY + 10);
+    for (let i = 0; i < 2 * BEAT_EVERY + 10; i++) tick();
+    expect(beat.mock.calls).toEqual([
+      [`merging groups · ${BEAT_EVERY} of ${(2 * BEAT_EVERY + 10).toLocaleString('en-US')}`],
+      [`merging groups · ${2 * BEAT_EVERY} of ${(2 * BEAT_EVERY + 10).toLocaleString('en-US')}`],
+    ]);
+    const none = beatEvery(undefined, 'x', 10);
+    expect(() => none()).not.toThrow();
+  });
+
+  it('a lane offers a beat once per target', () => {
+    const onTarget = vi.fn();
+    matchLane(ponds.slice(0, 7), ponds.slice(0, 7), undefined, { excludeSelf: true, onTarget });
+    expect(onTarget).toHaveBeenCalledTimes(7);
+  });
+
+  it('the master list beats at every stage and inside its long loops, and decides the same', () => {
+    const beat = vi.fn();
+    const withBeat = buildMasterList({ ...inputFor({ osm: ponds }), beat });
+    const labels = beat.mock.calls.map(([label]) => label as string);
+    for (const stage of [
+      'stage 0: GNIS ids from the gazetteer',
+      'stage 1: NHD ↔ 3DHP…',
+      'stage 2: OSM ↔ NHD…',
+      'stage 3: OSM ↔ 3DHP…',
+      'stage 3b: OSM ↔ OSM (same-source duplicates)…',
+      'stage 4: OSM ↔ NHD by name…',
+      'naming from the gazetteer',
+    ]) {
+      expect(labels).toContain(stage);
+    }
+    for (const loop of [
+      'stage 2: OSM ↔ NHD · ',
+      'stage 3: OSM ↔ 3DHP · ',
+      'stage 3b: OSM ↔ OSM · ',
+      'merging groups · ',
+      'the region, salt and bay rules · ',
+      'the admission floor · ',
+    ]) {
+      expect(labels.some((l) => l.startsWith(`${loop}${BEAT_EVERY} of`))).toBe(true);
+    }
+    // Pure still: the beat changes nothing it decides.
+    const without = buildMasterList(inputFor({ osm: ponds }));
+    expect(keys(withBeat.bodies)).toEqual(keys(without.bodies));
+    expect(withBeat.dropped).toEqual(without.dropped);
+  });
+
+  it('the emit beats every BEAT_EVERY bodies', () => {
+    const { bodies } = buildMasterList(inputFor({ osm: ponds }));
+    expect(bodies.length).toBeGreaterThanOrEqual(BEAT_EVERY);
+    const beat = vi.fn();
+    const emitted = emitCanonicalBodies(bodies, MAINE_TOWNS, beat);
+    expect(beat).toHaveBeenCalledWith(
+      `emitting bodies · ${BEAT_EVERY} of ${bodies.length.toLocaleString('en-US')}`,
+    );
+    expect(emitted.emitted).toHaveLength(emitCanonicalBodies(bodies, MAINE_TOWNS).emitted.length);
   });
 });
