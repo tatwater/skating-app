@@ -4,9 +4,11 @@
  * maxima, not its sort — so a bug in the rule isn't also a bug in its check.
  *
  * - every cell with a candidate has a pick (a cell whose every candidate was struck is a **hole**);
- * - no candidate beats its pick under the rule (a **violation**);
- * - the off-season step reached only the committed cells (the stage refuses on
- *   `offSeasonBeyondList`, which the rule reports itself).
+ * - no candidate beats its pick under the rule (a **violation**): among the leaf-on frames the
+ *   foliage list doesn't strike, else among the leaf-on frames, else among every frame;
+ * - the stack holds every other frame of that pool's season, and no frame struck as turned sits
+ *   above one that isn't;
+ * - the selection's off-season list is exactly the cells the step picked, each with the right why.
  */
 
 import {
@@ -16,7 +18,9 @@ import {
   NAIP_SHARP_WINDOW_YEARS,
   type NaipCandidate,
   type NaipExclusion,
+  type NaipFoliageStrike,
   type NaipSelection,
+  naipFoliageStruck,
   quarterQuadCell,
   quarterQuadInState,
 } from '@skating/core';
@@ -52,8 +56,11 @@ export function checkSelection(
   candidates: readonly NaipCandidate[],
   exclusions: readonly NaipExclusion[],
   selection: NaipSelection,
+  foliageStrikes: readonly NaipFoliageStrike[] = [],
 ): SelectionCheck {
   const struck = new Set(exclusions.map((e) => e.itemId));
+  const turned = naipFoliageStruck(foliageStrikes);
+  const offSeason = new Map(selection.offSeason.map((c) => [c.key, c.why]));
   const listed = new Set<string>();
   const pools = new Map<string, Map<string, NaipCandidate>>();
   for (const c of candidates) {
@@ -78,12 +85,30 @@ export function checkSelection(
     }
     const mid = quarterQuadCell(key).minLat + 1 / 32;
     const leafOn = live.filter((c) => isLeafOnNaipFrame(c.acquired, mid));
-    const pool = leafOn.length > 0 ? leafOn : live;
+    const green = leafOn.filter((c) => !turned(c));
+    const pool = green.length > 0 ? green : leafOn.length > 0 ? leafOn : live;
     if (!chosen(pick.pick, pool)) {
       violations.push(`${key}: ${pick.pick.itemId} is not the rule's choice of ${pool.length}`);
     }
-    if (pick.stack.length !== pool.length - 1) {
-      violations.push(`${key}: a stack of ${pick.stack.length} for ${pool.length - 1} alternates`);
+    const season = leafOn.length > 0 ? leafOn : live;
+    if (pick.stack.length !== season.length - 1) {
+      violations.push(
+        `${key}: a stack of ${pick.stack.length} for ${season.length - 1} alternates`,
+      );
+    }
+    const firstTurned = pick.stack.findIndex((f) => turned(f));
+    if (
+      green.length > 0 &&
+      firstTurned !== -1 &&
+      pick.stack.slice(firstTurned).some((f) => !turned(f))
+    ) {
+      violations.push(`${key}: a frame struck as turned sits above a green one in the stack`);
+    }
+    const why = green.length > 0 ? undefined : leafOn.length > 0 ? 'allTurned' : 'noLeafOn';
+    if (offSeason.get(key) !== why) {
+      violations.push(
+        `${key}: off-season ${offSeason.get(key) ?? 'no'}, the rule says ${why ?? 'no'}`,
+      );
     }
   }
   for (const key of picks.keys()) {

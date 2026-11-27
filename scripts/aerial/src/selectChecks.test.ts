@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import {
-  NAIP_OFF_SEASON_CELLS,
   type NaipCandidate,
   type NaipCellPick,
+  type NaipFoliageStrike,
   type NaipSelection,
   selectNaipPicks,
 } from '@skating/core';
@@ -33,7 +33,7 @@ const K = '4407236se';
 
 describe('checkSelection', () => {
   test("passes on the rule's answer for a real slice", () => {
-    const selection = selectNaipPicks(FIXTURE, [], NAIP_OFF_SEASON_CELLS);
+    const selection = selectNaipPicks(FIXTURE, []);
     expect(checkSelection(FIXTURE, [], selection)).toEqual({
       holes: [],
       noCandidate: [],
@@ -101,5 +101,51 @@ describe('checkSelection', () => {
     expect(checkSelection([], [], right).violations).toEqual([
       expect.stringMatching(/a pick for a cell with no candidate/),
     ]);
+  });
+
+  // The foliage review (D319): 2025's summer struck as turned, so 2023's sharp frame is the pick.
+  const sept = f(K, '2025-09-20', 0.3);
+  const turnedDay: NaipFoliageStrike = {
+    flight: { state: 'VT', acquired: '2025-09-20' },
+    keep: [],
+    reason: 'turned',
+    reviewedBy: 'founder',
+    reviewedOn: '2026-11-27',
+  };
+  const foliage = [sept, sharp, newer];
+  const struckRight = selectNaipPicks(foliage, [], [turnedDay]);
+
+  test("passes on the rule's answer with a foliage strike", () => {
+    expect(struckRight.picks[0]?.pick).toBe(sharp);
+    expect(checkSelection(foliage, [], struckRight, [turnedDay]).violations).toEqual([]);
+  });
+
+  test('a struck frame picked over a green one, or stacked above one, is a violation', () => {
+    const pick = struckRight.picks[0] as NaipCellPick;
+    const as = (p: Partial<NaipCellPick>): NaipSelection => ({
+      ...struckRight,
+      picks: [{ ...pick, ...p }],
+    });
+    expect(
+      checkSelection(foliage, [], as({ pick: sept, stack: [sharp, newer] }), [turnedDay])
+        .violations,
+    ).toEqual([expect.stringMatching(/is not the rule's choice of 2/)]);
+    expect(
+      checkSelection(foliage, [], as({ stack: [sept, newer] }), [turnedDay]).violations,
+    ).toEqual([expect.stringMatching(/a frame struck as turned sits above a green one/)]);
+  });
+
+  test('an off-season list that disagrees with the rule is a violation', () => {
+    const allTurned = selectNaipPicks([sept], [], [turnedDay]);
+    expect(allTurned.offSeason).toEqual([{ key: K, why: 'allTurned' }]);
+    expect(checkSelection([sept], [], allTurned, [turnedDay]).violations).toEqual([]);
+    expect(
+      checkSelection([sept], [], { ...allTurned, offSeason: [] }, [turnedDay]).violations,
+    ).toEqual([expect.stringMatching(/off-season no, the rule says allTurned/)]);
+    expect(
+      checkSelection(foliage, [], { ...struckRight, offSeason: [{ key: K, why: 'noLeafOn' }] }, [
+        turnedDay,
+      ]).violations,
+    ).toEqual([expect.stringMatching(/off-season noLeafOn, the rule says no/)]);
   });
 });

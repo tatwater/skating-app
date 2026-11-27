@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
-import { NAIP_EXCLUSIONS, NAIP_OFF_SEASON_CELLS } from './naipExclusions';
+import { NAIP_EXCLUSIONS } from './naipExclusions';
 import { quarterQuadCell } from './naipGrid';
 import type { NaipManifest } from './naipManifest';
 import {
@@ -14,9 +14,14 @@ import {
   type NaipCandidate,
   type NaipCellPick,
   type NaipExclusion,
+  type NaipFoliageStrike,
+  naipFoliageStruck,
   rankNaipFrames,
   selectNaipPicks,
 } from './naipSelection';
+
+/** The six October cells north of Rumford (the founder's F-7 a). */
+const OCTOBER_SIX = ['4407004ne', '4407004se', '4407012ne', '4407020ne', '4407020se', '4407028ne'];
 
 describe('the seven states', () => {
   test('are the supported five plus CT and RI', () => {
@@ -67,7 +72,7 @@ const struck = (
 });
 
 function onlyPick(candidates: NaipCandidate[], exclusions: NaipExclusion[] = []): NaipCellPick {
-  const { picks } = selectNaipPicks(candidates, exclusions, NAIP_OFF_SEASON_CELLS);
+  const { picks } = selectNaipPicks(candidates, exclusions);
   expect(picks).toHaveLength(1);
   return picks[0] as NaipCellPick;
 }
@@ -89,11 +94,7 @@ describe('step 1: what is a candidate', () => {
 
   test('a coarse frame is dropped and counted, even when it is the newest', () => {
     const summer = frame('2021-07-01', 0.6);
-    const { picks, dropped } = selectNaipPicks(
-      [summer, frame('2024-07-01', 1)],
-      [],
-      NAIP_OFF_SEASON_CELLS,
-    );
+    const { picks, dropped } = selectNaipPicks([summer, frame('2024-07-01', 1)], []);
     expect(picks[0]?.pick).toBe(summer);
     expect(picks[0]?.stack).toEqual([]);
     expect(dropped).toEqual({ coarse: 1, outsideState: 0, excluded: 0 });
@@ -103,7 +104,7 @@ describe('step 1: what is a candidate', () => {
     // A Massachusetts cell under a Maine label, as the 744 "Maine 2025" items are.
     const ma = frame('2023-07-01', 0.3, { key: '4207239sw', state: 'MA' });
     const me = frame('2025-09-20', 0.6, { key: '4207239sw', state: 'ME' });
-    const { picks, dropped } = selectNaipPicks([ma, me], [], NAIP_OFF_SEASON_CELLS);
+    const { picks, dropped } = selectNaipPicks([ma, me], []);
     expect(picks.map((p) => p.pick.itemId)).toEqual([ma.itemId]);
     expect(picks[0]?.states).toEqual(['MA']);
     expect(dropped.outsideState).toBe(1);
@@ -113,7 +114,6 @@ describe('step 1: what is a candidate', () => {
     const { dropped } = selectNaipPicks(
       [frame('2025-09-20', 1, { key: '4207239sw', state: 'ME' })],
       [],
-      NAIP_OFF_SEASON_CELLS,
     );
     expect(dropped).toEqual({ coarse: 0, outsideState: 1, excluded: 0 });
   });
@@ -259,29 +259,118 @@ describe('step 5: the off-season step', () => {
   const october18 = frame('2018-10-10', 0.6, { key: '4407028ne', state: 'ME' });
   const july15 = frame('2015-07-10', 1, { key: '4407028ne', state: 'ME' });
 
-  test('a cell with no leaf-on candidate takes steps 3 and 4 over every candidate', () => {
-    const { picks, offSeasonBeyondList } = selectNaipPicks(
-      [october18, july15, october21, october23],
-      [],
-      NAIP_OFF_SEASON_CELLS,
-    );
+  test('a cell with no leaf-on candidate takes steps 3 and 4 over every candidate (noLeafOn)', () => {
+    const { picks, offSeason } = selectNaipPicks([october18, july15, october21, october23], []);
     expect(picks[0]?.pick).toBe(october23);
     expect(picks[0]?.step).toBe('offSeason');
     expect(picks[0]?.stack).toEqual([october21, october18]);
-    expect(offSeasonBeyondList).toEqual([]);
+    expect(offSeason).toEqual([{ key: '4407028ne', why: 'noLeafOn' }]);
   });
 
-  test('a cell off the committed list is still picked, and reported', () => {
+  test('any cell may reach it: the rule says which, and every one is named, sorted', () => {
     const elsewhere = frame('2023-10-02', 0.3);
-    const { picks, offSeasonBeyondList } = selectNaipPicks(
-      [elsewhere, october23],
-      [],
-      NAIP_OFF_SEASON_CELLS,
-    );
+    const { picks, offSeason } = selectNaipPicks([elsewhere, october23], []);
     expect(picks.map((p) => p.step)).toEqual(['offSeason', 'offSeason']);
-    expect(offSeasonBeyondList).toEqual([NORTH]);
-    // With the list empty, the six are reported too.
-    expect(selectNaipPicks([october23], [], []).offSeasonBeyondList).toEqual(['4407028ne']);
+    expect(offSeason).toEqual([
+      { key: '4407028ne', why: 'noLeafOn' },
+      { key: NORTH, why: 'noLeafOn' },
+    ]);
+  });
+});
+
+// ── The foliage strikes (§2.1.4, D319) ───────────────────────────────────────────────────────────
+
+const review = { reason: 'turned', reviewedBy: 'founder', reviewedOn: '2026-11-27' } as const;
+const dayStrike = (state: NaipCandidate['state'], acquired: string, keep: string[] = []) =>
+  ({ flight: { state, acquired }, keep, ...review }) satisfies NaipFoliageStrike;
+const frameStrike = (c: NaipCandidate) =>
+  ({ itemId: c.itemId, ...review }) satisfies NaipFoliageStrike;
+
+describe('naipFoliageStruck', () => {
+  const a = frame('2025-09-20', 0.3);
+  const b = frame('2025-09-20', 0.3);
+  const ny = frame('2025-09-20', 0.6, { state: 'NY' });
+  const other = frame('2025-09-21', 0.3);
+
+  test('a flight strike takes every frame of that state and day but those it keeps', () => {
+    const turned = naipFoliageStruck([dayStrike('VT', '2025-09-20', [b.itemId])]);
+    expect([a, b, ny, other].map(turned)).toEqual([true, false, false, false]);
+  });
+
+  test('a frame strike takes that frame, on a day not struck', () => {
+    const turned = naipFoliageStruck([frameStrike(other)]);
+    expect([a, other].map(turned)).toEqual([false, true]);
+  });
+
+  test('two entries for one day keep only what both keep', () => {
+    const turned = naipFoliageStruck([
+      dayStrike('VT', '2025-09-20', [a.itemId, b.itemId]),
+      dayStrike('VT', '2025-09-20', [b.itemId]),
+    ]);
+    expect([a, b].map(turned)).toEqual([true, false]);
+  });
+
+  test('no entries strike nothing', () => {
+    expect(naipFoliageStruck([])(a)).toBe(false);
+  });
+});
+
+describe('the foliage step', () => {
+  const sept25 = frame('2025-09-20', 0.3);
+  const june23 = frame('2023-06-22', 0.3);
+  const sept21 = frame('2021-09-20', 0.6);
+
+  test('a struck frame loses the pick to the next green one, and sits below every green one', () => {
+    const pick = onlyPick([sept25, june23, sept21]);
+    expect(pick.pick).toBe(sept25);
+    const { picks, foliageStruck, offSeason } = selectNaipPicks(
+      [sept25, june23, sept21],
+      [],
+      [dayStrike('VT', '2025-09-20')],
+    );
+    expect(picks[0]?.pick).toBe(june23);
+    expect(picks[0]?.step).toBe('leafOn');
+    expect(picks[0]?.stack).toEqual([sept21, sept25]);
+    expect(foliageStruck).toBe(1);
+    expect(offSeason).toEqual([]);
+  });
+
+  test('every leaf-on frame struck: the cell keeps its newest sharpest leaf-on frame (allTurned)', () => {
+    // Western Maine: 27 September 2023 at 0.3 m, the October flights, and the 1 m summer of 2015.
+    const key = '4407003ne';
+    const sept23 = frame('2023-09-27', 0.3, { key, state: 'ME' });
+    const oct23 = frame('2023-10-02', 0.3, { key, state: 'ME' });
+    const oct18 = frame('2018-10-05', 0.6, { key, state: 'ME' });
+    const aug15 = frame('2015-08-18', 1, { key, state: 'ME' });
+    const { picks, offSeason } = selectNaipPicks(
+      [oct18, aug15, sept23, oct23],
+      [],
+      [dayStrike('ME', '2023-09-27'), dayStrike('ME', '2023-10-02')],
+    );
+    expect(picks[0]?.pick).toBe(sept23); // not the newer October frame, nor 2015's 1 m
+    expect(picks[0]?.step).toBe('offSeason');
+    expect(picks[0]?.stack).toEqual([]);
+    expect(offSeason).toEqual([{ key, why: 'allTurned' }]);
+  });
+
+  test('a strike changes nothing where the cell has no leaf-on frame (the six keep 2 October 2023)', () => {
+    const key = '4407020ne';
+    const oct23 = frame('2023-10-02', 0.3, { key, state: 'ME' });
+    const oct18 = frame('2018-10-05', 0.6, { key, state: 'ME' });
+    const { picks, offSeason } = selectNaipPicks([oct18, oct23], [], [frameStrike(oct23)]);
+    expect(picks[0]?.pick).toBe(oct23);
+    expect(offSeason).toEqual([{ key, why: 'noLeafOn' }]);
+  });
+
+  test('a cloud exclusion still drops a frame outright, struck as turned or not', () => {
+    const { picks } = selectNaipPicks(
+      [sept25, june23],
+      [struck(june23)],
+      [dayStrike('VT', '2025-09-20')],
+    );
+    expect(picks[0]?.pick).toBe(sept25);
+    expect(picks[0]?.step).toBe('offSeason');
+    expect(picks[0]?.stack).toEqual([]);
   });
 });
 
@@ -308,11 +397,23 @@ const candidateArb = fc
   });
 
 const catalogArb = fc
-  .tuple(fc.uniqueArray(candidateArb, { selector: (c) => c.itemId, maxLength: 40 }), fc.nat())
-  .map(([cands, seed]) => {
+  .tuple(
+    fc.uniqueArray(candidateArb, { selector: (c) => c.itemId, maxLength: 40 }),
+    fc.nat(),
+    fc.nat(),
+  )
+  .map(([cands, seed, foliageSeed]) => {
     // Strike a deterministic few, so properties see exclusions too.
     const exclusions = cands.filter((_, i) => (i + seed) % 5 === 0).map((c) => struck(c));
-    return { cands, exclusions };
+    // And foliage strikes of both shapes: some whole flight days (keeping a frame now and then),
+    // some single frames.
+    const strikes: NaipFoliageStrike[] = [];
+    cands.forEach((c, i) => {
+      const roll = (i + foliageSeed) % 7;
+      if (roll === 0) strikes.push(frameStrike(c));
+      if (roll === 1) strikes.push(dayStrike(c.state, c.acquired, i % 2 === 0 ? [] : [c.itemId]));
+    });
+    return { cands, exclusions, strikes };
   });
 
 /** What §2.1 says, phrased as sets and maxima rather than the implementation's sort. */
@@ -335,26 +436,41 @@ function ruleSays(eligible: readonly NaipCandidate[]): (c: NaipCandidate) => boo
   return (c) => c.acquired === newestDay;
 }
 
+/** Is a frame struck as turned, read straight off the entries (not through `naipFoliageStruck`)? */
+function turnedBy(strikes: readonly NaipFoliageStrike[], c: NaipCandidate): boolean {
+  const days = strikes.filter(
+    (s) => 'flight' in s && s.flight.state === c.state && s.flight.acquired === c.acquired,
+  ) as Extract<NaipFoliageStrike, { flight: unknown }>[];
+  const byFrame = strikes.some((s) => 'itemId' in s && s.itemId === c.itemId);
+  return byFrame || (days.length > 0 && days.some((d) => !d.keep.includes(c.itemId)));
+}
+
 function eligibleFor(
   key: string,
   cands: readonly NaipCandidate[],
   exclusions: readonly NaipExclusion[],
-): { leafOn: NaipCandidate[]; all: NaipCandidate[] } {
+  strikes: readonly NaipFoliageStrike[] = [],
+): { green: NaipCandidate[]; leafOn: NaipCandidate[]; all: NaipCandidate[] } {
   const struckIds = new Set(exclusions.map((e) => e.itemId));
   const mid = quarterQuadCell(key).minLat + 1 / 32;
   const all = cands.filter((c) => c.key === key && c.gsd <= 0.605 && !struckIds.has(c.itemId));
-  return { all, leafOn: all.filter((c) => isLeafOnNaipFrame(c.acquired, mid)) };
+  const leafOn = all.filter((c) => isLeafOnNaipFrame(c.acquired, mid));
+  return { all, leafOn, green: leafOn.filter((c) => !turnedBy(strikes, c)) };
 }
 
+/** The pool the rule picks from: green leaf-on, else leaf-on, else everything. */
+const poolOf = (e: ReturnType<typeof eligibleFor>) =>
+  e.green.length > 0 ? e.green : e.leafOn.length > 0 ? e.leafOn : e.all;
+
 describe('the rule, as properties', () => {
-  test('a pick is leaf-on whenever any candidate is, and the rule holds for it', () => {
+  test('a pick is green leaf-on whenever any candidate is, and the rule holds for it', () => {
     fc.assert(
-      fc.property(catalogArb, ({ cands, exclusions }) => {
-        const { picks } = selectNaipPicks(cands, exclusions, NAIP_OFF_SEASON_CELLS);
+      fc.property(catalogArb, ({ cands, exclusions, strikes }) => {
+        const { picks } = selectNaipPicks(cands, exclusions, strikes);
         for (const p of picks) {
-          const { leafOn, all } = eligibleFor(p.key, cands, exclusions);
-          expect(p.step).toBe(leafOn.length > 0 ? 'leafOn' : 'offSeason');
-          const pool = leafOn.length > 0 ? leafOn : all;
+          const e = eligibleFor(p.key, cands, exclusions, strikes);
+          expect(p.step).toBe(e.green.length > 0 ? 'leafOn' : 'offSeason');
+          const pool = poolOf(e);
           expect(pool).toContain(p.pick);
           expect(ruleSays(pool)(p.pick)).toBe(true);
         }
@@ -362,28 +478,51 @@ describe('the rule, as properties', () => {
     );
   });
 
+  test('no strike list changes which cells have a pick, or adds a frame to a cell', () => {
+    fc.assert(
+      fc.property(catalogArb, ({ cands, exclusions, strikes }) => {
+        const without = selectNaipPicks(cands, exclusions);
+        const withIt = selectNaipPicks(cands, exclusions, strikes);
+        expect(withIt.picks.map((p) => p.key)).toEqual(without.picks.map((p) => p.key));
+        withIt.picks.forEach((p, i) => {
+          const before = without.picks[i] as NaipCellPick;
+          const ids = (q: NaipCellPick) => [q.pick, ...q.stack].map((c) => c.itemId).sort();
+          expect(ids(p)).toEqual(ids(before)); // demoted, never dropped
+        });
+      }),
+    );
+  });
+
   test('every cell with a candidate has a pick; no other cell does', () => {
     fc.assert(
       fc.property(catalogArb, ({ cands, exclusions }) => {
-        const { picks } = selectNaipPicks(cands, exclusions, NAIP_OFF_SEASON_CELLS);
+        const { picks } = selectNaipPicks(cands, exclusions);
         const expected = CELLS.filter((k) => eligibleFor(k, cands, exclusions).all.length > 0);
         expect(picks.map((p) => p.key)).toEqual(expected.sort());
       }),
     );
   });
 
-  test('the stack is every other candidate of the pool, each the rule’s choice of what is left', () => {
+  test('the stack is every other candidate of the season, green first, each the rule’s next choice', () => {
     fc.assert(
-      fc.property(catalogArb, ({ cands, exclusions }) => {
-        const { picks } = selectNaipPicks(cands, exclusions, NAIP_OFF_SEASON_CELLS);
+      fc.property(catalogArb, ({ cands, exclusions, strikes }) => {
+        const { picks } = selectNaipPicks(cands, exclusions, strikes);
         for (const p of picks) {
-          const { leafOn, all } = eligibleFor(p.key, cands, exclusions);
-          let left = [...(leafOn.length > 0 ? leafOn : all)].filter((c) => c !== p.pick);
-          expect(p.stack).toHaveLength(left.length);
-          for (const next of p.stack) {
-            expect(left).toContain(next);
-            expect(ruleSays(left)(next)).toBe(true);
-            left = left.filter((c) => c !== next);
+          const e = eligibleFor(p.key, cands, exclusions, strikes);
+          const season = e.leafOn.length > 0 ? e.leafOn : e.all;
+          expect(p.stack).toHaveLength(season.length - 1);
+          // Green frames first, in the rule's order; then the struck ones, in the rule's order.
+          const tiers =
+            e.green.length > 0 ? [e.green, e.leafOn.filter((c) => !e.green.includes(c))] : [season];
+          let at = 0;
+          for (const tier of tiers) {
+            let left = tier.filter((c) => c !== p.pick);
+            for (const next of p.stack.slice(at, at + left.length)) {
+              expect(left).toContain(next);
+              expect(ruleSays(left)(next)).toBe(true);
+              left = left.filter((c) => c !== next);
+            }
+            at += tier.filter((c) => c !== p.pick).length;
           }
         }
       }),
@@ -393,7 +532,7 @@ describe('the rule, as properties', () => {
   test('an excluded item is never picked or stacked; the drops add up', () => {
     fc.assert(
       fc.property(catalogArb, ({ cands, exclusions }) => {
-        const out = selectNaipPicks(cands, exclusions, NAIP_OFF_SEASON_CELLS);
+        const out = selectNaipPicks(cands, exclusions);
         const struckIds = new Set(exclusions.map((e) => e.itemId));
         for (const p of out.picks) {
           expect(struckIds.has(p.pick.itemId)).toBe(false);
@@ -406,15 +545,19 @@ describe('the rule, as properties', () => {
     );
   });
 
-  test('the off-season step reaches only cells with no leaf-on candidate, and reports those off the list', () => {
+  test('the off-season step reaches exactly the cells with no green leaf-on frame, each named with why', () => {
     fc.assert(
-      fc.property(catalogArb, fc.subarray(CELLS), ({ cands, exclusions }, allowed) => {
-        const out = selectNaipPicks(cands, exclusions, allowed);
-        const offSeason = out.picks.filter((p) => p.step === 'offSeason').map((p) => p.key);
-        for (const key of offSeason) {
-          expect(eligibleFor(key, cands, exclusions).leafOn).toEqual([]);
-        }
-        expect(out.offSeasonBeyondList).toEqual(offSeason.filter((k) => !allowed.includes(k)));
+      fc.property(catalogArb, ({ cands, exclusions, strikes }) => {
+        const out = selectNaipPicks(cands, exclusions, strikes);
+        const expected = out.picks.flatMap((p) => {
+          const e = eligibleFor(p.key, cands, exclusions, strikes);
+          if (e.green.length > 0) return [];
+          return [{ key: p.key, why: e.leafOn.length > 0 ? 'allTurned' : 'noLeafOn' }];
+        });
+        expect(out.offSeason).toEqual(expected);
+        expect(out.picks.filter((p) => p.step === 'offSeason').map((p) => p.key)).toEqual(
+          expected.map((c) => c.key),
+        );
       }),
     );
   });
@@ -422,16 +565,17 @@ describe('the rule, as properties', () => {
   test("the answer doesn't depend on the input's order", () => {
     fc.assert(
       fc.property(
-        catalogArb.chain(({ cands, exclusions }) =>
+        catalogArb.chain(({ cands, exclusions, strikes }) =>
           fc.tuple(
             fc.constant(cands),
             fc.shuffledSubarray(cands, { minLength: cands.length }),
             fc.constant(exclusions),
+            fc.constant(strikes),
           ),
         ),
-        ([cands, shuffled, exclusions]) => {
-          const a = selectNaipPicks(cands, exclusions, NAIP_OFF_SEASON_CELLS);
-          const b = selectNaipPicks(shuffled, [...exclusions].reverse(), NAIP_OFF_SEASON_CELLS);
+        ([cands, shuffled, exclusions, strikes]) => {
+          const a = selectNaipPicks(cands, exclusions, strikes);
+          const b = selectNaipPicks(shuffled, [...exclusions].reverse(), [...strikes].reverse());
           expect(b).toEqual(a);
         },
       ),
@@ -456,7 +600,7 @@ const FIXTURE: FixtureRow[] = readFileSync(
 
 const candidates = FIXTURE.map(({ scoutsPick: _, ...c }) => c);
 const scouts = new Map(FIXTURE.filter((r) => r.scoutsPick).map((r) => [r.key, r]));
-const selection = selectNaipPicks(candidates, [], NAIP_OFF_SEASON_CELLS);
+const selection = selectNaipPicks(candidates, []);
 const pickOf = (key: string) => selection.picks.find((p) => p.key === key) as NaipCellPick;
 
 describe('the fixture: a slice of the real catalog', () => {
@@ -478,7 +622,7 @@ describe('the fixture: a slice of the real catalog', () => {
   });
 
   test('the six October cells take their 2 October 2023 frames at 0.3 m, through the off-season step', () => {
-    for (const key of NAIP_OFF_SEASON_CELLS) {
+    for (const key of OCTOBER_SIX) {
       const p = pickOf(key);
       expect(p.step).toBe('offSeason');
       expect(p.pick.acquired).toBe('2023-10-02');
@@ -490,8 +634,15 @@ describe('the fixture: a slice of the real catalog', () => {
         .filter((p) => p.step === 'offSeason')
         .map((p) => p.key)
         .sort(),
-    ).toEqual([...NAIP_OFF_SEASON_CELLS].sort());
-    expect(selection.offSeasonBeyondList).toEqual([]);
+    ).toEqual(OCTOBER_SIX);
+    expect(selection.offSeason).toEqual(OCTOBER_SIX.map((key) => ({ key, why: 'noLeafOn' })));
+  });
+
+  test('striking their 2 October 2023 day keeps it there: no leaf-on frame to fall to (ruling 4)', () => {
+    const after = selectNaipPicks(candidates, [], [dayStrike('ME', '2023-10-02')]);
+    for (const key of OCTOBER_SIX) {
+      expect(after.picks.find((p) => p.key === key)?.pick).toEqual(pickOf(key).pick);
+    }
   });
 
   test('the 744 mislabeled Maine 2025 items are dropped, and only they', () => {
@@ -536,7 +687,6 @@ describe('the fixture: a slice of the real catalog', () => {
     const after = selectNaipPicks(
       candidates,
       glare.map((p) => struck(p.pick)),
-      NAIP_OFF_SEASON_CELLS,
     );
     const years: number[] = [];
     for (const p of glare) {
@@ -559,7 +709,6 @@ describe('the fixture: a slice of the real catalog', () => {
     const after = selectNaipPicks(
       candidates,
       cumulus.map((p) => struck(p.pick)),
-      NAIP_OFF_SEASON_CELLS,
     );
     for (const key of keys) {
       const now = after.picks.find((q) => q.key === key) as NaipCellPick;
@@ -568,9 +717,9 @@ describe('the fixture: a slice of the real catalog', () => {
   });
 
   test("the committed exclusions move exactly the two Aroostook cells, to Maine's 31 August 2021", () => {
-    const after = selectNaipPicks(candidates, NAIP_EXCLUSIONS, NAIP_OFF_SEASON_CELLS);
+    const after = selectNaipPicks(candidates, NAIP_EXCLUSIONS);
     expect(after.dropped.excluded).toBe(2);
-    expect(after.offSeasonBeyondList).toEqual([]);
+    expect(after.offSeason).toEqual(selection.offSeason);
     expect(after.picks.map((p) => p.key)).toEqual(selection.picks.map((p) => p.key));
     const moved = after.picks.filter((p, i) => p.pick.itemId !== selection.picks[i]?.pick.itemId);
     expect(moved.map((p) => [p.key, p.pick.acquired, p.pick.gsd, p.step])).toEqual([
@@ -611,13 +760,14 @@ describe('diffNaipPicks', () => {
       }
     }
     return {
-      version: 1,
+      version: 2,
       campaign: 'naip-20261201',
       pilot: null,
       createdAt: '2026-12-01T00:00:00Z',
       ruleVersion: 1,
       catalog: { walkedOn: '2026-12-01', items: 0, perState: {}, archivedAt: null },
       exclusionsHash: '',
+      foliageStrikesHash: '',
       offSeasonCells: [],
       basedOn: null,
       frames,

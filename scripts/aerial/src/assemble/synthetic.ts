@@ -226,6 +226,7 @@ export async function writeSyntheticBuild(
     ruleVersion: NAIP_RULE_VERSION,
     catalog: { walkedOn: '2026-11-25', items: 2 * cells.size, perState: {}, archivedAt: null },
     exclusionsHash: 'e'.repeat(64),
+    foliageStrikesHash: 'f'.repeat(64),
     offSeasonCells: [],
     basedOn: null,
     frames,

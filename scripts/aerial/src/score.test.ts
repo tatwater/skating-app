@@ -151,6 +151,28 @@ describe('scoreFrames', () => {
     expect(new ScoreCache(join(dir, 'scores.json')).get('a')).toEqual({ white: 0.5, valid: 1 });
   });
 
+  test('scores with another measure into its own cache, reading the same kept thumbnail', async () => {
+    const dir = tmp();
+    const thumbsDir = join(dir, 'thumbs');
+    const fetchBlob = vi.fn(async () => answer(clear));
+    await scoreFrames([{ itemId: 'a', thumbnail: 'https://blob/a.jpg' }], {
+      fetchBlob,
+      decode: copyDecode,
+      thumbsDir,
+      cache: new ScoreCache(join(dir, 'scores.json')),
+    });
+    const counts = new ScoreCache<{ pixels: number }>(join(dir, 'other.json'));
+    const out = await scoreFrames(
+      [{ itemId: 'a', thumbnail: 'https://blob/a.jpg' }],
+      { fetchBlob, decode: copyDecode, thumbsDir, cache: counts },
+      (rgb) => ({ pixels: rgb.length / 3 }),
+    );
+    expect(out.get('a')).toEqual({ pixels: 2 });
+    expect(fetchBlob).toHaveBeenCalledTimes(1); // the thumbnail was kept
+    expect(new ScoreCache(join(dir, 'other.json')).get('a')).toEqual({ pixels: 2 });
+    expect(new ScoreCache(join(dir, 'scores.json')).get('a')).toEqual({ white: 0, valid: 0.5 });
+  });
+
   test('saves the cache as it goes, not only at the end', async () => {
     const dir = tmp();
     const cache = new ScoreCache(join(dir, 'scores.json'));

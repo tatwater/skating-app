@@ -1,22 +1,8 @@
 import { describe, expect, test } from 'vitest';
-import { NAIP_EXCLUSIONS, NAIP_OFF_SEASON_CELLS } from './naipExclusions';
+import { NAIP_CLOUD_KEPT, NAIP_EXCLUSIONS, NAIP_FOLIAGE_STRIKES } from './naipExclusions';
+import { isNaipFlightStrike, naipFoliageStruck } from './naipSelection';
 
 describe('the committed lists', () => {
-  test('the off-season cells are the six north of Rumford, and only those', () => {
-    expect([...NAIP_OFF_SEASON_CELLS].sort()).toEqual([
-      '4407004ne',
-      '4407004se',
-      '4407012ne',
-      '4407020ne',
-      '4407020se',
-      '4407028ne',
-    ]);
-  });
-
-  test('every off-season cell is a quarter-quad key', () => {
-    for (const key of NAIP_OFF_SEASON_CELLS) expect(key).toMatch(/^\d{7}(ne|nw|se|sw)$/);
-  });
-
   test("the founder's first review struck the two Aroostook cumulus frames and nothing else", () => {
     expect(NAIP_EXCLUSIONS.map((e) => [e.itemId, e.reason, e.reviewedBy, e.reviewedOn])).toEqual([
       ['me_m_4606741_se_19_030_20230922_20240103', 'cloud', 'founder', '2026-11-25'],
@@ -31,5 +17,36 @@ describe('the committed lists', () => {
       expect(ex.reviewedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     }
     expect(new Set(NAIP_EXCLUSIONS.map((e) => e.itemId)).size).toBe(NAIP_EXCLUSIONS.length);
+  });
+
+  test('the cloud review kept 23 Long Island and New York City picks, none of them struck', () => {
+    expect(NAIP_CLOUD_KEPT).toHaveLength(23);
+    expect(new Set(NAIP_CLOUD_KEPT).size).toBe(23);
+    for (const id of NAIP_CLOUD_KEPT)
+      expect(id).toMatch(/^ny_m_400\d{4}_(ne|nw|se|sw)_18_060_2024/);
+    const struck = new Set(NAIP_EXCLUSIONS.map((e) => e.itemId));
+    expect(NAIP_CLOUD_KEPT.filter((id) => struck.has(id))).toEqual([]);
+  });
+
+  test('every foliage strike is confirmed by the founder, never a proposal', () => {
+    for (const s of NAIP_FOLIAGE_STRIKES) {
+      expect(s.reviewedBy).toBe('founder');
+      expect(s.reason).toBe('turned');
+      expect(s.reviewedOn).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+      if (isNaipFlightStrike(s)) {
+        expect(s.flight.acquired).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+        expect([...s.keep].sort()).toEqual(s.keep);
+      }
+    }
+  });
+
+  test('no foliage strike takes a frame the cloud review kept on purpose', () => {
+    const turned = naipFoliageStruck(NAIP_FOLIAGE_STRIKES);
+    for (const id of NAIP_CLOUD_KEPT) {
+      const day = id.match(/_(\d{4})(\d{2})(\d{2})$/) as RegExpMatchArray;
+      expect(turned({ itemId: id, state: 'NY', acquired: `${day[1]}-${day[2]}-${day[3]}` })).toBe(
+        false,
+      );
+    }
   });
 });

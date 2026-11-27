@@ -46,13 +46,14 @@ function manifestFor(pickOf: (i: number) => number): NaipManifest {
     };
   });
   return {
-    version: 1,
+    version: 2,
     campaign: 'naip-20261212',
     pilot: null,
     createdAt: '2026-12-12T00:00:00Z',
     ruleVersion: 1,
     catalog: { walkedOn: '2026-12-01', items: 0, perState: {}, archivedAt: null },
     exclusionsHash: '0'.repeat(64),
+    foliageStrikesHash: '0'.repeat(64),
     offSeasonCells: [],
     basedOn: null,
     frames,

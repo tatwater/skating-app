@@ -128,24 +128,26 @@ export interface BlobAnswer {
   arrayBuffer(): Promise<ArrayBuffer>;
 }
 
-/** The scores already taken, by item id, kept in one JSON file beside the thumbnails. */
-export class ScoreCache {
-  private readonly scores: Map<string, ThumbnailScore>;
+/**
+ * The scores already taken, by item id, kept in one JSON file beside the thumbnails. One cache per
+ * measure: the cloud score's (`ThumbnailScore`) and the foliage score's (`foliage.ts`) live in two
+ * files, so a change to one never stales the other.
+ */
+export class ScoreCache<T = ThumbnailScore> {
+  private readonly scores: Map<string, T>;
   private dirty = false;
 
   constructor(private readonly path: string) {
     this.scores = existsSync(path)
-      ? new Map(
-          Object.entries(JSON.parse(readFileSync(path, 'utf8')) as Record<string, ThumbnailScore>),
-        )
+      ? new Map(Object.entries(JSON.parse(readFileSync(path, 'utf8')) as Record<string, T>))
       : new Map();
   }
 
-  get(itemId: string): ThumbnailScore | undefined {
+  get(itemId: string): T | undefined {
     return this.scores.get(itemId);
   }
 
-  set(itemId: string, score: ThumbnailScore): void {
+  set(itemId: string, score: T): void {
     this.scores.set(itemId, score);
     this.dirty = true;
   }
@@ -163,13 +165,13 @@ export class ScoreCache {
   }
 }
 
-export interface ScoreDeps {
+export interface ScoreDeps<T = ThumbnailScore> {
   /** A signed read of a thumbnail blob (core's `NaipSasSigner.fetch` over the real `fetch`). */
   fetchBlob: (url: string) => Promise<BlobAnswer>;
   decode: DecodeJpeg;
   /** Where thumbnails are kept, `<itemId>.jpg`. */
   thumbsDir: string;
-  cache: ScoreCache;
+  cache: ScoreCache<T>;
   /** Reads in flight at once (default 16). */
   concurrency?: number;
   /** Called after each frame (scored, cached or failed), with the running count. */
@@ -192,18 +194,31 @@ export const thumbnailPath = (thumbsDir: string, itemId: string) =>
  * Scores each frame — from the cache, the kept thumbnail, or a fresh read — and returns them by item
  * id; `null` for a frame whose thumbnail couldn't be had (none listed, a refused read, an image GDAL
  * can't decode), which the manifest records as unscored. A failure never stops the rest.
+ *
+ * `measure` turns a thumbnail's RGB into its score: the cloud score's `scorePixels` unless another
+ * is given (the foliage score's `foliagePixels`), with a cache of its own.
  */
-export async function scoreFrames(
+export function scoreFrames(
   targets: readonly ScoreTarget[],
-  deps: ScoreDeps,
-): Promise<Map<string, ThumbnailScore | null>> {
-  const out = new Map<string, ThumbnailScore | null>();
+  deps: ScoreDeps<ThumbnailScore>,
+): Promise<Map<string, ThumbnailScore | null>>;
+export function scoreFrames<T>(
+  targets: readonly ScoreTarget[],
+  deps: ScoreDeps<T>,
+  measure: (rgb: Uint8Array) => T,
+): Promise<Map<string, T | null>>;
+export async function scoreFrames<T>(
+  targets: readonly ScoreTarget[],
+  deps: ScoreDeps<T>,
+  measure: (rgb: Uint8Array) => T = scorePixels as unknown as (rgb: Uint8Array) => T,
+): Promise<Map<string, T | null>> {
+  const out = new Map<string, T | null>();
   const queue = [...new Map(targets.map((t) => [t.itemId, t])).values()];
   const total = queue.length;
   let done = 0;
   mkdirSync(deps.thumbsDir, { recursive: true });
 
-  const one = async (t: ScoreTarget): Promise<ThumbnailScore | null> => {
+  const one = async (t: ScoreTarget): Promise<T | null> => {
     const cached = deps.cache.get(t.itemId);
     if (cached !== undefined) return cached;
     const jpeg = thumbnailPath(deps.thumbsDir, t.itemId);
@@ -216,7 +231,7 @@ export async function scoreFrames(
     const ppm = `${jpeg}.ppm`;
     try {
       await deps.decode(jpeg, ppm);
-      const score = scorePixels(parsePpm(new Uint8Array(readFileSync(ppm))).rgb);
+      const score = measure(parsePpm(new Uint8Array(readFileSync(ppm))).rgb);
       deps.cache.set(t.itemId, score);
       return score;
     } catch {
@@ -228,7 +243,7 @@ export async function scoreFrames(
 
   const worker = async () => {
     for (let t = queue.shift(); t !== undefined; t = queue.shift()) {
-      let score: ThumbnailScore | null;
+      let score: T | null;
       try {
         score = await one(t);
       } catch {

@@ -85,13 +85,14 @@ function cell(key: string, over: Partial<NaipManifestCell> = {}): NaipManifestCe
 
 function manifest(over: Partial<NaipManifest> = {}): NaipManifest {
   return {
-    version: 1,
+    version: 2,
     campaign: CAMPAIGN,
     pilot: null,
     createdAt: '2026-12-12T00:00:00Z',
     ruleVersion: 1,
     catalog: { walkedOn: '2026-12-12', items: 3, perState: { VT: 2, NY: 1 }, archivedAt: null },
     exclusionsHash: 'e'.repeat(64),
+    foliageStrikesHash: 'f'.repeat(64),
     offSeasonCells: [],
     basedOn: null,
     frames: {},

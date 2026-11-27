@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import {
-  NAIP_OFF_SEASON_CELLS,
   NAIP_STATES,
   type NaipCatalogItem,
+  type NaipFoliageStrike,
   type NaipManifest,
   type NaipState,
   workTileKey,
@@ -154,13 +154,39 @@ describe('runSelect', () => {
     expect(out.manifest.catalog.archivedAt).toBeNull();
   });
 
-  test('refuses the off-season step past the committed list, failing the run', async () => {
-    const d = deps({ offSeasonCells: NAIP_OFF_SEASON_CELLS.slice(1) });
+  // A whole flight day struck, as the foliage review proposes them.
+  const proposed: NaipFoliageStrike = {
+    flight: { state: 'ME', acquired: '2023-10-02' },
+    keep: [],
+    reason: 'turned',
+    reviewedBy: 'proposed',
+    reviewedOn: '2026-11-27',
+  };
+
+  test("refuses a foliage strike the founder hasn't confirmed, failing the run", async () => {
+    const d = deps({ foliageStrikes: [proposed] });
     await expect(runSelect(args(), d.deps)).rejects.toThrow(
-      /reached cells beyond the committed six: 4407028ne/,
+      /1 foliage strikes await the founder's confirmation/,
     );
     expect(d.run.failed).toHaveBeenCalledWith(expect.any(SelectRefusal));
     expect(d.written.manifest).toBeUndefined();
+  });
+
+  test('runs a proposal as a dry run, and names the off-season cells by why', async () => {
+    const d = deps({ run: null, foliageStrikes: [proposed] });
+    const out = await runSelect(args('--dry-run'), d.deps);
+    expect(out.manifest.foliageStrikesHash).not.toBe(
+      (await runSelect(args('--dry-run'), deps({ run: null }).deps)).manifest.foliageStrikesHash,
+    );
+    // The six October cells have no leaf-on frame: the strike of their October day changes nothing.
+    expect(out.manifest.offSeasonCells.map((c) => c.why)).toEqual(Array(6).fill('noLeafOn'));
+    expect(d.lines.some((l) => /off-season \(noLeafOn\), 6: 4407004ne/.test(l))).toBe(true);
+  });
+
+  test('a confirmed strike builds', async () => {
+    const d = deps({ foliageStrikes: [{ ...proposed, reviewedBy: 'founder' }] });
+    await runSelect(args(), d.deps);
+    expect(d.run.succeed).toHaveBeenCalled();
   });
 
   test('refuses an exclusion list that leaves a cell with nothing', async () => {

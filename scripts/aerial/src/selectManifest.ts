@@ -22,13 +22,16 @@ import {
   type NaipCandidate,
   type NaipCellPick,
   type NaipExclusion,
+  type NaipFoliageStrike,
   type NaipManifest,
   type NaipManifestCell,
   type NaipManifestFrame,
   type NaipManifestWorkTile,
+  type NaipOffSeasonCell,
   type NaipSelection,
   type NaipState,
   naipExclusionsHash,
+  naipFoliageStrikesHash,
   naipWorkTileInputHash,
   workTileKey,
   workTilesOf,
@@ -71,7 +74,7 @@ export interface ManifestInput {
   catalog: NaipManifest['catalog'];
   selection: NaipSelection;
   exclusions: readonly NaipExclusion[];
-  offSeasonCells: readonly string[];
+  foliageStrikes: readonly NaipFoliageStrike[];
   scores: ReadonlyMap<string, ThumbnailScore | null>;
   narrowing: Narrowing;
   /** The current build's manifest, under `--from-current`; `null` otherwise. */
@@ -131,8 +134,13 @@ export function buildManifest(input: ManifestInput): NaipManifest {
     return { ...c, states: [...c.states], stack: [...c.stack], workTiles: [...c.workTiles] };
   };
 
-  // Which cells are considered changed, and what each cell's record is.
+  // Which cells are considered changed, and what each cell's record is. `whyOffSeason` follows the
+  // record: a fresh cell's from this selection, a kept one's from the current build.
   const considered = new Set<string>();
+  const whyOffSeason = new Map<string, NaipOffSeasonCell['why']>([
+    ...(current?.offSeasonCells ?? []).map((c) => [c.key, c.why] as const),
+  ]);
+  const freshWhy = new Map(input.selection.offSeason.map((c) => [c.key, c.why]));
   const freshByKey = new Map(input.selection.picks.map((p) => [p.key, p]));
   const currentByKey = new Map((current?.cells ?? []).map((c) => [c.key, c]));
   for (const key of new Set([...freshByKey.keys(), ...currentByKey.keys()])) {
@@ -145,7 +153,12 @@ export function buildManifest(input: ManifestInput): NaipManifest {
       if (was !== undefined) cells.set(key, kept(was));
       continue; // not considered: the current build's answer stands, or the cell stays out
     }
-    if (now !== undefined) cells.set(key, fresh(now));
+    if (now !== undefined) {
+      cells.set(key, fresh(now));
+      const why = freshWhy.get(key);
+      if (why === undefined) whyOffSeason.delete(key);
+      else whyOffSeason.set(key, why);
+    }
   }
 
   // The work tiles: which the archive holds, and which are cut.
@@ -177,7 +190,12 @@ export function buildManifest(input: ManifestInput): NaipManifest {
     ruleVersion: NAIP_RULE_VERSION,
     catalog: input.catalog,
     exclusionsHash: naipExclusionsHash(input.exclusions),
-    offSeasonCells: [...input.offSeasonCells],
+    foliageStrikesHash: naipFoliageStrikesHash(input.foliageStrikes),
+    // A kept cell with no why is a rule-1 build's, whose off-season step knew only `noLeafOn`.
+    offSeasonCells: [...cells.values()]
+      .filter((c) => c.step === 'offSeason')
+      .map((c) => ({ key: c.key, why: whyOffSeason.get(c.key) ?? 'noLeafOn' }))
+      .sort((a, b) => (a.key < b.key ? -1 : 1)),
     basedOn:
       current === null
         ? null
@@ -200,6 +218,8 @@ export function manifestCounts(manifest: NaipManifest): Record<string, number> {
     workTilesCut: manifest.workTiles.filter((w) => w.retile).length,
     pickedLeafOn: manifest.cells.filter((c) => c.step === 'leafOn').length,
     pickedOffSeason: manifest.cells.filter((c) => c.step === 'offSeason').length,
+    offSeasonNoLeafOn: manifest.offSeasonCells.filter((c) => c.why === 'noLeafOn').length,
+    offSeasonAllTurned: manifest.offSeasonCells.filter((c) => c.why === 'allTurned').length,
     partial: manifest.cells.filter((c) => c.partial).length,
     unscored: manifest.cells.filter((c) => c.cloudScore === null).length,
     borderCells: manifest.cells.filter((c) => c.states.length > 1).length,

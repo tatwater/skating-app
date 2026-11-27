@@ -14,13 +14,14 @@ import {
   type NaipCellIndex,
   naipCreditRange,
   naipExclusionsHash,
+  naipFoliageStrikesHash,
   naipFramesToCut,
   naipIndexUrl,
   naipWorkTileInputHash,
   parseNaipCellIndex,
   sha256Hex,
 } from './naipManifest';
-import { NAIP_STATES, type NaipExclusion } from './naipSelection';
+import { NAIP_STATES, type NaipExclusion, type NaipFoliageStrike } from './naipSelection';
 
 const ARCHIVE = 'naip-summer-20261212.pmtiles';
 
@@ -366,6 +367,41 @@ describe('naipWorkTileInputHash', () => {
 
   test('names the tiling version it hashes', () => {
     expect(NAIP_TILING_VERSION).toBe(1);
+  });
+});
+
+describe('naipFoliageStrikesHash', () => {
+  const review = { reason: 'turned', reviewedBy: 'founder', reviewedOn: '2026-11-27' } as const;
+  const day: NaipFoliageStrike = {
+    flight: { state: 'ME', acquired: '2023-09-27' },
+    keep: ['b', 'a'],
+    ...review,
+  };
+  const one: NaipFoliageStrike = { itemId: 'x', ...review };
+
+  test("hashes the list, not its order, nor the order of a day's keeps, nor a note", () => {
+    expect(naipFoliageStrikesHash([day, one])).toBe(naipFoliageStrikesHash([one, day]));
+    expect(naipFoliageStrikesHash([{ ...day, keep: ['a', 'b'] }])).toBe(
+      naipFoliageStrikesHash([day]),
+    );
+    expect(naipFoliageStrikesHash([{ ...one, note: 'brown' }])).toBe(naipFoliageStrikesHash([one]));
+    expect(naipFoliageStrikesHash([])).toBe(sha256Hex('[]'));
+  });
+
+  test('changes with any field that strikes differently, or with who reviewed it', () => {
+    const hashes = [
+      naipFoliageStrikesHash([day, one]),
+      naipFoliageStrikesHash([day]),
+      naipFoliageStrikesHash([{ ...day, keep: ['a'] }, one]),
+      naipFoliageStrikesHash([{ ...day, flight: { state: 'NH', acquired: '2023-09-27' } }, one]),
+      naipFoliageStrikesHash([{ ...day, flight: { state: 'ME', acquired: '2023-09-28' } }, one]),
+      naipFoliageStrikesHash([day, { ...one, itemId: 'y' }]),
+      naipFoliageStrikesHash([day, { ...one, reviewedBy: 'proposed' }]),
+      naipFoliageStrikesHash([{ ...day, reviewedOn: '2026-11-28' }, one]),
+      // A day that keeps the one frame is not the frame struck.
+      naipFoliageStrikesHash([{ itemId: 'ME 2023-09-27', ...review }]),
+    ];
+    expect(new Set(hashes).size).toBe(hashes.length);
   });
 });
 

@@ -16,8 +16,11 @@ import type { NaipManifest } from './naipManifest';
  * The rule's version, stamped into every manifest. Bump it whenever the rule could pick a different
  * frame for the same catalog, so a manifest says which rule built it and a partial rebuild never
  * mixes two rules' picks under one input hash.
+ *
+ * 2 (2026-11-27, D319): the reviewed foliage strikes, and the off-season step by rule rather than by
+ * a committed list of cells.
  */
-export const NAIP_RULE_VERSION = 1;
+export const NAIP_RULE_VERSION = 2;
 
 /**
  * The seven states the archive covers, each whole (the founder: the supported five plus CT and RI).
@@ -72,10 +75,98 @@ export interface NaipExclusion {
 }
 
 /**
+ * A flight or a frame struck by the founder's foliage review (§2.1.4, D319): flown leaf-on by the
+ * calendar, but already in autumn color or brown. Never by score alone: the screen
+ * (`scripts/aerial`'s `foliage.ts`) only proposes, and a person confirms.
+ *
+ * A struck frame is **demoted, not dropped**: it is never a cell's pick while the cell has a
+ * leaf-on frame that isn't struck, and it sits below every such frame in the fallback stack, so it
+ * shows only where nothing green has pixels — autumn imagery rather than a hole.
+ */
+interface NaipFoliageStrikeReview {
+  reason: 'turned';
+  /**
+   * `founder` once he has confirmed it; `proposed` for the screen's proposal awaiting him. The select
+   * stage refuses to build (anything but a dry run) with a `proposed` entry.
+   */
+  reviewedBy: 'founder' | 'proposed';
+  /** The review's day (the proposal's, for a `proposed` entry), `YYYY-MM-DD`. */
+  reviewedOn: string;
+  /** Why, in a few words, when it isn't obvious. */
+  note?: string;
+}
+
+/**
+ * One whole flight day, as the founder mostly reviews them: every frame the catalog labels `state`
+ * and dates `acquired`, except the frames in `keep` (a per-frame exception: a green frame on a
+ * turned day).
+ */
+export interface NaipFlightStrike extends NaipFoliageStrikeReview {
+  flight: { state: NaipState; acquired: string };
+  /** Item ids of that flight day that are not struck, sorted. */
+  keep: readonly string[];
+}
+
+/** One frame (the other per-frame exception: a turned frame on a day not struck whole). */
+export interface NaipFrameStrike extends NaipFoliageStrikeReview {
+  itemId: string;
+}
+
+export type NaipFoliageStrike = NaipFlightStrike | NaipFrameStrike;
+
+/** Does this strike name a whole flight day? */
+export function isNaipFlightStrike(strike: NaipFoliageStrike): strike is NaipFlightStrike {
+  return 'flight' in strike;
+}
+
+/**
+ * The reviewed list as a test of one frame: is it struck? A frame is struck when a frame entry names
+ * it, or a flight entry names its labeled state and acquisition day and doesn't keep it.
+ */
+export function naipFoliageStruck(
+  strikes: readonly NaipFoliageStrike[],
+): (frame: Pick<NaipCandidate, 'itemId' | 'state' | 'acquired'>) => boolean {
+  const frames = new Set<string>();
+  const flights = new Map<string, Set<string>>();
+  for (const s of strikes) {
+    if (!isNaipFlightStrike(s)) {
+      frames.add(s.itemId);
+      continue;
+    }
+    const day = `${s.flight.state} ${s.flight.acquired}`;
+    // Two entries for one day keep only what both keep: each says "strike all of it but these".
+    const before = flights.get(day);
+    const keep = new Set(s.keep);
+    flights.set(
+      day,
+      before === undefined ? keep : new Set([...before].filter((id) => keep.has(id))),
+    );
+  }
+  return (f) => {
+    if (frames.has(f.itemId)) return true;
+    const keep = flights.get(`${f.state} ${f.acquired}`);
+    return keep !== undefined && !keep.has(f.itemId);
+  };
+}
+
+/**
  * Which step picked a cell's frame: `leafOn` (the rule's steps 2–4), or `offSeason` (step 5, a cell
- * with no leaf-on candidate at all; allowed only for `NAIP_OFF_SEASON_CELLS`).
+ * with no leaf-on frame that isn't struck as turned).
  */
 export type NaipPickStep = 'leafOn' | 'offSeason';
+
+/**
+ * Why a cell reached the off-season step: `noLeafOn`, nothing flown leaf-on at 0.6 m or better (the
+ * six October cells north of Rumford); `allTurned`, every leaf-on frame struck as turned (western
+ * Maine's 27 September 2023 cells).
+ */
+export type NaipOffSeasonWhy = 'noLeafOn' | 'allTurned';
+
+/** A cell the off-season step reached: named in every run and manifest, for the July check. */
+export interface NaipOffSeasonCell {
+  key: string;
+  why: NaipOffSeasonWhy;
+}
 
 /** One quarter-quad's answer. */
 export interface NaipCellPick {
@@ -86,9 +177,9 @@ export interface NaipCellPick {
   step: NaipPickStep;
   /**
    * The fallback stack, **excluding the pick**: the pick's alternates in the order the rule would
-   * choose them if the pick were struck (first = the next choice). Every other leaf-on candidate —
-   * every other candidate, for an off-season cell. Each shows through wherever everything above it
-   * has no pixels (§2.2).
+   * choose them if the pick were struck (first = the next choice). Every other leaf-on candidate,
+   * those struck as turned last — every other candidate, for a cell with no leaf-on frame at all.
+   * Each shows through wherever everything above it has no pixels (§2.2).
    */
   stack: readonly NaipCandidate[];
   /**
@@ -113,12 +204,13 @@ export interface NaipSelection {
   /** One pick per quarter-quad with any candidate left, sorted by key. */
   picks: NaipCellPick[];
   dropped: NaipSelectionDrops;
+  /** Candidates the foliage list strikes (demoted, not dropped). */
+  foliageStruck: number;
   /**
-   * Cells the off-season step reached that are **not** on the committed list, sorted. Their picks
-   * are still in `picks`. The select stage refuses a build when this is non-empty (a seventh cell is
-   * a look for the founder, never a silent foliage pick); the July check reports it instead.
+   * Every cell the off-season step reached, with why, sorted by key: the known off-season cells.
+   * Their picks are in `picks`; the manifest names them, so the July check can revisit them.
    */
-  offSeasonBeyondList: string[];
+  offSeason: NaipOffSeasonCell[];
 }
 
 // ── The rule's parts ──────────────────────────────────────────────────────────────────────────────
@@ -210,8 +302,10 @@ export function rankNaipFrames(frames: readonly NaipCandidate[]): NaipCandidate[
 
 /**
  * The rule (§2.1), over every candidate of every state: drop the coarse, the mislabeled and the
- * excluded; then per cell, leaf-on only, the newest, a 0.3 m frame within two program years of the
- * newest beats it, and the off-season step where nothing is leaf-on. Independent of input order.
+ * excluded; then per cell, leaf-on only and not struck as turned, the newest, a 0.3 m frame within
+ * two program years of the newest beats it. Where that leaves nothing, the off-season step: the
+ * cell keeps the newest sharpest of its leaf-on frames, turned or not (`allTurned`), or of every
+ * frame when none was flown leaf-on (`noLeafOn`). Independent of input order.
  *
  * A candidate listed twice (the same item id) counts once. A cell whose every frame is dropped has
  * no pick; the select stage counts that as a hole and refuses the build.
@@ -219,10 +313,10 @@ export function rankNaipFrames(frames: readonly NaipCandidate[]): NaipCandidate[
 export function selectNaipPicks(
   candidates: readonly NaipCandidate[],
   exclusions: readonly NaipExclusion[],
-  offSeasonCells: readonly string[],
+  foliageStrikes: readonly NaipFoliageStrike[] = [],
 ): NaipSelection {
   const struck = new Set(exclusions.map((e) => e.itemId));
-  const allowedOffSeason = new Set(offSeasonCells);
+  const turned = naipFoliageStruck(foliageStrikes);
   const dropped: NaipSelectionDrops = { coarse: 0, outsideState: 0, excluded: 0 };
   const byCell = new Map<string, { frames: Map<string, NaipCandidate>; states: Set<NaipState> }>();
 
@@ -257,25 +351,36 @@ export function selectNaipPicks(
   }
 
   const picks: NaipCellPick[] = [];
-  const offSeasonBeyondList: string[] = [];
+  const offSeason: NaipOffSeasonCell[] = [];
+  let foliageStruck = 0;
   for (const [key, { frames, states }] of byCell) {
     const all = [...frames.values()];
     if (all.length === 0) continue;
     const midLat = quarterQuadCell(key).minLat + 1 / 32;
     const leafOn = all.filter((f) => isLeafOnNaipFrame(f.acquired, midLat));
-    const step: NaipPickStep = leafOn.length > 0 ? 'leafOn' : 'offSeason';
-    if (step === 'offSeason' && !allowedOffSeason.has(key)) offSeasonBeyondList.push(key);
-    const [pick, ...stack] = rankNaipFrames(step === 'leafOn' ? leafOn : all) as [
-      NaipCandidate,
-      ...NaipCandidate[],
-    ];
+    const green = leafOn.filter((f) => !turned(f));
+    const demoted = leafOn.filter((f) => turned(f));
+    foliageStruck += all.filter((f) => turned(f)).length;
+    let ranked: NaipCandidate[];
+    if (green.length > 0) {
+      // A struck frame stays under every green one: it shows only where they have no pixels.
+      ranked = [...rankNaipFrames(green), ...rankNaipFrames(demoted)];
+    } else if (leafOn.length > 0) {
+      offSeason.push({ key, why: 'allTurned' });
+      ranked = rankNaipFrames(leafOn);
+    } else {
+      offSeason.push({ key, why: 'noLeafOn' });
+      ranked = rankNaipFrames(all);
+    }
+    const [pick, ...stack] = ranked as [NaipCandidate, ...NaipCandidate[]];
+    const step: NaipPickStep = green.length > 0 ? 'leafOn' : 'offSeason';
     picks.push({ key, pick, step, stack, states: [...states].sort() });
   }
 
   // Keys are unique here (one pick per cell), so the order needs no tie.
   picks.sort((a, b) => (a.key < b.key ? -1 : 1));
-  offSeasonBeyondList.sort();
-  return { picks, dropped, offSeasonBeyondList };
+  offSeason.sort((a, b) => (a.key < b.key ? -1 : 1));
+  return { picks, dropped, foliageStruck, offSeason };
 }
 
 /** A cell's frame by reference: what a diff or an offer names. */

@@ -5,8 +5,8 @@
  *
  * What it refuses, before anything is written (each a `SelectRefusal`, the run row failed with it):
  *
- * - the off-season step reaching a cell beyond `NAIP_OFF_SEASON_CELLS` (a seventh October cell is a
- *   look for the founder, never a silent foliage pick);
+ * - a foliage strike the founder hasn't confirmed (`reviewedBy: 'proposed'`), in anything but a dry
+ *   run: a proposal is run to be looked at, never built (D319);
  * - a cell whose every candidate is struck (a hole the exclusion list made);
  * - any violation of the rule's invariants on the whole catalog (`checkSelection`);
  * - a `--cells` key no frame covers (a typo would otherwise build nothing there, quietly).
@@ -15,12 +15,13 @@
 import {
   isQuarterQuadKey,
   NAIP_EXCLUSIONS,
-  NAIP_OFF_SEASON_CELLS,
+  NAIP_FOLIAGE_STRIKES,
   NAIP_STATES,
   type NaipCandidate,
   type NaipCatalogItem,
   type NaipCellPick,
   type NaipExclusion,
+  type NaipFoliageStrike,
   type NaipManifest,
   type NaipState,
   selectNaipPicks,
@@ -59,7 +60,8 @@ export interface SelectDeps {
   run: SelectRunLog | null;
   now: () => Date;
   exclusions?: readonly NaipExclusion[];
-  offSeasonCells?: readonly string[];
+  /** The foliage strikes; the committed, reviewed list unless a dry run is handed a proposal. */
+  foliageStrikes?: readonly NaipFoliageStrike[];
   /** The whole-catalog proof; injectable only so a test can make it fail. */
   check?: typeof checkSelection;
 }
@@ -110,10 +112,16 @@ async function scoreRounds(
 
 export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<SelectResult> {
   const exclusions = deps.exclusions ?? NAIP_EXCLUSIONS;
-  const offSeasonCells = deps.offSeasonCells ?? NAIP_OFF_SEASON_CELLS;
+  const foliageStrikes = deps.foliageStrikes ?? NAIP_FOLIAGE_STRIKES;
   const run = deps.run;
   run?.start();
   try {
+    const unconfirmed = foliageStrikes.filter((s) => s.reviewedBy !== 'founder');
+    if (unconfirmed.length > 0 && !args.dryRun) {
+      throw new SelectRefusal(
+        `${unconfirmed.length} foliage strikes await the founder's confirmation: a proposal runs only as a dry run`,
+      );
+    }
     let narrowing: Narrowing = null;
     if (args.states !== null) narrowing = { states: args.states };
     if (args.cells !== null) {
@@ -132,18 +140,19 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
     const candidates = snapshot.items;
     run?.count('items', candidates.length);
 
-    const selection = selectNaipPicks(candidates, exclusions, offSeasonCells);
+    const selection = selectNaipPicks(candidates, exclusions, foliageStrikes);
     run?.count('droppedCoarse', selection.dropped.coarse);
-    run?.count('droppedOutsideState', selection.dropped.outsideState);
     run?.count('droppedExcluded', selection.dropped.excluded);
+    run?.count('droppedOutsideState', selection.dropped.outsideState);
+    run?.count('foliageStruck', selection.foliageStruck);
     run?.count('picks', selection.picks.length);
-    if (selection.offSeasonBeyondList.length > 0) {
-      run?.count('offSeasonBeyondList', selection.offSeasonBeyondList.length);
-      throw new SelectRefusal(
-        `the off-season step reached cells beyond the committed six: ${selection.offSeasonBeyondList.join(', ')} — a look for the founder, not a silent foliage pick`,
-      );
+    // The known off-season cells, by name: the run's log says which, the manifest keeps them.
+    for (const why of ['noLeafOn', 'allTurned'] as const) {
+      const keys = selection.offSeason.filter((c) => c.why === why).map((c) => c.key);
+      if (keys.length > 0)
+        deps.log(`[select] off-season (${why}), ${keys.length}: ${keys.join(' ')}`);
     }
-    const check = (deps.check ?? checkSelection)(candidates, exclusions, selection);
+    const check = (deps.check ?? checkSelection)(candidates, exclusions, selection, foliageStrikes);
     if (check.holes.length > 0) {
       throw new SelectRefusal(
         `the exclusion list leaves ${check.holes.length} cells with no frame: ${check.holes.join(', ')}`,
@@ -187,7 +196,7 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
       },
       selection,
       exclusions,
-      offSeasonCells,
+      foliageStrikes,
       scores,
       narrowing,
       current,

@@ -12,8 +12,11 @@
 
 import { isQuarterQuadKey, NAIP_MAX_ZOOM, NAIP_MIN_ZOOM, NAIP_TILE_SIZE } from './naipGrid';
 import {
+  isNaipFlightStrike,
   isNaipState,
   type NaipExclusion,
+  type NaipFoliageStrike,
+  type NaipOffSeasonCell,
   type NaipPickStep,
   type NaipState,
 } from './naipSelection';
@@ -31,7 +34,8 @@ export const NAIP_MANIFEST_SUFFIX = '-manifest.json';
 
 // ── The manifest (§2.1.3) ─────────────────────────────────────────────────────────────────────────
 
-export const NAIP_MANIFEST_VERSION = 1;
+/** 2 (2026-11-27, D319): `foliageStrikesHash`, and `offSeasonCells` names the cells the step reached. */
+export const NAIP_MANIFEST_VERSION = 2;
 
 /** A frame the build may draw (a pick or a fallback), by what the date index and an offer need. */
 export interface NaipManifestFrame {
@@ -131,8 +135,13 @@ export interface NaipManifest {
   };
   /** Hex SHA-256 of the exclusion list the rule ran with. */
   exclusionsHash: string;
-  /** The committed off-season cells the rule ran with. */
-  offSeasonCells: string[];
+  /** Hex SHA-256 of the foliage strikes the rule ran with (`naipFoliageStrikesHash`). */
+  foliageStrikesHash: string;
+  /**
+   * Every cell the off-season step reached, with why, sorted by key (`NaipSelection.offSeason`):
+   * the known off-season cells, for the July check to revisit.
+   */
+  offSeasonCells: NaipOffSeasonCell[];
   /**
    * The build this one diffs against (`--from-current`), by its archive and manifest names; `null`
    * for a build from nothing, where every work tile is cut.
@@ -359,6 +368,32 @@ export function naipExclusionsHash(exclusions: readonly NaipExclusion[]): string
   // in any order.
   const rows = exclusions
     .map((e) => JSON.stringify([e.itemId, e.reason, e.reviewedBy, e.reviewedOn]))
+    .sort();
+  return sha256Hex(`[${rows.join(',')}]`);
+}
+
+/**
+ * The foliage strikes' hash, for the manifest (`foliageStrikesHash`): hex SHA-256 of every entry as
+ * a fixed row, sorted — a flight entry's state, day and sorted `keep`, a frame entry's item id, and
+ * each one's review — so two lists that strike the same way hash alike whatever their order.
+ */
+export function naipFoliageStrikesHash(strikes: readonly NaipFoliageStrike[]): string {
+  const rows = strikes
+    .map((s) =>
+      JSON.stringify(
+        isNaipFlightStrike(s)
+          ? [
+              'flight',
+              s.flight.state,
+              s.flight.acquired,
+              [...s.keep].sort(),
+              s.reason,
+              s.reviewedBy,
+              s.reviewedOn,
+            ]
+          : ['frame', s.itemId, s.reason, s.reviewedBy, s.reviewedOn],
+      ),
+    )
     .sort();
   return sha256Hex(`[${rows.join(',')}]`);
 }

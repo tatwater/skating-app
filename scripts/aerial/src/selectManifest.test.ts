@@ -1,9 +1,9 @@
 import {
-  NAIP_OFF_SEASON_CELLS,
   NAIP_RULE_VERSION,
   type NaipCandidate,
   type NaipManifest,
   naipExclusionsHash,
+  naipFoliageStrikesHash,
   naipWorkTileInputHash,
   selectNaipPicks,
   workTileKey,
@@ -60,9 +60,9 @@ function input(
       perState: { VT: 4, NY: 1 },
       archivedAt: null,
     },
-    selection: selectNaipPicks(cands, [], NAIP_OFF_SEASON_CELLS),
+    selection: selectNaipPicks(cands, []),
     exclusions: [],
-    offSeasonCells: NAIP_OFF_SEASON_CELLS,
+    foliageStrikes: [],
     scores: new Map([
       [a1.itemId, FULL],
       [a2.itemId, HALF],
@@ -167,12 +167,13 @@ describe('buildManifest, from nothing', () => {
 
   test('stamps the rule, the lists and the catalog it ran with', () => {
     expect(m).toMatchObject({
-      version: 1,
+      version: 2,
       campaign: 'naip-20261201',
       pilot: null,
       ruleVersion: NAIP_RULE_VERSION,
       exclusionsHash: naipExclusionsHash([]),
-      offSeasonCells: [...NAIP_OFF_SEASON_CELLS],
+      foliageStrikesHash: naipFoliageStrikesHash([]),
+      offSeasonCells: [],
       basedOn: null,
       catalog: { walkedOn: '2026-12-01', items: 5 },
     });
@@ -187,6 +188,8 @@ describe('buildManifest, from nothing', () => {
       workTilesCut: m.workTiles.length,
       pickedLeafOn: 3,
       pickedOffSeason: 0,
+      offSeasonNoLeafOn: 0,
+      offSeasonAllTurned: 0,
       partial: 1,
       unscored: 0,
       borderCells: 1,
