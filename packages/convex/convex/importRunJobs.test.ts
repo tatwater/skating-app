@@ -9,7 +9,7 @@ import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
-import { aggregateOfPasses, BACKFILL_CAMPAIGN_READ } from './importRunJobs';
+import { aggregateOfPasses, BACKFILL_CAMPAIGN_READ, BACKFILL_PAGE } from './importRunJobs';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -389,6 +389,38 @@ describe('backfillListed', () => {
     expect((await all(t)).filter((r) => r.kind === 'region_masks')[0]?.parentRunId).toBeDefined();
   });
 });
+
+test('the worst page fits one transaction: every row a different campaign at its full size', async () => {
+  const t = convexTest(schema, modules);
+  // Interleaved by start, so the oldest page holds one pass of every campaign: each campaign is read
+  // whole and every one of its passes linked, on that page.
+  await t.run(async (ctx) => {
+    for (let k = 0; k < BACKFILL_CAMPAIGN_READ; k++) {
+      for (let c = 0; c < BACKFILL_PAGE; c++) {
+        await ctx.db.insert('importRuns', {
+          kind: 'canonical_water',
+          label: 'canonical water',
+          campaignId: `worst-${c}`,
+          deployment: 'dev:agile-bee-397',
+          isProd: false,
+          status: 'succeeded',
+          startedAt: T0 + (k * BACKFILL_PAGE + c) * 1_000,
+          finishedAt: T0 + (k * BACKFILL_PAGE + c) * 1_000 + 500,
+          counts: [],
+          stages: [],
+          failures: [],
+          failuresTotal: 0,
+        });
+      }
+    }
+  });
+  const first = await step(t, { pageSize: BACKFILL_PAGE });
+  expect(first).toMatchObject({
+    scanned: BACKFILL_PAGE,
+    campaignsCreated: BACKFILL_PAGE,
+    passesLinked: BACKFILL_PAGE * BACKFILL_CAMPAIGN_READ,
+  });
+}, 60_000);
 
 test('aggregateOfPasses: failed beats running beats succeeded', () => {
   const pass = (status: Doc<'importRuns'>['status'], startedAt: number, finishedAt?: number) =>

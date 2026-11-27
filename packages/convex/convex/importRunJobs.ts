@@ -37,8 +37,14 @@ import type { Doc, Id } from './_generated/dataModel';
 import { internalMutation, type MutationCtx } from './_generated/server';
 import { listedInOf } from './importRuns';
 
-/** Rows a pass reads (the page): a few hundred rows on dev is a handful of passes. */
-export const BACKFILL_PAGE = 100;
+/**
+ * Rows a pass reads (the page): a few hundred rows on dev is a handful of passes. Bounded by the
+ * worst page: every row a different campaign at {@link BACKFILL_CAMPAIGN_READ} script passes, so a
+ * pass reads one range per campaign and one per pass it links (a patch reads its row) — 50 × 61 is
+ * 3,050 ranges, under the backend's 4,096 with its start cost. At 100 a real backend refused the
+ * page ("Too many reads", 6,100 ranges).
+ */
+export const BACKFILL_PAGE = 50;
 /**
  * The most rows one campaign's aggregate reads (`by_campaign`). A campaign is seven script passes
  * and three by hand, re-runs included: tens at most. One past this is refused for that campaign
