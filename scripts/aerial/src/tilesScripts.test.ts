@@ -247,7 +247,9 @@ function cutAerial(
   return { ...res, calls: lines(calls), dir, unit };
 }
 
-describe('cut-aerial.sh', () => {
+// Each test runs the worker once or more, each run a bash, jq and two `tsx` processes: seconds alone,
+// past vitest's 20 s under a whole-repo `pnpm test` beside the real-GDAL proofs (measured).
+describe('cut-aerial.sh', { timeout: 60_000 }, () => {
   test('counts, warps only what shows, tiles, packs, and uploads the done record last', () => {
     const run = cutAerial();
     expect(run.stderr).not.toContain('SECRETSIG');
