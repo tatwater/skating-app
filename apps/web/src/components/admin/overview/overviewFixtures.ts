@@ -31,7 +31,13 @@ const day = (month: number, date: number, year = month >= 6 ? 2026 : 2027) =>
 export const MACHINERY: MachineryCardData = {
   jobs: [
     // Quiet for 41 minutes: a stalled run's time is its silence.
-    { id: 'corpus-load', name: 'Corpus · load bodies', state: 'stalled', at: NOW - 41 * MIN },
+    {
+      id: 'import',
+      name: 'Corpus · load bodies',
+      state: 'stalled',
+      at: NOW - 41 * MIN,
+      runId: 'k00000000000000000000000000000001',
+    },
     { id: 'depth-load', name: 'Depth load', state: 'failed', at: at(1, 22, 14) },
     { id: 'orphan-photos', name: 'Retention · orphan photos', state: 'failed', at: at(0, 4, 12) },
     { id: 'weather-appends', name: 'Weather appends', state: 'late', at: at(0, 2, 4) },

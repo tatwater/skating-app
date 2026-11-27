@@ -199,9 +199,10 @@ export function corpusExtrasFrom(counts: CorpusCounts): CorpusExtras {
 
 /**
  * A job's last word. Red won't recover without a person (stalled, failed); amber is late or
- * retrying; ok is the quiet state; `never` hasn't run this season.
+ * retrying; `running` is a run reporting on time (the corpus campaign while it works); ok is the
+ * quiet state; `never` hasn't run this season.
  */
-export type JobState = 'stalled' | 'failed' | 'late' | 'retried' | 'ok' | 'never';
+export type JobState = 'stalled' | 'failed' | 'late' | 'retried' | 'running' | 'ok' | 'never';
 
 export interface JobRow {
   id: string;
@@ -209,6 +210,8 @@ export interface JobRow {
   state: JobState;
   /** When it last ran (`jobWhen` writes it); `null` if it never has. */
   at: number | null;
+  /** The run the row stands for (the corpus import row): the row opens its page in Machinery. */
+  runId?: string;
 }
 
 export interface MachineryCardData {
@@ -222,7 +225,14 @@ export interface MachineryCardData {
 
 /** `machinery.overviewJobs` as the card draws it. */
 export function machineryFromJobs(read: OverviewJobs): MachineryCardData {
-  return { jobs: read.jobs, more: read.more, moreAllOk: read.moreAllOk };
+  return { jobs: read.jobs.map(jobRowOf), more: read.more, moreAllOk: read.moreAllOk };
+}
+
+/** A job as the card draws it, carrying the run it stands for when the read names one. */
+function jobRowOf(job: OverviewJobs['jobs'][number]): JobRow {
+  const { id, name, state, at } = job;
+  const runId = (job as { runId?: unknown }).runId;
+  return { id, name, state, at, ...(typeof runId === 'string' && { runId }) };
 }
 
 /**

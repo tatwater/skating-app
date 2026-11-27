@@ -1,7 +1,12 @@
 import { taskLaneById } from '../corpus/taskLanes';
 import { type InboxQuery, inboxHref } from '../inbox/inboxSearch';
 import type { FeedTarget } from './overviewData';
-import { CORPUS_LANE_OF, type OverviewTarget, PEOPLE_LANE_OF } from './overviewLinks';
+import {
+  CORPUS_LANE_OF,
+  machineryPath,
+  type OverviewTarget,
+  PEOPLE_LANE_OF,
+} from './overviewLinks';
 
 /** The Inbox at a place: a lane, or one item by its source ref (`request:<id>`). */
 function inboxPath(place: Partial<Pick<InboxQuery, 'lane' | 'item'>>): string {
@@ -47,7 +52,9 @@ export function consolePathFor(to: OverviewTarget): string | null {
       }
     }
     case 'machinery':
-      return '/admin/imports';
+      // Machinery has landed (B01-8a): the mode opens on Corpus until Health lands; an import row
+      // opens its run there. `/admin/imports` stays standing for the runs Machinery doesn't list yet.
+      return machineryPath(to.run);
     case 'people':
       // People has landed: its lanes are the lists, the default (Everyone) written as no param.
       return to.list === undefined
@@ -57,7 +64,8 @@ export function consolePathFor(to: OverviewTarget): string | null {
       // A most-reported row opens that body's Body console (the governor's ruling at B01-2).
       return bodyConsolePath(to.id);
     case 'ledger':
-      // No page holds the ledger until Machinery lands; Home draws no link to it while cost is unread.
+      // No page holds the ledger until the Cost Ledger lands; Home draws no link to it while cost is
+      // unread.
       return null;
     case 'audit':
       return auditPath(to.type, to.id);
@@ -103,7 +111,7 @@ function auditPath(type: string, id: string): string | null {
       return '/admin/water/place-names';
     case 'importRun':
       // A run marked failed, waited on or asked to stop: its own page in Machinery › Corpus.
-      return `/admin/machinery/corpus?run=${encodeURIComponent(id)}`;
+      return machineryPath(id);
     case 'waterBodySubArea':
     case 'putIn':
     case 'parkingArea':

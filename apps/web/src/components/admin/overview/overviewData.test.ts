@@ -13,6 +13,7 @@ import {
   inboxHeadCount,
   inboxTotal,
   jobWhen,
+  machineryFromJobs,
   machineryTrouble,
   peopleFromOverview,
   suspensionDetail,
@@ -178,6 +179,27 @@ describe('machinery and cost', () => {
     expect(jobWhen(new Date(2026, 10, 13, 4, 12).getTime(), now)).toBe('04:12');
     expect(jobWhen(new Date(2026, 10, 12, 22, 14).getTime(), now)).toBe('Thu 22:14');
     expect(jobWhen(new Date(2026, 10, 3, 9, 0).getTime(), now)).toBe('3 Nov');
+  });
+
+  it('carries the run a job row stands for, and only a run id the read names', () => {
+    const at = 1_000;
+    const read = {
+      jobs: [
+        { id: 'import', name: 'Corpus · load', state: 'running', at, runId: 'k1' },
+        { id: 'imagery-poll', name: 'Imagery poll', state: 'ok', at },
+        { id: 'odd', name: 'Odd', state: 'ok', at, runId: 7 },
+      ],
+      more: 0,
+      moreAllOk: true,
+      untracked: 0,
+    } as unknown as Parameters<typeof machineryFromJobs>[0];
+    expect(machineryFromJobs(read).jobs).toEqual([
+      { id: 'import', name: 'Corpus · load', state: 'running', at, runId: 'k1' },
+      { id: 'imagery-poll', name: 'Imagery poll', state: 'ok', at },
+      { id: 'odd', name: 'Odd', state: 'ok', at },
+    ]);
+    // A running import is neither stalled nor failed: the heads row says nothing of it.
+    expect(machineryTrouble(machineryFromJobs(read))).toEqual({ stalled: 0, failed: 0 });
   });
 
   it('writes dollars to the cent', () => {

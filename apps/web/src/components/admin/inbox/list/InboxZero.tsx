@@ -44,7 +44,9 @@ import type { InboxTodayView } from './inboxTypes';
  * head; the word, then the day in one line — *As of 15:02, 22 decided today, a median of 1.5 days from
  * filing to decision* — then *Open, today* (the open count stepping through the day over its rug of
  * filings and decisions, marked where it reached zero), *Decided today, by lane*, and *Not in the
- * inbox*: where the work that isn't a person's filing waits (Corpus, Machinery — *Coming soon*, D286).
+ * inbox*: where the work that isn't a person's filing waits — Corpus, and Machinery for a viewer who
+ * can open it (an admin; a moderator's list leaves the line out rather than link to a page that
+ * refuses them).
  *
  * From `inbox.today`, read only while the inbox is at zero. Nothing is judged: these are counts of
  * what moderators did, never anything about ice (D3).
@@ -52,10 +54,11 @@ import type { InboxTodayView } from './inboxTypes';
 
 /**
  * The live links of *Not in the inbox*, by the mode they open: the router's link element, worn as
- * the row's link chip. A mode with none here is *Coming soon* (D286). The route provides them (Corpus
- * from B01-7a: the first task lane with an open task), so the view between needs no prop for them.
+ * the row's link chip. Corpus without one is *Coming soon* (D286); Machinery without one isn't drawn
+ * (its link is given only to a viewer who can open it). The route provides them (Corpus from B01-7a:
+ * the first task lane with an open task; Machinery from B01-8a), so the view between needs no prop.
  */
-export const ZeroLinks = createContext<{ corpus?: ReactElement }>({});
+export const ZeroLinks = createContext<{ corpus?: ReactElement; machinery?: ReactElement }>({});
 
 const HOUR = 3_600_000;
 /** The longest two whole local hours in a row are apart: 90 minutes, across a half-hour change. */
@@ -137,12 +140,19 @@ export function InboxZero({
       )}
       <Section title={NOT_IN_INBOX} className="px-gutter pt-(--space-5_5)">
         <div data-slot="inbox-zero-elsewhere" className="flex flex-col">
-          <Elsewhere name={CORPUS} link={CORPUS_LINK} to={links.corpus}>
+          <Elsewhere
+            name={CORPUS}
+            link={CORPUS_LINK}
+            to={links.corpus}
+            last={links.machinery === undefined}
+          >
             {notInInbox?.corpus}
           </Elsewhere>
-          <Elsewhere name={MACHINERY} link={MACHINERY_LINK} last>
-            {notInInbox?.machinery}
-          </Elsewhere>
+          {links.machinery !== undefined && (
+            <Elsewhere name={MACHINERY} link={MACHINERY_LINK} to={links.machinery} last>
+              {notInInbox?.machinery}
+            </Elsewhere>
+          )}
         </div>
       </Section>
     </div>
