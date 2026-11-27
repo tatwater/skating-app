@@ -63,6 +63,11 @@ describe('a stored line', () => {
     );
     // A close that says it failed is red.
     expect(logLineOf(close as never).tone).toBe('bad');
+    // The server's line for a loader's late close beside a mark is red when it failed, not when not.
+    const late = (text: string) =>
+      logLineOf({ seq: 4, loggedAt: 0, kind: 'close', text, dropped: null }).tone;
+    expect(late('The loader closed the run itself: failed: exit 3')).toBe('bad');
+    expect(late('The loader closed the run itself: succeeded')).not.toBe('bad');
   });
 });
 

@@ -45,7 +45,9 @@ export function logLineOf(e: RunEventView, timeZone?: string): LogLine {
       text: e.dropped === null ? TAIL_WORDS.cappedUnknown : TAIL_WORDS.capped(e.dropped),
     };
   }
-  const failedClose = e.kind === 'close' && /^failed\b/i.test(e.text);
+  // The logger's close reads *Failed: …*; the server's, for a run closed beside a mark, *The loader
+  // closed the run itself: failed…* — both red.
+  const failedClose = e.kind === 'close' && /(^|: )failed\b/i.test(e.text);
   const tone = failedClose ? 'bad' : (TONE[e.kind] ?? undefined);
   return {
     id: e.seq,
