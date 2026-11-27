@@ -250,7 +250,9 @@ require('node:http').createServer((req, res) => {
 }).listen(0, '127.0.0.1', function () { console.log(this.address().port); });
 `;
 
-describe.skipIf(!hasGdalPython)('aerial-counts.py, with real GDAL', () => {
+// Real GDAL: seconds alone, past vitest's 20 s under a whole-repo `pnpm test` beside the served
+// worker proof (measured). Never on CI.
+describe.skipIf(!hasGdalPython)('aerial-counts.py, with real GDAL', { timeout: 120_000 }, () => {
   const { unit, edge } = setup();
   const cell = unit.cells[0] as AerialWorkUnit['cells'][number];
 
