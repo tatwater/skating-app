@@ -496,6 +496,41 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'corpus.intake',
   },
+
+  // ── Machinery (B01-8a, D342) ───────────────────────────────────────────────────────────────────
+  // PLACEHOLDER (B01-8a T0): the six rows as the design pairs them, so the registry compiles and the
+  // pairs are visible; S1 writes the final rows with `undoHandlersMachinery.ts`. A run's mark, wait
+  // and stop change nothing a skater sees, so none asks a reason.
+  mark_run_failed: {
+    undo: inverse('reopen_run'),
+    takesAway: never,
+    capability: 'machinery.corpus',
+  },
+  reopen_run: {
+    undo: { kind: 'none', why: 'To mark it failed again, mark it from its page.' },
+    takesAway: never,
+    capability: 'machinery.corpus',
+  },
+  wait_on_run: {
+    undo: inverse('stop_waiting_on_run'),
+    takesAway: never,
+    capability: 'machinery.corpus',
+  },
+  stop_waiting_on_run: {
+    undo: { kind: 'none', why: 'To wait on it again, press Wait 30 minutes on its page.' },
+    takesAway: never,
+    capability: 'machinery.corpus',
+  },
+  request_run_stop: {
+    undo: inverse('withdraw_run_stop'),
+    takesAway: never,
+    capability: 'machinery.corpus',
+  },
+  withdraw_run_stop: {
+    undo: { kind: 'none', why: 'To ask it to stop again, ask from its page.' },
+    takesAway: never,
+    capability: 'machinery.corpus',
+  },
 };
 
 /** The verbs whose undo is still owed by a later workstream — the register the build closes. */

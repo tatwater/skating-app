@@ -125,6 +125,7 @@ import {
   REMOVAL_REASONS,
   REPORT_SOURCES,
   REVIEW_STATUSES,
+  RUN_EVENT_KINDS,
   SATELLITE_IMAGERY_MODES,
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
@@ -5514,11 +5515,103 @@ export default defineSchema({
      * Absent on rows written before B01-7a.
      */
     progressAt: v.optional(v.number()),
+    /** The campaign row this pass ran under (D341): from `RUN_CORPUS_PARENT`, set by run-corpus.sh. */
+    parentRunId: v.optional(v.id('importRuns')),
+    /** run-corpus.sh's name for the pass (`merge`, `load-landmarks`…), from `RUN_CORPUS_PASS`. */
+    campaignPass: v.optional(v.string()),
+    /**
+     * The Machinery list this run is a row of (D341): set by `start` from the kind for a run with no
+     * parent (`corpusRunPlan`'s kinds → 'corpus'); absent on a campaign's own passes, which draw
+     * inside their campaign. Widened as each pipeline's page lands (8d: 'enrichment'), to a union.
+     */
+    listedIn: v.optional(v.literal('corpus')),
+    /** On a `corpus_campaign` row only: what the script was asked, and how it ended. */
+    campaign: v.optional(
+      v.object({
+        flags: v.array(v.string()),
+        /** The passes in order, as the script will run them; a skipped one says why. */
+        plan: v.array(
+          v.object({
+            pass: v.string(),
+            by: literals(['script', 'hand']),
+            skipped: v.optional(v.string()),
+          }),
+        ),
+        exitCode: v.optional(v.number()),
+        /** The pass that was running when the script exited. */
+        lastPass: v.optional(v.string()),
+      }),
+    ),
+    /** Marked failed in the console (D342): who, when, why, and the audit row that did it. */
+    markedFailed: v.optional(
+      v.object({
+        byUserId: v.id('profiles'),
+        at: v.number(),
+        reason: v.string(),
+        actionId: v.id('moderationActions'),
+      }),
+    ),
+    /** The loader's own close, kept beside a hand mark rather than over it (D342). */
+    loaderFinish: v.optional(
+      v.object({
+        status: literals(['succeeded', 'failed']),
+        at: v.number(),
+        error: v.optional(v.string()),
+        applied: v.optional(v.boolean()),
+      }),
+    ),
+    /** *Wait 30 minutes* (D342): the stalled alarm held until `until`, seen by every admin. */
+    stallWait: v.optional(
+      v.object({
+        until: v.number(),
+        byUserId: v.id('profiles'),
+        at: v.number(),
+        actionId: v.id('moderationActions'),
+      }),
+    ),
+    /** A request to stop (D342, built and not drawn): the logger stops at its next flush. */
+    stopRequest: v.optional(
+      v.object({
+        byUserId: v.id('profiles'),
+        at: v.number(),
+        actionId: v.id('moderationActions'),
+        /** When the run's logger saw it. */
+        seenAt: v.optional(v.number()),
+      }),
+    ),
   })
     // The admin list: newest first, optionally narrowed to one loader.
     .index('by_started', ['startedAt'])
     .index('by_kind_started', ['kind', 'startedAt'])
-    .index('by_campaign', ['campaignId', 'startedAt']),
+    .index('by_campaign', ['campaignId', 'startedAt'])
+    // Machinery's run list (D341), one `.paginate()` over one range. Both fields are optional, so
+    // neither index is sparse: read each with `eq` on a defined value only, never a bare range.
+    .index('by_listed_started', ['listedIn', 'startedAt'])
+    .index('by_parent', ['parentRunId', 'startedAt']),
+
+  /**
+   * A run's log, line by line (D341, B01-8a): what the run logger saw — start, stages, the counts at
+   * each flush, failures, beats, close — and what the console did to the run (marked failed, waited
+   * on, asked to stop). Written by `runEvents.append` (the logger, at each flush) and by the
+   * machinery writes; read by Machinery's live tail. Capped per run at `MAX_RUN_EVENTS`, with one
+   * `cap` row counting what was not kept; `close`, `mark`, `wait` and `stop` rows are always kept.
+   * Kept as long as the run row is (corpus runs are few); the cron logs' retention sweep (B01-8b,
+   * D343) decides any horizon for them.
+   */
+  runEvents: defineTable({
+    runId: v.id('importRuns'),
+    /** 0-based per run, assigned by the server: the tail's order, whatever the clocks say. */
+    seq: v.number(),
+    /** The server's clock at the append. */
+    at: v.number(),
+    /** The writer's clock when it saw the line (the laptop's): the time the tail shows. */
+    loggedAt: v.number(),
+    kind: literals(RUN_EVENT_KINDS),
+    /** The line, trimmed by the server to `MAX_RUN_EVENT_TEXT` characters. */
+    text: v.string(),
+    /** On the `cap` row only: how many lines past the cap were not kept. */
+    dropped: v.optional(v.number()),
+  }).index('by_run_seq', ['runId', 'seq']),
 
   // ── B01 server reads: colleague presence ──────────────────────────────────────────────────────
 

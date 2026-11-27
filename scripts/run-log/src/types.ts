@@ -72,7 +72,12 @@ export type ImportRunKind =
    * `scripts/etl retire-absorbed` — the merge's absorbed rows folded into their survivors (D136).
    * Logged as `canonical_water` before B01-7a, which made it read as a campaign's load.
    */
-  | 'absorbed_retire';
+  | 'absorbed_retire'
+  /**
+   * `scripts/etl/run-corpus.sh`'s own row (D341, B01-8a), opened before its first pass by the
+   * campaign CLI and closed with the script's exit status; each pass's row points at it.
+   */
+  | 'corpus_campaign';
 
 /**
  * What a run set out to cover (D218): one member of `IMPORT_RUN_SCOPES`
