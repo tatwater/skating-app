@@ -498,9 +498,9 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
   },
 
   // ── Machinery (B01-8a, D342) ───────────────────────────────────────────────────────────────────
-  // PLACEHOLDER (B01-8a T0): the six rows as the design pairs them, so the registry compiles and the
-  // pairs are visible; S1 writes the final rows with `undoHandlersMachinery.ts`. A run's mark, wait
-  // and stop change nothing a skater sees, so none asks a reason.
+  // A run's mark, wait and request to stop change nothing a skater sees, so none asks a reason. Each
+  // forward press is undone by its inverse (`undoHandlersMachinery.ts`), which runs the inverse's own
+  // write; an inverse has no undo of its own — the forward press is on the run's page.
   mark_run_failed: {
     undo: inverse('reopen_run'),
     takesAway: never,

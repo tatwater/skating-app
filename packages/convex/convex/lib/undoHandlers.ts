@@ -30,6 +30,7 @@ import { ROW_MAX, type WaveCost } from './readBudget';
 import { termsSetBy } from './statusTerms';
 import { BODY_TARGET_UNDO, BODY_UNDO_HANDLERS } from './undoHandlersBody';
 import { CORPUS_TARGET_UNDO, CORPUS_UNDO_HANDLERS } from './undoHandlersCorpus';
+import { MACHINERY_UNDO_HANDLERS } from './undoHandlersMachinery';
 import { SUPPORT_UNDO_HANDLERS } from './undoHandlersSupport';
 import { UNDO_POLICY } from './undoPolicy';
 import {
@@ -442,6 +443,7 @@ export function undoHandlers(): Partial<Record<ModerationAction, UndoHandler>> {
     ...BODY_UNDO_HANDLERS,
     ...CORPUS_UNDO_HANDLERS,
     ...SUPPORT_UNDO_HANDLERS,
+    ...MACHINERY_UNDO_HANDLERS,
   };
   return composed;
 }
