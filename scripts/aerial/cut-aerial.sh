@@ -49,8 +49,10 @@
 #    chunk's zoom down to the deepest; then the zooms above the chunks from the chunks' own top
 #    tiles (no source read). Overviews are 2×2 averages (`tiles.ts`' `overviewResampling`).
 # 7. **Pack** (§2.2 step 5): `tilesPackMain.ts pack` writes the pack, its index and the done record.
-# 8. **Upload**: pack, index, then the done record — what "landed" means (`shard.ts`' `shardLanded`).
-#    A pack with no done record behind it is outstanding, and the next round overwrites it.
+# 8. **Upload**: first the work tile's old done record goes, then pack, index, and the new done record
+#    — what "landed" means (`shard.ts`' `shardLanded`). A pack with no done record behind it is
+#    outstanding, and the next round overwrites it; an old done record is never left beside a pack
+#    this cut is replacing (its input hash may be one a later manifest asks for again).
 #
 # Every step is timed into the done record (`timings`); the source bytes GDAL read are logged.
 set -euo pipefail
@@ -385,6 +387,7 @@ INDEX_KEY="$(jq -r .keys.index "$UNIT")"
 DONE_KEY="$(jq -r .keys.done "$UNIT")"
 if [[ -n "$LOCAL" ]]; then
   put() { mkdir -p "$(dirname "$LOCAL/$2")" && cp "$1" "$LOCAL/$2"; }
+  unput() { rm -f "$LOCAL/$1"; }
 else
   # Written at run time from the secrets, never baked into the image (the winter cutter's rule).
   RCLONE_CONF="$W/rclone.conf"
@@ -401,7 +404,17 @@ EOF
   )
   # `--s3-no-check-bucket`: bucket-scoped R2 tokens 403 on the HeadBucket probe (the imagery README).
   put() { rclone --config "$RCLONE_CONF" copyto "$1" "r2:${R2_BUCKET}/$2" --s3-no-check-bucket --retries 3; }
+  # Not there is fine: rclone answers 4, "file not found".
+  unput() {
+    rclone --config "$RCLONE_CONF" deletefile "r2:${R2_BUCKET}/$1" --s3-no-check-bucket --retries 3 \
+      || { local status=$?; (( status == 4 )); }
+  }
 fi
+# The old done record first. A re-cut overwrites the pack and then the index; a death between them
+# would leave the old index over the new pack, and a done record from an earlier cut — vouching for
+# both, under an input hash a later manifest may ask for again — would have the assembler copy the
+# wrong bytes. With it gone, any death from here on leaves the work tile outstanding.
+unput "$DONE_KEY" || die "the old done record could not be dropped"
 put "$W/shard/shard.pack" "$PACK_KEY" || die "uploading the pack failed"
 put "$W/shard/shard.idx.json" "$INDEX_KEY" || die "uploading the index failed"
 put "$W/shard/shard.done.json" "$DONE_KEY" || die "uploading the done record failed"

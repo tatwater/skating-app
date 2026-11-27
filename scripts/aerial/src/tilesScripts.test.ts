@@ -108,13 +108,25 @@ echo '}' >> "$out"
   bin(
     b,
     'rclone',
-    `echo "rclone $*" >> "$CALLS"\n[ "\${FAIL_ON:-}" = rclone ] && exit 6\nexit 0\n`,
+    `echo "rclone $*" >> "$CALLS"
+[ "\${FAIL_ON:-}" = rclone ] && exit 6
+[ "\${FAIL_ON:-}" = copyto ] && [ "$3" = copyto ] && exit 6
+[ "$3" = deletefile ] && [ -n "\${NO_DONE:-}" ] && exit 4
+exit 0
+`,
   );
   return b;
 }
 
 function cutAerial(
-  opts: { failOn?: string; image?: string; local?: boolean; wholeWorkTile?: boolean } = {},
+  opts: {
+    failOn?: string;
+    image?: string;
+    local?: boolean;
+    wholeWorkTile?: boolean;
+    /** The bucket holds no done record for the work tile yet (rclone's deletefile answers 4). */
+    noDone?: boolean;
+  } = {},
 ) {
   const dir = tmp();
   const b = workerTools(dir);
@@ -164,6 +176,7 @@ function cutAerial(
         R2_ENDPOINT: 'https://r2.example',
         R2_BUCKET: 'bucket',
         ...(opts.failOn !== undefined && { FAIL_ON: opts.failOn }),
+        ...(opts.noDone && { NO_DONE: '1' }),
       },
     },
   );
@@ -193,7 +206,15 @@ describe('cut-aerial.sh', () => {
     );
     expect(tile).toContain('--overview-resampling average');
     const uploads = run.calls.filter((c) => c.startsWith('rclone'));
-    expect(uploads.map((u) => u.split(' ')[5])).toEqual([
+    // The old done record goes first: nothing may vouch for a pack while it is being replaced.
+    expect(uploads.map((u) => u.split(' ')[3])).toEqual([
+      'deletefile',
+      'copyto',
+      'copyto',
+      'copyto',
+    ]);
+    expect(uploads[0]?.split(' ')[4]).toBe(`r2:bucket/${run.unit.keys.done}`);
+    expect(uploads.slice(1).map((u) => u.split(' ')[5])).toEqual([
       `r2:bucket/${run.unit.keys.pack}`,
       `r2:bucket/${run.unit.keys.index}`,
       `r2:bucket/${run.unit.keys.done}`,
@@ -241,10 +262,25 @@ describe('cut-aerial.sh', () => {
   });
 
   test('a failed upload fails the run before the done record', () => {
-    const run = cutAerial({ failOn: 'rclone' });
+    const run = cutAerial({ failOn: 'copyto' });
     expect(run.status).not.toBe(0);
-    expect(run.calls.filter((c) => c.startsWith('rclone'))).toHaveLength(1);
+    expect(run.calls.filter((c) => c.startsWith('rclone'))).toHaveLength(2);
     expect(run.stderr).toMatch(/uploading the pack failed/);
+  });
+
+  test('a re-cut drops the old done record before it overwrites the pack, or uploads nothing', () => {
+    // A done record left from an earlier cut — whose input hash a later manifest may ask for again —
+    // must never vouch for a pack this cut is replacing (a death between the pack and the index
+    // would leave the old index over the new pack, and the assembler would copy garbage).
+    const failed = cutAerial({ failOn: 'rclone' });
+    expect(failed.status).not.toBe(0);
+    expect(failed.calls.filter((c) => c.startsWith('rclone'))).toHaveLength(1);
+    expect(failed.calls.find((c) => c.startsWith('rclone'))).toContain('deletefile');
+    expect(failed.stderr).toMatch(/the old done record could not be dropped/);
+    // None there yet (rclone answers 4, "not found"): the cut goes on.
+    const first = cutAerial({ noDone: true });
+    expect(first.status).toBe(0);
+    expect(first.calls.filter((c) => c.startsWith('rclone'))).toHaveLength(4);
   });
 
   test('refuses an image not pinned by digest before reading anything', () => {
