@@ -1,9 +1,19 @@
 import { tileSurveyKey } from '@skating/core';
+import type { FunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
-import { emptyMarkerKey, POLL_CAP, slotOf } from './imageryLive';
+import { readReport } from './cronRuns';
+import {
+  type buildIndexHandler,
+  emptyMarkerKey,
+  IMAGERY_CRON_JOBS,
+  POLL_CAP,
+  type pollHandler,
+  type pumpHandler,
+  slotOf,
+} from './imageryLive';
 import { unreadableRetryMs } from './lib/imageryPump';
 import schema from './schema';
 
@@ -198,7 +208,53 @@ async function openSeason(t: T, fields: Record<string, unknown> = {}) {
   );
 }
 
-const runs = (t: T) => t.run((ctx) => ctx.db.query('imageryRuns').collect());
+type ImageryKind = keyof typeof IMAGERY_CRON_JOBS;
+const KIND_OF = new Map(
+  (Object.entries(IMAGERY_CRON_JOBS) as [ImageryKind, string][]).map(([k, job]) => [job, k]),
+);
+/** The imagery crons' runs, as the backbone keeps them (D347), with each one's `kind`. */
+const runs = (t: T) =>
+  t.run(async (ctx) =>
+    (await ctx.db.query('cronRuns').collect()).map((r) => ({ ...r, kind: KIND_OF.get(r.job) })),
+  );
+
+/**
+ * One imagery tick as the cron dispatcher records it: the job runs, then `cronRuns.finish` records
+ * its report (or its throw) — what `tickAction` does around the in-process handler (whose own wiring
+ * `crons.test.ts` proves). Answers the job's own result, its report taken off.
+ */
+type Results = {
+  poll: Awaited<ReturnType<typeof pollHandler>>;
+  pump: Awaited<ReturnType<typeof pumpHandler>>;
+  index: Awaited<ReturnType<typeof buildIndexHandler>>;
+};
+async function tick<K extends ImageryKind>(t: T, kind: K): Promise<Results[K]> {
+  const ref: FunctionReference<'action', 'internal'> = {
+    poll: internal.imageryLive.poll,
+    pump: internal.imageryLive.pump,
+    index: internal.imageryLive.buildIndex,
+  }[kind];
+  const startedAt = Date.now();
+  let result: unknown;
+  let thrown: { error: unknown } | null = null;
+  try {
+    result = await t.action(ref, {});
+  } catch (error) {
+    thrown = { error };
+  }
+  await t.mutation(internal.cronRuns.finish, {
+    job: IMAGERY_CRON_JOBS[kind],
+    trigger: 'cron',
+    startedAt,
+    finishedAt: Date.now(),
+    ...(thrown ? { error: String(thrown.error) } : {}),
+    report: thrown ? null : readReport(result, Date.now()),
+  });
+  if (thrown) throw thrown.error;
+  if (result === null || typeof result !== 'object') return result as Results[K];
+  const { cronReport: _report, ...rest } = result as Record<string, unknown>;
+  return rest as Results[K];
+}
 const granules = (t: T) => t.run((ctx) => ctx.db.query('imageryGranules').collect());
 const scheduled = (t: T, name: string) =>
   t.run(async (ctx) =>
@@ -222,14 +278,12 @@ describe('poll', () => {
   test('does nothing — and records nothing — until imagery is started', async () => {
     const t = convexTest(schema, modules);
     stub(world());
-    expect(await t.action(internal.imageryLive.poll, {})).toEqual({
+    expect(await tick(t, 'poll')).toEqual({
       outcome: 'skipped',
       detail: 'no watch is open',
     });
     await openSeason(t, { imageryStartedAt: undefined });
-    expect((await t.action(internal.imageryLive.poll, {})).detail).toBe(
-      'imagery has not been started',
-    );
+    expect((await tick(t, 'poll')).detail).toBe('imagery has not been started');
     await t.run(async (ctx) => {
       const row = await ctx.db.query('imageryIngestSeasons').first();
       await ctx.db.patch((row as { _id: Id<'imageryIngestSeasons'> })._id, {
@@ -237,7 +291,7 @@ describe('poll', () => {
         imageryPausedAt: 2,
       });
     });
-    expect((await t.action(internal.imageryLive.poll, {})).detail).toBe('imagery is paused');
+    expect((await tick(t, 'poll')).detail).toBe('imagery is paused');
     await t.run(async (ctx) => {
       const row = await ctx.db.query('imageryIngestSeasons').first();
       await ctx.db.patch((row as { _id: Id<'imageryIngestSeasons'> })._id, {
@@ -245,7 +299,7 @@ describe('poll', () => {
         closesOn: '2027-05-01',
       });
     });
-    expect((await t.action(internal.imageryLive.poll, {})).detail).toBe('the watch has ended');
+    expect((await tick(t, 'poll')).detail).toBe('the watch has ended');
     expect(await runs(t)).toEqual([]);
   });
 
@@ -263,7 +317,7 @@ describe('poll', () => {
       ],
     });
     stub(w);
-    expect(await t.action(internal.imageryLive.poll, {})).toEqual({
+    expect(await tick(t, 'poll')).toEqual({
       outcome: 'ok',
       detail: 'window 2026-10-03 → 2026-10-10',
     });
@@ -281,7 +335,7 @@ describe('poll', () => {
     // published late into an already-cut slot is not cut a second time.
     vi.setSystemTime(new Date('2026-10-12T12:00:00Z'));
     w.s2.push(feature(s2('19TEM', '20261005', 0, 'S2C'), '2026-10-05T15:30:00Z'));
-    const again = await t.action(internal.imageryLive.poll, {});
+    const again = await tick(t, 'poll');
     expect(again.detail).toBe('window 2026-10-05 → 2026-10-12');
     expect(await granules(t)).toHaveLength(2);
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ queued: 0, alreadyQueued: 2 });
@@ -292,8 +346,8 @@ describe('poll', () => {
     await openSeason(t);
     vi.unstubAllEnvs();
     stub(world());
-    expect((await t.action(internal.imageryLive.poll, {})).outcome).toBe('refused');
-    await t.action(internal.imageryLive.poll, {});
+    expect((await tick(t, 'poll')).outcome).toBe('refused');
+    await tick(t, 'poll');
     const alerts = await scheduled(t, 'broadcastToStaff');
     expect(alerts).toHaveLength(1);
     expect(alerts[0]?.args[0]).toMatchObject({
@@ -308,16 +362,16 @@ describe('poll', () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     stub(world({ sidecar: null }));
-    expect((await t.action(internal.imageryLive.poll, {})).detail).toContain('bake-masks');
+    expect((await tick(t, 'poll')).detail).toContain('bake-masks');
     stub(world({ plan: { surveyKey: 'v3:winter-2026-27:1', bbox: [0, 0, 1, 1], emptyTiles: [] } }));
-    expect((await t.action(internal.imageryLive.poll, {})).detail).toContain('publish-search-plan');
+    expect((await tick(t, 'poll')).detail).toContain('publish-search-plan');
   });
 
   test('a catalog failure is recorded and alerts the admins', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     stub(world({ failStac: true }));
-    const result = await t.action(internal.imageryLive.poll, {});
+    const result = await tick(t, 'poll');
     expect(result).toMatchObject({ outcome: 'failed' });
     expect(result.detail).toContain('STAC search failed: 502');
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
@@ -337,7 +391,7 @@ describe('poll', () => {
     });
     const w = world({ s2: features });
     stub(w);
-    const result = await t.action(internal.imageryLive.poll, {});
+    const result = await tick(t, 'poll');
     expect(result).toEqual({ outcome: 'capped', detail: 'window 2026-10-03 → 2026-10-04' });
     expect(await granules(t)).toHaveLength(POLL_CAP);
     expect((await runs(t))[0]?.counts).toMatchObject({ queued: POLL_CAP, notYetExamined: 150 });
@@ -349,7 +403,7 @@ describe('poll', () => {
 
     // The next check starts from the overlap and queues the rest.
     vi.setSystemTime(new Date('2026-10-10T18:00:00Z'));
-    expect((await t.action(internal.imageryLive.poll, {})).outcome).toBe('ok');
+    expect((await tick(t, 'poll')).outcome).toBe('ok');
     expect(await granules(t)).toHaveLength(450);
   });
 });
@@ -415,7 +469,7 @@ const jobs = (t: T, name: string) =>
       j.name.includes(name),
     ),
   );
-const pumpNow = (t: T) => t.action(internal.imageryLive.pump, {});
+const pumpNow = (t: T) => tick(t, 'pump');
 
 /** The known-unreadable manifests, least recently tried first — the order the next build reads them. */
 const unreadableRows = (t: T) =>
@@ -741,7 +795,13 @@ describe('admin resets', () => {
       expect(await runState(t)).toMatchObject({ refusalStreak: 0, blindTicks: 0 });
       expect((await runState(t))?.backoffUntil).toBeUndefined();
     }
-    expect(await scheduled(t, 'imageryLive:pump')).toHaveLength(2);
+    // Each press is a recorded run of the pump, with who pressed it (D347).
+    const presses = await scheduled(t, 'cronRuns:tickAction');
+    expect(presses.map((j) => j.args[0])).toEqual([
+      { job: IMAGERY_CRON_JOBS.pump, trigger: 'manual', byUserId: expect.any(String) },
+      { job: IMAGERY_CRON_JOBS.pump, trigger: 'manual', byUserId: expect.any(String) },
+      { job: IMAGERY_CRON_JOBS.index, trigger: 'manual', byUserId: expect.any(String) },
+    ]);
   });
 });
 
@@ -794,10 +854,10 @@ describe('the index tick', () => {
   test('does nothing with no request outstanding, or while another build holds the lease', async () => {
     const t = convexTest(schema, modules);
     stub(world());
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    expect(await tick(t, 'index')).toBeNull();
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'other' });
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    expect(await tick(t, 'index')).toBeNull();
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
   });
 
@@ -805,7 +865,7 @@ describe('the index tick', () => {
     const t = convexTest(schema, modules);
     vi.unstubAllEnvs();
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    expect(await tick(t, 'index')).toBeNull();
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
   });
 
@@ -1111,7 +1171,7 @@ describe('buildIndex', () => {
       ]),
     });
     stub(w);
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
+    expect(await tick(t, 'index')).toEqual({ frames: 2 });
     const index = w.puts.get(`index/${SEASON}.json`) as { frames: { key: string }[] };
     expect(index.frames.map((f) => f.key)).toEqual([
       `frames/${SEASON}/${a}-visual.pmtiles`,
@@ -1134,10 +1194,10 @@ describe('buildIndex', () => {
     w.latest = { season: SEASON };
     w.puts.clear();
     // Not dirty: the tick is one read and writes nothing.
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    expect(await tick(t, 'index')).toBeNull();
     expect(w.puts.size).toBe(0);
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     const next = w.puts.get(`index/${SEASON}.json`) as {
       frames: { granuleId: string; band: string }[];
     };
@@ -1165,7 +1225,7 @@ describe('buildIndex', () => {
     // `null` in the map lists the key but 404s on read; `'error'` lists it and 500s.
     w.manifests.set(`frames/${SEASON}/bad.json`, null);
     w.manifests.set(`frames/${SEASON}/worse.json`, 'error');
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(w.puts.has('index/latest.json')).toBe(false);
     expect((await runs(t))[0]).toMatchObject({
       outcome: 'failed',
@@ -1185,7 +1245,7 @@ describe('buildIndex', () => {
     const w = world({ manifests: new Map<string, unknown>([[bad, 'error']]) });
     stub(w);
     const due = () => t.query(internal.imageryLive.indexOutstanding, { now: Date.now() });
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 0 });
+    expect(await tick(t, 'index')).toEqual({ frames: 0 });
     // The last cut has landed and imagery is paused: nothing will mark the index dirty again —
     // the retry is what reads it, in half an hour.
     expect(await due()).toBeNull();
@@ -1198,12 +1258,12 @@ describe('buildIndex', () => {
     vi.advanceTimersByTime(10 * 60_000);
     w.manifests.set(`frames/${SEASON}/${b}.json`, manifest(b, '2026-10-06T15:30:00Z'));
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 2 });
+    expect(await tick(t, 'index')).toEqual({ frames: 2 });
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 1, retryAt: firstRetry });
     // The retry comes due on its own; still unreadable, the next wait doubles to an hour.
     vi.advanceTimersByTime(21 * 60_000);
     expect(await due()).not.toBeNull();
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
     await expectIndexRetryAfter(t, 60 * 60_000);
     // The page shows the wait, and Try again now makes it due at once.
@@ -1221,7 +1281,7 @@ describe('buildIndex', () => {
     expect(await due()).toBe(2);
     // The manifest is fixed: the retry reads it, and the wait is gone.
     w.manifests.set(bad, manifest(a, '2026-10-05T15:30:00Z'));
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 4 });
+    expect(await tick(t, 'index')).toEqual({ frames: 4 });
     expect(await due()).toBeNull();
     const job = await runState(t, 'index');
     expect(job?.retryAt).toBeUndefined();
@@ -1233,7 +1293,7 @@ describe('buildIndex', () => {
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     const bad = `frames/${SEASON}/${s2('19TEA', '20261005')}.json`;
     stub(world({ manifests: new Map<string, unknown>([[bad, 'error']]) }));
-    await t.action(internal.imageryLive.buildIndex, {}); // a retry is pending, 30 minutes out
+    await tick(t, 'index'); // a retry is pending, 30 minutes out
     // A new frame's build is under way when the admin presses Try again now…
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'run' });
@@ -1252,12 +1312,12 @@ describe('buildIndex', () => {
     await t.mutation(internal.imageryLive.markIndexDirty, {});
     const bad = `frames/${SEASON}/${s2('19TEA', '20261005')}.json`;
     stub(world({ manifests: new Map<string, unknown>([[bad, 'error']]) }));
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     // Past the retry, a new frame asks for a build: it re-reads the manifest, so it was the retry,
     // and the wait doubles rather than sitting in the past.
     vi.advanceTimersByTime(31 * 60_000);
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await runState(t, 'index')).toMatchObject({ unreadableStreak: 2 });
     await expectIndexRetryAfter(t, 60 * 60_000);
   });
@@ -1277,11 +1337,11 @@ describe('buildIndex', () => {
       manifests: new Map<string, unknown>([[key, manifest(a, '2026-10-05T15:30:00Z')]]),
     });
     stub(w);
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     // A manual recut writes the same key: one band now, and a different body count.
     w.manifests.set(key, manifest(a, '2026-10-05T15:30:00Z', { bands: ['visual'], bodyCount: 15 }));
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toEqual({ frames: 1 });
+    expect(await tick(t, 'index')).toEqual({ frames: 1 });
     const index = w.puts.get(`index/${SEASON}.json`) as { frames: { band: string }[] };
     expect(index.frames.map((f) => f.band)).toEqual(['visual']);
     const rows = await t.run((ctx) => ctx.db.query('imageryFrames').collect());
@@ -1289,7 +1349,7 @@ describe('buildIndex', () => {
     expect(rows[0]).toMatchObject({ bodyCount: 15, bands: ['visual'] });
     // Unchanged since: the next build reuses the row and reads nothing.
     await t.mutation(internal.imageryLive.markIndexDirty, {});
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 0 });
   });
 
@@ -1317,7 +1377,7 @@ describe('buildIndex', () => {
         ]),
       }),
     );
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     const [row] = await t.run((ctx) => ctx.db.query('imageryFrames').collect());
     expect(row).toMatchObject({ bodyCount: 15, bands: ['visual'] });
     expect(row?.etag).toBeDefined();
@@ -1346,14 +1406,14 @@ describe('buildIndex', () => {
     );
     const saved = () => t.run((ctx) => ctx.db.query('imageryFrames').collect());
     // One group of eight takes four minutes: the budget is spent, and what it read is kept.
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await saved()).toHaveLength(8);
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 8, deferred: 12 });
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
     // Each tick goes on from there, until every frame is read and the request is satisfied.
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await saved()).toHaveLength(16);
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await saved()).toHaveLength(20);
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 4 });
@@ -1388,12 +1448,12 @@ describe('buildIndex', () => {
     const good = async () =>
       (await t.run((ctx) => ctx.db.query('imageryFrames').collect())).map((r) => r.manifestKey);
     // Two builds spend their budgets on the stalling front of the list, remembering each failure.
-    await t.action(internal.imageryLive.buildIndex, {});
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
+    await tick(t, 'index');
     expect(await good()).toEqual([]);
     expect(await unreadableRows(t)).toHaveLength(16);
     // The third reads the good frames first, the known-unreadable ones behind them.
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await good()).toHaveLength(4);
     // Nothing readable is left, so the request is satisfied; the sixteen wait for their retry.
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBeNull();
@@ -1439,13 +1499,13 @@ describe('buildIndex', () => {
     const read = async () =>
       (await t.run((ctx) => ctx.db.query('imageryFrames').collect())).map((r) => r.manifestKey);
     // The first build spends its budget on the front eight; they go to the back of the line.
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await read()).toEqual([]);
     expect((await unreadableRows(t)).slice(-8)).toEqual(keys.slice(0, 8));
     // The next starts where that one stopped; the one after reaches the repaired manifest.
     for (let build = 0; build < 2 && (await read()).length === 0; build++) {
       vi.advanceTimersByTime(7 * 60 * 60_000); // past any retry wait
-      await t.action(internal.imageryLive.buildIndex, {});
+      await tick(t, 'index');
     }
     expect(await read()).toEqual([repaired]);
   });
@@ -1483,7 +1543,7 @@ describe('buildIndex', () => {
         return fetchFn(req);
       }),
     );
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     const rows = await t.run((ctx) => ctx.db.query('imageryFrames').collect());
     expect(rows.map((r) => r.granuleId)).toEqual([fresh]);
     // All 1,200 still remembered. Two groups fit the budget — the good frame with seven stalls
@@ -1516,7 +1576,7 @@ describe('buildIndex', () => {
         ]),
       }),
     );
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect(await unreadableRows(t)).toEqual([]);
     expect((await runs(t)).at(-1)).toMatchObject({ outcome: 'ok' });
   });
@@ -1545,7 +1605,7 @@ describe('buildIndex', () => {
         return fetchFn(req);
       }),
     );
-    await t.action(internal.imageryLive.buildIndex, {});
+    await tick(t, 'index');
     expect((await runs(t)).at(-1)?.counts).toMatchObject({ added: 7, unreadable: 1, deferred: 4 });
     // Readable manifests are left: the request stands — and the failure still has its wait and email.
     expect(await t.query(internal.imageryLive.indexOutstanding, { now: Date.now() })).toBe(1);
@@ -1562,7 +1622,8 @@ describe('buildIndex', () => {
       'fetch',
       vi.fn(async () => new Response('', { status: 403, statusText: 'Forbidden' })),
     );
-    expect(await t.action(internal.imageryLive.buildIndex, {})).toBeNull();
+    // No frames: only the failed run's report, which the dispatcher writes as its run and log.
+    expect(await tick(t, 'index')).toEqual({});
     expect((await runs(t))[0]).toMatchObject({ kind: 'index', outcome: 'failed' });
     expect((await scheduled(t, 'broadcastToStaff'))[0]?.args[0]).toMatchObject({
       heading: 'The imagery index could not be rebuilt',
@@ -1608,11 +1669,12 @@ describe('the page', () => {
       id: claims[0]?.id as Id<'imageryGranules'>,
       untried: true,
     });
-    await t.mutation(internal.imageryLive.recordRun, {
-      season: SEASON,
-      kind: 'poll',
+    await t.mutation(internal.cronRuns.finish, {
+      job: IMAGERY_CRON_JOBS.poll,
+      trigger: 'cron',
       startedAt: 1,
-      outcome: 'ok',
+      finishedAt: 2,
+      report: { worked: true, outcome: 'ok', season: SEASON },
     });
     await seedAdmin(t);
     const admin = t.withIdentity({ subject: 'admin' });

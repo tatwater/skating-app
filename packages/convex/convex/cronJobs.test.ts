@@ -37,8 +37,9 @@ const registered = (crons as unknown as { crons: Record<string, Registration> })
  * Every cron as `crons.crons` held it before the backbone: name, the function it ran, its schedule
  * as Convex records it, its arguments. In registration order.
  *
- * ⚠ The one intended change: *watch for the imagery season to open* was `{ type: 'interval',
- * hours: 24 }`; it is now daily at 11:30 UTC (D346).
+ * ⚠ The two intended changes: *watch for the imagery season to open* was `{ type: 'interval',
+ * hours: 24 }`; it is now daily at 11:30 UTC (D346). And the last row, *prune cron records*, is new:
+ * the backbone's own retention sweep (D347), registered as an entry like any other — 53 in all.
  */
 const BEFORE: readonly [string, string, Record<string, unknown>, Record<string, unknown>][] = [
   [
@@ -233,6 +234,8 @@ const BEFORE: readonly [string, string, Record<string, unknown>, Record<string, 
   ],
   ['repair body geometry drift', 'bodyGeo:repairDrift', { type: 'interval', minutes: 30 }, {}],
   ['find bodies missing geometry', 'bodyGeo:repairMissing', { type: 'interval', hours: 168 }, {}],
+  // New with the backbone (D347): its retention sweep.
+  ['prune cron records', 'cronRunJobs:prune', { type: 'daily', hourUTC: 10, minuteUTC: 50 }, {}],
 ];
 
 const MUTATION_DISPATCHER = getFunctionName(internal.cronRuns.tickMutation);
@@ -248,8 +251,8 @@ const FREQUENT = [
 ];
 
 describe('the registry is the crons as they were', () => {
-  test('the same 52 names, in the same order', () => {
-    expect(BEFORE).toHaveLength(52);
+  test('the same 52 names, in the same order, and the backbone’s prune after them', () => {
+    expect(BEFORE).toHaveLength(53);
     expect(Object.keys(registered)).toEqual(BEFORE.map(([name]) => name));
     expect(CRON_JOBS.map((j) => j.name)).toEqual(BEFORE.map(([name]) => name));
   });
@@ -375,7 +378,7 @@ describe('the lookups', () => {
   });
 });
 
-describe('the dispatchers (placeholders until the recorder lands) run their job', () => {
+describe('the dispatchers run their job (what they record: crons.test.ts)', () => {
   test('tickMutation runs a mutation job', async () => {
     const t = convexTest(schema, modules);
     await expect(
@@ -390,15 +393,16 @@ describe('the dispatchers (placeholders until the recorder lands) run their job'
     ).resolves.toBeNull();
   });
 
-  test('the backbone jobs answer empty', async () => {
+  test('the backbone jobs answer empty on an empty database', async () => {
     const t = convexTest(schema, modules);
-    await expect(t.mutation(internal.cronRunJobs.prune, {})).resolves.toEqual({
+    await expect(t.mutation(internal.cronRunJobs.prune, { table: 'runEvents' })).resolves.toEqual({
       deleted: 0,
       more: false,
+      cronReport: { worked: false, counts: { runEvents: 0 } },
     });
     await expect(
       t.mutation(internal.cronRunJobs.copyImageryRuns, { dryRun: true }),
-    ).resolves.toEqual({ dryRun: true, copied: 0, alreadyCopied: 0, more: false });
+    ).resolves.toEqual({ dryRun: true, copied: 0, alreadyCopied: 0, quiet: 0, more: false });
     await expect(t.mutation(internal.cronRunJobs.copyImageryRuns, {})).resolves.toMatchObject({
       dryRun: false,
     });

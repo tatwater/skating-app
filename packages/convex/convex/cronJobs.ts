@@ -21,6 +21,15 @@ import type { CronSchedule } from '@skating/core';
 import type { FunctionReference } from 'convex/server';
 import type { Value } from 'convex/values';
 import { internal } from './_generated/api';
+import type { ActionCtx } from './_generated/server';
+import * as bodyGeo from './bodyGeo';
+import * as clerkReconcile from './clerkReconcile';
+import * as hazardWeather from './hazardWeather';
+import * as imageryIngest from './imageryIngest';
+import * as imageryLive from './imageryLive';
+import * as waterBodies from './waterBodies';
+import * as weatherAlerts from './weatherAlerts';
+import * as weatherArchive from './weatherArchive';
 
 const DAY_MS = 86_400_000;
 
@@ -140,8 +149,20 @@ export interface CronMutationJob extends CronJobBase {
 export interface CronActionJob extends CronJobBase {
   kind: 'action';
   fn: FunctionReference<'action', 'internal'>;
+  /**
+   * The body `fn` is registered with (`internalAction({ args, handler })`), which `tickAction` calls
+   * in-process: an action tick costs no second action. `crons.test.ts` holds each one to its `fn`.
+   */
+  handler: CronActionHandler;
   announces: boolean;
 }
+
+/**
+ * An action cron's body as the dispatcher calls it. Its arguments are the entry's own `args`, which
+ * the registered action's validator accepts (`crons.test.ts` checks each); `never` lets every
+ * handler's own argument type be assigned here, and the dispatcher passes `args` through.
+ */
+export type CronActionHandler = (ctx: ActionCtx, args: never) => Promise<unknown>;
 
 export type CronJobEntry = CronMutationJob | CronActionJob;
 
@@ -208,6 +229,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 1 } },
     kind: 'action',
     fn: internal.hazardWeather.refreshHazardWeather,
+    handler: hazardWeather.refreshHazardWeatherHandler,
     args: {},
     pipeline: 'hazards',
     retention: CRON_RETENTION,
@@ -455,6 +477,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 24 * 7 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeSyncWeatherCells,
+    handler: weatherArchive.maybeSyncWeatherCellsHandler,
     args: {},
     pipeline: 'weather',
     retention: CRON_RETENTION,
@@ -476,6 +499,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 24 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeRefreshFilterTier,
+    handler: weatherArchive.maybeRefreshFilterTierHandler,
     args: {},
     pipeline: 'weather',
     retention: CRON_RETENTION,
@@ -490,6 +514,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 24 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeRefreshBayTier,
+    handler: weatherArchive.maybeRefreshBayTierHandler,
     args: {},
     pipeline: 'weather',
     retention: CRON_RETENTION,
@@ -504,6 +529,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 24 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeSweepGaps,
+    handler: weatherArchive.maybeSweepGapsHandler,
     args: {},
     pipeline: 'weather',
     retention: CRON_RETENTION,
@@ -669,6 +695,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { daily: { hourUTC: 11, minuteUTC: 30 } },
     kind: 'action',
     fn: internal.imageryIngest.maybeCheckSeasonOpen,
+    handler: imageryIngest.maybeCheckSeasonOpenHandler,
     args: {},
     pipeline: 'imagery',
     retention: CRON_RETENTION,
@@ -690,6 +717,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 6 } },
     kind: 'action',
     fn: internal.imageryLive.poll,
+    handler: imageryLive.pollHandler,
     args: {},
     pipeline: 'imagery',
     retention: SEASON_CRON_RETENTION,
@@ -708,6 +736,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { minutes: 3 } },
     kind: 'action',
     fn: internal.imageryLive.pump,
+    handler: imageryLive.pumpHandler,
     args: {},
     pipeline: 'imagery',
     retention: SEASON_CRON_RETENTION,
@@ -719,6 +748,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { minutes: 10 } },
     kind: 'action',
     fn: internal.imageryLive.buildIndex,
+    handler: imageryLive.buildIndexHandler,
     args: {},
     pipeline: 'imagery',
     retention: SEASON_CRON_RETENTION,
@@ -737,6 +767,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { minutes: 15 } },
     kind: 'action',
     fn: internal.weatherAlerts.refreshAlerts,
+    handler: weatherAlerts.refreshAlertsHandler,
     args: {},
     pipeline: 'weather',
     retention: CRON_RETENTION,
@@ -759,6 +790,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 1 } },
     kind: 'action',
     fn: internal.waterBodies.sweepDueBodySummaries,
+    handler: waterBodies.sweepDueBodySummariesHandler,
     args: {},
     pipeline: 'bodies',
     retention: CRON_RETENTION,
@@ -888,6 +920,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { daily: { hourUTC: 10, minuteUTC: 20 } },
     kind: 'action',
     fn: internal.clerkReconcile.run,
+    handler: clerkReconcile.runHandler,
     args: {},
     pipeline: 'people',
     retention: CRON_RETENTION,
@@ -931,6 +964,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { minutes: 5 } },
     kind: 'action',
     fn: internal.bodyGeo.computeDue,
+    handler: bodyGeo.computeDueHandler,
     args: {},
     pipeline: 'geometry',
     retention: CRON_RETENTION,
@@ -943,6 +977,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     schedule: { every: { hours: 24 } },
     kind: 'action',
     fn: internal.bodyGeo.computeDue,
+    handler: bodyGeo.computeDueHandler,
     args: {
       parked: true,
     },
@@ -974,6 +1009,25 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     fn: internal.bodyGeo.repairMissing,
     args: {},
     pipeline: 'geometry',
+    retention: CRON_RETENTION,
+    record: 'every',
+  },
+
+  // ── B01-8b: the cron backbone's own retention (D343, D347) ──────────────────────────────────────
+
+  /**
+   * The backbone's records past their `keepUntil` — tick rows (35 days), run rows (30, the imagery
+   * jobs' 200) and the cron lines of `runEvents` (30) — deleted a page at a time, one table after the
+   * next, self-continuing (`cronRunJobs.prune`). Daily, after the other daily sweeps: nothing reads
+   * a record on the day it expires.
+   */
+  {
+    name: 'prune cron records',
+    schedule: { daily: { hourUTC: 10, minuteUTC: 50 } },
+    kind: 'mutation',
+    fn: internal.cronRunJobs.prune,
+    args: {},
+    pipeline: 'hygiene',
     retention: CRON_RETENTION,
     record: 'every',
   },
