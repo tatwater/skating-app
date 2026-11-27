@@ -509,7 +509,7 @@ date on it (D146 — a founder review falsified the map-wide toggle the first sc
 doc was rewritten rather than patched); behind it, a season of Sentinel passes to scrub through and
 watch the ice arrive, stored as one masked raster PMTiles per pass on our first owned infrastructure
 (a Fly granule job → R2, D148). The constraint was never quota but physics (D147): NAIP is mid-summer
-aerial and will never show ice; 10 m Sentinel can't show a 1–3 m ridge. Ingest is weather-gated and
+aerial and never evidence about ice; 10 m Sentinel can't show a 1–3 m ridge. Ingest is weather-gated and
 the archive turns over on a frame, not a date (D149). Workstream 0 recovered the ORS route geometry
 A06d never stored and drew the approach on both clients. *A water body can be revealed as a photograph and
 its freeze-up scrubbed, on both clients.*
@@ -962,7 +962,7 @@ longer need.*
 - The founder's sequencing (2026-11-13): B01 is the focus; the boards and B04's design and build passes wait, designed and built in tandem later. Until then the plan is the running list of skater-side changes the console build finds (its *The running list*)
 
 ## Phase B05 — The summer aerial: our own NAIP archive of the region
-🟡 **In progress** 2026-11-25 · [plan](./phases/B05-summer-aerial.md) · D314 D315 D316 D317 D318 D319
+🟡 **In progress** 2026-11-25 · PR #188 · [plan](./phases/B05-summer-aerial.md) · D314 D315 D316 D317 D318 D319
 
 The console's summer aerial asks a USGS service to render every view on demand, so a first look
 takes up to 45 seconds and its flight date often never arrives. The founder chose to own the imagery:
@@ -972,11 +972,13 @@ newest, a 0.3 m frame over a newer 0.6 m one within two years, clouds and autumn
 flights struck by his review — and a date
 index means the map always says when the imagery under the view was flown. It is for console staff
 only. One entry point builds it whole, by stage or for the cells that changed; a July check stores
-any newer summer flights for Machinery to show, never spending on its own. *An operator opens the
-aerial on any lake and it is there in a second, with the months it was flown.*
+any newer summer flights for Machinery to show, never spending on its own. B05-1 (the pipeline) is
+open; the region has not been built, and the console reads USGS until B05-2. *Once both land, an
+operator opens the aerial on any lake and it is there in a second, with the months it was flown.*
 
 #### Data runs
 - **2026-11-25 — the first catalog walk (`naip-20261125`, a dry run, no rows):** 69,207 items over the seven states → 9,168 quarter-quads, every one with a pick; 28,568 frames; 1,764 work tiles; 140 partial picks; 60 cloud candidates, two struck by the founder's review
+- **2026-11-26 — the pilot (`naip-pilot-20261126`, `champlain-nhma-me-ny`, on Fly and R2, its rows on a throwaway local backend):** 65 cells, 28 work tiles, 209 cells cut; 149,698 tiles in a 4.08 GB archive, verified and looked at; 256 s a work tile on `performance-4x` (a `shared-cpu-4x` throttles), 9 minutes wall; the assembler at 47.5 MB/s; the date index 808 B gzipped; a first view in about a second. Re-extrapolated for the region: ~260 GB, ~$3.90 a month, a full run ~7–9 h and ~$37 ($28–48)
 - **2026-11-27 — the first foliage review (`naip-20261127`, the 2026-11-26 walk, a dry run, no rows):** 18,939 frames from 1 September scored, 8,947 turned at 0.6; proposed 524 entries (16 flight days, 508 frames); applied, 1,074 of 9,168 cells change (ME 456, NY 423, VT 186, NH 9), 264 from 0.3 m to 0.6 m, 3.2 years older on average; all cells covered; 80 + 6 cells named off-season
 
 #### Deferred
@@ -992,12 +994,11 @@ aerial on any lake and it is there in a second, with the months it was flown.*
 - **A prod copy** — prod points at dev's dated object at the cutover
 
 #### Owed
-- **The founder's foliage review, before the full run** (D319): confirm the proposal by flight day on the sheet (`scripts/aerial/review/naip-20261127-foliage-proposed.json`, the sheet beside the campaign), the confirmed entries committed to `NAIP_FOLIAGE_STRIKES`; then read the applied run's cloud sheet (one new pick over 3% white, a likely false positive)
-- B05-1 is built, integrated and piloted (`naip-pilot-20261126`, 65 cells on Fly and R2, verified and looked at, its rows on a throwaway local backend) but not yet open as a PR: the independent review, then the PR, then the founder's go for the full region run (~16 h on Fly, ~$30–40, the plan's §6.1)
-- The archive measured larger than designed: ~550 GB, ~$8 a month (~$100 a year against the ~$70 accepted), because the design's 387 GB left out the pyramid's upper levels — for the founder's go/no-go with the pilot's numbers
+- B05-1 is open as PR #188 (built, integrated, piloted, independently reviewed). It ships `NAIP_FOLIAGE_STRIKES` empty, with the proposal beside it. After it merges, in order:
+  1. **The founder's foliage review** (D319): the proposal by flight day on the sheet (`scripts/aerial/review/naip-20261127-foliage-proposed.json`, the sheet beside the campaign); his confirmed entries land as a commit to `NAIP_FOLIAGE_STRIKES`; then the applied run's cloud sheet (one new pick over 3% white, a likely false positive)
+  2. **The full region run, the founder's explicit go/no-go** on the pilot's numbers (~7–9 h on 25 `performance-4x` Machines, ~$37 all told, ~260 GB at ~$3.90 a month, the plan's §6.1; the Machine size is part of the call), from main, after the widen's deploy to dev (`convex dev --once` from main) so its rows can be written
+  3. **B05-2, the app's swap**, once the archive is on dev: `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, `NAIP_MANIFEST_URL` on Convex dev
 - G-6 answered at build start: `skating-imagery`, whose public host already serves the winter archive and which the app's staged R2 token writes — no new credential
-- `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, and `NAIP_MANIFEST_URL` on Convex dev, once the archive exists
-- The widen's deploy to dev (`convex dev --once` from main) after B05-1 merges, before the full run writes its rows
 
 ## Deferred register
 

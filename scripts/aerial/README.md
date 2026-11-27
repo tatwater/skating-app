@@ -33,7 +33,7 @@ all apply here — each costs money silently. The six that bite this directory:
 5. **No comment between backslash-continuations** — it ends the command and drops every argument
    after it, silently (twenty winter Machines once ran with no granule).
 6. **The live-Machine cap is shared with the winter pump.** `spawn.sh` counts every live Machine on
-   `skating-imagery` against `MAX_PARALLEL` (25), the pump's included, so a sixteen-hour build holds the
+   `skating-imagery` against `MAX_PARALLEL` (25), the pump's included, so an overnight build holds the
    winter pump's spawns back while it runs. Run the full build when the season can wait a night.
 
 And one that is the aerial's own:

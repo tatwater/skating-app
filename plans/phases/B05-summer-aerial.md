@@ -18,7 +18,12 @@ lines.*
 > with the cloud stood in for); the pilot (§10.7, gated) is next. What the build found is at the end.
 > **2026-11-27:** the pilot built and looked at, the founder ruled on its autumn frames (**D319**,
 > amends D315: turned flights struck by his review of flight days, §2.1.4); the first proposal awaits
-> his review before the full run.
+> his review before the full run. **B05-1 is open as PR #188** (the pipeline; built, integrated,
+> piloted and independently reviewed). It ships the foliage strike list empty, with the proposal
+> beside it. No full region run has happened. After it merges, in order: (1) the founder reviews the
+> foliage sheet by flight day, and his confirmed strikes land as a commit to `NAIP_FOLIAGE_STRIKES`;
+> (2) the widen's deploy to dev, then the full region run, which is his explicit go/no-go (§7.4);
+> (3) B05-2, the app's swap (§10.8).
 >
 > **The token.** `B05`: the work is launch-era console infrastructure, and the `A` era (enrichment,
 > `A01`–`A10`) is closed in the README's table, so it is not `A06j` even though its family is A06e's
@@ -87,7 +92,7 @@ Quoted where they bear; these are the inputs, not this doc's reading of them.
 **The eight forks, ruled (2026-11-25).** The design's §8 asked; he answered every one:
 
 1. **Maximum zoom: z18 everywhere** (F-1 b, D317). One archive, one layer, ~387 GB, ~$5.80 a month
-   (the design's figure; ~550 GB and ~$8.30 a month measured, §6.1).
+   (the design's figure; the pilot measured ~260 GB and ~$3.90 a month, §6.1).
    No two-band stacking.
 2. **Where the July offer appears** (F-2): not an Overview card and not the Inbox. *"I think this
    belongs in the Machinery pages eventually, where we manage the rest of the imagery runs."* And no
@@ -306,6 +311,8 @@ where striking leaves a cell nothing green at 0.6 m or better it keeps its newes
   `NAIP_FOLIAGE_STRIKES` in core, which an entry joins once the founder has confirmed it
   (`reviewedBy: 'founder'`), as the cloud review's do. One entry strikes a whole flight day (labeled
   state and acquisition day) with a `keep` list; a frame entry strikes one frame on a day not struck.
+  A day entry also strikes any frame the catalog adds to that day later, such as a reprocessed item
+  under a new id — accepted (the governor, 2026-11-27): same flight, same foliage.
   The select stage refuses to build — anything but a dry run — with an entry still `proposed`.
 - **The review** (`pnpm --filter @skating/aerial foliage <campaign>`, before a full build): scores the
   campaign's candidates from 1 September, proposes the turned ones — a day where turned frames are the
@@ -354,8 +361,9 @@ read as not green because they are city and water).
 **The unit of work is a z11 Web Mercator tile** — 1,769 of them touch a quarter-quad by the design's
 count (z10 would be 488, z9 135; measured from the quarter-quad outlines), **1,764 by core's grid**
 (`workTilesOf`, which doesn't count an outline that only touches a tile's edge; the select stage's
-full dry run, 2026-11-25). A fully covered one is 235–440 MB of output and, by §6.1's measured
-figure, roughly 12–20 minutes on a `shared-cpu-4x` Machine (the design said ~220 MB and ~7 minutes):
+full dry run, 2026-11-25). A fully covered one is 176–202 MB of output on land and, by the pilot
+(§6.1), about four minutes on a `performance-4x` Machine (256 s; a `shared-cpu-4x` throttles) — the
+design said ~220 MB and ~7 minutes:
 small enough that a failure costs minutes, large enough that boot time (seconds) is noise.
 
 **The quarter-quad grid is computed, not read.** A key like `4407236se` is a 3.75′ cell: 1° block
@@ -473,7 +481,7 @@ What can be avoided is re-tiling.
 changed; the assembler copies every other work tile's tiles **out of the current archive** by range
 reads (in a clustered archive each work tile's tiles at a zoom are one contiguous run, because the
 Hilbert order keeps an aligned block's descendants together), and their per-cell counts out of the
-current manifest's work tiles (`cellCounts`, which the assembler writes there for this reason). Keeping a separate shard cache would double storage (~$100 a year at §6.1's measured size)
+current manifest's work tiles (`cellCounts`, which the assembler writes there for this reason). Keeping a separate shard cache would double storage (~$47 a year more at the pilot's ~260 GB, §6.1)
 to save work the old archive already holds (Governor fork G-4).
 
 **A streaming writer, not `pmtiles convert`.** `pmtiles convert` wants the whole input as an MBTiles
@@ -549,6 +557,12 @@ founder or the governor's named executor sets them; no brief displays a value.
 The previous archive (and its index and manifest) is deleted no sooner than a week after the new one
 is live on Vercel — never by the build itself, and never the newest key
 (`run-aerial.sh <campaign> --stage cleanup --old <key>` refuses both).
+
+**An assembly that dies before its manifest** — after its archive (or index) went up, before the
+manifest, the last write — leaves objects at published keys that nothing names and nothing has
+served. **Ruled (the governor, 2026-11-27): they are deleted by hand**, as built. The keys are never
+overwritten, so a re-run refuses, naming what was left; the operator deletes those objects
+(`rclone deletefile`, `scripts/aerial/README.md`) and assembles again.
 
 ### §2.6 — The run record (D218, D310)
 
@@ -655,12 +669,12 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 ### §3.2 — What "on demand" honestly means
 
 - **The heavy stages run on Fly**, spawned from the operator's laptop with `flyctl`, as A06e's
-  backfills are. The laptop runs the orchestration for the build's wall time (about 16 h for the
-  region on 25 Machines; a pilot minutes), so it must stay awake (`caffeinate`) — but every stage is
+  backfills are. The laptop runs the orchestration for the build's wall time (about 7–9 h for the
+  region on 25 `performance-4x` Machines by the pilot's figures, §6.1; a pilot minutes), so it must stay awake (`caffeinate`) — but every stage is
   resumable, so a laptop that sleeps costs a re-run of the reconcile, not the work done.
 - **Convex can launch Fly Machines** — the live imagery pump does (`imageryLive.ts`, `lib/fly.ts`,
   `FLY_API_TOKEN` and `FLY_IMAGE` on Convex dev since 2026-10-09). So a console *Rebuild* is
-  technically reachable. It is not built here: a sixteen-hour campaign with its run rows written through
+  technically reachable. It is not built here: an overnight campaign with its run rows written through
   `RunLogger` (the `convex run` CLI with a deploy key) and a long-lived assembler is B01's deferred
   *hosted ETL runner* decision, not a button. Governor fork G-5 weighs a Fly "conductor" Machine as
   the step between.
@@ -1032,14 +1046,18 @@ briefs ~1.0×, and A06e's cutter grew from 154 lines at its first commit to 1,56
 | **Sum** | | **~8,250–12,250 new** (was 8,300–12,000) |
 | **Honest range** (×1.5 at the low end, ×1.6 at the high, as the first estimate's 12,000–20,000 did) | | **~12,500–19,500 new; ~3,600 deleted** — B05-1 ~8,600–13,400; B05-2 ~3,800–6,200 added |
 
-The size the founder was told stands.
+The size the founder was told stood at design. **Measured at B05-1's PR (#188):** ~23,000 lines
+outside `plans/`, the fixtures, the proposal file and the lockfile — about 10,000 of them tests —
+so B05-1 alone is past the 12,000–20,000 he was told for both PRs (§6.3).
 
 ### §6.3 — The PR plan
 
 **Two PRs**, because the web swap can't merge before an archive exists on dev:
 
 1. **B05-1 — the pipeline** (core rule, grid and date-index helpers, `scripts/aerial`, its image,
-   the three run kinds' widen in `enums.ts` and `@skating/run-log`): ~8,600–13,400 lines. Over
+   the three run kinds' widen in `enums.ts` and `@skating/run-log`): ~8,600–13,400 lines estimated;
+   **measured at the PR (#188), ~23,000 lines** outside `plans/`, the fixtures, the proposal file
+   and the lockfile, about 44% of them tests (§6.2's estimate ran ~1.7–2.7× low). Over
    CLAUDE.md's ~5,000, for a reason: the rule, the worker, the assembler, the date index and the run
    record are one review boundary — a reviewer can't judge the warp stack without the manifest, the
    assembler without the shards' layout, or the index without the counts the worker takes. It merges
@@ -1082,9 +1100,10 @@ The briefs are §10; this is the roster.
 - **S ↔ W:** `quarterQuadsIn`, `naipIndexUrl`, `parseNaipCellIndex`, `naipCreditRange` in core; W
   never computes a date itself.
 - **Order:** X → S, T and P in parallel → integration → the local proofs (§7.3) → the pilot (§7.4,
-  gated) → the founder's foliage review (§2.1.4, D319; his confirmed strikes committed, on the branch
-  or after the merge) → `/code-review xhigh --fix` → B05-1 opens → merge → the widen deployed to dev
-  → the full run (the founder's go) → Y → K and W → B05-2 opens → merge.
+  gated) → `/code-review xhigh --fix` → B05-1 opens (#188, the strike list empty, the proposal beside
+  it) → merge → the founder's foliage review by flight day (§2.1.4, D319; his confirmed strikes land
+  as a commit) → the widen deployed to dev → the full run (the founder's go) → Y → K and W → B05-2
+  opens → merge.
 
 ### §7.3 — What is proven how
 
@@ -1140,7 +1159,8 @@ credit's range across a join, and the archive loading in about a second. What it
 per work tile, bytes per tile at each zoom (to firm §6.1), the date index's size, source bytes read,
 outbound transfer, the assembler's throughput. Pennies of spend, started only on the governor's go.
 
-**The full region run** (~16 h on ~25 Machines by §6.1's measured figure, a few terabytes read, ~$30–40 all told) is **the
+**The full region run** (by the pilot's figures, §6.1: ~7–9 h on 25 `performance-4x` Machines, ~1.5
+TB read, ~$37 all told, $28–48; the Machine size is part of his call) is **the
 founder's go/no-go**, given the pilot's numbers — never a builder's. **It waits for his foliage review**
 (§2.1.4, D319): the confirmed strikes committed to `NAIP_FOLIAGE_STRIKES` first, and the applied run's
 cloud sheet read, so the build is cut once with the picks he chose rather than re-cut by a
@@ -1225,7 +1245,7 @@ and copies the rest from the live archive; (b) keep every build's shards in R2 (
 ~$70 a year). **Recommendation: (a).**
 
 **G-5 — Who runs the heavy stages.** (a) The laptop orchestrates Fly Machines, as A06e's backfills
-do (it must stay awake about 16 h, §6.1; every stage resumes); (b) a "conductor" Fly Machine runs the
+do (it must stay awake for the build, 7–9 h by the pilot's figures, §6.1; every stage resumes); (b) a "conductor" Fly Machine runs the
 whole build so the laptop can close (it needs a Fly token and a Convex deploy key staged on the app —
 new credential placements, a founder task); (c) Convex launches it from a console button. **The
 recommendation: (a)** now; (b) or (c) is B01's hosted-runner decision.
@@ -1987,7 +2007,13 @@ in particular. Each fix landed with a test (commits on the branch):
   pack and index, then a manifest returning to the old hash, would have the assembler range-copy the
   wrong bytes. The worker drops the done record first.
 - Smaller: verify left its row running when it threw; an assembly that stopped before its manifest
-  refused every re-run as "already exists" (it now says what to delete); `--keep` kept the rclone
-  config holding the R2 secrets; the foliage sheet told the founder a struck frame never shows; and
-  D314 and §5.1 promised the aerial "can never show ice", which the off-season step can break.
+  refused every re-run as "already exists" (it now says what to delete; deleting by hand stays the
+  answer, a ruling, §2.5); `--keep` kept the rclone config holding the R2 secrets; the foliage sheet
+  told the founder a struck frame never shows; and D314 and §5.1 promised the aerial "can never show
+  ice", which the off-season step can break (D312, D147's record, `04` and the older imagery docs
+  said the same and now read "never evidence about ice").
+- **The reviewer's open calls, ruled by the governor (2026-11-27):** the wording above; a struck
+  flight day also strikes frames the catalog adds to that day later, accepted and said on the sheet
+  (§2.1.4); and an archive orphaned by an assembly that died before its manifest is deleted by hand
+  (§2.5).
 - A property test now holds the proposal's flight-day entries to the selection's reading of them.
