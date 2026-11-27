@@ -5540,6 +5540,12 @@ export default defineSchema({
         exitCode: v.optional(v.number()),
         /** The pass that was running when the script exited. */
         lastPass: v.optional(v.string()),
+        /**
+         * Written by `importRunJobs:backfillListed` for a campaign from before B01-8a, rebuilt only
+         * from what its pass rows prove: its flags, plan, exit status and heartbeat were never
+         * recorded, so `flags` and `plan` are empty and read *Not recorded*, never "none".
+         */
+        reconstructed: v.optional(v.boolean()),
       }),
     ),
     /** Marked failed in the console (D342): who, when, why, and the audit row that did it. */
