@@ -73,7 +73,17 @@ describe('runLiveness', () => {
   });
 
   it('gives no verdict for a kind with no expected gap — prototype keys included', () => {
-    for (const k of ['lake_depth', 'toString', 'constructor', '__proto__']) {
+    // The summer aerial's stages (B05) among them: hours long, quiet between their own reports, and
+    // with no Machinery page yet, so no gap has been measured to judge them by.
+    for (const k of [
+      'lake_depth',
+      'aerial_select',
+      'aerial_tiles',
+      'aerial_assemble',
+      'toString',
+      'constructor',
+      '__proto__',
+    ]) {
       expect(expectedQuietMs(k)).toBeNull();
       expect(runLiveness(live({ kind: k, progressAt: NOW - 50 * 60 * MINUTE }), NOW)).toEqual({
         state: 'running',

@@ -1146,3 +1146,54 @@ describe('the inputs a page re-reads a row by', () => {
     expect(page?.row.livenessInputs?.passes.some((p) => p.markedFailed === true)).toBe(true);
   });
 });
+
+describe('the summer aerial’s runs (B05)', () => {
+  test('list in no lane, get no pace, and read plainly when the Overview’s card opens one', async () => {
+    // `aerial_select`, `aerial_tiles` and `aerial_assemble` are a build's stages, hours long and
+    // silent between their own reports, with no Machinery page yet: none is a corpus kind, and none
+    // has a gap in `RUN_QUIET_MS`, so a quiet one is never called late or stalled.
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    const tiles = await seedRun(t, {
+      listedIn: undefined,
+      kind: 'aerial_tiles',
+      label: 'naip-20261212 tiles',
+      campaignId: 'naip-20261212',
+      startedAt: NOW - 6 * 60 * MINUTE,
+      progressAt: NOW - 5 * 60 * MINUTE,
+    });
+    const assemble = await seedRun(t, {
+      listedIn: undefined,
+      kind: 'aerial_assemble',
+      label: 'naip-20261211 assemble',
+      status: 'succeeded',
+      startedAt: NOW - DAY,
+      finishedAt: NOW - DAY + 30 * MINUTE,
+    });
+    await seedRun(t, { listedIn: undefined, kind: 'aerial_select', label: 'naip-20261212 select' });
+    const listed = await as.query(api.machineryRuns.listPage, {
+      lane: 'corpus',
+      paginationOpts: { numItems: 25, cursor: null },
+      now: NOW,
+    });
+    expect(listed.page).toEqual([]);
+    expect(listed.indexed).toBe(true);
+    const view = must(await as.query(api.machineryRuns.run, { runId: tiles, now: NOW }));
+    expect(view.liveness).toEqual({
+      state: 'running',
+      quietMs: 5 * 60 * MINUTE,
+      expectedMs: null,
+      waitUntil: null,
+    });
+    expect(view.parent).toBeNull();
+    // With no corpus run listed, the card's row is the newest finished import: the aerial's.
+    const card = await as.query(api.machinery.overviewJobs, { now: NOW });
+    expect(card?.jobs.find((j) => j.id === 'import')).toEqual({
+      id: 'import',
+      name: 'naip-20261211 assemble',
+      state: 'ok',
+      at: NOW - DAY + 30 * MINUTE,
+      runId: assemble,
+    });
+  });
+});
