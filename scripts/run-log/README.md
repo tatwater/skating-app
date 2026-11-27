@@ -79,6 +79,54 @@ tiles to R2. It never touches Convex and populates no part of the data model. Th
 makes it *possible* (the mirrors use exactly that route), so this is a scope decision rather than a
 technical one.
 
+## The live log, beats and the campaign row (D341, B01-8a)
+
+Machinery's corpus page watches a campaign as it runs, so the logger records what it sees as it sees
+it — no loader writes a line itself.
+
+**The live log.** The logger keeps a line for each call it already receives — the start (*Run
+started · A07a unified corpus · full canonical, 5 states · dev · dry run*), a stage the first time
+it is named, the failures since the last report (*3 new failures · e.g. nhd/3290011 · …*), the counts
+that changed (`inserted=1200, updated=40`, in the order the loader set them, at most 500 characters),
+a beat's label, and the close (*Succeeded*, or *Failed: …*). It sends them to `runEvents:append` after
+the start, after each `progress` and after the `finish` — at most 200 lines a call; past that it keeps
+the first 150 and the last, with one line saying how many it left out.
+
+**`beat(label?)`** is for a pass that never flushed. It is cheap enough for a hot loop — a clock read
+— and reaches Convex (a flush) only once `beatMs` (default 60 s) has passed since the logger last
+did; the latest label rides that flush as a `beat` line. Every logger call is a `pnpm exec convex run`
+subprocess of one to three seconds, so a beat can never be per item, and no beat can cover one
+synchronous step longer than its gap (an `osmium` run, one hung batch, one huge `JSON.parse`).
+
+**The console's directives**, in `append`'s answer:
+
+- *marked failed* — the logger says so on stderr once and carries on; its own close is kept beside
+  the mark, never over it.
+- *stop* (built, not drawn) — the logger adds a line, closes the row as failed with *Stopped on
+  request*, and calls `onStop` (default `process.exit(130)`). It takes effect only at a flush or a
+  reported beat — between batches, never inside one.
+
+**The campaign, from the environment.** `run-corpus.sh` sets `RUN_CORPUS_PASS` (the pass's name)
+and `RUN_CORPUS_PARENT` (the campaign row's id) for each pass; the logger sends them at `start` as
+`campaignPass` and `parentRunId`. A loader run by hand has neither, and lists on its own.
+
+**An older deployment loses only lines, never counts.** A `start` refused with the campaign's keys is
+retried once without them; a missing `runEvents:append` turns the lines off for the run with one
+warning; `progress` and `finish` are unchanged either way.
+
+**The campaign row** is `run-corpus.sh`'s own (`corpus_campaign`), written by `src/campaign.ts`:
+
+```sh
+pnpm --silent --filter @skating/run-log campaign open <campaignId> --plan=<pass,…> \
+    [--hand=<pass,…>] [--skipped=<pass>:<why>]… [-- <the script's flags>…]   # prints the row's id
+pnpm --silent --filter @skating/run-log campaign pass <runId> <pass>          # prints `stop` if asked
+pnpm --silent --filter @skating/run-log campaign skip <runId> <pass> <why…>
+pnpm --silent --filter @skating/run-log campaign close <runId> --exit=<code> [--last-pass=<pass>]
+```
+
+Every verb exits 0 whatever Convex says: a campaign never fails because its row couldn't be written.
+`--silent` matters — without it pnpm prints its banner on stdout, ahead of the id.
+
 ## The two rules
 
 **1. Bookkeeping never breaks the thing it books.** Every call `RunLogger` makes into Convex is
