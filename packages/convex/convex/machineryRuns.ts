@@ -299,10 +299,17 @@ async function campaignPassesForRow(ctx: QueryCtx, row: Run): Promise<Run[]> {
   return all.filter((r) => isScriptPassOf(r, row));
 }
 
-/** A run that is one of a campaign's script passes: under it, or (no parent) sharing its id. */
+/**
+ * A run that is one of a campaign's script passes: under it, or — for a reconstructed campaign only,
+ * whose old passes may carry no parent — sharing its id. A recorded campaign's passes are exactly the
+ * rows under it, as its list row reads them ({@link campaignPassesForRow}), so the list and the page
+ * judge it by the same passes: a by-hand re-run of a script pass, or a pass from an earlier campaign
+ * under the same id, is never taken for its own.
+ */
 function isScriptPassOf(run: Run, row: Run): boolean {
   if (run._id === row._id || isCampaignRow(run)) return false;
   if (run.parentRunId !== undefined) return run.parentRunId === row._id;
+  if (!isReconstructed(row)) return false;
   if (run.campaignId === undefined || run.campaignId !== row.campaignId) return false;
   const pass = passOfRun(run);
   return pass !== null && !HAND_PASSES.has(pass);

@@ -729,6 +729,31 @@ describe('campaign', () => {
     expect(await as.query(api.machineryRuns.campaign, { runId: gone })).toBeNull();
   });
 
+  test('a recorded campaign is judged by the passes under it, as its list row is', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    const { campaign, load } = await seedCampaign(t, 'c1');
+    // A row left running under the same id with no parent: no heartbeat, from an earlier campaign.
+    await seedRun(t, {
+      kind: 'canonical_water',
+      campaignId: 'c1',
+      listedIn: 'corpus',
+      startedAt: NOW - 20 * DAY,
+      progressAt: undefined,
+    });
+    const view = await as.query(api.machineryRuns.campaign, { runId: campaign, now: NOW });
+    const listed = await as.query(api.machineryRuns.listPage, {
+      lane: 'corpus',
+      paginationOpts: { numItems: 25, cursor: null },
+      now: NOW,
+    });
+    const row = listed.page.find((r) => r.id === campaign);
+    expect(view?.liveness).toEqual(row?.liveness);
+    expect(view?.liveness.state).toBe('running');
+    expect(view?.row.line).toEqual(row?.line);
+    expect(view?.current?.runId).toBe(load);
+  });
+
   test('a reconstructed campaign is finished history; its flags and plan not recorded', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');
