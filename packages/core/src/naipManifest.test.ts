@@ -366,7 +366,8 @@ describe('naipWorkTileInputHash', () => {
   });
 
   test('names the tiling version it hashes', () => {
-    expect(NAIP_TILING_VERSION).toBe(1);
+    // 2: the worker fills strips narrower than a counts' pixel (B05-1's review, 2026-11-27).
+    expect(NAIP_TILING_VERSION).toBe(2);
   });
 });
 

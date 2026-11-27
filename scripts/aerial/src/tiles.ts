@@ -167,6 +167,13 @@ export interface AerialUnitCell {
   extent: MercatorBounds;
   /** The same on the counts' grid (`COUNT_PIXEL_ZOOM`). */
   countExtent: MercatorBounds;
+  /**
+   * `countExtent` with one more counts' pixel on every side: what the counts' warps read. The ring
+   * is never counted (its centers lie outside the cell, or outside the window); it is read so the
+   * worker can tell where an upper frame's data ends between the cell's last counted center and its
+   * edge — the deepest zoom's pixels there belong to the cell but to none of its counted pixels.
+   */
+  countWindow: MercatorBounds;
 }
 
 /**
@@ -361,8 +368,31 @@ export function buildWorkUnit(
     const m: MercatorBounds = [minX, minY, maxX, maxY];
     const extent = pixelExtent(m, resolution, bounds);
     const countExtent = pixelExtent(m, countResolution, bounds);
-    if (extent === null || countExtent === null) continue;
-    cells.push({ key: cell.key, outline, frames: [...cell.frames], extent, countExtent });
+    if (extent === null) continue;
+    // A cell can't enter the window by pixels at the deepest zoom and by none on the counts' grid
+    // without its frames going uncounted there, and an uncounted frame is never drawn: a strip of up
+    // to half a counts' pixel would stay empty. The real grid never does this (0 of the 18,225 cell
+    // and work tile pairs, checked 2026-11-27), so it is refused, never dropped.
+    if (countExtent === null) {
+      throw new Error(
+        `cell ${cell.key} has pixels in ${windowKey} at the deepest zoom but none on the counts' grid`,
+      );
+    }
+    const c = countResolution;
+    const countWindow: MercatorBounds = [
+      countExtent[0] - c,
+      countExtent[1] - c,
+      countExtent[2] + c,
+      countExtent[3] + c,
+    ];
+    cells.push({
+      key: cell.key,
+      outline,
+      frames: [...cell.frames],
+      extent,
+      countExtent,
+      countWindow,
+    });
   }
   const { chunks, overview } = chunksOf(window);
   const unit: AerialWorkUnit = {

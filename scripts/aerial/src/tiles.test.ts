@@ -288,6 +288,31 @@ describe('buildWorkUnit', () => {
     const [ne, nw] = unit.cells as [AerialWorkUnit['cells'][0], AerialWorkUnit['cells'][0]];
     expect(ne.extent[2]).toBe(nw.extent[0]);
     expect(ne.countExtent[2]).toBe(nw.countExtent[0]);
+    // The counts read one more counts' pixel on every side, never counted.
+    for (const c of unit.cells) {
+      expect(c.countWindow).toEqual([
+        c.countExtent[0] - unit.countResolution,
+        c.countExtent[1] - unit.countResolution,
+        c.countExtent[2] + unit.countResolution,
+        c.countExtent[3] + unit.countResolution,
+      ]);
+    }
+  });
+
+  test('refuses a cell with deepest-zoom pixels in the window and none on the counts’ grid', () => {
+    // A cell entering the work tile by under half a counts' pixel, past a deepest-zoom center.
+    const [x0] = tileBounds(11, 606, 736);
+    const res = tileResolution(TILE_SETTINGS.maxTileZoom);
+    const lng = (x: number) => (x / 6378137 / Math.PI) * 180;
+    const sliver: CellOutline = () => ({
+      minLng: lng(x0 - 50_000),
+      minLat: 44.9375,
+      maxLng: lng(x0 + res * 1.5),
+      maxLat: 45.0,
+    });
+    expect(() =>
+      buildWorkUnit({ ...spec, cells: [{ key: '4407305ne', frames: ['a'] }] }, sliver),
+    ).toThrow(/has pixels in 11\/606\/736 at the deepest zoom but none on the counts' grid/);
   });
 
   test('a proof’s window inside the work tile; refused outside it or off the zooms', () => {
@@ -584,6 +609,10 @@ describe('the tiling fingerprint', () => {
     // `--parallel-method spawn` (the thread pool can't clone the mosaic), which draws tiles
     // byte-identical to a single-threaded run (measured on 89 real tiles); no archive had been built.
     1: 'd6b25433e0b8fd5f5225740004750f94d7052a041ec20f7653e7e2c371a42139',
+    // 2 (B05-1's review, 2026-11-27): the counts read a ring past each cell, and a frame that fills
+    // only a strip the counts' grid can't see is checked at the deepest zoom and drawn in its
+    // windows — the same stack now draws pixels tiling 1 left transparent.
+    2: '94207eb716944bfb1f1745accc74efbc52fa8833cecce10079f36f3e1988258c',
   };
 
   /** The worker's GDAL invocations (with their continuation lines) and the counts helper's code. */

@@ -25,6 +25,7 @@ assertion fails. Reads the COGs again (the seam strips only) with the SAS token 
 import json
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -184,7 +185,8 @@ def main(argv):
         outside = []
         for p in layer_paths:
             base = os.path.basename(p)[: -len(".vrt")]
-            cell, rank = base.rsplit("-", 1)
+            # `<cell>-<rank>`, or `<cell>-<rank>-w<n>` for a frame drawn only in windows.
+            cell, rank = re.fullmatch(r"(.+)-(\d+)(?:-w\d+)?", base).groups()
             rank = int(rank)
             frame = cells[cell]["frames"][rank]
             ds, arr = read(p)

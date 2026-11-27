@@ -103,10 +103,16 @@ New picks the proposal makes are not cloud-reviewed: read the applied cloud shee
 ### The worker, one work tile (`cut-aerial.sh`)
 
 A z11 work tile in, a shard out (`shard.ts`: the pack, its index, then the done record). Per cell,
-every frame of its stack is warped to the counts' grid (pixel zoom 16, the 256-px z16 grid) and
-counted in the rule's order — the pick first, each fallback only where everything above it is
-empty (`aerial-counts.py`); only the frames that supply a pixel are warped at full resolution, so a
-fallback under a pick that covers its cell is never read. Each frame is cut to **exactly its cell's
+every frame of its stack is warped to the counts' grid (pixel zoom 16, the 256-px z16 grid, over the
+cell and a ring of one more pixel) and counted in the rule's order — the pick first, each fallback
+only where everything above it is empty (`aerial-counts.py`); only the frames that supply a pixel are
+warped at full resolution, so a fallback under a pick that covers its cell is never read. **A counts'
+pixel is ~2.4 m and samples its center**, so a strip narrower than that — an upper frame's data
+stopping just short of the cell's edge, or of another frame's — can hold deepest-zoom pixels nothing
+above fills while the frame below counts zero. Where an upper frame's data ends within two counts'
+pixels of a lower one's, the helper checks at the deepest zoom over just that band; a frame that
+fills anything there is counted (so the date index names it) and warped on those windows only
+(`<cell>.windows.json`, `-w<n>.vrt` in the mosaic), so it is read only there. Each frame is cut to **exactly its cell's
 pixels** (`tiles.ts`' `pixelExtent`: the pixels whose centers are in the cell), not by a cutline: a
 cutline is applied on each source's own grid, and two frames on different grids disagreed about the
 edge pixel (measured). The mosaic composes them pick last; `gdal raster tile` writes WebP q80 at

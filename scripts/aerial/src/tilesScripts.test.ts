@@ -99,10 +99,15 @@ echo '{"methods":{"GET":{"count":1,"downloaded_bytes":1000}},"handlers":{"vsiaz"
   bin(
     b,
     'python3',
+    // The counts helper takes one job file; the stand-in counts 7 for the pick, 0 for the rest.
     `echo "python3 $*" >> "$CALLS"
-out="$2"; shift 2; first=1; printf '{' > "$out"
-for p in "$@"; do id="\${p%%=*}"; [ $first = 1 ] && n=7 || n=0; [ $first = 1 ] || printf ',' >> "$out"; printf '"%s": %s' "$id" "$n" >> "$out"; first=0; done
-echo '}' >> "$out"
+job="$2"; jq -c '{ frames: [.frames[].id], extent, res, pad, warp }' "$job" >> "$CALLS"
+jq '[.frames[].id] | to_entries | map({ (.value): (if .key == 0 then 7 else 0 end) }) | add' "$job" > "$(jq -r .counts "$job")"
+# STRIP: the second frame fills a strip the counts' grid can't see, along the cell's west edge.
+if [ -n "\${STRIP:-}" ] && [ "$(jq '.frames | length' "$job")" -gt 1 ]; then
+  jq '[.frames[].id] | to_entries | map({ (.value): (if .key == 0 then 7 elif .key == 1 then 1 else 0 end) }) | add' "$job" > "$(jq -r .counts "$job")"
+  jq -c '{ (.frames[1].id): [[.extent[0], .extent[1], (.extent[0] + 4 * .res), .extent[3]]] }' "$job" > "$(jq -r .windows "$job")"
+fi
 `,
   );
   bin(
@@ -128,6 +133,8 @@ function cutAerial(
     noDone?: boolean;
     /** `--keep <dir>/kept`: the work directory stays. */
     keep?: boolean;
+    /** The counts stand-in reports a strip only the second frame fills, with its window. */
+    strip?: boolean;
   } = {},
 ) {
   const dir = tmp();
@@ -180,6 +187,7 @@ function cutAerial(
         R2_BUCKET: 'bucket',
         ...(opts.failOn !== undefined && { FAIL_ON: opts.failOn }),
         ...(opts.noDone && { NO_DONE: '1' }),
+        ...(opts.strip && { STRIP: '1' }),
       },
     },
   );
@@ -226,6 +234,57 @@ describe('cut-aerial.sh', () => {
     expect(run.stderr).toMatch(/landed 11\/606\/736: 4 tiles/);
     // The scratch is gone, and the rclone config written into it with it.
     expect(readdirSync(run.dir).filter((n) => n.startsWith('aerial.'))).toEqual([]);
+  });
+
+  /** A warp call's `-te` box, as numbers (jq and JavaScript may print a float differently). */
+  const teOf = (call: string) =>
+    (/-te (\S+) (\S+) (\S+) (\S+) /.exec(call)?.slice(1) ?? []).map(Number);
+  const sameBox = (a: number[], b: readonly number[]) =>
+    a.length === 4 && a.every((v, i) => Math.abs(v - (b[i] as number)) < 1e-6);
+
+  test('counts on the padded counts window and hands the helper the deepest zoom’s warp', () => {
+    const run = cutAerial();
+    expect(run.status).toBe(0);
+    const near = run.calls.filter((c) => c.startsWith('gdalwarp') && c.includes(' near '));
+    for (const cell of run.unit.cells) {
+      const mine = near.filter((w) => sameBox(teOf(w), cell.countWindow));
+      expect(mine).toHaveLength(cell.frames.length);
+    }
+    const jobs = run.calls.filter((c) => c.startsWith('{"frames"')).map((j) => JSON.parse(j));
+    expect(jobs.map((j) => j.frames)).toEqual(run.unit.cells.map((c) => c.frames));
+    for (const [i, j] of jobs.entries()) {
+      expect(j).toMatchObject({
+        extent: run.unit.cells[i]?.extent,
+        res: run.unit.resolution,
+        pad: 1,
+        warp: { bands: [1, 2, 3], srcNodata: '0 0 0', resampling: 'cubic' },
+      });
+    }
+  });
+
+  test('a frame that fills only a strip is warped on its window alone, under the pick', () => {
+    const run = cutAerial({ strip: true, keep: true });
+    expect(run.status).toBe(0);
+    const cell = run.unit.cells.find((c) => c.key === '4407306nw') as (typeof run.unit.cells)[0];
+    const deep = run.calls.filter((c) => c.startsWith('gdalwarp') && c.includes(' cubic '));
+    const strip = [
+      cell.extent[0],
+      cell.extent[1],
+      cell.extent[0] + 4 * run.unit.resolution,
+      cell.extent[3],
+    ];
+    // The fallback once, on its window; the two picks on their cells.
+    expect(deep).toHaveLength(3);
+    expect(deep.filter((w) => sameBox(teOf(w), strip))).toHaveLength(1);
+    expect(deep.filter((w) => sameBox(teOf(w), cell.extent))).toHaveLength(1);
+    const mosaic = readFileSync(join(run.dir, 'kept', 'mosaic.txt'), 'utf8')
+      .trim()
+      .split('\n');
+    expect(mosaic.map((p) => p.slice(p.lastIndexOf('/') + 1))).toEqual([
+      '4407305ne-0.vrt',
+      '4407306nw-1-w1.vrt',
+      '4407306nw-0.vrt',
+    ]);
   });
 
   test('--local writes the shard under its keys; its done record is checked and dated', () => {

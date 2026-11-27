@@ -8,6 +8,12 @@
  *   the pick's alpha first, each fallback only where everything above it is empty — and mosaics
  *   exactly the frames that supply any (`mosaicLayers`), the pick last so it wins wherever it has
  *   pixels. A fallback under a pick that covers its cell is never read at full resolution.
+ *   **The counts' grid can miss a strip narrower than one of its pixels** (about 2.4 m): an upper
+ *   frame whose data stops just short of where its center samples reach reads as covering, and the
+ *   frame below that would fill the strip counts zero. So where an upper frame's data ends within
+ *   two counts' pixels of a lower frame's, `aerial-counts.py` checks at the deepest zoom, over just
+ *   that band; a frame that fills anything there is mosaicked **in the band's windows only**
+ *   (`readCellWindows`) and counted, so the date index still names exactly the frames that show.
  * - **The pack** holds the tiles in ascending PMTiles tile id, streamed to disk with each tile's
  *   SHA-256 and the whole pack's (`writeShard`); the index is checked by `checkShardIndex` before
  *   it is written, so the worker can't upload one the assembler would refuse.
@@ -15,7 +21,15 @@
  */
 
 import { createHash } from 'node:crypto';
-import { closeSync, openSync, readdirSync, readFileSync, statSync, writeSync } from 'node:fs';
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  statSync,
+  writeSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { parseWorkTileKey } from '@skating/core';
 import { zxyToTileId } from 'pmtiles';
@@ -30,7 +44,7 @@ import {
   type ShardIndexEntry,
   tileInWorkTile,
 } from './shard';
-import type { AerialWorkUnit } from './tiles';
+import { type AerialWorkUnit, MERCATOR_ORIGIN, type MercatorBounds } from './tiles';
 
 /** One tile file the tiler wrote: `<dir>/<z>/<x>/<y>.webp`. */
 export interface TileFile {
@@ -89,27 +103,103 @@ export function readCellCounts(dir: string, unit: AerialWorkUnit): ShardCellCoun
   return counts;
 }
 
-/** One warp of the mosaic: a cell's frame. */
+/**
+ * The frames shown only in windows, per cell: `{ "<itemId>": [[minX, minY, maxX, maxY], …] }` in
+ * `<dir>/<cellKey>.windows.json` (absent when none). Each is a frame that fills a strip the counts'
+ * grid can't see (see the header), drawn only there so it is read only there.
+ */
+export type CellWindows = Record<string, Record<string, MercatorBounds[]>>;
+
+/**
+ * The windows of every cell in the unit, checked against it and its counts: only a frame of the
+ * cell that the counts say supplies pixels may have windows, and each window is a box of positive
+ * area inside the cell's pixels on the deepest zoom's grid (`extent`), on that grid.
+ */
+export function readCellWindows(
+  dir: string,
+  unit: AerialWorkUnit,
+  counts: ShardCellCounts,
+): CellWindows {
+  const out: CellWindows = {};
+  const onGrid = (v: number) => {
+    const i = (v - MERCATOR_ORIGIN) / unit.resolution;
+    return Math.abs(i - Math.round(i)) < 1e-6;
+  };
+  for (const cell of unit.cells) {
+    const path = join(dir, `${cell.key}.windows.json`);
+    if (!existsSync(path)) continue;
+    const raw = JSON.parse(readFileSync(path, 'utf8')) as unknown;
+    if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+      throw new Error(`windows for ${cell.key}: not an object`);
+    }
+    const frames: Record<string, MercatorBounds[]> = {};
+    for (const [itemId, boxes] of Object.entries(raw)) {
+      if (!((counts[cell.key]?.[itemId] ?? 0) > 0)) {
+        throw new Error(`windows for ${cell.key} name ${itemId}, which supplies no pixel`);
+      }
+      if (!Array.isArray(boxes) || boxes.length === 0) {
+        throw new Error(`windows for ${cell.key} frame ${itemId}: no window`);
+      }
+      const [ex0, ey0, ex1, ey1] = cell.extent;
+      frames[itemId] = boxes.map((b: unknown) => {
+        const ok =
+          Array.isArray(b) &&
+          b.length === 4 &&
+          b.every((v) => typeof v === 'number' && Number.isFinite(v) && onGrid(v));
+        const [x0, y0, x1, y1] = (ok ? b : [0, 0, 0, 0]) as MercatorBounds;
+        const eps = unit.resolution * 1e-6;
+        if (
+          !ok ||
+          !(x0 < x1 && y0 < y1) ||
+          x0 < ex0 - eps ||
+          y0 < ey0 - eps ||
+          x1 > ex1 + eps ||
+          y1 > ey1 + eps
+        ) {
+          throw new Error(
+            `windows for ${cell.key} frame ${itemId}: ${JSON.stringify(b)} is not a box of its pixels`,
+          );
+        }
+        return [x0, y0, x1, y1];
+      });
+    }
+    if (Object.keys(frames).length > 0) out[cell.key] = frames;
+  }
+  return out;
+}
+
+/** One warp of the mosaic: a cell's frame, or one window of it. */
 export interface MosaicLayer {
   cell: string;
   itemId: string;
   /** The frame's position in the cell's rule order (0 = the pick). */
   rank: number;
+  /** Where it is drawn when it is drawn only in windows (`readCellWindows`); else the cell's extent. */
+  window?: MercatorBounds;
 }
 
 /**
  * The mosaic's sources, bottom to top: per cell, the frames that supply any pixel, in reverse rule
- * order (its lowest fallback first, its pick last). Cells don't overlap — each frame is cut to its
- * own cell — so the order between cells doesn't matter; within a cell it is the whole point.
+ * order (its lowest fallback first, its pick last) — a frame shown only in windows as one layer a
+ * window, at its place in that order. Cells don't overlap — each frame is cut to its own cell — so
+ * the order between cells doesn't matter; within a cell it is the whole point.
  */
-export function mosaicLayers(unit: AerialWorkUnit, counts: ShardCellCounts): MosaicLayer[] {
+export function mosaicLayers(
+  unit: AerialWorkUnit,
+  counts: ShardCellCounts,
+  windows: CellWindows = {},
+): MosaicLayer[] {
   const layers: MosaicLayer[] = [];
   for (const cell of unit.cells) {
     const supplied = counts[cell.key] ?? {};
     const shown = cell.frames
       .map((itemId, rank) => ({ cell: cell.key, itemId, rank }))
       .filter((l) => (supplied[l.itemId] ?? 0) > 0);
-    layers.push(...shown.reverse());
+    for (const l of shown.reverse()) {
+      const boxes = windows[cell.key]?.[l.itemId];
+      if (boxes === undefined) layers.push(l);
+      else for (const window of boxes) layers.push({ ...l, window });
+    }
   }
   return layers;
 }

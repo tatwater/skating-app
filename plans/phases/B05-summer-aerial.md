@@ -407,7 +407,15 @@ the raw COGs can't mosaic them. Instead:
    number of pixels each frame of its stack supplies to the mosaic, counted on the z16 grid (about
    2.4 m a pixel at 44°N) from the frames' alphas in the stack's order — the pick's alpha first, each
    fallback only where everything above it is empty. Any pixel counts; a frame that supplies none is
-   not in the cell's dates.
+   not in the cell's dates. **And the strip the z16 grid can't see** (*added at the PR's review,
+   2026-11-27*): a z16 alpha is a sample at the pixel's center, so an upper frame whose data stops
+   between two centers — short of its cell's edge, or of another frame's — reads as covering while
+   z18 pixels there are empty, and the fallback that would fill them counts zero and was never
+   warped: a transparent strip up to four z18 pixels wide. The counts now read a ring of one more z16
+   pixel past each cell (never counted), and for a frame that counts zero, wherever its data lies
+   within one z16 pixel of the band where no shown frame above it is set for two pixels around, the
+   worker warps it and the frames above it at z18 over just that band; if it fills anything, it is
+   counted (at least one, so the index dates it) and mosaicked on those windows only. Tiling 2.
 5. **Packed into a shard**: the tiles ordered by zoom and then by PMTiles tile id, with a small index
    (tile id, length, hash), uploaded to the private build prefix
    `naip/build/<campaign>/shards/11/<x>/<y>.{pack,idx.json}` (a pilot's under

@@ -36,13 +36,17 @@
 #    (16 to a work tile), each short enough to finish inside the margin.
 # 2. **Resolve** each frame's COG by its STAC item (anonymous).
 # 3. **Count** (§2.2 step 4): per cell, every frame warped to the counts' grid (pixel zoom 16) on the
-#    cell's own pixels, its alpha materialized; `aerial-counts.py` counts each frame's pixels in the
-#    rule's order — the pick first, each fallback only where everything above it is empty.
+#    cell's own pixels and a ring of one more (`countWindow`), its alpha materialized;
+#    `aerial-counts.py` counts each frame's pixels in the rule's order — the pick first, each
+#    fallback only where everything above it is empty — and, where an upper frame's data ends within
+#    two counts' pixels of a lower one's, checks at the deepest zoom over just that band whether the
+#    lower one fills a strip too narrow for the counts' grid to see (`<cell>.windows.json`).
 # 4. **Warp** (§2.2 step 1): per cell, a warped VRT of each frame that supplied any pixel — to
 #    EPSG:3857 on the deepest zoom's grid, **on exactly the cell's pixels** (`-te`, the unit's
 #    `extent`: the pixels whose centers are in the cell, so neighbors split an edge exactly), RGB
 #    only, alpha from NAIP's 0,0,0 fill (the COGs declare no nodata; measured 2026-11-25),
-#    `-r cubic`. A fallback the pick hides entirely is never read at full resolution.
+#    `-r cubic`; a frame that fills only such a strip, on just its windows. A fallback the pick hides
+#    entirely is never read at full resolution.
 # 5. **Mosaic** (§2.2 step 2): one VRT of those, per cell its lowest fallback first and its pick
 #    last; `gdalbuildvrt` composes them through their alpha, so the pick wins wherever it has pixels.
 # 6. **Tile** (§2.2 step 3): `gdal raster tile` per chunk, WebP q80, 512 px, `--skip-blank`, the
@@ -231,14 +235,18 @@ step resolve resolve || die "could not resolve the unit's frames"
 export AZURE_STORAGE_ACCOUNT="$ACCOUNT"
 log "resolved ${#SRC[@]} frames"
 
-# warp <cell> <itemId> <extent field> <res> <resampling> <out.vrt> — the frame on exactly the cell's
-# pixels (the unit's extent), which is the cut: no cutline (see `tiles.ts`' `pixelExtent`).
+# cell_box <cell> <field> — one of the cell's boxes in the unit, `minX minY maxX maxY`.
+cell_box() {
+  jq -r --arg k "$1" ".cells[] | select(.key == \$k) | .$2 | map(tostring) | join(\" \")" "$UNIT"
+}
+# warp <cell> <itemId> "<minX minY maxX maxY>" <res> <resampling> <out.vrt> — the frame on exactly
+# that box of the cell's pixels (its extent, or a window of it), which is the cut: no cutline (see
+# `tiles.ts`' `pixelExtent`). `aerial-counts.py`'s deepest-zoom check warps with the same arguments.
 # ⚠ Any change to these arguments (or the tiler's below) that draws different pixels from the same
 # stack bumps NAIP_TILING_VERSION in core — see the header; `tiles.test.ts` holds the fingerprint.
 warp() {
-  local cell="$1" id="$2" field="$3" res="$4" resampling="$5" out="$6" te srcbands=()
-  read -r -a te < <(jq -r --arg k "$cell" \
-    ".cells[] | select(.key == \$k) | .${field} | map(tostring) | join(\" \")" "$UNIT")
+  local cell="$1" id="$2" res="$4" resampling="$5" out="$6" te srcbands=()
+  read -r -a te <<<"$3"
   for b in "${BANDS[@]}"; do srcbands+=(-srcband "$b"); done
   sas_ensure || return 1
   gdalwarp -q -overwrite -of VRT -t_srs EPSG:3857 -te "${te[@]}" -tr "$res" "$res" \
@@ -248,17 +256,29 @@ warp() {
 
 # --- 3. Count, per cell, on the counts' grid --------------------------------------------------------
 count_cell() {
-  local cell="$1" id i=0 pairs=() alpha_band=$(( ${#BANDS[@]} + 1 ))
+  local cell="$1" id i=0 frames="[]" alpha_band=$(( ${#BANDS[@]} + 1 )) window
   mkdir -p "$W/count/$cell"
+  window="$(cell_box "$cell" countWindow)"
   for id in $(jq -r --arg k "$cell" '.cells[] | select(.key == $k) | .frames[]' "$UNIT"); do
     i=$((i + 1))
-    warp "$cell" "$id" countExtent "$CRES" near "$W/count/$cell/$i.vrt" || return 1
+    warp "$cell" "$id" "$window" "$CRES" near "$W/count/$cell/$i.vrt" || return 1
     sas_ensure || return 1
     gdal_read gdal_translate -q -b "$alpha_band" -co COMPRESS=DEFLATE \
       "$W/count/$cell/$i.vrt" "$W/count/$cell/$i-alpha.tif" || return 1
-    pairs+=("$id=$W/count/$cell/$i-alpha.tif")
+    frames="$(jq -c --arg id "$id" --arg a "$W/count/$cell/$i-alpha.tif" --arg s "${SRC[$id]}" \
+      '. + [{ id: $id, alpha: $a, src: $s }]' <<<"$frames")"
   done
-  "$AERIAL_PYTHON" "$AERIAL_COUNTS" "$W/counts/$cell.json" "${pairs[@]}"
+  # The job: the frames in the rule's order, where to write, and the deepest zoom's warp, which the
+  # helper repeats over any band it must check there (the same arguments as `warp`).
+  jq -n --arg counts "$W/counts/$cell.json" --arg windows "$W/counts/$cell.windows.json" \
+    --argjson extent "$(jq -c --arg k "$cell" '.cells[] | select(.key == $k) | .extent' "$UNIT")" \
+    --argjson res "$RES" --argjson frames "$frames" \
+    --argjson bands "$(jq -c .settings.bands "$UNIT")" --arg nodata "$SRC_NODATA" --arg r "$RESAMPLING" \
+    '{ counts: $counts, windows: $windows, extent: $extent, res: $res, pad: 1,
+       warp: { bands: $bands, srcNodata: $nodata, resampling: $r }, frames: $frames }' \
+    > "$W/count/$cell/job.json"
+  sas_ensure || return 1
+  "$AERIAL_PYTHON" "$AERIAL_COUNTS" "$W/count/$cell/job.json"
 }
 for cell in "${CELLS[@]}"; do
   step count count_cell "$cell" || die "counting $cell failed"
@@ -268,11 +288,18 @@ done
 mapfile -t LAYERS < <($AERIAL_PACK layers --unit "$UNIT" --counts "$W/counts")
 : > "$W/mosaic.txt"
 warp_layers() {
-  local line cell id rank
+  local line cell id rank box out n=0
   for line in "${LAYERS[@]}"; do
-    IFS=$'\t' read -r cell id rank <<<"$line"
-    warp "$cell" "$id" extent "$RES" "$RESAMPLING" "$W/warp/$cell-$rank.vrt" || return 1
-    echo "$W/warp/$cell-$rank.vrt" >> "$W/mosaic.txt"
+    IFS=$'\t' read -r cell id rank box <<<"$line"
+    if [[ -z "$box" ]]; then
+      out="$W/warp/$cell-$rank.vrt"
+      box="$(cell_box "$cell" extent)"
+    else
+      # A frame shown only in a strip the counts' grid can't see: drawn, and so read, just there.
+      n=$((n + 1)); out="$W/warp/$cell-$rank-w$n.vrt"
+    fi
+    warp "$cell" "$id" "$box" "$RES" "$RESAMPLING" "$out" || return 1
+    echo "$out" >> "$W/mosaic.txt"
   done
 }
 step warp warp_layers || die "a warp failed"

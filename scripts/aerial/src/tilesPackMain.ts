@@ -5,7 +5,8 @@
  *
  * ```text
  * tilesPackMain.ts layers --unit <unit.json> --counts <dir>
- *     the mosaic's sources, bottom to top, one `<cellKey>\t<itemId>\t<rank>` a line
+ *     the mosaic's sources, bottom to top, one `<cellKey>\t<itemId>\t<rank>\t<window>` a line —
+ *     `<window>` empty for a frame drawn over its cell, `minX minY maxX maxY` for one drawn only there
  * tilesPackMain.ts pack --unit <unit.json> --tiles <dir> --counts <dir> --timings <file> --out <dir>
  *                       --image <ref@sha256:…>
  *     <out>/shard.pack, shard.idx.json, shard.done.json
@@ -27,6 +28,7 @@ import {
   listTiles,
   mosaicLayers,
   readCellCounts,
+  readCellWindows,
   writeShard,
 } from './tilesPack';
 
@@ -88,8 +90,10 @@ export function main(argv: readonly string[], io: MainIo = defaultIo): number {
     if (command === 'layers') {
       const f = flags(rest, ['unit', 'counts']);
       const unit = readUnit(f.get('unit') as string);
-      for (const l of mosaicLayers(unit, readCellCounts(f.get('counts') as string, unit))) {
-        io.out(`${l.cell}\t${l.itemId}\t${l.rank}`);
+      const dir = f.get('counts') as string;
+      const counts = readCellCounts(dir, unit);
+      for (const l of mosaicLayers(unit, counts, readCellWindows(dir, unit, counts))) {
+        io.out(`${l.cell}\t${l.itemId}\t${l.rank}\t${l.window?.join(' ') ?? ''}`);
       }
       return 0;
     }

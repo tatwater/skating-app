@@ -305,7 +305,9 @@ export function formatNaipCreditRange(range: NaipCreditRange): string {
  * the region under `--from-current`. Bump it whenever `cut-aerial.sh` would draw different pixels
  * from the same stack.
  */
-export const NAIP_TILING_VERSION = 1;
+// 2 (B05-1's review, 2026-11-27): a frame that fills only a strip narrower than a counts' pixel is
+// found at the deepest zoom and drawn there; under 1 such a strip stayed transparent.
+export const NAIP_TILING_VERSION = 2;
 
 /** One cell as a work tile's input hash reads it. */
 export interface NaipHashedCell {

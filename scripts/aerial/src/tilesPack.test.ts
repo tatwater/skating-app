@@ -11,6 +11,7 @@ import {
   listTiles,
   mosaicLayers,
   readCellCounts,
+  readCellWindows,
   type TileFile,
   writeShard,
 } from './tilesPack';
@@ -170,6 +171,55 @@ describe('readCellCounts and mosaicLayers', () => {
     ]);
     expect(mosaicLayers(UNIT, {})).toEqual([]);
   });
+
+  const NW = UNIT.cells.find((c) => c.key === '4407306nw') as (typeof UNIT.cells)[0];
+  const RES = UNIT.resolution;
+  const strip = (cols: number): number[] => [
+    NW.extent[0],
+    NW.extent[1],
+    NW.extent[0] + cols * RES,
+    NW.extent[3],
+  ];
+
+  test('a frame shown only in windows is one layer a window, at its place in the order', () => {
+    const counts = { '4407306nw': { 'vt-pick': 90, 'vt-old': 1, 'ny-fb': 10 } };
+    const layers = mosaicLayers(UNIT, counts, {
+      '4407306nw': { 'vt-old': [strip(4) as never, strip(2) as never] },
+    });
+    expect(layers.filter((l) => l.cell === '4407306nw')).toEqual([
+      { cell: '4407306nw', itemId: 'ny-fb', rank: 2 },
+      { cell: '4407306nw', itemId: 'vt-old', rank: 1, window: strip(4) },
+      { cell: '4407306nw', itemId: 'vt-old', rank: 1, window: strip(2) },
+      { cell: '4407306nw', itemId: 'vt-pick', rank: 0 },
+    ]);
+  });
+
+  test('readCellWindows: none is none; a window must be a box of the cell’s pixels, of a frame that shows', () => {
+    const d = tmp();
+    const counts = { '4407306nw': { 'vt-pick': 90, 'vt-old': 1 } };
+    expect(readCellWindows(d, UNIT, counts)).toEqual({});
+    const put = (w: unknown) => {
+      writeFileSync(join(d, '4407306nw.windows.json'), JSON.stringify(w));
+      return () => readCellWindows(d, UNIT, counts);
+    };
+    expect(put({ 'vt-old': [strip(4)] })()).toEqual({ '4407306nw': { 'vt-old': [strip(4)] } });
+    expect(put({})()).toEqual({});
+    expect(put([1])).toThrow(/not an object/);
+    expect(put({ 'ny-fb': [strip(4)] })).toThrow(/ny-fb, which supplies no pixel/);
+    expect(put({ 'vt-old': [] })).toThrow(/no window/);
+    expect(put({ 'vt-old': 'x' })).toThrow(/no window/);
+    const [x0, y0, x1, y1] = strip(4) as [number, number, number, number];
+    for (const bad of [
+      [x0, y0, x1],
+      [x0, y0, x0, y1],
+      [x0 - RES, y0, x1, y1],
+      [x0, y0, x1, y1 + RES],
+      [x0 + RES / 2, y0, x1, y1],
+      [x0, y0, x1, 'y'],
+    ]) {
+      expect(put({ 'vt-old': [bad] })).toThrow(/is not a box of its pixels/);
+    }
+  });
 });
 
 describe('buildDone and bytesByZoom', () => {
@@ -232,10 +282,25 @@ describe('tilesPackMain', () => {
     const r = io();
     expect(main(['layers', '--unit', s.unitPath, '--counts', s.countsDir], r.io)).toBe(0);
     expect(r.out).toEqual([
-      '4407305ne\tny-pick\t0',
-      '4407306nw\tny-fb\t2',
-      '4407306nw\tvt-pick\t0',
+      '4407305ne\tny-pick\t0\t',
+      '4407306nw\tny-fb\t2\t',
+      '4407306nw\tvt-pick\t0\t',
     ]);
+  });
+
+  test('layers prints a frame shown only in windows once a window, the box after the rank', () => {
+    const s = setup();
+    const cell = UNIT.cells.find((c) => c.key === '4407306nw') as (typeof UNIT.cells)[0];
+    const box = [
+      cell.extent[0],
+      cell.extent[1],
+      cell.extent[0] + 4 * UNIT.resolution,
+      cell.extent[3],
+    ];
+    writeFileSync(join(s.countsDir, '4407306nw.windows.json'), JSON.stringify({ 'ny-fb': [box] }));
+    const r = io();
+    expect(main(['layers', '--unit', s.unitPath, '--counts', s.countsDir], r.io)).toBe(0);
+    expect(r.out[1]).toBe(`4407306nw\tny-fb\t2\t${box.join(' ')}`);
   });
 
   test('pack writes the pack, the index and the done record, and says what it packed', () => {
