@@ -774,6 +774,14 @@ crons with *Run now*, the granule ledger) that a *Check for newer summer flights
 offer band would slot into — but building it means building the mode, which is B01's §5.5, not a
 small slot. So the page is a register row owed to Machinery, and B05 stores the record it will read.
 
+*Since #189 (B01-8a, D340–D346), merged into this branch 2026-11-27:* the mode exists —
+`/admin/machinery`, with one page, Corpus — and watches a corpus campaign through the run logger's
+lines, beats and one stall rule (core's `runLiveness`). The aerial's runs are in none of it yet: no
+aerial kind is a corpus kind, so none is listed in a lane, and none has a gap in `RUN_QUIET_MS`, so a
+quiet one is never called late (its stages report per round, per 25 work tiles, per zoom and per
+check — irregular, and hours long). A run page opened from the Overview card reads one plainly.
+Giving the aerial its own lane, a gap per stage and the logger's `beat()` is that page's work.
+
 ---
 
 ## §4 — The app
