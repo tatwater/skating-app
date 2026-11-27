@@ -1968,3 +1968,26 @@ greenness score and several rules re-run on the real catalog); the founder ruled
 - **Rule 2, manifest 2.** `NAIP_RULE_VERSION` and `NAIP_MANIFEST_VERSION` are 2; the pilot's archive and
   manifest (rule 1) stay as built, and no `--from-current` build is ever based on a pilot.
 
+
+**The independent review (2026-11-27)**, before the PR, of the whole branch and the foliage commits
+in particular. Each fix landed with a test (commits on the branch):
+
+- **`spawn.sh` spawned past the Machine cap.** Its wait for room gave up after twenty minutes and
+  spawned the batch anyway (fan-out.sh's shape), so a `fly machine list` that kept failing — read as
+  the cap — or an app the winter pump kept full got work-tile Machines on top of `MAX_PARALLEL`. A
+  round now fails and spawns nothing more; the assembler's Machine waits under the same cap.
+- **Cleanup read only `apps/web/.env`**, while the checkouts keep their URLs in `.env.local`: it
+  refused every run, and with an `.env` lacking the variable it would have read "nothing is live" and
+  deleted the archive `.env.local` points at. It reads every env file Vite does, by archive name.
+- **`--from-current` built on any manifest it was handed.** A version-1 one (the pilot's) went
+  through with its off-season cells misread, a narrowed build kept rule-1 picks under a rule-2
+  stamp, and a production build could base itself on a pilot. It now refuses another format, a
+  narrowed build on another rule, and the other kind of build.
+- **A re-cut left the old done record over the new pack** until its own landed: a death between
+  pack and index, then a manifest returning to the old hash, would have the assembler range-copy the
+  wrong bytes. The worker drops the done record first.
+- Smaller: verify left its row running when it threw; an assembly that stopped before its manifest
+  refused every re-run as "already exists" (it now says what to delete); `--keep` kept the rclone
+  config holding the R2 secrets; the foliage sheet told the founder a struck frame never shows; and
+  D314 and §5.1 promised the aerial "can never show ice", which the off-season step can break.
+- A property test now holds the proposal's flight-day entries to the selection's reading of them.
