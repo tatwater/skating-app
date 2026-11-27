@@ -158,8 +158,10 @@ export const RUN_WORDS = {
       ? 'The loader later reported it succeeded'
       : 'The loader later reported it failed',
   loaderLaterError: (error: string) => `Its own error: ${error}`,
+  // The server's rule (`machineryWrites.markRunFailed`, fork 2): a mark asks for the sync when the
+  // run had already changed bodies.
   noReconcile:
-    "A run marked failed doesn't schedule the weather-cell sync; the weekly sync still runs.",
+    'Marking it failed asks for a weather-cell sync if it had already changed bodies; the weekly sync runs either way.',
   waitingBy: 'Waiting',
   clockSkew: (words: string, ahead: boolean) =>
     `Your machine's clock is ${words} ${ahead ? 'ahead' : 'behind'}`,

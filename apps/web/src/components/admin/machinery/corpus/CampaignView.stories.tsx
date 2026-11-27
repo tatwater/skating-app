@@ -195,7 +195,7 @@ export const Waiting: Story = {
   },
 };
 
-/** 14:20 — marked failed by hand: who, the reason quoted, nothing scheduled, no bar. */
+/** 14:20 — marked failed by hand: who, the reason quoted, what the mark scheduled, no bar. */
 export const MarkedFailed: Story = {
   args: { now: NOW_MARKED, campaign: boardCampaign(NOW_MARKED, { marked: MARKED }) },
   play: async ({ canvasElement }) => {
@@ -203,7 +203,9 @@ export const MarkedFailed: Story = {
     const note = slot(canvasElement, 'run-marked');
     await expect(note).toHaveTextContent('Teagan Atwater');
     await expect(note).toHaveTextContent('Laptop slept; no process.');
-    await expect(note).toHaveTextContent("doesn't schedule the weather-cell sync");
+    await expect(note).toHaveTextContent(
+      'asks for a weather-cell sync if it had already changed bodies',
+    );
     await expect(slot(canvasElement, 'heartbeat')).toHaveTextContent(/failed\s*By hand/);
     await expect(bar(canvasElement)).toBeNull();
     const tones = [...slot(canvasElement, 'stage-bar').querySelectorAll('[data-tone]')].map((s) =>
