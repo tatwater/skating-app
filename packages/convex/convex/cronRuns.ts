@@ -227,7 +227,8 @@ export interface Tick {
  * A tick's outcomes: the heartbeat's, the strip's code, and the run row's (`null`: a quiet tick, no
  * run row). A thrown job is `failed` whatever it reported; a report that failed or was refused is a
  * run even with `worked: false`; a refused run is `failed` on the heartbeat (someone must act on it)
- * and `refused` on the strip.
+ * and `refused` on the strip. A manual tick is always a run (`ok` when it found nothing to do), so a
+ * press is recorded with who pressed it.
  */
 export function outcomesOf(tick: Tick): {
   heartbeat: CronOutcome;
@@ -248,7 +249,11 @@ export function outcomesOf(tick: Tick): {
   if (r?.worked) {
     return { heartbeat: 'worked', code: CRON_TICK_CODES.worked, run: r.outcome ?? 'ok' };
   }
-  return { heartbeat: 'ok', code: CRON_TICK_CODES.ok, run: null };
+  return {
+    heartbeat: 'ok',
+    code: CRON_TICK_CODES.ok,
+    run: tick.trigger === 'manual' ? 'ok' : null,
+  };
 }
 
 // ─── The recorder ───────────────────────────────────────────────────────────────────────────────
