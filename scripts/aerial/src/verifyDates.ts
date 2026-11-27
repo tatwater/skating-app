@@ -20,29 +20,35 @@
  * cell, and a tile across several touches at least one.
  */
 
-import { isNaipState, type NaipCellIndex, type NaipManifest } from '@skating/core';
+import {
+  isCalendarDay,
+  isNaipState,
+  type NaipCellIndex,
+  type NaipManifest,
+  parseNaipItemId,
+} from '@skating/core';
 import type { CellFrameTotals } from './assemble/cellIndex';
 
-const DAY = /^(\d{4})-(\d{2})-(\d{2})$/;
 const CELL_KEY = /^\d{7}(?:ne|nw|se|sw)$/;
-const ITEM_DATE = /^[a-z]{2}_m_\d{7}_(?:ne|nw|se|sw)_\d{2}_\d{3}_(\d{8})(?:_\d{8})?$/;
 
-/** Is `s` a `YYYY-MM-DD` day the calendar has? */
+/** Is `s` a `YYYY-MM-DD` day the calendar has? Core's `isCalendarDay`, for any value. */
 export function isRealDay(s: unknown): s is string {
-  if (typeof s !== 'string') return false;
-  const m = DAY.exec(s);
-  if (!m) return false;
-  const [y, mo, d] = [Number(m[1]), Number(m[2]), Number(m[3])];
-  const t = new Date(Date.UTC(y, mo - 1, d));
-  return t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === d;
+  return typeof s === 'string' && isCalendarDay(s);
 }
 
-/** The acquisition day an item id names (its first date), as `YYYY-MM-DD`; `null` if it names none. */
+/**
+ * The acquisition day an item id names (its first date), as `YYYY-MM-DD`; `null` if it isn't an
+ * item id. **Core's `parseNaipItemId`, the pipeline's one reader of an id**: the catalog's walk, the
+ * select stage's check and this all read a date the same way, whatever the id's resolution token
+ * (`030`, `060`, `1`, `.5`, `.6`, `h` — verify once read only the three-digit ones and would have
+ * refused any build where a 2015–2016 0.5 or 0.6 m fallback showed).
+ */
 export function itemIdDate(itemId: string): string | null {
-  const m = ITEM_DATE.exec(itemId);
-  if (!m) return null;
-  const d = m[1] as string;
-  return `${d.slice(0, 4)}-${d.slice(4, 6)}-${d.slice(6, 8)}`;
+  try {
+    return parseNaipItemId(itemId).acquired;
+  } catch {
+    return null;
+  }
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> =>

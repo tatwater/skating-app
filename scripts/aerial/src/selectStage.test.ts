@@ -204,6 +204,35 @@ describe('runSelect', () => {
     );
   });
 
+  test('dates every frame as verify will, and refuses a frame it could not — before any Machine', async () => {
+    // The slice holds the older formats (`.6`, `.5`, `1` as well as `030`, `060`); all pass.
+    const ok = deps();
+    const out = await runSelect(args(), ok.deps);
+    expect(Object.keys(out.manifest.frames).some((id) => id.includes('_.6_'))).toBe(true);
+    // A kept snapshot whose row disagrees with its own id (the walk checks this; a read-back doesn't).
+    // One day later: still leaf-on and still the pick, but no longer the day its id names.
+    const victim = out.manifest.cells[0]?.pick as string;
+    const day = out.manifest.frames[victim]?.acquired as string;
+    const next = new Date(Date.parse(`${day}T00:00:00Z`) + 86_400_000).toISOString().slice(0, 10);
+    const skewed = ITEMS.map((i) => (i.itemId === victim ? { ...i, acquired: next } : i));
+    const d = deps({
+      walk: async () => ({
+        walkedOn: '2026-11-25',
+        perState,
+        pages: {},
+        items: skewed,
+        walked: false,
+      }),
+    });
+    await expect(runSelect(args(), d.deps)).rejects.toThrow(
+      new RegExp(
+        `dated as verify will date them: frame ${victim}: acquired ${next}, but its id says ${day}`,
+      ),
+    );
+    expect(d.written.manifest).toBeUndefined();
+    expect(d.run.failed).toHaveBeenCalledWith(expect.any(SelectRefusal));
+  });
+
   test("refuses when the rule's invariants fail", async () => {
     const d = deps({ check: () => ({ holes: [], noCandidate: [], violations: ['x: broken'] }) });
     await expect(runSelect(args(), d.deps)).rejects.toThrow(

@@ -279,6 +279,60 @@ describe('buildCellIndex refuses a pixel it can’t date', () => {
 });
 
 describe('item dates and days', () => {
+  /**
+   * The resolution token of every item id in the walked catalog (`naip-20261127`, 69,207 items):
+   * `060` 29,424, `1` 27,191, `030` 5,856, `.5` 3,876, `h` 1,587, `.6` 1,273. The 0.5 m and 0.6 m
+   * ones (`.5`, `.6`, `h`) are candidates: 5,156 of the manifest's 28,566 frames, every one in a
+   * fallback stack, 555 of them in the 319 cells whose fallbacks are cut. Verify once read only the
+   * three-digit tokens, so any of those that showed would have refused the whole assembly.
+   */
+  it.each([
+    ['ny_m_4307536_sw_18_.5_20150923_20151109', '2015-09-23'],
+    ['ct_m_4107215_sw_18_.6_20160803_20160913', '2016-08-03'],
+    ['nh_m_4507164_sw_19_h_20160913', '2016-09-13'],
+    ['ct_m_4107118_se_19_1_20140729_20140826', '2014-07-29'],
+    ['ct_m_4207364_se_18_060_20250809', '2025-08-09'],
+  ])('reads %s, whatever its resolution token, as core does', (id, day) => {
+    expect(itemIdDate(id)).toBe(day);
+  });
+
+  it('dates a fallback of an older format that shows, rather than refusing the build', () => {
+    const id = 'ny_m_4307536_sw_18_.5_20150923_20151109';
+    const pick = 'ny_m_4307536_sw_18_060_20240702';
+    const m: NaipManifest = {
+      ...manifestFor(() => 0),
+      frames: {
+        [pick]: { acquired: '2024-07-02', gsd: 0.6, state: 'NY', year: 2024 },
+        [id]: { acquired: '2015-09-23', gsd: 0.5, state: 'NY', year: 2015 },
+      },
+      cells: [
+        {
+          key: '4307536sw',
+          states: ['NY'],
+          pick,
+          step: 'leafOn',
+          stack: [id],
+          partial: true,
+          cloudScore: null,
+          workTiles: ['11/603/731'],
+        },
+      ],
+    };
+    const totals: CellFrameTotals = new Map([
+      [
+        '4307536sw',
+        new Map([
+          [pick, 900],
+          [id, 40],
+        ]),
+      ],
+    ]);
+    const index = buildCellIndex(m, totals, 'a.pmtiles');
+    expect(checkCellIndex({ json: index, archiveName: 'a.pmtiles', manifest: m, totals })).toEqual(
+      [],
+    );
+  });
+
   it('reads the first date of an id, never the processing date', () => {
     expect(itemIdDate('me_m_4407028_ne_19_030_20231002_20240103')).toBe('2023-10-02');
     expect(itemIdDate('vt_m_4507264_sw_18_030_20250920')).toBe('2025-09-20');

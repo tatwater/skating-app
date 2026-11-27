@@ -9,9 +9,14 @@
  * - the stack holds every other frame of that pool's season, and no frame struck as turned sits
  *   above one that isn't;
  * - the selection's off-season list is exactly the cells the step picked, each with the right why.
+ *
+ * And `checkManifestFrames`, over the manifest about to be written: every frame it names dated as
+ * verify will date it (B05 §2.5 *Dates*) — so a date problem stops the build here, before a Machine
+ * is paid for, not at assembly after every work tile is cut.
  */
 
 import {
+  isCalendarDay,
   isCoarseNaipFrame,
   isLeafOnNaipFrame,
   isSharpNaipFrame,
@@ -19,8 +24,12 @@ import {
   type NaipCandidate,
   type NaipExclusion,
   type NaipFoliageStrike,
+  type NaipItemId,
+  type NaipManifest,
+  type NaipManifestCell,
   type NaipSelection,
   naipFoliageStruck,
+  parseNaipItemId,
   quarterQuadCell,
   quarterQuadInState,
 } from '@skating/core';
@@ -116,4 +125,45 @@ export function checkSelection(
   }
   const noCandidate = [...listed].filter((k) => !pools.has(k));
   return { holes: holes.sort(), noCandidate: noCandidate.sort(), violations: violations.sort() };
+}
+
+/**
+ * Every way the manifest's frames would fail verify's date check (`verifyDates.ts`), one line each;
+ * empty when every frame is datable. Read by core's `parseNaipItemId`, the pipeline's one reader of
+ * an item id: each frame in the table is an id core reads, its acquisition day a real day and the
+ * id's own (its first date), and each cell's pick and stack are frames of that cell in the table.
+ * Runs on the manifest as built, so a frame `--from-current` copied from the current build is held
+ * to the same rule as a freshly walked one.
+ */
+export function checkManifestFrames(manifest: {
+  frames: NaipManifest['frames'];
+  cells: readonly Pick<NaipManifestCell, 'key' | 'pick' | 'stack'>[];
+}): string[] {
+  const problems: string[] = [];
+  const read = new Map<string, NaipItemId>();
+  for (const [id, frame] of Object.entries(manifest.frames)) {
+    let parsed: NaipItemId;
+    try {
+      parsed = parseNaipItemId(id);
+    } catch {
+      problems.push(`frame ${id}: not an item id core can read`);
+      continue;
+    }
+    read.set(id, parsed);
+    if (!isCalendarDay(frame.acquired)) {
+      problems.push(`frame ${id}: acquired ${JSON.stringify(frame.acquired)} is not a real day`);
+    } else if (parsed.acquired !== frame.acquired) {
+      problems.push(`frame ${id}: acquired ${frame.acquired}, but its id says ${parsed.acquired}`);
+    }
+  }
+  for (const cell of manifest.cells) {
+    for (const id of [cell.pick, ...cell.stack]) {
+      if (manifest.frames[id] === undefined) {
+        problems.push(`cell ${cell.key}: ${id} is not in the manifest's frames`);
+      } else if (read.has(id) && read.get(id)?.key !== cell.key) {
+        problems.push(`cell ${cell.key}: ${id} is cell ${read.get(id)?.key}'s frame`);
+      }
+    }
+  }
+  return problems;
 }

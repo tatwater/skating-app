@@ -9,6 +9,8 @@
  *   run: a proposal is run to be looked at, never built (D319);
  * - a cell whose every candidate is struck (a hole the exclusion list made);
  * - any violation of the rule's invariants on the whole catalog (`checkSelection`);
+ * - a frame verify couldn't date (`checkManifestFrames`): caught here, before a Machine is paid for,
+ *   never at assembly after the tiles are cut;
  * - a `--cells` key no frame covers (a typo would otherwise build nothing there, quietly).
  */
 
@@ -31,7 +33,7 @@ import type { CatalogSnapshot } from './catalog';
 import type { ScoreTarget, ThumbnailScore } from './score';
 import type { CloudCandidates } from './scoreSheet';
 import { cloudCandidates } from './scoreSheet';
-import { checkSelection } from './selectChecks';
+import { checkManifestFrames, checkSelection } from './selectChecks';
 import { buildManifest, framesShowing, manifestCounts, type Narrowing } from './selectManifest';
 import { parseCellList, type StageArgs } from './stages';
 
@@ -201,6 +203,12 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
       narrowing,
       current,
     });
+    const undatable = checkManifestFrames(manifest);
+    if (undatable.length > 0) {
+      throw new SelectRefusal(
+        `${undatable.length} of the manifest's frames can't be dated as verify will date them: ${undatable.slice(0, 20).join('; ')}`,
+      );
+    }
     const counts = {
       ...manifestCounts(manifest),
       scored: [...scores.values()].filter((s) => s !== null).length,

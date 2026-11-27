@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+import { parseNaipItemId } from './naipCatalog';
 import { NAIP_CLOUD_KEPT, NAIP_EXCLUSIONS, NAIP_FOLIAGE_STRIKES } from './naipExclusions';
 import { isNaipFlightStrike, naipFoliageStruck } from './naipSelection';
 
@@ -42,11 +43,10 @@ describe('the committed lists', () => {
 
   test('no foliage strike takes a frame the cloud review kept on purpose', () => {
     const turned = naipFoliageStruck(NAIP_FOLIAGE_STRIKES);
+    // The id read by core's one reader: its first date is the flight's (a second is processing).
     for (const id of NAIP_CLOUD_KEPT) {
-      const day = id.match(/_(\d{4})(\d{2})(\d{2})$/) as RegExpMatchArray;
-      expect(turned({ itemId: id, state: 'NY', acquired: `${day[1]}-${day[2]}-${day[3]}` })).toBe(
-        false,
-      );
+      const { acquired } = parseNaipItemId(id);
+      expect(turned({ itemId: id, state: 'NY', acquired })).toBe(false);
     }
   });
 });

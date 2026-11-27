@@ -7,7 +7,7 @@ import {
   selectNaipPicks,
 } from '@skating/core';
 import { describe, expect, test } from 'vitest';
-import { checkSelection } from './selectChecks';
+import { checkManifestFrames, checkSelection } from './selectChecks';
 
 // A slice of the real catalog (cut from core's fixture, kept here so Turbo hashes it with this
 // package): the checks must pass on the rule's real answer.
@@ -147,5 +147,55 @@ describe('checkSelection', () => {
         turnedDay,
       ]).violations,
     ).toEqual([expect.stringMatching(/off-season noLeafOn, the rule says no/)]);
+  });
+});
+
+describe('checkManifestFrames', () => {
+  const frame = (acquired: string, gsd = 0.6) => ({
+    acquired,
+    gsd,
+    year: Number(acquired.slice(0, 4)),
+    state: 'NY' as const,
+  });
+  const cell = (key: string, pick: string, stack: string[] = []) => ({ key, pick, stack });
+  const PICK = 'ny_m_4307536_sw_18_060_20240702';
+  // Every resolution token the catalog uses reads as core reads it.
+  const OLD = [
+    'ny_m_4307536_sw_18_.5_20150923_20151109',
+    'ny_m_4307536_sw_18_1_20110501_20111115',
+    'ny_m_4307536_sw_18_h_20160913',
+    'ny_m_4307536_sw_18_.6_20160803_20160913',
+  ];
+
+  test('passes frames of every format, each dated by its id’s first date', () => {
+    const frames = Object.fromEntries([
+      [PICK, frame('2024-07-02')],
+      [OLD[0], frame('2015-09-23', 0.5)],
+      [OLD[1], frame('2011-05-01', 1)],
+      [OLD[2], frame('2016-09-13')],
+      [OLD[3], frame('2016-08-03')],
+    ]);
+    expect(checkManifestFrames({ frames, cells: [cell('4307536sw', PICK, OLD)] })).toEqual([]);
+  });
+
+  test('refuses an id core can’t read, a day that isn’t one or isn’t the id’s, a frame of another cell or none', () => {
+    const other = 'ny_m_4307535_sw_18_060_20240702';
+    expect(
+      checkManifestFrames({
+        frames: {
+          [PICK]: frame('2024-07-03'),
+          'ny-2024': frame('2024-07-02'),
+          [OLD[0] as string]: frame('2015-02-30'),
+          [other]: frame('2024-07-02'),
+        },
+        cells: [cell('4307536sw', PICK, [OLD[0] as string, other, 'missing'])],
+      }),
+    ).toEqual([
+      `frame ${PICK}: acquired 2024-07-03, but its id says 2024-07-02`,
+      'frame ny-2024: not an item id core can read',
+      `frame ${OLD[0]}: acquired "2015-02-30" is not a real day`,
+      `cell 4307536sw: ${other} is cell 4307535sw's frame`,
+      "cell 4307536sw: missing is not in the manifest's frames",
+    ]);
   });
 });
