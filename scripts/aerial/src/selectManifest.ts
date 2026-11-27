@@ -95,14 +95,38 @@ function narrowed(narrowing: Narrowing, key: string, states: readonly NaipState[
   return states.some((s) => narrowing.states.includes(s));
 }
 
+/**
+ * The current build, checked before anything is read from it: published, this format (a manifest
+ * read from the bucket is only cast to the type, and a version-1 one's `offSeasonCells` are bare
+ * keys), the same rule when the build is narrowed (a kept cell keeps the current record, so it would
+ * carry another rule's pick under this manifest's `ruleVersion`), and the same kind of build (the
+ * assembler reads `basedOn` under this build's own prefix; §2.1.3: never a build based on a pilot).
+ */
+function checkCurrent(current: NaipManifest, input: ManifestInput): void {
+  const refuse = (why: string): never => {
+    throw new Error(`--from-current: ${current.campaign}'s manifest ${why}`);
+  };
+  if ((current.version as number) !== NAIP_MANIFEST_VERSION) {
+    refuse(
+      `is a version-${String(current.version)} manifest; this select stage reads version ${NAIP_MANIFEST_VERSION} — build from nothing`,
+    );
+  }
+  if (current.archive === undefined) refuse('names no archive (it was never published)');
+  if (input.narrowing !== null && current.ruleVersion !== NAIP_RULE_VERSION) {
+    refuse(
+      `was built by rule ${current.ruleVersion}, not rule ${NAIP_RULE_VERSION}: a narrowed build would keep its picks — run it whole`,
+    );
+  }
+  const kind = (pilot: string | null) => (pilot === null ? "production's" : `pilot ${pilot}'s`);
+  if (current.pilot !== input.pilot) {
+    refuse(`is ${kind(current.pilot)}; this build is ${kind(input.pilot)}`);
+  }
+}
+
 /** The manifest, from the rule's answer and its scores. Throws on a `current` it can't build from. */
 export function buildManifest(input: ManifestInput): NaipManifest {
   const { current, narrowing } = input;
-  if (current !== null && current.archive === undefined) {
-    throw new Error(
-      `--from-current: ${current.campaign}'s manifest names no archive (it was never published)`,
-    );
-  }
+  if (current !== null) checkCurrent(current, input);
 
   const frames: Record<string, NaipManifestFrame> = {};
   const cells = new Map<string, NaipManifestCell>();
@@ -191,10 +215,19 @@ export function buildManifest(input: ManifestInput): NaipManifest {
     catalog: input.catalog,
     exclusionsHash: naipExclusionsHash(input.exclusions),
     foliageStrikesHash: naipFoliageStrikesHash(input.foliageStrikes),
-    // A kept cell with no why is a rule-1 build's, whose off-season step knew only `noLeafOn`.
+    // Every off-season cell has its why: a fresh one from this selection, a kept one from the
+    // current build (the same format and rule, `checkCurrent`).
     offSeasonCells: [...cells.values()]
       .filter((c) => c.step === 'offSeason')
-      .map((c) => ({ key: c.key, why: whyOffSeason.get(c.key) ?? 'noLeafOn' }))
+      .map((c) => {
+        const why = whyOffSeason.get(c.key);
+        if (why === undefined) {
+          throw new Error(
+            `--from-current: the current manifest's off-season cell ${c.key} has no why`,
+          );
+        }
+        return { key: c.key, why };
+      })
       .sort((a, b) => (a.key < b.key ? -1 : 1)),
     basedOn:
       current === null

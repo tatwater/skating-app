@@ -282,6 +282,63 @@ describe('buildManifest, from the current build', () => {
     );
   });
 
+  test('refuses a current manifest of another format, outright', () => {
+    // A rule-1 manifest (the pilot's) holds `offSeasonCells` as bare keys and no foliage hash: read
+    // as this format, its off-season cells came back keyless and its kept cells were relabeled.
+    const v1 = { ...current, version: 1, offSeasonCells: ['4407028ne'] } as unknown as NaipManifest;
+    expect(() => buildManifest(input({ current: v1, campaign: 'naip-20270712' }))).toThrow(
+      /--from-current: .* is a version-1 manifest; this select stage reads version 2/,
+    );
+  });
+
+  test("refuses a narrowed build on another rule's manifest: its kept cells would be that rule's", () => {
+    // As a rule-1 build's: its work tiles hashed under rule 1.
+    const older = {
+      ...current,
+      ruleVersion: NAIP_RULE_VERSION - 1,
+      workTiles: current.workTiles.map((w) => ({ ...w, inputHash: `rule-1 ${w.inputHash}` })),
+    };
+    expect(() =>
+      buildManifest(
+        input({ current: older, campaign: 'naip-20270712', narrowing: { cells: [K3] } }),
+      ),
+    ).toThrow(/built by rule \d+, not rule \d+: a narrowed build would keep its picks/);
+    // Not narrowed, every cell is chosen afresh, and every work tile is cut (the hash holds the rule).
+    const m = buildManifest(input({ current: older, campaign: 'naip-20270712' }));
+    expect(m.ruleVersion).toBe(NAIP_RULE_VERSION);
+    expect(m.workTiles.every((w) => w.retile)).toBe(true);
+  });
+
+  test('refuses a current manifest whose off-season cell has no why', () => {
+    const offSeason = frame(K3, '2025-10-02', 0.3);
+    const built = published(
+      buildManifest(input({ selection: selectNaipPicks([offSeason], []) }, [offSeason])),
+    );
+    expect(built.offSeasonCells).toEqual([{ key: K3, why: 'noLeafOn' }]);
+    expect(() =>
+      buildManifest(
+        input(
+          {
+            current: { ...built, offSeasonCells: [] },
+            campaign: 'naip-20270712',
+            narrowing: { cells: [K1] },
+          },
+          [a1, b1],
+        ),
+      ),
+    ).toThrow(/off-season cell 4307236se has no why/);
+  });
+
+  test("refuses a production build on a pilot's manifest, and a pilot on production's", () => {
+    const pilot = { ...current, campaign: 'naip-pilot-20261201', pilot: 'champlain' };
+    expect(() => buildManifest(input({ current: pilot, campaign: 'naip-20270712' }))).toThrow(
+      /is pilot champlain's; this build is production/,
+    );
+    expect(() =>
+      buildManifest(input({ current, campaign: 'naip-pilot-20270712', pilot: 'champlain' })),
+    ).toThrow(/is production's; this build is pilot champlain's/);
+  });
+
   test("a changed cell changes exactly its work tiles' hashes (a property)", () => {
     fc.assert(
       fc.property(
