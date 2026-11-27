@@ -115,6 +115,18 @@ describe('the tail', () => {
     fireEvent.scroll(viewport);
     expect(onLoadOlder).toHaveBeenCalledTimes(1);
   });
+
+  test('a log empty when it opened still pages older once its lines arrive', () => {
+    const onLoadOlder = vi.fn();
+    const quiet = { ...base, state: 'finished' as const, onLoadOlder };
+    const { rerender } = render(<RunTail {...quiet} events={[]} more={false} />);
+    expect(screen.getByText('No log lines recorded for this run')).toBeInTheDocument();
+    rerender(<RunTail {...quiet} events={loadEvents()} more />);
+    const viewport = document.querySelector('[data-slot="scroll-area-viewport"]') as HTMLElement;
+    viewport.scrollTop = 0;
+    fireEvent.scroll(viewport);
+    expect(onLoadOlder).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe('the wired tail', () => {

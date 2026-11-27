@@ -114,11 +114,19 @@ export function RunTail({
   const box = useRef<HTMLDivElement>(null);
   const ask = useRef({ more, loadingOlder, onLoadOlder });
   ask.current = { more, loadingOlder, onLoadOlder };
-  const loaded = events !== undefined;
+  const lines = useMemo(() => {
+    if (events === undefined) return [];
+    const drawn = events.map((e) => logLineOf(e, timeZone));
+    const q = state === 'live' ? quietLine(liveness, lastHeardAt, timeZone) : null;
+    return q === null ? drawn : [...drawn, quietLogLine(q, now, timeZone)];
+  }, [events, state, liveness, lastHeardAt, now, timeZone]);
+  // The log (and its scroller) is drawn only once there is a line: a run opened before its first
+  // line lands draws the empty note first, so the scroll is wired when the log appears.
+  const drawn = lines.length > 0;
 
   // Scrolling to the top asks for the next older page.
   useEffect(() => {
-    if (!loaded) return;
+    if (!drawn) return;
     const viewport = box.current?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]');
     if (!viewport) return;
     const onScroll = () => {
@@ -127,14 +135,7 @@ export function RunTail({
     };
     viewport.addEventListener('scroll', onScroll, { passive: true });
     return () => viewport.removeEventListener('scroll', onScroll);
-  }, [loaded]);
-
-  const lines = useMemo(() => {
-    if (events === undefined) return [];
-    const drawn = events.map((e) => logLineOf(e, timeZone));
-    const q = state === 'live' ? quietLine(liveness, lastHeardAt, timeZone) : null;
-    return q === null ? drawn : [...drawn, quietLogLine(q, now, timeZone)];
-  }, [events, state, liveness, lastHeardAt, now, timeZone]);
+  }, [drawn]);
 
   if (events === undefined) {
     return (
