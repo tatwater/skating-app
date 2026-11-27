@@ -531,7 +531,7 @@ describe('marking the campaign failed after its pass (the founder’s ruling on 
     const [audit] = await auditOf(t, campaign);
     expect(audit?.metadata).toMatchObject({ afterPass: load });
     expect((await linesOf(t, campaign)).map((l) => l.text)).toEqual([
-      'Marked failed by teagan after its pass load: laptop died',
+      'Marked failed by teagan after its load pass: laptop died',
     ]);
     expect(await offerOf(admin.as, campaign)).toBeNull();
     // Two marks, two audit rows: neither write touched the other's run.

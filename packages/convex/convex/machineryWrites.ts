@@ -134,7 +134,7 @@ export async function markRunFailedImpl(
       text:
         afterPassName === null
           ? `Marked failed by ${actor.displayName}: ${reason}`
-          : `Marked failed by ${actor.displayName} after its pass ${afterPassName}: ${reason}`,
+          : `Marked failed by ${actor.displayName} after its ${afterPassName} pass: ${reason}`,
     },
     now,
   });
