@@ -19,7 +19,9 @@ import {
 } from './lib/undoHandlersMachinery';
 import { UNDO_POLICY } from './lib/undoPolicy';
 import {
+  CAMPAIGN_MOVED_ON,
   MARK_NEEDS_REASON,
+  NOT_A_CAMPAIGN,
   RUN_ALREADY_MARKED,
   RUN_GONE,
   RUN_NOT_MARKED,
@@ -463,6 +465,251 @@ describe('reopenRun and the mark’s undo', () => {
     await expect(admin.as.mutation(api.undo.run, { actionId })).rejects.toThrow(
       'To mark it failed again',
     );
+  });
+});
+
+// ── Mark the campaign failed too ─────────────────────────────────────────────────────────────────
+
+describe('marking the campaign failed after its pass (the founder’s ruling on Ma14)', () => {
+  /** A campaign whose load went quiet long ago: the laptop is gone, as far as anyone can tell. */
+  async function quietCampaign(t: T) {
+    const campaign = await seedRun(t, {
+      kind: 'corpus_campaign',
+      label: 'Corpus campaign c1',
+      campaignId: 'c1',
+      startedAt: Date.now() - 90 * MINUTE,
+      progressAt: Date.now() - 60 * MINUTE,
+    });
+    const load = await seedRun(t, {
+      campaignId: 'c1',
+      parentRunId: campaign,
+      campaignPass: 'load',
+      startedAt: Date.now() - 60 * MINUTE,
+      progressAt: Date.now() - 40 * MINUTE,
+    });
+    return { campaign, load };
+  }
+  const offerOf = async (
+    as: Awaited<ReturnType<typeof setup>>['admin']['as'],
+    id: Id<'importRuns'>,
+  ) =>
+    (await as.query(api.machineryRuns.campaign, { runId: id, now: Date.now() }))?.campaignToo ??
+    null;
+  const later = () => vi.advanceTimersByTime(1_000);
+
+  test('after the pass is marked, both pages offer it and the campaign is marked with its pass named', async () => {
+    const { t, admin } = await setup();
+    const { campaign, load } = await quietCampaign(t);
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+    const pass = await admin.as.mutation(api.machineryWrites.markRunFailed, {
+      runId: load,
+      reason: 'laptop died',
+    });
+    const offer = {
+      campaign: { id: campaign, title: 'c1' },
+      afterPass: { id: load, pass: 'load' },
+    };
+    expect(await offerOf(admin.as, campaign)).toEqual(offer);
+    expect(
+      (await admin.as.query(api.machineryRuns.run, { runId: load, now: Date.now() }))?.campaignToo,
+    ).toEqual(offer);
+    // The campaign's own page never draws its offer on the campaign's run read.
+    expect(
+      (await admin.as.query(api.machineryRuns.run, { runId: campaign, now: Date.now() }))
+        ?.campaignToo,
+    ).toBeNull();
+
+    later();
+    const both = await admin.as.mutation(api.machineryWrites.markRunFailed, {
+      runId: campaign,
+      reason: 'laptop died',
+      afterPass: load,
+    });
+    const row = await getRun(t, campaign);
+    expect(row.status).toBe('failed');
+    expect(row.markedFailed?.actionId).toBe(both.actionId);
+    const [audit] = await auditOf(t, campaign);
+    expect(audit?.metadata).toMatchObject({ afterPass: load });
+    expect((await linesOf(t, campaign)).map((l) => l.text)).toEqual([
+      'Marked failed by teagan after its pass load: laptop died',
+    ]);
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+    // Two marks, two audit rows: neither write touched the other's run.
+    expect((await getRun(t, load)).markedFailed?.actionId).toBe(pass.actionId);
+  });
+
+  test('a live laptop carries on: once a later pass opens, the offer is gone and the write refused', async () => {
+    const { t, admin } = await setup();
+    const { campaign, load } = await quietCampaign(t);
+    await admin.as.mutation(api.machineryWrites.markRunFailed, { runId: load, reason: 'quiet' });
+    expect(await offerOf(admin.as, campaign)).not.toBeNull();
+    later();
+    // The script begins the next pass: a beat on the campaign, then the pass's own row.
+    await t.mutation(internal.importRuns.progress, { runId: campaign });
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+    await expect(
+      admin.as.mutation(api.machineryWrites.markRunFailed, {
+        runId: campaign,
+        reason: 'x',
+        afterPass: load,
+      }),
+    ).rejects.toThrow(CAMPAIGN_MOVED_ON);
+    await t.mutation(internal.importRuns.start, {
+      kind: 'sub_area_seed',
+      label: 'sub-areas',
+      campaignId: 'c1',
+      deployment: 'dev:agile-bee-397',
+      isProd: false,
+      parentRunId: campaign,
+      campaignPass: 'load-sub-areas',
+    });
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+    await expect(
+      admin.as.mutation(api.machineryWrites.markRunFailed, {
+        runId: campaign,
+        reason: 'x',
+        afterPass: load,
+      }),
+    ).rejects.toThrow(CAMPAIGN_MOVED_ON);
+    expect((await getRun(t, campaign)).status).toBe('running');
+    expect(await auditOf(t, campaign)).toEqual([]);
+    expect(await linesOf(t, campaign)).toEqual([]);
+  });
+
+  test.each([
+    [
+      'the pass beat after its mark',
+      (t: T, ids: { load: Id<'importRuns'> }) =>
+        t.mutation(internal.importRuns.progress, { runId: ids.load }),
+    ],
+    [
+      'the loader closed the pass itself',
+      (t: T, ids: { load: Id<'importRuns'> }) =>
+        t.mutation(internal.importRuns.finish, { runId: ids.load, status: 'succeeded' }),
+    ],
+  ])('withdrawn, and refused, when %s', async (_what, act) => {
+    const { t, admin } = await setup();
+    const ids = await quietCampaign(t);
+    await admin.as.mutation(api.machineryWrites.markRunFailed, { runId: ids.load, reason: 'q' });
+    later();
+    await act(t, ids);
+    expect(await offerOf(admin.as, ids.campaign)).toBeNull();
+    await expect(
+      admin.as.mutation(api.machineryWrites.markRunFailed, {
+        runId: ids.campaign,
+        reason: 'x',
+        afterPass: ids.load,
+      }),
+    ).rejects.toThrow(CAMPAIGN_MOVED_ON);
+  });
+
+  test('refused before the pass is marked, for a pass not the newest, and on a run not a campaign', async () => {
+    const { t, admin } = await setup();
+    const { campaign, load } = await quietCampaign(t);
+    const mark = (runId: Id<'importRuns'>, afterPass: Id<'importRuns'>) =>
+      admin.as.mutation(api.machineryWrites.markRunFailed, { runId, reason: 'x', afterPass });
+    await expect(mark(campaign, load)).rejects.toThrow(CAMPAIGN_MOVED_ON);
+    await expect(mark(load, load)).rejects.toThrow(NOT_A_CAMPAIGN);
+    // An older pass, marked, while a newer one is the campaign's newest.
+    const older = await seedRun(t, {
+      campaignId: 'c1',
+      parentRunId: campaign,
+      campaignPass: 'merge',
+      kind: 'corpus_merge',
+      startedAt: Date.now() - 80 * MINUTE,
+      progressAt: Date.now() - 70 * MINUTE,
+    });
+    await admin.as.mutation(api.machineryWrites.markRunFailed, { runId: older, reason: 'q' });
+    await expect(mark(campaign, older)).rejects.toThrow(CAMPAIGN_MOVED_ON);
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+    // The plain mark on a campaign is as it was: no afterPass, no new condition.
+    await admin.as.mutation(api.machineryWrites.markRunFailed, { runId: campaign, reason: 'x' });
+    expect((await getRun(t, campaign)).status).toBe('failed');
+  });
+
+  test('the existing refusals come first and stay as they were', async () => {
+    const { t, admin } = await setup();
+    const { campaign, load } = await quietCampaign(t);
+    await admin.as.mutation(api.machineryWrites.markRunFailed, { runId: load, reason: 'q' });
+    await expect(
+      admin.as.mutation(api.machineryWrites.markRunFailed, {
+        runId: campaign,
+        reason: '  ',
+        afterPass: load,
+      }),
+    ).rejects.toThrow(MARK_NEEDS_REASON);
+    await admin.as.mutation(api.machineryWrites.markRunFailed, {
+      runId: campaign,
+      reason: 'x',
+      afterPass: load,
+    });
+    await expect(
+      admin.as.mutation(api.machineryWrites.markRunFailed, {
+        runId: campaign,
+        reason: 'x',
+        afterPass: load,
+      }),
+    ).rejects.toThrow(RUN_ALREADY_MARKED);
+  });
+
+  test('the two marks undo apart, and the offer follows what stands', async () => {
+    const { t, admin } = await setup();
+    const { campaign, load } = await quietCampaign(t);
+    const pass = await admin.as.mutation(api.machineryWrites.markRunFailed, {
+      runId: load,
+      reason: 'q',
+    });
+    later();
+    const both = await admin.as.mutation(api.machineryWrites.markRunFailed, {
+      runId: campaign,
+      reason: 'q',
+      afterPass: load,
+    });
+    // Undo the campaign's: the pass keeps its mark, and the offer is back.
+    await admin.as.mutation(api.undo.run, { actionId: both.actionId });
+    expect((await getRun(t, campaign)).status).toBe('running');
+    expect((await getRun(t, load)).markedFailed?.actionId).toBe(pass.actionId);
+    expect(await offerOf(admin.as, campaign)).not.toBeNull();
+    // Mark it again, then undo the pass's: the campaign keeps its mark; no offer on a marked campaign.
+    later();
+    await admin.as.mutation(api.machineryWrites.markRunFailed, {
+      runId: campaign,
+      reason: 'again',
+      afterPass: load,
+    });
+    await admin.as.mutation(api.undo.run, { actionId: pass.actionId });
+    expect((await getRun(t, load)).status).toBe('running');
+    expect((await getRun(t, campaign)).markedFailed?.reason).toBe('again');
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+  });
+
+  test('with the pass’s mark undone and the campaign open, no offer, and the write refused', async () => {
+    const { t, admin } = await setup();
+    const { campaign, load } = await quietCampaign(t);
+    const pass = await admin.as.mutation(api.machineryWrites.markRunFailed, {
+      runId: load,
+      reason: 'q',
+    });
+    await admin.as.mutation(api.undo.run, { actionId: pass.actionId });
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+    await expect(
+      admin.as.mutation(api.machineryWrites.markRunFailed, {
+        runId: campaign,
+        reason: 'x',
+        afterPass: load,
+      }),
+    ).rejects.toThrow(CAMPAIGN_MOVED_ON);
+  });
+
+  test('a campaign closed by the script offers nothing', async () => {
+    const { t, admin } = await setup();
+    const { campaign, load } = await quietCampaign(t);
+    await admin.as.mutation(api.machineryWrites.markRunFailed, { runId: load, reason: 'q' });
+    await t.run((ctx) => ctx.db.patch(campaign, { status: 'failed', finishedAt: Date.now() }));
+    expect(await offerOf(admin.as, campaign)).toBeNull();
+    expect(
+      (await admin.as.query(api.machineryRuns.run, { runId: load, now: Date.now() }))?.campaignToo,
+    ).toBeNull();
   });
 });
 

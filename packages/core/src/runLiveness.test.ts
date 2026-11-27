@@ -1,8 +1,11 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  type CampaignMarkCampaign,
+  type CampaignMarkPass,
   campaignLiveness,
   expectedQuietMs,
+  offersCampaignMark,
   RUN_LATE_FACTOR,
   RUN_QUIET_MS,
   RUN_STALLED_FACTOR,
@@ -322,6 +325,66 @@ describe('campaignLiveness', () => {
         }
       }),
       { numRuns: 2_000 },
+    );
+  });
+});
+
+describe('offersCampaignMark', () => {
+  const MARKED = NOW - 5 * MINUTE;
+  const open = (over: Partial<CampaignMarkCampaign> = {}): CampaignMarkCampaign => ({
+    status: 'running',
+    progressAt: NOW - 50 * MINUTE,
+    ...over,
+  });
+  const pass = (over: Partial<CampaignMarkPass> = {}): CampaignMarkPass => ({
+    markedAt: MARKED,
+    progressAt: NOW - 40 * MINUTE,
+    loaderFinished: false,
+    ...over,
+  });
+
+  it('offers while the campaign is open and its newest pass is marked, with nothing after', () => {
+    expect(offersCampaignMark(open(), pass())).toBe(true);
+    // No beat recorded on either: nothing moved.
+    expect(
+      offersCampaignMark(open({ progressAt: undefined }), pass({ progressAt: undefined })),
+    ).toBe(true);
+    // A beat at the mark's own instant isn't after it.
+    expect(offersCampaignMark(open({ progressAt: MARKED }), pass({ progressAt: MARKED }))).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    ['the campaign closed', open({ status: 'failed' }), pass()],
+    ['the campaign succeeded', open({ status: 'succeeded' }), pass()],
+    ['the campaign is already marked', open({ markedFailed: { at: MARKED } }), pass()],
+    ['there is no pass', open(), null],
+    [
+      'the newest pass is not marked (a later pass, or the mark undone)',
+      open(),
+      pass({ markedAt: null }),
+    ],
+    ['the pass beat after the mark', open(), pass({ progressAt: MARKED + 1 })],
+    ['the loader closed the pass itself', open(), pass({ loaderFinished: true })],
+    ['the script beat the campaign after the mark', open({ progressAt: MARKED + 1 }), pass()],
+  ])('withdraws when %s', (_what, campaign, newest) => {
+    expect(offersCampaignMark(campaign, newest)).toBe(false);
+  });
+
+  it('a null mark on the campaign row reads as no mark', () => {
+    expect(offersCampaignMark(open({ markedFailed: null }), pass())).toBe(true);
+  });
+
+  it('never offers once anything stamped after the mark (property)', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 1, max: 60 * MINUTE }), fc.boolean(), (later, onPass) => {
+        const at = MARKED + later;
+        const result = onPass
+          ? offersCampaignMark(open(), pass({ progressAt: at }))
+          : offersCampaignMark(open({ progressAt: at }), pass());
+        expect(result).toBe(false);
+      }),
     );
   });
 });

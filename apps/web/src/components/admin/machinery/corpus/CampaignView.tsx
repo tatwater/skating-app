@@ -99,6 +99,7 @@ export function CampaignView({
           status={status}
           liveness={liveness}
           marked={marked}
+          campaignToo={view.campaignToo ?? null}
           // A campaign rebuilt from its runs has always ended: never an action on it.
           writes={view.recorded ? writes : null}
           {...(pane !== undefined && { pane })}

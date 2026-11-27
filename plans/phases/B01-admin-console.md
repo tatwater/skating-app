@@ -16425,6 +16425,10 @@ named; a ruling that only picks a mechanic stays here.
     this design's reading found.
 21. **Noted for Health**: `crons.ts` holds 52 crons (46 `crons.interval`, 6 `crons.daily`), where §5.5
     and D218 say thirty; the plan's count is corrected (§5.5 and D218, amended 2026-11-27).
+22. **After a campaign's pass is marked failed, offer to mark the campaign too** (2026-11-27, Ma14,
+    option (c) of three: (a) mark the campaign with its pass, (b) keep two presses, (c) after the
+    pass is marked, offer *Mark the campaign failed too*). The two marks stay separate and each
+    undoes on its own. **D342** (a mechanic of its *Mark failed*; no new decision).
 
 #### What the code says today
 
@@ -17420,6 +17424,19 @@ commit with its test, mutation-checked.
   - ***Mark failed* schedules the weather-cell reconcile** (fork 2, (b)), when the run is of an
     invalidating kind, isn't a dry run, and applied at least one batch (`markChangedBodies`). The
     marked run's note says so.
+  - ***Mark the campaign failed too*** (Ma14, (c); ruling 22). Core's `offersCampaignMark` is the
+    one rule: the campaign row still open (running, not marked), its newest pass under it (by
+    start) marked failed, and nothing after the mark (no beat or late close on that pass, no beat
+    on the campaign, which the script stamps as it begins the next pass). `machineryRuns` sends it
+    as `campaignToo` on the campaign page's read and on that pass's own run read; `actionsShown`
+    draws it whenever it is sent, in place of the campaign's own *Mark failed*. It sends the
+    existing `markRunFailed` on the campaign with `afterPass`, and the server re-reads the same rule
+    inside the write (one indexed `.first()`), refusing as a toast once the script has moved on. A
+    plain *Mark failed* on a campaign is unchanged: the server never required a stall for it. The
+    two marks are two audit rows and two `mark_run_failed` undos, each reopening its own run:
+    undoing the campaign's brings the offer back while the pass is still marked; undoing the pass's
+    leaves the campaign marked, so the pass may read running under a marked campaign, as any hand
+    mark beside a live loader does.
   - **Older campaigns are backfilled** (fork 3, (b), the founder's departure from the design's (a)).
     `importRunJobs:backfillListed` writes one reconstructed campaign row per campaign from before
     8a, marked as reconstructed. It reads as finished history, *Rebuilt from its runs*, with no
@@ -17515,6 +17532,7 @@ hand, and retiring `/admin/imports` with everything *Legacy retirement* lists.
 Only he presses real triggers:
 
 - *Mark failed*, and its *Undo* (the receipt's and History's);
+- *Mark the campaign failed too*, after a pass is marked, and its *Undo*;
 - *Wait 30 minutes*, and its *Undo*;
 - *Stop* isn't drawn, so there is nothing to press.
 
@@ -17537,7 +17555,7 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma11 | Health's count of crons and their next due: 52 crons, 46 of them intervals whose phase is set at deploy, so no next-run time can be read (ruling 17) | ruling 21 | Health (8e) | open |
 | Ma12 | A laptop campaign that sleeps reads *stalled* though nothing failed; a *paused* state would need the laptop to say so before it sleeps, which it can't | this design | — (the stall is the honest reading) | wontfix |
 | Ma13 | The silent stretches inside one step (a single long read, one Convex call, the merge's file writes) aren't measured; a long one between two beats can read late | 8a's build | with Ma1, from the campaign's events | open |
-| Ma14 | *Mark failed* on a campaign's running pass marks that pass only: the campaign row stays running on its own heartbeat, and a dead laptop's campaign then asks for a second *Mark failed* on the campaign itself | 8a's review (the scripted proof) | a founder call: mark the campaign with its pass, or keep two presses | open |
+| Ma14 | *Mark failed* on a campaign's running pass marks that pass only: the campaign row stays running on its own heartbeat, and a dead laptop's campaign then asks for a second *Mark failed* on the campaign itself | 8a's review (the scripted proof) | ruled (c) by the founder, 2026-11-27: after the pass is marked, the campaign page and the pass's page offer *Mark the campaign failed too* while the campaign is open and nothing came after the mark; built in 8a (ruling 22, *What B01-8a's build found*) | done |
 | Ma15 | A transient failure of one `append` drops that batch of log lines (the terminal and the log file keep them); a lost `close` line is the one that matters | 8a's review (the scripted proof) | a later logger change: requeue a failed batch once | open |
 | Ma16 | The pages re-read liveness on the browser's clock; a browser clock minutes off shows *late* or *Wait* early, and the server refuses the press (a toast) | 8a's review | a later change: a server-clock offset on the web | open |
 | Ma17 | A stop honored between passes closes the campaign as *Stopped at <the pass that last ran>* (designed, tested): it reads as if that pass was cut, though it finished | 8a's review | the copy pass, if *Stop* is ever drawn | open |

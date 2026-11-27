@@ -23,6 +23,7 @@ import { type MutationCtx, mutation } from './_generated/server';
 import { markChangedBodies, requestCellReconcile } from './importRuns';
 import { normalizeReason, typed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
+import { campaignMarkOffered, isCampaignRow, newestPassUnder, titleOf } from './machineryRuns';
 import { insertRunLines } from './runEvents';
 
 /** Every write's answer: the audit row it wrote, which its undo receipt names. */
@@ -37,6 +38,9 @@ export const RUN_GONE = 'That run no longer exists.';
 export const RUN_NOT_RUNNING = 'This run has already finished, so there is nothing to mark.';
 export const RUN_ALREADY_MARKED = 'This run is already marked failed.';
 export const MARK_NEEDS_REASON = 'Say why you are marking this run failed.';
+export const CAMPAIGN_MOVED_ON =
+  'The campaign has carried on since its pass was marked, so it was left open. Check where it is now.';
+export const NOT_A_CAMPAIGN = 'Only a campaign can be marked failed along with its pass.';
 export const RUN_NOT_MARKED = 'This run isn’t marked failed, so there is nothing to reopen.';
 export const WAIT_FINISHED = 'This run has already finished, so there is nothing to wait on.';
 export const WAIT_ALREADY = 'Someone is already waiting on this run.';
@@ -98,11 +102,22 @@ async function record(
 export async function markRunFailedImpl(
   ctx: MutationCtx,
   actor: Doc<'profiles'>,
-  args: { runId: Id<'importRuns'>; reason: string },
+  args: { runId: Id<'importRuns'>; reason: string; afterPass?: Id<'importRuns'> },
 ): Promise<RunWriteResult> {
   const run = await runOf(ctx, args.runId);
   if (run.markedFailed !== undefined) throw new ConvexError(RUN_ALREADY_MARKED);
   if (run.status !== 'running') throw new ConvexError(RUN_NOT_RUNNING);
+  // *Mark the campaign failed too*: only while the offer still holds by the rows as they stand —
+  // the named pass is the campaign's newest and nothing moved after its mark (`campaignMarkOffered`).
+  let afterPassName: string | null = null;
+  if (args.afterPass !== undefined) {
+    if (!isCampaignRow(run)) throw new ConvexError(NOT_A_CAMPAIGN);
+    const newest = await newestPassUnder(ctx, run._id);
+    if (newest?._id !== args.afterPass || !campaignMarkOffered(run, newest)) {
+      throw new ConvexError(CAMPAIGN_MOVED_ON);
+    }
+    afterPassName = titleOf(newest);
+  }
   const reason = normalizeReason(args.reason);
   if (reason.length === 0) throw new ConvexError(MARK_NEEDS_REASON);
   const now = Date.now();
@@ -110,8 +125,17 @@ export async function markRunFailedImpl(
   const actionId = await record(ctx, actor, run, {
     action: 'mark_run_failed',
     reason,
-    metadata: { prev: { status: run.status } },
-    line: { kind: 'mark', text: `Marked failed by ${actor.displayName}: ${reason}` },
+    metadata: {
+      prev: { status: run.status },
+      ...(args.afterPass !== undefined && { afterPass: args.afterPass }),
+    },
+    line: {
+      kind: 'mark',
+      text:
+        afterPassName === null
+          ? `Marked failed by ${actor.displayName}: ${reason}`
+          : `Marked failed by ${actor.displayName} after its pass ${afterPassName}: ${reason}`,
+    },
     now,
   });
   await ctx.db.patch(run._id, {
@@ -275,11 +299,17 @@ export async function withdrawRunStopImpl(
 
 /**
  * Refused when the run isn't `running`, is already marked, or the reason is empty (the record's
- * *why*, asked in a dialog). Sets `status: 'failed'`, `finishedAt` and `markedFailed`, writes a
+ * *why*, asked in a dialog). With `afterPass` (*Mark the campaign failed too*), also refused unless
+ * the run is a campaign whose newest pass is that one, marked, with nothing after the mark. Sets `status: 'failed'`, `finishedAt` and `markedFailed`, writes a
  * `mark` line, and asks for the weather-cell walk when the run changed bodies (`markChangedBodies`).
  */
 export const markRunFailed = mutation({
-  args: { runId: v.id('importRuns'), reason: v.string() },
+  args: {
+    runId: v.id('importRuns'),
+    reason: v.string(),
+    /** *Mark the campaign failed too*: the campaign's pass already marked, which must still be its newest. */
+    afterPass: v.optional(v.id('importRuns')),
+  },
   handler: async (ctx, args): Promise<RunWriteResult> => {
     const actor = await requireCapability(ctx, 'machinery.corpus');
     return markRunFailedImpl(ctx, actor, args);

@@ -4,7 +4,7 @@ import { describe, expect, test, vi } from 'vitest';
 
 import { createToastManager } from '@/components/kit/toast';
 
-import { LOAD_ID, ZONE } from '../corpus/runFixtures';
+import { CAMPAIGN_ID, LOAD_ID, ZONE } from '../corpus/runFixtures';
 import { type RunServer, useRunWrites } from './useRunWrites';
 
 const TARGET = { runId: LOAD_ID, title: 'load' };
@@ -49,6 +49,26 @@ describe('the run writes', () => {
       actionId: 'act_mark',
       undoNeedsReason: false,
     });
+    expect(added).toHaveLength(0);
+  });
+
+  test('Mark the campaign failed too sends the campaign’s mark naming the pass it follows', async () => {
+    const { writes, server, announce, added } = setup();
+    const campaign = { runId: CAMPAIGN_ID, title: 'a07a-20261012' };
+    expect(await writes.markFailed(campaign, ' Laptop is off ', LOAD_ID)).toBe(true);
+    expect(server.markRunFailed).toHaveBeenCalledWith({
+      runId: CAMPAIGN_ID,
+      reason: 'Laptop is off',
+      afterPass: LOAD_ID,
+    });
+    expect(announce).toHaveBeenCalledWith(
+      expect.objectContaining({
+        title: 'Marked failed',
+        subject: 'a07a-20261012',
+        target: { targetType: 'importRun', targetId: CAMPAIGN_ID },
+        actionId: 'act_mark',
+      }),
+    );
     expect(added).toHaveLength(0);
   });
 

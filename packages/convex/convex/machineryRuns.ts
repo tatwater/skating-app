@@ -33,6 +33,7 @@ import {
   callerNow,
   campaignLiveness,
   LEGACY_RETIRE_LABEL_PREFIX,
+  offersCampaignMark,
   passOfRun,
   type RunLiveness,
   type RunLivenessInput,
@@ -145,6 +146,15 @@ export type MarkedView = {
 /** A stalled run held by *Wait 30 minutes*. */
 export type WaitingView = { by: PersonView; at: number; until: number };
 
+/**
+ * *Mark the campaign failed too*, while {@link campaignMarkOffered} holds: the campaign to mark, and
+ * its newest pass, the one already marked, which the write names (`markRunFailed`'s `afterPass`).
+ */
+export type CampaignTooView = {
+  campaign: { id: Id<'importRuns'>; title: string };
+  afterPass: { id: Id<'importRuns'>; pass: string };
+};
+
 export type CampaignView = {
   row: RunRowView;
   /** false: assembled from its runs (no campaign row was kept). */
@@ -164,6 +174,8 @@ export type CampaignView = {
   path: Doc<'importRuns'>['stages'];
   marked: MarkedView | null;
   waiting: WaitingView | null;
+  /** The offer to mark the campaign after its pass; `null` when it doesn't hold. Optional so an older fixture still reads. */
+  campaignToo?: CampaignTooView | null;
   /** The newest line's `loggedAt − at`, when over a minute. */
   clockSkewMs: number | null;
   /** The deployment the campaign's row was written to, as its writer named it. */
@@ -181,6 +193,8 @@ export type RunView = {
   parent: { id: Id<'importRuns'>; title: string } | null;
   marked: MarkedView | null;
   waiting: WaitingView | null;
+  /** As the campaign page's: offered on the pass's own page when it is the one that holds it. */
+  campaignToo?: CampaignTooView | null;
 };
 
 export type RunEventView = {
@@ -271,6 +285,50 @@ export function livenessOfRun(run: Run, now: number): RunLiveness {
 export function livenessOfCampaign(row: Run, passes: readonly Run[], now: number): RunLiveness {
   if (isReconstructed(row)) return { state: 'finished' };
   return campaignLiveness(livenessInput(row), passes.map(livenessInput), now);
+}
+
+/** A campaign's newest pass under it, by start: one indexed read. */
+export async function newestPassUnder(
+  ctx: QueryCtx,
+  campaignRunId: Id<'importRuns'>,
+): Promise<Run | null> {
+  return await ctx.db
+    .query('importRuns')
+    .withIndex('by_parent', (q) => q.eq('parentRunId', campaignRunId))
+    .order('desc')
+    .first();
+}
+
+/**
+ * Whether `row`, a recorded campaign, offers *Mark the campaign failed too* after `newest`, its
+ * newest pass: core's {@link offersCampaignMark}, read the same way by the pages and by the write.
+ */
+export function campaignMarkOffered(row: Run, newest: Run | null): boolean {
+  if (!isCampaignRow(row) || isReconstructed(row)) return false;
+  if (newest !== null && newest.parentRunId !== row._id) return false;
+  return offersCampaignMark(
+    {
+      status: row.status,
+      ...(row.markedFailed !== undefined && { markedFailed: row.markedFailed }),
+      ...(row.progressAt !== undefined && { progressAt: row.progressAt }),
+    },
+    newest === null
+      ? null
+      : {
+          markedAt: newest.markedFailed?.at ?? null,
+          ...(newest.progressAt !== undefined && { progressAt: newest.progressAt }),
+          loaderFinished: newest.loaderFinish !== undefined,
+        },
+  );
+}
+
+/** The offer's view, or `null` when it doesn't hold. */
+function campaignTooOf(row: Run, newest: Run | null): CampaignTooView | null {
+  if (newest === null || !campaignMarkOffered(row, newest)) return null;
+  return {
+    campaign: { id: row._id, title: titleOf(row) },
+    afterPass: { id: newest._id, pass: titleOf(newest) },
+  };
 }
 
 const countOf = (run: Run, name: string) => run.counts.find((c) => c.name === name)?.value;
@@ -774,6 +832,7 @@ export const campaign = query({
       path: merge?.stages ?? [],
       marked: await markedOf(ctx, row),
       waiting: await waitingOf(ctx, heldBy, now),
+      campaignToo: reconstructed ? null : campaignTooOf(row, await newestPassUnder(ctx, row._id)),
       clockSkewMs: running === null ? null : await clockSkewOf(ctx, running._id),
       deployment: row.deployment,
       isProd: row.isProd,
@@ -794,6 +853,11 @@ export const run = query({
       ? livenessOfCampaign(doc, passes, now)
       : livenessOfRun(doc, now);
     const parentDoc = doc.parentRunId === undefined ? null : await ctx.db.get(doc.parentRunId);
+    // Only a marked pass under an open campaign can hold the offer: the newest-pass read waits on that.
+    const campaignToo =
+      parentDoc !== null && doc.markedFailed !== undefined && parentDoc.status === 'running'
+        ? campaignTooOf(parentDoc, await newestPassUnder(ctx, parentDoc._id))
+        : null;
     return {
       doc,
       dryRun: isDryRun(doc),
@@ -802,6 +866,7 @@ export const run = query({
       parent: parentDoc === null ? null : { id: parentDoc._id, title: titleOf(parentDoc) },
       marked: await markedOf(ctx, doc),
       waiting: await waitingOf(ctx, doc, now),
+      campaignToo: campaignToo?.afterPass.id === doc._id ? campaignToo : null,
     };
   },
 });

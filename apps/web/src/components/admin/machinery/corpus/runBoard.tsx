@@ -22,7 +22,7 @@ import type { CampaignView as CampaignData, RunView as RunData, RunEventView } f
 
 /** What each fake write answered with, and what the undo ran — for a story's play to read. */
 export type BoardCalls = {
-  marks: { runId: string; reason: string }[];
+  marks: { runId: string; reason: string; afterPass?: string }[];
   waits: { runId: string; now: number }[];
   undone: string[];
 };

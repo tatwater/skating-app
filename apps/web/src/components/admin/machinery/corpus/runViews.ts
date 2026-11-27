@@ -15,3 +15,4 @@ export type MarkedView = NonNullable<CampaignView['marked']>;
 export type WaitingView = NonNullable<CampaignView['waiting']>;
 export type PersonView = MarkedView['by'];
 export type RunStatus = CampaignView['row']['status'];
+export type CampaignTooView = NonNullable<CampaignView['campaignToo']>;

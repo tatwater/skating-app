@@ -1,6 +1,7 @@
 import type { Doc, Id } from '@skating/convex/dataModel';
 import {
   CORPUS_RUN_PLAN,
+  campaignLiveness,
   RUN_QUIET_MS,
   RUN_WAIT_MS,
   type RunLivenessInput,
@@ -8,6 +9,7 @@ import {
 } from '@skating/core';
 
 import type {
+  CampaignTooView,
   CampaignView,
   MarkedView,
   PassRowView,
@@ -236,6 +238,41 @@ export function boardCampaign(
   };
 }
 
+/** The offer the read sends once the load is marked and the campaign is still open. */
+export const CAMPAIGN_TOO: CampaignTooView = {
+  campaign: { id: CAMPAIGN_ID, title: 'a07a-20261012' },
+  afterPass: { id: LOAD_ID, pass: 'load' },
+};
+
+/**
+ * 14:20 — the load marked failed by hand, the campaign row still open with nothing heard since: the
+ * campaign is read by its own heartbeat between passes, and the read offers to mark it too.
+ */
+export function passMarkedCampaign(now: number = NOW_MARKED): CampaignView {
+  const board = boardCampaign(now, { loadState: 'failed' });
+  const self: RunLivenessInput = { kind: 'corpus_campaign', status: 'running' };
+  const load: RunLivenessInput = {
+    kind: 'canonical_water',
+    status: 'failed',
+    progressAt: LAST_FLUSH,
+    markedFailed: true,
+  };
+  const liveness = campaignLiveness(self, [load], now);
+  const line =
+    board.row.line.kind === 'campaign' ? { ...board.row.line, current: null } : board.row.line;
+  return {
+    ...board,
+    row: {
+      ...board.row,
+      liveness,
+      livenessInputs: { self, passes: [load] },
+      line,
+    },
+    liveness,
+    campaignToo: CAMPAIGN_TOO,
+  };
+}
+
 /** August's campaign, assembled from its runs (no campaign row was kept), long finished. */
 export function assembledCampaign(): CampaignView {
   const done = (pass: string, i: number): PassRowView => ({
@@ -366,6 +403,21 @@ export function loadView(
     marked,
     waiting,
   };
+}
+
+/** The load's own page once it is marked, its campaign still open: the offer is drawn here too. */
+export function markedLoadView(now: number = NOW_MARKED): RunView {
+  const doc = loadDoc({
+    status: 'failed',
+    finishedAt: NOW_MARKED,
+    markedFailed: {
+      byUserId: TEAGAN.id,
+      at: NOW_MARKED,
+      reason: MARKED.reason,
+      actionId: id<'moderationActions'>('act_mark'),
+    },
+  });
+  return { ...loadView(now, { doc, marked: MARKED }), campaignToo: CAMPAIGN_TOO };
 }
 
 /** A finished single pass with a long record: totals, groups past the preview, a path. */

@@ -15,6 +15,8 @@ export type RunActionsShown = {
   /** The bar is drawn at all. */
   bar: boolean;
   markFailed: boolean;
+  /** *Mark the campaign failed too*, after its pass was marked. */
+  campaignToo: boolean;
   wait: boolean;
   stop: boolean;
 };
@@ -28,9 +30,20 @@ export type RunActionsShown = {
  * - ***Mark failed*** on every such run.
  * - ***Wait 30 minutes*** only while stalled and not already held.
  * - ***Stop*** only when the switch above is on, on any running run not already asked.
+ * - ***Mark the campaign failed too*** whenever the server says its offer holds (`campaignToo`,
+ *   core's `offersCampaignMark`: the campaign still open, its newest pass the one marked, nothing
+ *   after the mark), on the campaign's page and on that pass's own. Not a clock reading: the read
+ *   moves when a later pass opens, the campaign closes, or a mark is undone. While it shows, the
+ *   campaign's own *Mark failed* is not drawn beside it: both would send the same mark.
  */
 export function runActions(
-  run: { status: RunStatus; liveness: LivenessView; marked: boolean; stopAsked?: boolean },
+  run: {
+    status: RunStatus;
+    liveness: LivenessView;
+    marked: boolean;
+    stopAsked?: boolean;
+    campaignToo?: boolean;
+  },
   { stopDrawn = STOP_DRAWN }: { stopDrawn?: boolean } = {},
 ): RunActionsShown {
   const running = run.status === 'running' && !run.marked;
@@ -39,9 +52,11 @@ export function runActions(
     running &&
     (state === 'late' || state === 'stalled' || state === 'waiting' || state === 'notRecorded');
   const stop = stopDrawn && running && state !== 'finished' && run.stopAsked !== true;
+  const campaignToo = run.campaignToo === true;
   return {
-    bar: quiet || stop,
-    markFailed: quiet,
+    bar: quiet || stop || campaignToo,
+    markFailed: quiet && !campaignToo,
+    campaignToo,
     wait: quiet && state === 'stalled',
     stop,
   };

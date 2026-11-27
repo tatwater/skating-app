@@ -14,6 +14,7 @@ import {
   NOW_MARKED,
   NOW_RUNNING,
   NOW_STALLED,
+  passMarkedCampaign,
   WAITING,
 } from './runFixtures';
 
@@ -222,6 +223,56 @@ export const MarkedFailed: Story = {
       'dead',
       'dead',
     ]);
+  },
+};
+
+/**
+ * 14:20 — the load marked failed, the campaign still open and silent since: the bar offers *Mark the
+ * campaign failed too* in place of the campaign's own *Mark failed*; it asks why, and sends the
+ * campaign's mark naming the load it follows. Its receipt's Undo reopens the campaign alone.
+ */
+export const PassMarkedCampaignOpen: Story = {
+  args: {
+    now: NOW_MARKED,
+    campaign: passMarkedCampaign(),
+    calls: { marks: [], waits: [], undone: [] } satisfies BoardCalls,
+  },
+  play: async ({ canvasElement, args }) => {
+    const calls = args.calls as BoardCalls;
+    const load = must(canvasElement.querySelector('[data-pass="load"]'));
+    await expect(load).toHaveTextContent('failed');
+    const [too] = await waitFor(() => {
+      const found = buttons(canvasElement, /Mark the campaign failed too/);
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+    // Never two buttons that send the same mark.
+    await expect(buttons(canvasElement, /^Mark failed/)).toHaveLength(0);
+    await userEvent.click(must(too));
+    const dialog = await within(document.body).findByRole('alertdialog');
+    await expect(dialog).toHaveTextContent('Mark a07a-20261012 failed?');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Laptop is off.');
+    await userEvent.click(
+      must(dialog.querySelector<HTMLElement>('[data-slot="alert-dialog-action"]')),
+    );
+    await waitFor(() =>
+      expect(calls.marks).toEqual([
+        { runId: 'run_campaign', reason: 'Laptop is off.', afterPass: 'run_load' },
+      ]),
+    );
+    const undo = await within(document.body).findByRole('button', { name: /Undo/ });
+    await userEvent.click(undo);
+    await waitFor(() => expect(calls.undone).toEqual(['act_mark']));
+  },
+};
+
+/** Once the script has opened its next pass, the read drops the offer: the campaign's own bar is back. */
+export const PassMarkedCampaignMovedOn: Story = {
+  args: { now: NOW_MARKED, campaign: { ...passMarkedCampaign(), campaignToo: null } },
+  play: async ({ canvasElement }) => {
+    await waitFor(() => expect(bar(canvasElement)).not.toBeNull());
+    await expect(buttons(canvasElement, /Mark the campaign failed too/)).toHaveLength(0);
+    await expect(buttons(canvasElement, /Mark failed/).length).toBeGreaterThan(0);
   },
 };
 

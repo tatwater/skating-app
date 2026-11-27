@@ -3,12 +3,13 @@ import { expect, userEvent, waitFor, within } from 'storybook/test';
 
 import { must } from '@/components/kit/storyKit';
 
-import { fixtureTail, RunBoard } from './runBoard';
+import { type BoardCalls, fixtureTail, RunBoard } from './runBoard';
 import {
   finishedPassDoc,
   loadDoc,
   loadView,
   MARKED,
+  markedLoadView,
   NOW_LATE,
   NOW_MARKED,
   NOW_RUNNING,
@@ -127,6 +128,41 @@ export const MarkedWithLateClose: Story = {
 };
 
 /** A row from before heartbeats, left running: *No heartbeat recorded*, and *Mark failed* offered. */
+/**
+ * The load marked failed, its campaign still open: its own page offers *Mark the campaign failed
+ * too*, which marks the campaign (not the load again), naming the load it follows.
+ */
+export const MarkedCampaignOpen: Story = {
+  args: {
+    now: NOW_MARKED,
+    run: markedLoadView(),
+    calls: { marks: [], waits: [], undone: [] } satisfies BoardCalls,
+  },
+  play: async ({ canvasElement, args }) => {
+    const calls = args.calls as BoardCalls;
+    await expect(slot(canvasElement, 'run-state')).toHaveTextContent('Marked failed · 14:20');
+    const [too] = await waitFor(() => {
+      const found = within(canvasElement).queryAllByRole('button', {
+        name: /Mark the campaign failed too/,
+      });
+      expect(found.length).toBeGreaterThan(0);
+      return found;
+    });
+    await userEvent.click(must(too));
+    const dialog = await within(document.body).findByRole('alertdialog');
+    await expect(dialog).toHaveTextContent('Mark a07a-20261012 failed?');
+    await userEvent.type(within(dialog).getByRole('textbox'), 'Laptop is off.');
+    await userEvent.click(
+      must(dialog.querySelector<HTMLElement>('[data-slot="alert-dialog-action"]')),
+    );
+    await waitFor(() =>
+      expect(calls.marks).toEqual([
+        { runId: 'run_campaign', reason: 'Laptop is off.', afterPass: 'run_load' },
+      ]),
+    );
+  },
+};
+
 export const NoHeartbeat: Story = {
   args: { run: loadView(NOW_STALLED, { doc: loadDoc({ progressAt: undefined }) }) },
   play: async ({ canvasElement }) => {

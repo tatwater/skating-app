@@ -201,6 +201,9 @@ export const ACTION_WORDS = {
   bar: 'Run actions',
   markFailed: 'Mark failed',
   markFailedWhat: 'If nothing is running: end this run as failed, saying why. You can undo it.',
+  markCampaignToo: 'Mark the campaign failed too',
+  markCampaignTooWhat: (pass: string) =>
+    `The ${pass} pass is marked, but the campaign is still open. If the laptop has stopped, end the campaign as failed too. You can undo each one on its own.`,
   wait: 'Wait 30 minutes',
   waitWhat:
     'If it may still be working: hold the stalled alarm for 30 minutes. A flush clears it sooner.',

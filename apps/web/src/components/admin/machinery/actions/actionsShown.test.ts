@@ -13,6 +13,7 @@ describe('which actions a run offers', () => {
     expect(runActions({ status: 'running', liveness: at('running'), marked: false })).toEqual({
       bar: false,
       markFailed: false,
+      campaignToo: false,
       wait: false,
       stop: false,
     });
@@ -22,6 +23,7 @@ describe('which actions a run offers', () => {
     expect(runActions({ status: 'running', liveness: at('late'), marked: false })).toEqual({
       bar: true,
       markFailed: true,
+      campaignToo: false,
       wait: false,
       stop: false,
     });
@@ -71,6 +73,7 @@ describe('which actions a run offers', () => {
     expect(runActions({ status: 'running', liveness: at('running'), marked: false }, on)).toEqual({
       bar: true,
       markFailed: false,
+      campaignToo: false,
       wait: false,
       stop: true,
     });
@@ -81,5 +84,47 @@ describe('which actions a run offers', () => {
     expect(
       runActions({ status: 'running', liveness: at('finished'), marked: false }, on).stop,
     ).toBe(false);
+  });
+
+  describe('Mark the campaign failed too: the server’s offer, never a clock reading', () => {
+    test('drawn whenever the offer holds, at any liveness, in place of the campaign’s own mark', () => {
+      for (const s of ['running', 'late', 'stalled', 'waiting', 'notRecorded'] as const) {
+        const shown = runActions({
+          status: 'running',
+          liveness: at(s),
+          marked: false,
+          campaignToo: true,
+        });
+        expect(shown).toMatchObject({ bar: true, campaignToo: true, markFailed: false });
+        expect(shown.wait).toBe(s === 'stalled');
+      }
+    });
+
+    test('on the marked pass’s own page too: the pass is finished, the offer still drawn', () => {
+      expect(
+        runActions({ status: 'failed', liveness: at('finished'), marked: true, campaignToo: true }),
+      ).toEqual({ bar: true, markFailed: false, campaignToo: true, wait: false, stop: false });
+    });
+
+    test('gone when the read drops it (a later pass, the campaign closed, a mark undone)', () => {
+      for (const campaignToo of [false, undefined]) {
+        expect(
+          runActions({
+            status: 'running',
+            liveness: at('stalled'),
+            marked: false,
+            ...(campaignToo !== undefined && { campaignToo }),
+          }),
+        ).toMatchObject({ campaignToo: false, markFailed: true });
+        expect(
+          runActions({
+            status: 'failed',
+            liveness: at('finished'),
+            marked: true,
+            ...(campaignToo !== undefined && { campaignToo }),
+          }).bar,
+        ).toBe(false);
+      }
+    });
   });
 });

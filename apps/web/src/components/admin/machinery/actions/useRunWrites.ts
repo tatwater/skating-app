@@ -51,7 +51,8 @@ export function useRunServer(): RunServer {
 
 /** What the actions call: each resolves whether its write landed. */
 export type RunWrites = {
-  markFailed: (target: RunTarget, reason: string) => Promise<boolean>;
+  /** `afterPass`: *Mark the campaign failed too* — the campaign's pass already marked. */
+  markFailed: (target: RunTarget, reason: string, afterPass?: Id<'importRuns'>) => Promise<boolean>;
   wait: (target: RunTarget) => Promise<boolean>;
   stop: (target: RunTarget) => Promise<boolean>;
 };
@@ -86,9 +87,14 @@ export function useRunWrites({
   );
 
   const markFailed = useCallback(
-    async (target: RunTarget, reason: string) => {
+    async (target: RunTarget, reason: string, afterPass?: Id<'importRuns'>) => {
       const sent = await said(
-        () => server.markRunFailed({ runId: target.runId, reason: reason.trim() }),
+        () =>
+          server.markRunFailed({
+            runId: target.runId,
+            reason: reason.trim(),
+            ...(afterPass !== undefined && { afterPass }),
+          }),
         (why) => ({ title: W.notMarked(target.title), description: why }),
         options,
       );

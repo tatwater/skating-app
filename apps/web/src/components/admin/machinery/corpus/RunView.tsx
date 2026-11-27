@@ -111,6 +111,7 @@ export function RunView({
           liveness={liveness}
           marked={marked}
           stopAsked={doc.stopRequest !== undefined}
+          campaignToo={view.campaignToo ?? null}
           writes={writes}
           {...(pane !== undefined && { pane })}
         />

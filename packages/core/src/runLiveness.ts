@@ -137,3 +137,44 @@ export function campaignLiveness(
   }
   return rule(progressAt === undefined ? campaign : { ...campaign, progressAt }, now);
 }
+
+/** What {@link offersCampaignMark} reads of a campaign row. */
+export interface CampaignMarkCampaign {
+  status: 'running' | 'succeeded' | 'failed';
+  markedFailed?: unknown;
+  /** The script's own beat, stamped as each pass begins (`run-corpus.sh`'s `begin_pass`). */
+  progressAt?: number;
+}
+
+/** What it reads of the campaign's newest pass (by start). */
+export interface CampaignMarkPass {
+  /** When the console marked it failed; `null` when it isn't marked. */
+  markedAt: number | null;
+  progressAt?: number;
+  /** The loader's own close came after the mark (`importRuns.loaderFinish`). */
+  loaderFinished: boolean;
+}
+
+/**
+ * **Whether a campaign offers *Mark the campaign failed too*** — the founder's ruling on the
+ * Machinery follow-up of 2026-11-27: after a campaign's pass is marked failed, the campaign itself
+ * can be marked in the same breath, while nothing says the laptop is still at it. One rule, read by
+ * the server for the pages and again inside the write, so the offer and the refusal can't disagree.
+ *
+ * True only while all hold: the campaign row is still open (running, not marked); its newest pass
+ * is marked failed; and nothing moved after the mark — the pass hasn't beaten or closed itself, and
+ * the script hasn't beaten the campaign (it does so as it begins the next pass, before that pass's
+ * row opens). A later pass, a campaign that closed, or a mark undone all end it.
+ */
+export function offersCampaignMark(
+  campaign: CampaignMarkCampaign,
+  newestPass: CampaignMarkPass | null,
+): boolean {
+  if (campaign.status !== 'running') return false;
+  if (campaign.markedFailed !== undefined && campaign.markedFailed !== null) return false;
+  if (newestPass === null || newestPass.markedAt === null) return false;
+  if (newestPass.loaderFinished) return false;
+  const markedAt = newestPass.markedAt;
+  const after = (at: number | undefined) => at !== undefined && at > markedAt;
+  return !after(newestPass.progressAt) && !after(campaign.progressAt);
+}

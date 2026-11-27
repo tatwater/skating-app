@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { describe, expect, test, vi } from 'vitest';
 
-import { LOAD_ID } from '../corpus/runFixtures';
+import { CAMPAIGN_ID, CAMPAIGN_TOO, LOAD_ID } from '../corpus/runFixtures';
 import type { LivenessView } from '../corpus/runViews';
 import { RunActions } from './RunActions';
 import type { RunWrites } from './useRunWrites';
@@ -125,5 +125,48 @@ describe("a run's action bar", () => {
     writes.markFailed.mockResolvedValueOnce(true);
     await act(async () => fireEvent.click(confirm() as HTMLElement));
     await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+  });
+
+  test('Mark the campaign failed too: drawn from the offer, asking why, sending the campaign with its pass', async () => {
+    const writes = fakeWrites();
+    const { rerender } = render(
+      <RunActions
+        target={TARGET}
+        status="failed"
+        liveness={{ state: 'finished' }}
+        marked
+        writes={writes}
+        campaignToo={CAMPAIGN_TOO}
+      />,
+    );
+    expect(screen.queryAllByRole('button', { name: /^Mark failed/ })).toHaveLength(0);
+    const [too] = screen.getAllByRole('button', { name: /Mark the campaign failed too/ });
+    fireEvent.click(too as HTMLElement);
+    const dialog = await screen.findByRole('alertdialog');
+    expect(dialog).toHaveTextContent('Mark a07a-20261012 failed?');
+    fireEvent.change(screen.getByRole('textbox'), { target: { value: 'Laptop is off' } });
+    await act(async () =>
+      fireEvent.click(
+        dialog.querySelector<HTMLButtonElement>('[data-slot="alert-dialog-action"]') as HTMLElement,
+      ),
+    );
+    expect(writes.markFailed).toHaveBeenCalledWith(
+      { runId: CAMPAIGN_ID, title: 'a07a-20261012' },
+      'Laptop is off',
+      LOAD_ID,
+    );
+    await waitFor(() => expect(screen.queryByRole('alertdialog')).toBeNull());
+    // The read drops the offer (a later pass opened): nothing left to draw on a marked pass.
+    rerender(
+      <RunActions
+        target={TARGET}
+        status="failed"
+        liveness={{ state: 'finished' }}
+        marked
+        writes={writes}
+        campaignToo={null}
+      />,
+    );
+    expect(bar()).toBeNull();
   });
 });
