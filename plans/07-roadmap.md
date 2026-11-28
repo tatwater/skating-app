@@ -509,7 +509,7 @@ date on it (D146 — a founder review falsified the map-wide toggle the first sc
 doc was rewritten rather than patched); behind it, a season of Sentinel passes to scrub through and
 watch the ice arrive, stored as one masked raster PMTiles per pass on our first owned infrastructure
 (a Fly granule job → R2, D148). The constraint was never quota but physics (D147): NAIP is mid-summer
-aerial and will never show ice; 10 m Sentinel can't show a 1–3 m ridge. Ingest is weather-gated and
+aerial and never evidence about ice; 10 m Sentinel can't show a 1–3 m ridge. Ingest is weather-gated and
 the archive turns over on a frame, not a date (D149). Workstream 0 recovered the ORS route geometry
 A06d never stored and drew the approach on both clients. *A water body can be revealed as a photograph and
 its freeze-up scrubbed, on both clients.*
@@ -962,6 +962,45 @@ longer need.*
 - The founder's answers to the plan's §9 questions, and the boards in its §5 before B04-3
 - The founder's sequencing (2026-11-13): B01 is the focus; the boards and B04's design and build passes wait, designed and built in tandem later. Until then the plan is the running list of skater-side changes the console build finds (its *The running list*)
 
+## Phase B05 — The summer aerial: our own NAIP archive of the region
+🟡 **In progress** 2026-11-25 · PR #188 · [plan](./phases/B05-summer-aerial.md) · D314 D315 D316 D317 D318 D319
+
+The console's summer aerial asks a USGS service to render every view on demand, so a first look
+takes up to 45 seconds and its flight date often never arrives. The founder chose to own the imagery:
+one raster archive of all seven states, NY to RI, cut from NAIP's own files on Fly and stored in R2
+to z18, seamless across state lines. Each quarter-quad gets the frame his rule picks — leaf-on,
+newest, a 0.3 m frame over a newer 0.6 m one within two years, clouds and autumn-colored September
+flights struck by his review — and a date
+index means the map always says when the imagery under the view was flown. It is for console staff
+only. One entry point builds it whole, by stage or for the cells that changed; a July check stores
+any newer summer flights for Machinery to show, never spending on its own. B05-1 (the pipeline) is
+open; the region has not been built, and the console reads USGS until B05-2. *Once both land, an
+operator opens the aerial on any lake and it is there in a second, with the months it was flown.*
+
+#### Data runs
+- **2026-11-25 — the first catalog walk (`naip-20261125`, a dry run, no rows):** 69,207 items over the seven states → 9,168 quarter-quads, every one with a pick; 28,568 frames; 1,764 work tiles; 140 partial picks; 60 cloud candidates, two struck by the founder's review
+- **2026-11-26 — the pilot (`naip-pilot-20261126`, `champlain-nhma-me-ny`, on Fly and R2, its rows on a throwaway local backend):** 65 cells, 28 work tiles, 209 cells cut; 149,698 tiles in a 4.08 GB archive, verified and looked at; 256 s a work tile on `performance-4x` (a `shared-cpu-4x` throttles), 9 minutes wall; the assembler at 47.5 MB/s; the date index 808 B gzipped; a first view in about a second. Re-extrapolated for the region: ~260 GB, ~$3.90 a month, a full run ~7–9 h and ~$37 ($28–48)
+- **2026-11-27 — the first foliage review (`naip-20261127`, the 2026-11-26 walk, a dry run, no rows):** 18,939 frames from 1 September scored, 8,947 turned at 0.6; proposed 524 entries (16 flight days, 508 frames); applied, 1,074 of 9,168 cells change (ME 456, NY 423, VT 186, NH 9), 264 from 0.3 m to 0.6 m, 3.2 years older on average; all cells covered; 80 + 6 cells named off-season
+
+#### Deferred
+- ⚪ **Color matching across flights** — the low-zoom quilt is accepted in v1 → the plan's §1.3
+- ⚪ **A console *Rebuild* that launches the build** — Convex can start Fly Machines, but the build's orchestration stays on the laptop until B01's hosted-runner decision → the plan's §3.2
+- ⚪ **Machinery's imagery page drawing the July check's offer** — B05 stores the record (`aerialOffers`); the page is B01's Machinery mode → the deferred register's *Machinery: the summer aerial's offer*
+- 🟢 **The October-cell fallbacks in Maine and New York** — revisited 2026-11-27 once the pilot showed September in color too: D319, turned flights struck by his review of flight days, the six October cells keep 2 October 2023 → the plan's §2.1.4, §5.5
+
+#### Ruled out
+- **A summer aerial for skaters, region-wide or clipped to one lake** — D316: console staff only, not for now, revisited only on the founder's word
+- **z19** — finer than every source; the head maps overzoom instead
+- **Canada** — NAIP stops 0–7 km past the border
+- **A prod copy** — prod points at dev's dated object at the cutover
+
+#### Owed
+- B05-1 is open as PR #188 (built, integrated, piloted, independently reviewed). It ships `NAIP_FOLIAGE_STRIKES` empty, with the proposal beside it. After it merges, in order:
+  1. **The founder's foliage review** (D319): the proposal by flight day on the sheet (`scripts/aerial/review/naip-20261127-foliage-proposed.json`, the sheet beside the campaign); his confirmed entries land as a commit to `NAIP_FOLIAGE_STRIKES`; then the applied run's cloud sheet (one new pick over 3% white, a likely false positive)
+  2. **The full region run, the founder's explicit go/no-go** on the pilot's numbers (~7–9 h on 25 `performance-4x` Machines, ~$37 all told, ~260 GB at ~$3.90 a month, the plan's §6.1; the Machine size is part of the call), from main, after the widen's deploy to dev (`convex dev --once` from main) so its rows can be written, and on an image rebuilt from main and pinned by its digest (`scripts/aerial/README.md`'s gated step 1: the pilot's image predates the worker's and the assembler's review fixes)
+  3. **B05-2, the app's swap**, once the archive is on dev: `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, `NAIP_MANIFEST_URL` on Convex dev
+- G-6 answered at build start: `skating-imagery`, whose public host already serves the winter archive and which the app's staged R2 token writes — no new credential
+
 ## Deferred register
 
 Everything deliberately not done, in one place, with what it waits on — grouped by the blocker, since
@@ -1026,6 +1065,7 @@ here and defers to this table. The long-form register this table replaced is arc
 | Item | Status | Blocked on | Where |
 | --- | --- | --- | --- |
 | **Corpus: enrichment gaps** — the plan's Corpus task for bodies awaiting elevation, wind or depth (today a column on the old Standing page); its *done* is an enrichment run, so it lands with Machinery's run triggers, and the Overview's *Awaiting enrichment* stays unrecorded until then. Deferred from Corpus's first wave by the founder (D303) | ⚪ | the Machinery mode (B01 §8 §5) | B01 §5.3, D303 |
+| **Machinery: the summer aerial's offer** — Phase B05's July check stores a *newer suitable flight available* record (`aerialOffers`: the cells, their flight dates, what the live layer was built from, the command to run) and its run row, and tells no one (the founder, 2026-11-25: no interim surface); Machinery's imagery page draws the open offer and runs the check on demand | ⚪ | the Machinery mode (B01 §8 §5) | B05 §3.3, §3.4, D314 |
 | **Corpus: the script-filed bay asks** — the `name_bay` asks `corpusRequests.seedBayRequests` files with `origin: 'seed'` (D289's amendment) are no Inbox items and are decided only in the old editor's bay queue and the Bodies preview's asks; a Corpus lane is to take them. Deferred from Corpus's first wave by the founder (D303) | ⚪ | a later Corpus lane; the old editor's bay queue holds them until then (In27) | B01 §5.3, D289, D303 |
 | **The yearly recurrence pass can skip itself** — `maybeRunRollover` treats any `hazardRecurrence` row stamped with this season as "already run", and `enqueueBody` (the body-merge hook in `waterBodies.ts`, and "recompute now") stamps one; a merge or a recompute on 1–7 July before the pass starts makes every remaining tick in the window a no-op, and the pass waits a year. Gate on a run record (or the queue's own completion) rather than any computed row; a `convex-test` for a merge on 2 July. Found 2026-10-18 | ⚪ | nothing; must land before **1 July 2027** — designed into B01-7d (the pass record gates the rollover) | `convex/recurrence.ts` `maybeRunRollover` / `enqueueBody`, A05c, B01 *The Corpus tasks (B01-7, the design)* |
 | **`centroid` → `representativePoint` stage 2** — the 85-site code sweep, make it required, drop `centroid` and the `interiorPoint ?? representativePoint ?? centroid` chains · **the `waterBodies.ts` split** (6,289 lines, 58 exports; loaders call by string path) | ⚪ | nothing, and it shouldn't linger; the split wants its own PR with nothing else in flight | [`features/representative-point-rename.md`](./features/representative-point-rename.md), A07a-3 audit |

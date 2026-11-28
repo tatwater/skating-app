@@ -1,0 +1,32 @@
+{
+  "name": "@skating/aerial",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "The summer aerial (B05): our own region-wide NAIP archive, selected, cut, assembled and verified. Entry point run-aerial.sh; the cutting and assembly run on Fly (see README).",
+  "scripts": {
+    "check-types": "tsc --noEmit",
+    "test": "vitest run --coverage",
+    "test:watch": "vitest",
+    "select": "tsx src/cli/select.ts",
+    "foliage": "tsx src/cli/foliage.ts",
+    "tiles": "tsx src/cli/tiles.ts",
+    "assemble": "tsx src/cli/assemble.ts",
+    "verify": "tsx src/cli/verify.ts",
+    "cleanup": "tsx src/cli/cleanup.ts"
+  },
+  "dependencies": {
+    "@skating/core": "workspace:*",
+    "@skating/run-log": "workspace:*",
+    "pmtiles": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/geojson": "^7946.0.16",
+    "@types/node": "^26.6.6",
+    "@vitest/coverage-v8": "^5.1.0",
+    "esbuild": "^0.28.1",
+    "fast-check": "^4.10.2",
+    "tsx": "^4.23.15",
+    "vitest": "^5.1.0"
+  }
+}

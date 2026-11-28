@@ -1,0 +1,3679 @@
+{
+  "status": "PROPOSED, awaiting the founder's confirmation. Nothing here is struck: an entry is struck only once it is copied into core's NAIP_FOLIAGE_STRIKES with reviewedBy 'founder'.",
+  "campaign": "naip-20261127",
+  "walkedOn": "2026-11-26",
+  "threshold": 0.6,
+  "proposedOn": "2026-11-27",
+  "strikes": [
+    {
+      "itemId": "ma_m_4207339_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ma_m_4207159_ne_19_060_20210926",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4406726_nw_19_060_20210907",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4406726_sw_19_060_20210907",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606709_nw_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606709_sw_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606717_sw_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606808_se_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606815_ne_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606815_se_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606816_ne_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606816_nw_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606816_se_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606816_sw_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606823_ne_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606832_nw_19_060_20210908",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506831_ne_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506831_se_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506832_nw_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506832_sw_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506839_ne_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506855_ne_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506855_se_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606931_se_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606955_ne_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606963_se_19_060_20210911",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4406825_nw_19_060_20210913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4406850_sw_19_060_20210913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4406858_nw_19_060_20210913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2021-09-19"
+      },
+      "keep": [
+        "me_m_4406814_nw_19_060_20210919",
+        "me_m_4406814_se_19_060_20210919",
+        "me_m_4406814_sw_19_060_20210919",
+        "me_m_4406822_ne_19_060_20210919",
+        "me_m_4406822_nw_19_060_20210919",
+        "me_m_4406822_se_19_060_20210919",
+        "me_m_4406822_sw_19_060_20210919",
+        "me_m_4406830_ne_19_060_20210919",
+        "me_m_4406830_nw_19_060_20210919",
+        "me_m_4406830_se_19_060_20210919",
+        "me_m_4406830_sw_19_060_20210919",
+        "me_m_4406838_ne_19_060_20210919",
+        "me_m_4406838_sw_19_060_20210919",
+        "me_m_4406846_ne_19_060_20210919",
+        "me_m_4406846_nw_19_060_20210919",
+        "me_m_4406846_se_19_060_20210919",
+        "me_m_4406846_sw_19_060_20210919",
+        "me_m_4406854_ne_19_060_20210919",
+        "me_m_4406854_nw_19_060_20210919",
+        "me_m_4406854_se_19_060_20210919",
+        "me_m_4406854_sw_19_060_20210919",
+        "me_m_4406862_nw_19_060_20210919",
+        "me_m_4406951_se_19_060_20210919",
+        "me_m_4406959_ne_19_060_20210919",
+        "me_m_4406959_se_19_060_20210919",
+        "me_m_4407008_se_19_060_20210919",
+        "me_m_4407016_nw_19_060_20210919",
+        "me_m_4407016_sw_19_060_20210919",
+        "me_m_4407056_se_19_060_20210919",
+        "me_m_4606807_ne_19_060_20210919",
+        "me_m_4606807_nw_19_060_20210919",
+        "me_m_4606807_sw_19_060_20210919",
+        "me_m_4606815_nw_19_060_20210919",
+        "me_m_4606815_sw_19_060_20210919",
+        "me_m_4606823_nw_19_060_20210919",
+        "me_m_4606823_sw_19_060_20210919",
+        "me_m_4606831_nw_19_060_20210919",
+        "me_m_4606831_se_19_060_20210919",
+        "me_m_4606831_sw_19_060_20210919",
+        "me_m_4606839_nw_19_060_20210919",
+        "me_m_4606839_sw_19_060_20210919",
+        "me_m_4606847_nw_19_060_20210919",
+        "me_m_4606847_sw_19_060_20210919",
+        "me_m_4606855_nw_19_060_20210919",
+        "me_m_4606855_sw_19_060_20210919",
+        "me_m_4606863_nw_19_060_20210919",
+        "me_m_4606863_sw_19_060_20210919",
+        "me_m_4706854_se_19_060_20210919",
+        "me_m_4706862_se_19_060_20210919",
+        "me_m_4706863_ne_19_060_20210919",
+        "me_m_4706863_se_19_060_20210919",
+        "me_m_4706863_sw_19_060_20210919"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "98 of 150 frames read turned; the 52 kept do not"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2021-09-20"
+      },
+      "keep": [
+        "me_m_4406815_nw_19_060_20210920",
+        "me_m_4406815_sw_19_060_20210920",
+        "me_m_4406823_sw_19_060_20210920",
+        "me_m_4406831_sw_19_060_20210920",
+        "me_m_4406839_ne_19_060_20210920",
+        "me_m_4406839_nw_19_060_20210920",
+        "me_m_4406839_se_19_060_20210920",
+        "me_m_4406839_sw_19_060_20210920",
+        "me_m_4406847_ne_19_060_20210920",
+        "me_m_4406847_nw_19_060_20210920",
+        "me_m_4406847_sw_19_060_20210920",
+        "me_m_4406855_nw_19_060_20210920",
+        "me_m_4406855_sw_19_060_20210920",
+        "me_m_4606839_se_19_060_20210920",
+        "me_m_4606847_ne_19_060_20210920",
+        "me_m_4606847_se_19_060_20210920",
+        "me_m_4606855_ne_19_060_20210920",
+        "me_m_4606855_se_19_060_20210920",
+        "me_m_4606863_ne_19_060_20210920",
+        "me_m_4606863_se_19_060_20210920",
+        "me_m_4606914_se_19_060_20210920",
+        "me_m_4606922_sw_19_060_20210920",
+        "me_m_4606930_ne_19_060_20210920",
+        "me_m_4606930_se_19_060_20210920",
+        "me_m_4606931_sw_19_060_20210920",
+        "me_m_4606938_ne_19_060_20210920",
+        "me_m_4606939_nw_19_060_20210920",
+        "me_m_4606939_sw_19_060_20210920",
+        "me_m_4606947_nw_19_060_20210920",
+        "me_m_4606947_sw_19_060_20210920",
+        "me_m_4606954_ne_19_060_20210920",
+        "me_m_4606955_nw_19_060_20210920",
+        "me_m_4606955_sw_19_060_20210920",
+        "me_m_4706749_nw_19_060_20210920",
+        "me_m_4706757_se_19_060_20210920",
+        "me_m_4706757_sw_19_060_20210920",
+        "me_m_4706758_sw_19_060_20210920",
+        "me_m_4706849_sw_19_060_20210920",
+        "me_m_4706860_se_19_060_20210920",
+        "me_m_4706861_ne_19_060_20210920",
+        "me_m_4706861_nw_19_060_20210920",
+        "me_m_4706861_se_19_060_20210920",
+        "me_m_4706861_sw_19_060_20210920",
+        "me_m_4706862_nw_19_060_20210920",
+        "me_m_4706862_sw_19_060_20210920",
+        "me_m_4706864_ne_19_060_20210920"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "111 of 157 frames read turned; the 46 kept do not"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2021-09-21"
+      },
+      "keep": [
+        "me_m_4606903_ne_19_060_20210921",
+        "me_m_4606903_nw_19_060_20210921",
+        "me_m_4606903_se_19_060_20210921",
+        "me_m_4606910_ne_19_060_20210921",
+        "me_m_4606911_nw_19_060_20210921",
+        "me_m_4606918_ne_19_060_20210921",
+        "me_m_4606918_se_19_060_20210921",
+        "me_m_4606919_ne_19_060_20210921",
+        "me_m_4606919_nw_19_060_20210921",
+        "me_m_4606921_sw_19_060_20210921",
+        "me_m_4606926_ne_19_060_20210921",
+        "me_m_4606926_nw_19_060_20210921",
+        "me_m_4606926_sw_19_060_20210921",
+        "me_m_4606934_ne_19_060_20210921",
+        "me_m_4606934_nw_19_060_20210921",
+        "me_m_4606937_nw_19_060_20210921",
+        "me_m_4606937_se_19_060_20210921",
+        "me_m_4606937_sw_19_060_20210921",
+        "me_m_4606945_ne_19_060_20210921",
+        "me_m_4606945_nw_19_060_20210921",
+        "me_m_4606945_se_19_060_20210921",
+        "me_m_4606953_nw_19_060_20210921",
+        "me_m_4606953_sw_19_060_20210921",
+        "me_m_4606961_se_19_060_20210921",
+        "me_m_4606961_sw_19_060_20210921"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "138 of 163 frames read turned; the 25 kept do not"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2021-09-29"
+      },
+      "keep": ["me_m_4406802_ne_19_060_20210929", "me_m_4506862_se_19_060_20210929"],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "52 of 54 frames read turned; the 2 kept do not"
+    },
+    {
+      "itemId": "me_m_4506801_ne_19_030_20230901_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506801_se_19_030_20230901_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506701_nw_19_030_20230922_20240209",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506702_nw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506709_nw_19_030_20230922_20240209",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506725_sw_19_030_20230922_20240209",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506726_sw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4506733_nw_19_030_20230922_20240209",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606734_sw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606742_ne_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606742_nw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606742_se_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606742_sw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606750_ne_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606750_nw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606750_se_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606750_sw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "me_m_4606758_nw_19_030_20230922_20240103",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2023-09-26"
+      },
+      "keep": [
+        "me_m_4406907_nw_19_030_20230926_20240103",
+        "me_m_4406907_sw_19_030_20230926_20240103",
+        "me_m_4406915_nw_19_030_20230926_20240103",
+        "me_m_4406915_sw_19_030_20230926_20240103",
+        "me_m_4406923_nw_19_030_20230926_20240103",
+        "me_m_4406923_sw_19_030_20230926_20240103",
+        "me_m_4406931_nw_19_030_20230926_20240103",
+        "me_m_4406931_sw_19_030_20230926_20240103",
+        "me_m_4406939_nw_19_030_20230926_20240103",
+        "me_m_4406939_sw_19_030_20230926_20240103",
+        "me_m_4406947_nw_19_030_20230926_20240103",
+        "me_m_4506939_sw_19_030_20230926_20240103",
+        "me_m_4506946_se_19_030_20230926_20240103",
+        "me_m_4506947_nw_19_030_20230926_20240103",
+        "me_m_4506947_sw_19_030_20230926_20240103",
+        "me_m_4506955_nw_19_030_20230926_20240103",
+        "me_m_4506955_sw_19_030_20230926_20240103",
+        "me_m_4506963_nw_19_030_20230926_20240103",
+        "me_m_4506963_sw_19_030_20230926_20240103",
+        "me_m_4606902_ne_19_030_20230926_20240103",
+        "me_m_4606902_se_19_030_20230926_20240103",
+        "me_m_4606903_ne_19_030_20230926_20240103",
+        "me_m_4606903_nw_19_030_20230926_20240103",
+        "me_m_4606903_se_19_030_20230926_20240103",
+        "me_m_4606903_sw_19_030_20230926_20240103",
+        "me_m_4606904_nw_19_030_20230926_20240103",
+        "me_m_4606904_sw_19_030_20230926_20240103",
+        "me_m_4606910_ne_19_030_20230926_20240103",
+        "me_m_4606910_nw_19_030_20230926_20240103",
+        "me_m_4606910_se_19_030_20230926_20240103",
+        "me_m_4606911_nw_19_030_20230926_20240103",
+        "me_m_4606912_ne_19_030_20230926_20240103",
+        "me_m_4606912_nw_19_030_20230926_20240103",
+        "me_m_4606918_ne_19_030_20230926_20240103",
+        "me_m_4606918_se_19_030_20230926_20240103",
+        "me_m_4606919_ne_19_030_20230926_20240103",
+        "me_m_4606919_nw_19_030_20230926_20240103",
+        "me_m_4606919_se_19_030_20230926_20240103",
+        "me_m_4606920_sw_19_030_20230926_20240103",
+        "me_m_4606926_se_19_030_20230926_20240103",
+        "me_m_4606927_ne_19_030_20230926_20240103",
+        "me_m_4606927_se_19_030_20230926_20240103",
+        "me_m_4606928_nw_19_030_20230926_20240103",
+        "me_m_4606928_sw_19_030_20230926_20240103",
+        "me_m_4606934_ne_19_030_20230926_20240103",
+        "me_m_4606935_ne_19_030_20230926_20240103",
+        "me_m_4606936_nw_19_030_20230926_20240103",
+        "me_m_4706952_ne_19_030_20230926_20240103",
+        "me_m_4706952_sw_19_030_20230926_20240103",
+        "me_m_4706959_se_19_030_20230926_20240103",
+        "me_m_4706960_se_19_030_20230926_20240103",
+        "me_m_4706960_sw_19_030_20230926_20240103"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "59 of 111 frames read turned; the 52 kept do not"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2023-09-27"
+      },
+      "keep": [
+        "me_m_4407018_se_19_030_20230927_20240103",
+        "me_m_4407019_ne_19_030_20230927_20240103",
+        "me_m_4407019_se_19_030_20230927_20240103",
+        "me_m_4407020_sw_19_030_20230927_20240103",
+        "me_m_4407025_se_19_030_20230927_20240103",
+        "me_m_4407026_sw_19_030_20230927_20240103",
+        "me_m_4407027_ne_19_030_20230927_20240103",
+        "me_m_4407027_nw_19_030_20230927_20240103",
+        "me_m_4407027_se_19_030_20230927_20240103",
+        "me_m_4407028_se_19_030_20230927_20240103",
+        "me_m_4407028_sw_19_030_20230927_20240103",
+        "me_m_4407033_ne_19_030_20230927_20240103",
+        "me_m_4407033_se_19_030_20230927_20240103",
+        "me_m_4407034_ne_19_030_20230927_20240103",
+        "me_m_4407034_nw_19_030_20230927_20240103",
+        "me_m_4407034_se_19_030_20230927_20240103",
+        "me_m_4407034_sw_19_030_20230927_20240103",
+        "me_m_4407035_ne_19_030_20230927_20240103",
+        "me_m_4407035_nw_19_030_20230927_20240103",
+        "me_m_4407035_se_19_030_20230927_20240103",
+        "me_m_4407035_sw_19_030_20230927_20240103",
+        "me_m_4407036_nw_19_030_20230927_20240103",
+        "me_m_4407041_ne_19_030_20230927_20240103",
+        "me_m_4407042_ne_19_030_20230927_20240103",
+        "me_m_4407042_nw_19_030_20230927_20240103",
+        "me_m_4407043_ne_19_030_20230927_20240103",
+        "me_m_4507156_se_19_030_20230927_20240103"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "87 of 114 frames read turned; the 27 kept do not"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2023-09-28"
+      },
+      "keep": [
+        "me_m_4606817_sw_19_030_20230928_20240103",
+        "me_m_4606825_nw_19_030_20230928_20240103",
+        "me_m_4606825_se_19_030_20230928_20240103",
+        "me_m_4606825_sw_19_030_20230928_20240103",
+        "me_m_4606833_ne_19_030_20230928_20240103",
+        "me_m_4606833_nw_19_030_20230928_20240103",
+        "me_m_4606833_sw_19_030_20230928_20240103",
+        "me_m_4606913_se_19_030_20230928_20240103",
+        "me_m_4606914_se_19_030_20230928_20240103",
+        "me_m_4606914_sw_19_030_20230928_20240103",
+        "me_m_4606921_ne_19_030_20230928_20240103",
+        "me_m_4606921_nw_19_030_20230928_20240103",
+        "me_m_4606921_sw_19_030_20230928_20240103",
+        "me_m_4606922_nw_19_030_20230928_20240103",
+        "me_m_4606922_sw_19_030_20230928_20240103",
+        "me_m_4606923_ne_19_030_20230928_20240103",
+        "me_m_4606923_se_19_030_20230928_20240103",
+        "me_m_4606924_sw_19_030_20230928_20240103",
+        "me_m_4606930_ne_19_030_20230928_20240103",
+        "me_m_4606930_nw_19_030_20230928_20240103",
+        "me_m_4606930_se_19_030_20230928_20240103",
+        "me_m_4606930_sw_19_030_20230928_20240103",
+        "me_m_4606931_ne_19_030_20230928_20240103",
+        "me_m_4606931_se_19_030_20230928_20240103",
+        "me_m_4606931_sw_19_030_20230928_20240103",
+        "me_m_4606932_ne_19_030_20230928_20240103",
+        "me_m_4606932_nw_19_030_20230928_20240103",
+        "me_m_4606932_se_19_030_20230928_20240103",
+        "me_m_4606932_sw_19_030_20230928_20240103",
+        "me_m_4606938_ne_19_030_20230928_20240103",
+        "me_m_4606938_nw_19_030_20230928_20240103",
+        "me_m_4606939_ne_19_030_20230928_20240103",
+        "me_m_4606939_nw_19_030_20230928_20240103",
+        "me_m_4606940_ne_19_030_20230928_20240103",
+        "me_m_4606940_se_19_030_20230928_20240103",
+        "me_m_4606940_sw_19_030_20230928_20240103",
+        "me_m_4706849_nw_19_030_20230928_20240103",
+        "me_m_4706939_ne_19_030_20230928_20240103",
+        "me_m_4706940_nw_19_030_20230928_20240103",
+        "me_m_4706940_se_19_030_20230928_20240103",
+        "me_m_4706945_sw_19_030_20230928_20240103",
+        "me_m_4706946_se_19_030_20230928_20240103",
+        "me_m_4706946_sw_19_030_20230928_20240103",
+        "me_m_4706947_sw_19_030_20230928_20240103",
+        "me_m_4706953_se_19_030_20230928_20240103",
+        "me_m_4706954_nw_19_030_20230928_20240103",
+        "me_m_4706955_ne_19_030_20230928_20240103",
+        "me_m_4706956_ne_19_030_20230928_20240103",
+        "me_m_4706956_sw_19_030_20230928_20240103"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "108 of 157 frames read turned; the 49 kept do not"
+    },
+    {
+      "flight": {
+        "state": "ME",
+        "acquired": "2023-09-30"
+      },
+      "keep": [
+        "me_m_4606939_se_19_030_20230930_20240103",
+        "me_m_4606939_sw_19_030_20230930_20240103",
+        "me_m_4606947_ne_19_030_20230930_20240103"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "37 of 40 frames read turned; the 3 kept do not"
+    },
+    {
+      "itemId": "nh_m_4307125_sw_19_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307232_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307112_se_19_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307128_nw_19_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307222_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407113_sw_19_030_20230917_20231113",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407120_nw_19_030_20230922_20231113",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407128_nw_19_030_20230922_20231113",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "flight": {
+        "state": "NH",
+        "acquired": "2023-09-26"
+      },
+      "keep": [
+        "nh_m_4407113_ne_19_030_20230926_20231113",
+        "nh_m_4407114_nw_19_030_20230926_20231113",
+        "nh_m_4407129_ne_19_030_20230926_20231113",
+        "nh_m_4407137_nw_19_030_20230926_20231113",
+        "nh_m_4407141_se_19_030_20230926_20231113",
+        "nh_m_4407151_sw_19_030_20230926_20231113"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "12 of 18 frames read turned; the 6 kept do not"
+    },
+    {
+      "itemId": "nh_m_4307101_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307102_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307102_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307102_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307109_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307109_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307109_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307110_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307117_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307117_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307117_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307117_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307118_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307118_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307125_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307207_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307208_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307208_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307208_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307215_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307215_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307215_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307215_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307216_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307216_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307216_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307216_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307223_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307223_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307223_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307223_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307224_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307224_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307224_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307231_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307231_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307231_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307231_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307232_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307232_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307232_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307232_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307239_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307239_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307239_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307239_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307240_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307240_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307240_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4307263_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407106_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407106_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407106_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407107_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407107_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407107_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407108_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407108_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407108_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407108_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407111_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407112_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407112_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407112_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407112_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407113_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407114_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407115_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407115_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407115_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407115_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407116_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407116_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407119_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407120_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407120_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407121_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407121_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407122_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407122_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407122_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407123_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407123_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407123_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407123_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407124_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407124_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407128_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407128_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407128_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407129_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407129_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407129_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407129_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407130_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407130_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407130_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407130_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407131_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407131_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407131_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407131_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407132_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407132_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407132_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407132_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407134_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407134_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407135_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407135_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407136_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407137_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407137_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407138_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407138_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407138_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407138_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407139_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407139_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407139_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407139_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407140_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407140_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407141_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407141_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407141_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407142_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407143_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407143_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407143_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407144_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407144_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407144_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407145_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407145_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407145_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407146_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407146_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407146_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407147_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407147_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407148_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407150_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407150_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407151_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407151_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407152_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407153_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407153_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407154_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407155_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407155_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407155_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407156_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407157_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407157_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407158_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407160_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407161_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407248_se_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407248_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407256_ne_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407256_nw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407256_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4407264_sw_18_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507146_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507147_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507147_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507153_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507153_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507154_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507154_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507154_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507155_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507161_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507161_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507161_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507162_ne_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507162_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507162_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507163_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507163_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507163_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507164_nw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507164_se_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "nh_m_4507164_sw_19_060_20250920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207859_sw_17_060_20210902",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307849_nw_17_060_20210902",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207940_sw_17_060_20210907",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207948_nw_17_060_20210907",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "flight": {
+        "state": "NY",
+        "acquired": "2021-09-14"
+      },
+      "keep": ["ny_m_4407303_ne_18_060_20210914", "ny_m_4407345_se_18_060_20210914"],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "5 of 7 frames read turned; the 2 kept do not"
+    },
+    {
+      "itemId": "ny_m_4307406_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307406_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307406_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307407_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307407_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307407_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307407_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307413_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307414_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307414_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307415_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307415_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307415_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307415_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307417_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307418_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307418_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307419_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307419_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307420_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307420_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307420_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307421_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307421_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307422_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307422_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307423_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307423_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307423_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307423_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307426_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307426_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307426_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307427_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307427_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307428_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307428_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307428_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307428_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307430_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307430_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307431_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307431_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307431_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307521_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307522_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307522_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407401_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407401_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407415_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407422_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407422_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407422_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407423_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407423_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407423_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407423_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407425_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407430_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407431_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407431_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407432_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407433_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407437_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407454_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407454_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407455_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407455_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407455_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407455_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407457_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407462_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407462_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407462_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407463_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407463_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407463_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407463_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407464_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407464_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407514_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407529_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407529_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407534_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407547_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407554_se_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407554_sw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407561_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407562_nw_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407654_ne_18_060_20210919",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107408_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207350_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207357_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207357_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207454_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207455_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207456_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4207464_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307325_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307424_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307430_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307430_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307431_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307432_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307432_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307438_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307438_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307438_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307438_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307439_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307439_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307439_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307446_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307446_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307454_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307454_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407655_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007423_se_18_060_20220915",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107350_sw_18_060_20220915",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107351_sw_18_060_20220915",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107455_se_18_060_20220915",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107456_sw_18_060_20220915",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107463_ne_18_060_20220915",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107464_nw_18_060_20220915",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "flight": {
+        "state": "NY",
+        "acquired": "2022-09-24"
+      },
+      "keep": [
+        "ny_m_4407305_ne_18_060_20220924",
+        "ny_m_4407321_se_18_060_20220924",
+        "ny_m_4407329_ne_18_060_20220924",
+        "ny_m_4407345_ne_18_060_20220924",
+        "ny_m_4407417_se_18_060_20220924",
+        "ny_m_4407417_sw_18_060_20220924",
+        "ny_m_4407418_se_18_060_20220924",
+        "ny_m_4407418_sw_18_060_20220924",
+        "ny_m_4407419_se_18_060_20220924",
+        "ny_m_4407419_sw_18_060_20220924",
+        "ny_m_4507361_se_18_060_20220924"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "74 of 85 frames read turned; the 11 kept do not"
+    },
+    {
+      "flight": {
+        "state": "NY",
+        "acquired": "2024-09-12"
+      },
+      "keep": [
+        "ny_m_4207401_ne_18_060_20240912",
+        "ny_m_4207401_nw_18_060_20240912",
+        "ny_m_4207402_ne_18_060_20240912",
+        "ny_m_4207402_nw_18_060_20240912",
+        "ny_m_4207402_se_18_060_20240912",
+        "ny_m_4207403_se_18_060_20240912",
+        "ny_m_4207403_sw_18_060_20240912",
+        "ny_m_4207404_nw_18_060_20240912",
+        "ny_m_4207404_sw_18_060_20240912",
+        "ny_m_4207405_ne_18_060_20240912",
+        "ny_m_4207405_sw_18_060_20240912",
+        "ny_m_4207406_nw_18_060_20240912",
+        "ny_m_4207429_ne_18_060_20240912",
+        "ny_m_4207429_se_18_060_20240912",
+        "ny_m_4207430_nw_18_060_20240912",
+        "ny_m_4207430_sw_18_060_20240912",
+        "ny_m_4207437_ne_18_060_20240912",
+        "ny_m_4207437_se_18_060_20240912",
+        "ny_m_4207437_sw_18_060_20240912",
+        "ny_m_4207438_nw_18_060_20240912",
+        "ny_m_4207438_sw_18_060_20240912",
+        "ny_m_4207445_ne_18_060_20240912",
+        "ny_m_4207445_se_18_060_20240912",
+        "ny_m_4207446_nw_18_060_20240912",
+        "ny_m_4207446_sw_18_060_20240912",
+        "ny_m_4207462_nw_18_060_20240912",
+        "ny_m_4307446_sw_18_060_20240912",
+        "ny_m_4307450_se_18_060_20240912",
+        "ny_m_4307451_sw_18_060_20240912",
+        "ny_m_4307454_nw_18_060_20240912",
+        "ny_m_4307457_ne_18_060_20240912",
+        "ny_m_4307457_nw_18_060_20240912",
+        "ny_m_4307457_se_18_060_20240912",
+        "ny_m_4307457_sw_18_060_20240912",
+        "ny_m_4307458_ne_18_060_20240912",
+        "ny_m_4307458_nw_18_060_20240912",
+        "ny_m_4307458_se_18_060_20240912",
+        "ny_m_4307458_sw_18_060_20240912",
+        "ny_m_4307459_nw_18_060_20240912",
+        "ny_m_4307460_se_18_060_20240912",
+        "ny_m_4307460_sw_18_060_20240912",
+        "ny_m_4307461_ne_18_060_20240912",
+        "ny_m_4307461_se_18_060_20240912",
+        "ny_m_4307461_sw_18_060_20240912",
+        "ny_m_4307462_nw_18_060_20240912",
+        "ny_m_4307462_sw_18_060_20240912",
+        "ny_m_4307564_se_18_060_20240912"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "99 of 146 frames read turned; the 47 kept do not"
+    },
+    {
+      "itemId": "ny_m_4007217_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007304_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007306_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007307_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007310_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007310_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007311_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007311_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007311_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007311_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007312_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007312_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007313_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007313_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007313_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007314_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007314_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007314_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007318_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007318_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007319_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007319_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007320_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007320_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007321_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007321_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007322_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007322_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007323_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007323_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4007324_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107357_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107357_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107423_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107423_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107430_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107430_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107430_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107430_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107431_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107438_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107438_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107438_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107446_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107446_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107446_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107447_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107454_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107454_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107455_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107455_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107455_se_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107455_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107456_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107456_sw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107463_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107463_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107464_ne_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4107464_nw_18_060_20240913",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307504_nw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307507_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307507_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307508_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307508_nw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307508_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307515_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307516_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307516_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307516_sw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307520_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307521_sw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307523_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307524_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307524_nw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307524_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307524_sw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307528_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307529_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307529_nw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307531_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307532_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4307532_nw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407401_sw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407540_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407548_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407549_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407551_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407556_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407556_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407559_sw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407560_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407563_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407563_sw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407564_ne_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407564_se_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "ny_m_4407564_sw_18_060_20240914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "flight": {
+        "state": "NY",
+        "acquired": "2024-09-15"
+      },
+      "keep": [
+        "ny_m_4307406_ne_18_060_20240915",
+        "ny_m_4407409_sw_18_060_20240915",
+        "ny_m_4407410_se_18_060_20240915",
+        "ny_m_4407410_sw_18_060_20240915",
+        "ny_m_4407411_se_18_060_20240915",
+        "ny_m_4407411_sw_18_060_20240915",
+        "ny_m_4407412_se_18_060_20240915",
+        "ny_m_4407412_sw_18_060_20240915",
+        "ny_m_4407413_se_18_060_20240915",
+        "ny_m_4407413_sw_18_060_20240915",
+        "ny_m_4407414_se_18_060_20240915",
+        "ny_m_4407414_sw_18_060_20240915",
+        "ny_m_4407417_ne_18_060_20240915",
+        "ny_m_4407417_se_18_060_20240915",
+        "ny_m_4407417_sw_18_060_20240915",
+        "ny_m_4407418_ne_18_060_20240915",
+        "ny_m_4407418_nw_18_060_20240915",
+        "ny_m_4407418_se_18_060_20240915",
+        "ny_m_4407418_sw_18_060_20240915",
+        "ny_m_4407419_ne_18_060_20240915",
+        "ny_m_4407419_nw_18_060_20240915",
+        "ny_m_4407419_sw_18_060_20240915",
+        "ny_m_4407420_ne_18_060_20240915",
+        "ny_m_4407420_nw_18_060_20240915",
+        "ny_m_4407421_ne_18_060_20240915",
+        "ny_m_4407421_se_18_060_20240915",
+        "ny_m_4407421_sw_18_060_20240915",
+        "ny_m_4407422_ne_18_060_20240915",
+        "ny_m_4407422_nw_18_060_20240915",
+        "ny_m_4407422_se_18_060_20240915",
+        "ny_m_4407422_sw_18_060_20240915",
+        "ny_m_4407425_ne_18_060_20240915",
+        "ny_m_4407425_nw_18_060_20240915",
+        "ny_m_4407426_nw_18_060_20240915",
+        "ny_m_4407429_ne_18_060_20240915",
+        "ny_m_4407429_nw_18_060_20240915",
+        "ny_m_4407429_sw_18_060_20240915",
+        "ny_m_4407430_ne_18_060_20240915",
+        "ny_m_4407430_nw_18_060_20240915",
+        "ny_m_4407430_se_18_060_20240915",
+        "ny_m_4407430_sw_18_060_20240915",
+        "ny_m_4407436_sw_18_060_20240915",
+        "ny_m_4407437_ne_18_060_20240915",
+        "ny_m_4407437_nw_18_060_20240915",
+        "ny_m_4407438_ne_18_060_20240915",
+        "ny_m_4407438_nw_18_060_20240915",
+        "ny_m_4407438_se_18_060_20240915",
+        "ny_m_4407444_nw_18_060_20240915",
+        "ny_m_4407445_ne_18_060_20240915",
+        "ny_m_4407445_se_18_060_20240915",
+        "ny_m_4407445_sw_18_060_20240915",
+        "ny_m_4407446_ne_18_060_20240915",
+        "ny_m_4407446_nw_18_060_20240915",
+        "ny_m_4407446_se_18_060_20240915",
+        "ny_m_4407446_sw_18_060_20240915",
+        "ny_m_4407453_ne_18_060_20240915",
+        "ny_m_4407454_ne_18_060_20240915",
+        "ny_m_4407454_nw_18_060_20240915",
+        "ny_m_4407462_ne_18_060_20240915",
+        "ny_m_4407462_nw_18_060_20240915",
+        "ny_m_4407462_se_18_060_20240915",
+        "ny_m_4407462_sw_18_060_20240915"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "66 of 128 frames read turned; the 62 kept do not"
+    },
+    {
+      "flight": {
+        "state": "NY",
+        "acquired": "2024-09-16"
+      },
+      "keep": [
+        "ny_m_4307303_ne_18_060_20240916",
+        "ny_m_4307303_nw_18_060_20240916",
+        "ny_m_4307303_se_18_060_20240916",
+        "ny_m_4307304_nw_18_060_20240916",
+        "ny_m_4307304_sw_18_060_20240916",
+        "ny_m_4307310_se_18_060_20240916",
+        "ny_m_4307311_ne_18_060_20240916",
+        "ny_m_4307311_nw_18_060_20240916",
+        "ny_m_4307311_se_18_060_20240916",
+        "ny_m_4307311_sw_18_060_20240916",
+        "ny_m_4307312_nw_18_060_20240916",
+        "ny_m_4307312_sw_18_060_20240916",
+        "ny_m_4307318_ne_18_060_20240916",
+        "ny_m_4307318_se_18_060_20240916",
+        "ny_m_4307319_ne_18_060_20240916",
+        "ny_m_4307319_nw_18_060_20240916",
+        "ny_m_4307319_se_18_060_20240916",
+        "ny_m_4307319_sw_18_060_20240916",
+        "ny_m_4307320_nw_18_060_20240916",
+        "ny_m_4307320_sw_18_060_20240916",
+        "ny_m_4307326_ne_18_060_20240916",
+        "ny_m_4307327_ne_18_060_20240916",
+        "ny_m_4307327_nw_18_060_20240916",
+        "ny_m_4307328_ne_18_060_20240916",
+        "ny_m_4307328_nw_18_060_20240916",
+        "ny_m_4407336_sw_18_060_20240916",
+        "ny_m_4407344_nw_18_060_20240916",
+        "ny_m_4407344_sw_18_060_20240916",
+        "ny_m_4407352_nw_18_060_20240916",
+        "ny_m_4407352_se_18_060_20240916",
+        "ny_m_4407352_sw_18_060_20240916",
+        "ny_m_4407359_ne_18_060_20240916",
+        "ny_m_4407359_se_18_060_20240916",
+        "ny_m_4407360_ne_18_060_20240916",
+        "ny_m_4407360_nw_18_060_20240916",
+        "ny_m_4407360_sw_18_060_20240916"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "125 of 161 frames read turned; the 36 kept do not"
+    },
+    {
+      "itemId": "vt_m_4307313_ne_18_060_20210914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307313_se_18_060_20210914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307321_ne_18_060_20210914",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307206_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307206_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307214_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307214_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307218_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307218_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307222_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307225_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307226_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307227_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307229_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307233_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307308_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307308_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307324_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4307332_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407206_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407206_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407214_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407214_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407222_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407222_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407230_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407230_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407238_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407238_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407246_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407246_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407254_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407254_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407262_ne_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407262_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407308_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407324_sw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407348_nw_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4507262_se_18_060_20210920",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407104_sw_19_030_20230922_20231113",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407120_nw_19_030_20230922_20231113",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407126_ne_19_030_20230922_20231113",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "itemId": "vt_m_4407128_nw_19_030_20230922_20231113",
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27"
+    },
+    {
+      "flight": {
+        "state": "VT",
+        "acquired": "2023-09-26"
+      },
+      "keep": [],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "22 of 22 frames read turned; the 0 kept do not"
+    },
+    {
+      "flight": {
+        "state": "VT",
+        "acquired": "2025-09-20"
+      },
+      "keep": [
+        "vt_m_4407101_nw_19_030_20250920",
+        "vt_m_4407105_sw_19_030_20250920",
+        "vt_m_4407117_sw_19_030_20250920",
+        "vt_m_4407125_ne_19_030_20250920",
+        "vt_m_4407125_nw_19_030_20250920",
+        "vt_m_4407207_nw_18_030_20250920",
+        "vt_m_4407208_ne_18_030_20250920",
+        "vt_m_4407208_se_18_030_20250920",
+        "vt_m_4407216_ne_18_030_20250920",
+        "vt_m_4407264_se_18_030_20250920",
+        "vt_m_4507157_se_19_030_20250920",
+        "vt_m_4507157_sw_19_030_20250920",
+        "vt_m_4507158_se_19_030_20250920",
+        "vt_m_4507160_se_19_030_20250920",
+        "vt_m_4507263_sw_18_030_20250920",
+        "vt_m_4507264_se_18_030_20250920",
+        "vt_m_4507264_sw_18_030_20250920"
+      ],
+      "reason": "turned",
+      "reviewedBy": "proposed",
+      "reviewedOn": "2026-11-27",
+      "note": "186 of 203 frames read turned; the 17 kept do not"
+    }
+  ]
+}

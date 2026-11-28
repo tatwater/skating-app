@@ -1,0 +1,8 @@
+# The context `scripts/aerial/Dockerfile` reads, from the repo root: the worker's three scripts and
+# the two bundles `bundle.sh` wrote. Nothing else goes to the builder.
+*
+!scripts/aerial/cut-aerial.sh
+!scripts/aerial/aerial-counts.py
+!scripts/aerial/assemble-aerial.sh
+!scripts/aerial/.scratch/image/tiles-pack.mjs
+!scripts/aerial/.scratch/image/assemble.mjs

@@ -178,6 +178,11 @@ describe('importRuns.start, widened (D341)', () => {
     expect((await getRun(t, await start(t))).listedIn).toBe('corpus');
     expect((await getRun(t, await start(t, { kind: 'lake_depth' }))).listedIn).toBeUndefined();
     expect(listedInOf('corpus_campaign', undefined)).toBe('corpus');
+    // The summer aerial's stages (B05) have no page yet.
+    expect((await getRun(t, await start(t, { kind: 'aerial_tiles' }))).listedIn).toBeUndefined();
+    for (const kind of ['aerial_select', 'aerial_tiles', 'aerial_assemble']) {
+      expect(listedInOf(kind, undefined)).toBeUndefined();
+    }
   });
 
   test("a campaign's pass keeps its parent and pass name, and leaves the list", async () => {

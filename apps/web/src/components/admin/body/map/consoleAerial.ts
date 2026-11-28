@@ -36,8 +36,8 @@ import { rasterAnchor } from './glLayers';
  *   while it is on, the map draws its own lines and words light on dark over a dark ground; the
  *   marks and the chrome on their plates keep the page's theme.
  *
- * NAIP is a summer photograph on a two-to-three-year cycle. It can never show ice, and nothing here
- * says it does: its credit names the program and the month it was flown.
+ * NAIP is a summer photograph on a two-to-three-year cycle. It is never evidence about ice, and
+ * nothing here says otherwise: its credit names the program and the month it was flown.
  */
 
 /**

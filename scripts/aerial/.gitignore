@@ -1,0 +1,5 @@
+# Per-run scratch: manifests, inventories, shards, reports, logs. Disposable and regenerable —
+# except `.scratch/scouts/`, the scouts' catalog snapshot (69,207 items) and picks, copied here so the
+# selection fixture can be cut from it without a fresh walk. Never commit it; never put a SAS token
+# anywhere under it.
+.scratch/

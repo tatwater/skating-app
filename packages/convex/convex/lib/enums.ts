@@ -718,6 +718,12 @@ export const IMPORT_RUN_KINDS = [
   // between passes. Each pass's row points at it (`parentRunId`). Never a load: it is in no list that
   // groups a campaign's loads (`CAMPAIGN_RUN_KINDS`) and invalidates no weather cell.
   'corpus_campaign',
+  // scripts/aerial (B05) — the summer aerial's region-wide NAIP archive, a row per stage of a build,
+  // grouped by its campaign (`naip-<YYYYMMDD>`): the frame rule and manifest, the work tiles cut on
+  // Fly, and the archive's assembly with its date index and verify. None writes a body.
+  'aerial_select',
+  'aerial_tiles',
+  'aerial_assemble',
 ] as const;
 
 /**

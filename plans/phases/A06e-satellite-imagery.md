@@ -37,7 +37,7 @@ with a date on it — and behind it, a season of passes you can scrub through an
 > 2. **The source the plan named cannot do the job the founder wants.** `USGSImageryOnly` caps at
 >    **zoom 16** (~1.7 m/px at our latitude), not the "~0.6 m" the doc and
 >    [`05-accounts-and-credentials.md`](../05-accounts-and-credentials.md) both claimed — and NAIP is
->    **summer aerial photography on a 2–3 year cycle**, so no NAIP frame will ever show ice. See
+>    **summer aerial photography on a 2–3 year cycle**, so no NAIP frame is ever evidence about ice. See
 >    **D147**, and §2 for the 0.3 m endpoint that does exist.
 > 3. **The founder wants a scrubbable timeline of the freeze**, which promotes Workstream 3 from
 >    "gated on evidence" to shipping in the same PR. That brings the phase its own **infrastructure** —
@@ -1411,7 +1411,7 @@ three ways, so the doc was rewritten rather than patched.*
   thing the founder wanted. The cost, accepted: no panning the region in aerial.
 - **The constraint was never really the quota — it's physics (D147).** NAIP is **aerial photography
   flown every 2–3 years in mid-summer**; Burlington's current scene is dated the 2023 summer solstice,
-  so **no NAIP frame will ever show ice.** And the `USGSImageryOnly` service the old doc named caps at
+  so **no NAIP frame is ever evidence about ice.** And the `USGSImageryOnly` service the old doc named caps at
   **z16 (~1.7 m/px here)**, not the "~0.6 m" it and `05-accounts-and-credentials` both claimed.
   **`USGSNAIPPlus` does serve 0.3 m**, keyless, via `exportImage` + MapLibre's `{bbox-epsg-3857}`.
 - **A pressure ridge is 1–3 m wide** — legible at 0.3 m, nonexistent at 10 m. The imagery that would

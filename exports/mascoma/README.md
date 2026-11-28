@@ -107,7 +107,7 @@ Source is the A06e freeze-up archive (`VITE_IMAGERY_ARCHIVE_URL`), season `winte
 **`S2B_18TYP_20251222_0_L2A`** — Sentinel-2B, 2025-12-22T15:50:59Z, 2.9% granule cloud.
 
 **Not NAIP.** The aerial tier is 0.3 m and far sharper, but NAIP is flown mid-summer on a 2–3 year
-cycle for the USDA's crop program, so it can never show ice. Any dated winter frame is Sentinel.
+cycle for the USDA's crop program, so it is never evidence about ice. Any dated winter frame is Sentinel.
 
 **The feather is already in the pixels** — the cutter bakes alpha server-side (`featherMeters: 240`,
 `erosionMeters: 20`, its `feather_proximity` stage). That is `SENTINEL_MASK_METERS` 60/240, *not* the

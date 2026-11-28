@@ -77,7 +77,14 @@ export type ImportRunKind =
    * `scripts/etl/run-corpus.sh`'s own row (D341, B01-8a), opened before its first pass by the
    * campaign CLI and closed with the script's exit status; each pass's row points at it.
    */
-  | 'corpus_campaign';
+  | 'corpus_campaign'
+  // `scripts/aerial` (B05) — the summer aerial's NAIP archive, one kind per stage of a build.
+  /** `select` — the frame rule over the whole catalog, and the build's manifest. */
+  | 'aerial_select'
+  /** `tiles` — the work tiles cut on Fly, each a shard with its done record. */
+  | 'aerial_tiles'
+  /** `assemble` — the archive and its date index written from the shards, then verified. */
+  | 'aerial_assemble';
 
 /**
  * What a run set out to cover (D218): one member of `IMPORT_RUN_SCOPES`

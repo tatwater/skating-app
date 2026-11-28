@@ -78,7 +78,15 @@ describe('passOfRun', () => {
   });
 
   it('is null for a kind that is no pass', () => {
-    for (const kind of ['corpus_campaign', 'dedup_resolve', 'seed_destinations', 'lake_depth']) {
+    for (const kind of [
+      'corpus_campaign',
+      'dedup_resolve',
+      'seed_destinations',
+      'lake_depth',
+      'aerial_select',
+      'aerial_tiles',
+      'aerial_assemble',
+    ]) {
       expect(passOfRun({ kind, label: 'x' })).toBeNull();
     }
   });
