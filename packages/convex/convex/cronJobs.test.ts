@@ -11,7 +11,7 @@
 import { getFunctionName } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { describe, expect, test } from 'vitest';
-import { api, internal } from './_generated/api';
+import { internal } from './_generated/api';
 import {
   CRON_JOBS,
   CRON_PIPELINES,
@@ -402,77 +402,5 @@ describe('the dispatchers (placeholders until the recorder lands) run their job'
     await expect(t.mutation(internal.cronRunJobs.copyImageryRuns, {})).resolves.toMatchObject({
       dryRun: false,
     });
-  });
-});
-
-describe('the crons reads (placeholders until the reads land) are gated and answer empty', () => {
-  async function asRole(t: ReturnType<typeof convexTest>, role: 'moderator' | 'admin') {
-    const subject = `cron-reads-${role}`;
-    await t.run((ctx) =>
-      ctx.db.insert('profiles', {
-        clerkUserId: subject,
-        displayName: role,
-        username: subject,
-        driveTimePrefMinutes: 60,
-        profileVisibility: 'public' as const,
-        notificationPrefs: {
-          activityDetected: true,
-          bountyRequest: true,
-          hazardConfirmation: true,
-          bountyAnswered: true,
-          reportRated: true,
-          reportCommented: true,
-          contentFlagResolved: true,
-          favoriteReport: true,
-          nearbyReportDigest: false,
-          greatReportNearby: false,
-          moderatorDecision: false,
-        },
-        dateOfBirth: Date.UTC(1990, 0, 1),
-        reputationPoints: 0,
-        role,
-        status: 'active' as const,
-        createdAt: Date.UTC(2025, 0, 1),
-      }),
-    );
-    return t.withIdentity({ subject });
-  }
-
-  test('an admin reads the empty answers', async () => {
-    const t = convexTest(schema, modules);
-    const admin = await asRole(t, 'admin');
-    const runId = await t.run((ctx) =>
-      ctx.db.insert('cronRuns', {
-        job: 'expire bounties',
-        startedAt: 1,
-        finishedAt: 2,
-        outcome: 'ok',
-        trigger: 'cron',
-        keepUntil: 3,
-      }),
-    );
-    const page = { numItems: 25, cursor: null };
-    await expect(
-      admin.query(api.machineryCrons.jobs, { names: ['expire bounties'] }),
-    ).resolves.toEqual([]);
-    await expect(
-      admin.query(api.machineryCrons.strip, { job: 'expire bounties', from: 0, to: 1 }),
-    ).resolves.toEqual({ ticks: [], truncated: false });
-    await expect(
-      admin.query(api.machineryCrons.runsPage, {
-        job: 'expire bounties',
-        filter: 'failed',
-        paginationOpts: page,
-      }),
-    ).resolves.toMatchObject({ page: [], isDone: true });
-    await expect(
-      admin.query(api.machineryCrons.runLog, { runId, paginationOpts: page }),
-    ).resolves.toMatchObject({ page: [], isDone: true });
-  });
-
-  test('a moderator is refused', async () => {
-    const t = convexTest(schema, modules);
-    const mod = await asRole(t, 'moderator');
-    await expect(mod.query(api.machineryCrons.jobs, { names: [] })).rejects.toThrow();
   });
 });

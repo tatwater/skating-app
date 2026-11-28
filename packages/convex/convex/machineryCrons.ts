@@ -10,24 +10,41 @@
  * `take(200)`; `runsPage` one `.paginate()` of 25 over `by_job_started` (or, for *Failed*,
  * `by_job_outcome_started`); `runLog` one `.paginate()` of 200 over `by_cron_run_seq`, newest first.
  *
- * PLACEHOLDER (B01-8b seams): the contracts are the seam (the web derives its types from `api`, so
- * the stubs return these shapes); every body is S2's, and each returns the empty answer until then.
+ * Every view carries the entry's `record` mode: a `sparse` cron's strip holds one quiet tick an hour
+ * (what was recorded), and its verdict's *E* is floored at an hour (`cronQuietFloorMs`).
  */
 
-import type { CronLiveness, CronLivenessInput, CronSchedule } from '@skating/core';
+import {
+  type CronLiveness,
+  type CronLivenessInput,
+  type CronSchedule,
+  callerNow,
+  cronLiveness,
+  cronQuietFloorMs,
+  unpackTick,
+} from '@skating/core';
 import { type PaginationResult, paginationOptsValidator } from 'convex/server';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
-import { query } from './_generated/server';
+import { type QueryCtx, query } from './_generated/server';
+import {
+  CRON_JOBS,
+  type CronJobEntry,
+  type CronRecordMode,
+  cronJob,
+  cronScheduleOf,
+} from './cronJobs';
 import { requireCapability } from './lib/auth';
 import { literals } from './lib/validators';
-import type { PersonView, RunEventView } from './machineryRuns';
+import { EVENTS_PAGE_SIZE, type PersonView, type RunEventView } from './machineryRuns';
 
 /** A cron as its card and lane read it. */
 export type CronJobView = {
   job: string;
   title: string;
   pipeline: string;
+  /** How the recorder writes its quiet ticks: a `sparse` strip holds one an hour. */
+  record: CronRecordMode;
   schedule: CronSchedule;
   liveness: CronLiveness;
   /** The rule's inputs, so the web re-reads the verdict on its ticking clock. */
@@ -65,23 +82,162 @@ export type CronTickView = { at: number; code: number; ms: number };
  */
 export const CRON_RUNS_FILTERS = ['all', 'failed'] as const;
 
-/** Every named cron's verdict, in the order asked. */
+// ── Bounds ─────────────────────────────────────────────────────────────────────────────────────
+
+const MINUTE = 60_000;
+const DAY = 24 * 60 * MINUTE;
+/** How far the caller's clock may sit from the server's: one minute, the rounding it sends. */
+const CLOCK_SLACK_MS = MINUTE;
+/** The tick rows one strip reads, newest first. */
+export const STRIP_ROWS = 200;
+/** The ticks one strip returns, newest kept: well under the 8,192-item array cap. */
+export const STRIP_MAX_TICKS = 5_000;
+/** The largest tick bucket (a UTC day): a row starting this long before `from` may hold ticks in it. */
+const MAX_BUCKET_MS = DAY;
+/** The runs list's page. */
+export const RUNS_PAGE_SIZE = 25;
+
+// ── The rule's inputs ─────────────────────────────────────────────────────────────────────────
+
+/**
+ * What core's rule reads for an entry: its heartbeat's three facts and the entry's quiet floor —
+ * the one place a read builds them, so the jobs read, the Overview and the web's clock agree.
+ */
+export function cronLivenessInputOf(
+  entry: Pick<CronJobEntry, 'record'>,
+  hb: Doc<'cronHeartbeats'> | null,
+): CronLivenessInput {
+  const floor = cronQuietFloorMs(entry.record);
+  return {
+    ...(hb?.lastTickAt === undefined ? {} : { lastTickAt: hb.lastTickAt }),
+    ...(hb?.lastOutcome === undefined ? {} : { lastOutcome: hb.lastOutcome }),
+    ...(hb?.runningSince === undefined ? {} : { runningSince: hb.runningSince }),
+    ...(floor > 0 ? { quietFloorMs: floor } : {}),
+  };
+}
+
+/** A cron's heartbeat: one point read (`by_job`). */
+export async function heartbeatOf(
+  ctx: QueryCtx,
+  job: string,
+): Promise<Doc<'cronHeartbeats'> | null> {
+  return await ctx.db
+    .query('cronHeartbeats')
+    .withIndex('by_job', (q) => q.eq('job', job))
+    .first();
+}
+
+/** A cron's name as a title: its registered name, capitalized. */
+const titleOf = (name: string) => name.charAt(0).toUpperCase() + name.slice(1);
+
+/**
+ * The views of the named crons, in the order asked: each registry name once, unknown names dropped,
+ * so the read is at most two point reads (the heartbeat, its last run) per registry entry.
+ */
+export async function cronJobViews(
+  ctx: QueryCtx,
+  names: readonly string[],
+  now: number,
+): Promise<CronJobView[]> {
+  const seen = new Set<string>();
+  const views: CronJobView[] = [];
+  for (const name of names) {
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const entry = cronJob(name);
+    if (entry === null) continue;
+    const hb = await heartbeatOf(ctx, name);
+    const schedule = cronScheduleOf(entry.schedule);
+    const inputs = cronLivenessInputOf(entry, hb);
+    const run = hb?.lastRunId === undefined ? null : await ctx.db.get(hb.lastRunId);
+    views.push({
+      job: name,
+      title: titleOf(name),
+      pipeline: entry.pipeline,
+      record: entry.record,
+      schedule,
+      liveness: cronLiveness(inputs, schedule, now),
+      inputs,
+      lastRun:
+        run === null
+          ? null
+          : {
+              id: run._id,
+              startedAt: run.startedAt,
+              outcome: run.outcome,
+              counts: run.counts ?? null,
+            },
+    });
+  }
+  return views;
+}
+
+async function personOf(ctx: QueryCtx, id: Id<'profiles'>): Promise<PersonView> {
+  const p = await ctx.db.get(id);
+  const gone = p === null || p.status === 'deleted' || p.deletionRequestedAt !== undefined;
+  return { id, name: p?.displayName ?? '', avatarUrl: gone ? null : (p.profileImageUrl ?? null) };
+}
+
+/** Every registry name, in the registry's order (Health's read, later). */
+export const CRON_JOB_NAMES: readonly string[] = CRON_JOBS.map((j) => j.name);
+
+// ── The reads ──────────────────────────────────────────────────────────────────────────────────
+
+/** Every named cron's verdict, in the order asked; a name not in the registry is left out. */
 export const jobs = query({
   args: { names: v.array(v.string()), now: v.optional(v.number()) },
-  handler: async (ctx, _args): Promise<CronJobView[]> => {
+  handler: async (ctx, args): Promise<CronJobView[]> => {
     await requireCapability(ctx, 'machinery.read');
-    // PLACEHOLDER (S2).
-    return [];
+    const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
+    return await cronJobViews(ctx, args.names, now);
   },
 });
 
-/** A cron's ticks between `from` and `to`, oldest first; `truncated` past the read's bound. */
+/**
+ * A cron's ticks between `from` and `to` (inclusive), oldest first. One `by_job_bucket` range,
+ * newest rows first, at most {@link STRIP_ROWS} rows and {@link STRIP_MAX_TICKS} ticks; `truncated`
+ * when either bound cut the oldest off. A `sparse` cron's strip is what was recorded: one quiet
+ * tick an hour, every failure and every tick that worked.
+ */
 export const strip = query({
   args: { job: v.string(), from: v.number(), to: v.number() },
-  handler: async (ctx, _args): Promise<{ ticks: CronTickView[]; truncated: boolean }> => {
+  handler: async (ctx, args): Promise<{ ticks: CronTickView[]; truncated: boolean }> => {
     await requireCapability(ctx, 'machinery.read');
-    // PLACEHOLDER (S2).
-    return { ticks: [], truncated: false };
+    if (!Number.isFinite(args.from) || !Number.isFinite(args.to) || args.to < args.from) {
+      return { ticks: [], truncated: false };
+    }
+    const rows = await ctx.db
+      .query('cronTicks')
+      .withIndex('by_job_bucket', (q) =>
+        q
+          .eq('job', args.job)
+          .gt('bucketStart', args.from - MAX_BUCKET_MS)
+          .lte('bucketStart', args.to),
+      )
+      .order('desc')
+      .take(STRIP_ROWS + 1);
+    let truncated = rows.length > STRIP_ROWS;
+    const newestFirst: CronTickView[] = [];
+    for (const row of rows.slice(0, STRIP_ROWS)) {
+      const inRow: CronTickView[] = [];
+      const n = Math.min(row.ticks.length, row.ms.length);
+      for (let i = 0; i < n; i++) {
+        const { offsetSec, code } = unpackTick(row.ticks[i] as number);
+        const at = row.bucketStart + offsetSec * 1000;
+        if (at < args.from || at > args.to) continue;
+        inRow.push({ at, code, ms: row.ms[i] as number });
+      }
+      inRow.sort((a, b) => b.at - a.at);
+      for (const tick of inRow) {
+        if (newestFirst.length >= STRIP_MAX_TICKS) {
+          truncated = true;
+          break;
+        }
+        newestFirst.push(tick);
+      }
+      if (newestFirst.length >= STRIP_MAX_TICKS) break;
+    }
+    return { ticks: newestFirst.reverse(), truncated };
   },
 });
 
@@ -92,19 +248,68 @@ export const runsPage = query({
     filter: literals(CRON_RUNS_FILTERS),
     paginationOpts: paginationOptsValidator,
   },
-  handler: async (ctx, _args): Promise<PaginationResult<CronRunView>> => {
+  handler: async (ctx, args): Promise<PaginationResult<CronRunView>> => {
     await requireCapability(ctx, 'machinery.read');
-    // PLACEHOLDER (S2).
-    return { page: [], isDone: true, continueCursor: '' };
+    const opts = {
+      ...args.paginationOpts,
+      numItems: Math.max(1, Math.min(RUNS_PAGE_SIZE, args.paginationOpts.numItems)),
+    };
+    const result =
+      args.filter === 'failed'
+        ? await ctx.db
+            .query('cronRuns')
+            .withIndex('by_job_outcome_started', (q) =>
+              q.eq('job', args.job).eq('outcome', 'failed'),
+            )
+            .order('desc')
+            .paginate(opts)
+        : await ctx.db
+            .query('cronRuns')
+            .withIndex('by_job_started', (q) => q.eq('job', args.job))
+            .order('desc')
+            .paginate(opts);
+    const page: CronRunView[] = [];
+    for (const run of result.page) {
+      page.push({
+        id: run._id,
+        job: run.job,
+        startedAt: run.startedAt,
+        finishedAt: run.finishedAt,
+        outcome: run.outcome,
+        trigger: run.trigger,
+        by: run.byUserId === undefined ? null : await personOf(ctx, run.byUserId),
+        season: run.season ?? null,
+        detail: run.detail ?? null,
+        error: run.error ?? null,
+        counts: run.counts ?? null,
+      });
+    }
+    return { ...result, page };
   },
 });
 
 /** A cron run's lines, newest first, 200 a page; the web reverses each page. */
 export const runLog = query({
   args: { runId: v.id('cronRuns'), paginationOpts: paginationOptsValidator },
-  handler: async (ctx, _args): Promise<PaginationResult<RunEventView>> => {
+  handler: async (ctx, args): Promise<PaginationResult<RunEventView>> => {
     await requireCapability(ctx, 'machinery.read');
-    // PLACEHOLDER (S2).
-    return { page: [], isDone: true, continueCursor: '' };
+    const result = await ctx.db
+      .query('runEvents')
+      .withIndex('by_cron_run_seq', (q) => q.eq('cronRunId', args.runId))
+      .order('desc')
+      .paginate({
+        ...args.paginationOpts,
+        numItems: Math.max(1, Math.min(EVENTS_PAGE_SIZE, args.paginationOpts.numItems)),
+      });
+    return {
+      ...result,
+      page: result.page.map((e) => ({
+        seq: e.seq,
+        loggedAt: e.loggedAt,
+        kind: e.kind,
+        text: e.text,
+        dropped: e.dropped ?? null,
+      })),
+    };
   },
 });
