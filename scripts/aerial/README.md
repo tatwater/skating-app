@@ -66,7 +66,7 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 | `tiles` | laptop → Fly `ams` | uploads the manifest and snapshot, writes a unit per work tile, spawns, drains, reconciles by done record, three rounds | `aerial_tiles`, a heartbeat every 25 landed |
 | `assemble` | laptop → one Fly Machine | the streaming PMTiles writer, the overviews (tile zooms 7–10), the date index | `aerial_assemble` |
 | `verify` | laptop | counts, spot reads from the public URL, coverage, dates, seams, the viewer page | `aerial_assemble` (label `verify …`) |
-| `cleanup` | laptop | deletes an old archive: never the newest, never the one the web points at, never before its replacement has been live a week (`--live-since`, below) | — |
+| `cleanup` | laptop | deletes an old archive: never the newest, never the one the web points at, never before its replacement has been live a week (`--live-since`, below); its build prefix first and the archive last, so a cleanup stopped part way finishes on its re-run | — |
 
 `all` is select → tiles → assemble → verify, stopping at the first refusal. **Every argument is
 checked first** (`src/tilesRunArgs.ts`, through the same `parseStageArgs` every stage reads): a
@@ -95,6 +95,33 @@ the record's inputs are the build manifest's — and attaches to a running one �
 assembler. While the campaign's assembler is up, `spawn.sh tiles` re-cuts nothing (a re-cut would
 overwrite the shards it is reading); and a select whose thumbnail reads failed refuses rather than
 decide on them, so running the same command again decides the same build.
+
+**Every stage decides before it writes** (phase doc §2.8). Each is a preflight (`src/preflight.ts`)
+that reads every fact a refusal depends on — the arguments, where its rows go, the variables,
+whether the campaign is published and from what, the bucket's build manifest and record, whether
+its assembler is up (`spawn.sh status <campaign>`, read-only), which work tiles have landed — and a
+body (`src/stage/`) that only carries the plan out. **A refusal has written nothing**: no object, no
+scratch file a later stage reads, no Machine, nothing on its row but the open and the failed close.
+Every refusal has an id (`src/refusals.ts`), and `refusals.test.ts` fails on one without a case.
+While the campaign's assembler is up, `tiles` writes nothing at all (a changed selection is refused
+before its upload, `tiles.assembling`); a published campaign whose build manifest drifted is put
+back by the next `tiles` run once no assembler is up.
+
+**One stage of a campaign at a time.** Each stage takes `.scratch/<campaign>.lock` first and drops it
+when it ends (Ctrl-C included); a second terminal's stage refuses, naming the holder. A lock left by
+a crash is refused as stale — read the run's log, then `rm scripts/aerial/.scratch/<campaign>.lock`.
+It covers this checkout only: never run one campaign's stages from two checkouts or two machines.
+
+**What a re-run can't finish, by hand** (each refused with these words, before any Machine starts):
+
+- *An archive (and index) no manifest names* — an assembly stopped mid-publish: `rclone deletefile`
+  them and assemble again (above).
+- *Published from these inputs but no assembly record* — it stopped in the second between its
+  manifest and its record: verify can't check it, nothing serves it. Delete the three published keys
+  (`for k in .pmtiles -cells.json -manifest.json; do rclone deletefile
+  "r2:$R2_BUCKET/dev/naip/naip-summer-<YYYYMMDD>$k"; done`; a pilot's are under `dev/naip/pilot/<name>/`)
+  and assemble again.
+- *A lock whose process has gone*: above.
 
 **A campaign is published once.** Once its manifest is published, what its archive was built from is
 fixed (core's `naipBuildInputsHash`): re-running a stage with the same inputs finds it done (tiles has

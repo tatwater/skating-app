@@ -684,6 +684,98 @@ pixels.
 range. **"Date unknown" is never a shipped state**: the build won't publish one, and the map never
 draws the layer until its index has loaded.
 
+### §2.8 — Decide before you write (the eighth review)
+
+**The rule.** Every stage decides before it writes. On any refusal path a stage has written
+nothing — not to R2, not to the campaign's scratch files a later stage reads, not a Fly Machine, and
+nothing to its run row beyond opening it and closing it failed. Four review rounds in a row found a
+stage that wrote first and refused after (a manifest, a done record, a shard, a row's terminal
+state); the seventh ("What the build found", the PR's seventh review) was the tiles stage
+uploading a changed selection over the build manifest and only then reaching `spawn.sh`'s
+live-assembler check.
+
+**The shape.** Each stage is a **preflight** (`src/preflight.ts`) and a **body** (`src/stage/`). The
+preflight reads every fact a refusal depends on — the arguments, the campaign's lock, where its
+rows may go, which variables are set, whether the campaign is published and from which inputs, what
+the bucket's build manifest and record say, whether its assembler is up (`spawn.sh status`, the one
+file that knows how Machines are named), which work tiles have landed — through a `ReadView`, a
+world with no way to write, each fact read at most once (`CampaignFacts`); it returns a plan or
+throws a `StageRefusal`. The body carries the plan out. Every refusal has an id (`src/refusals.ts`,
+95 of them); `refusals.test.ts` scans the source so that every refusal constructed names an id from
+the catalog and every id is thrown somewhere, holds `CASES` (typed `Record<RefusalId, …>`, so an id
+without a case fails `check-types`) and runs each case against a world that records every write
+(`stageHarness.ts`), asserting the named refusal, no write beyond the row's open and failed close,
+and the bucket and scratch byte-identical; a property test does the same over random combinations
+of the facts for the tiles and assemble stages, and holds that under a live assembler the build
+manifest never moves. The shell's exits are classified line by line in `tilesScripts.test.ts`: each
+refusal runs against its stand-ins and starts no Machine and writes nothing; `cut-aerial.sh`'s order
+is held structurally (no R2 write before `unput "$DONE_KEY"`).
+
+**Two allowances, named.** The kept walk and the score caches are memos of reads — written once,
+never replaced, read back so a re-run decides the same build (§2.1) — and may be written before a
+select refuses on what it computed from them. A failed check in **verify** is its verdict, not a
+refusal: the report is written (no later stage reads it) and the row closes failed.
+
+**What can't be decided before a write** — races that exist only once something is started:
+
+- **What only the assembler can decide** (a shard's index against its record, the date index's own
+  check, an empty zoom, a copied work tile's counts): the Machine has to be started to read every
+  index. It decides before its first write — no progress object is written until it has (the
+  latest event is held and handed over then) — and on a refusal leaves only its error object, which
+  the laptop relays as `assemble.machine`. Everything a handful of reads can decide is decided on the
+  laptop first (published, orphans, landed, the base), so a Machine is started only for these.
+- **The record that lands** is held to the build manifest again (`finishedAssembly`): an assembler
+  attached to, or one that started from a manifest replaced between the laptop's preflight and its
+  own read, may have built other inputs. Reachable only from a second checkout or machine (the lock
+  covers this one); never exposed — verify refuses it and nothing points the web at an archive verify
+  hasn't passed.
+- **`spawn.sh tiles`' own assembler check** stays, for an assembler started between the preflight's
+  listing and the spawn (from another checkout); it refuses before any `fly machine run`, but after
+  the manifest upload — and the next tiles run, with the published selection, puts a drifted build
+  manifest back (below).
+- **A round's capacity wait past its first batch** fails after some spawns, by design: those Machines
+  land their own shards, and the next round or a re-run (which waits for live work tiles) carries on.
+
+**Writes in order, and what an interruption between two leaves** (each stage takes the campaign's
+lock first and releases it last; a crash leaves it, and every later stage refuses `lock.stale`,
+naming the file to remove):
+
+| Stage | Facts read before any write | Writes, in order | Interrupted between … | Leaves | A re-run |
+| --- | --- | --- | --- | --- | --- |
+| select | args, lock, row target, `R2_BUCKET`, `NAIP_MANIFEST_URL`; then (row open) strikes confirmed, `--cells`, the current manifest checked, the published manifest | lock → row open → [kept walk: state files, `walk.json` last] → [thumbs, score caches] → `manifest.json` → cloud sheet → row close | walk files and `walk.json` | a walk with no record | walks again (a snapshot without its record is none) |
+| | | | manifest and sheet | a manifest with no sheet | decides the same build (kept walk, cached scores) and writes both |
+| | | | sheet and row close | a row left running (no aerial kind is ever called stalled) | opens a new row; the old one stays running — cosmetic |
+| tiles | args, lock, scratch manifest, units (pure), row target, `R2_BUCKET`, published and build manifests, `AERIAL_IMAGE`, Fly (assembler up?), under a live assembler the done records, the snapshot's keys | lock → units → build manifest → snapshot → row open → per round: list file, Machines (each: drop done, pack, index, done) → row close | units and the upload | units for a manifest not yet uploaded | rewrites the units, uploads |
+| | | | the build manifest and the rounds | the bucket naming the new selection, its shards not yet cut | an assemble refuses `assemble.notLanded` before any Machine; tiles cuts what is outstanding |
+| | | | inside a round (the laptop asleep, a lost stage) | Machines still running | waits for live work tiles, never doubles one; reconciles by done record |
+| | | | a Machine's drop and its done record | the work tile outstanding | re-cut by the next round |
+| assemble | args, lock, `R2_BUCKET`, row target, build manifest, record, Fly (assembler up?), the error object's time, published manifest, the publish prefix's listing, the base manifest, the done records | lock → row open → Machine → [Machine, once decided: progress → archive (one multipart upload) → index → manifest → record] → row close | the Machine's start and its archive | at most an unfinished multipart upload (no object) | starts it again (or attaches to it) |
+| | | | archive and index; index and manifest | an archive (and index) no manifest names | refuses `assemble.orphans` before any Machine: delete them by hand (ruling, §2.5), assemble again |
+| | | | manifest and record | a published campaign with no record | refuses `assemble.publishedNoRecord` before any Machine (new: it started a Machine that refused "already assembled"): delete the three published keys by hand, assemble again (README) |
+| | | | the record and the row close | a row left failed or running | takes the record, closes a new row succeeded |
+| verify | args, lock, `R2_PUBLIC_BASE_URL`, row target, `R2_BUCKET` | lock → row open → report → viewer → row close | report files | part of a report | writes it afresh (read-only on R2) |
+| cleanup | args, lock, `R2_BUCKET`, the publish prefix's listing, the web's env files, the plan (every refusal) | lock → old build prefix → old index → old manifest → **old archive last** | any two deletes | the archive and some of the rest | plans again (the archive its refusals read is still there) and deletes the rest — **fixed**: the archive went first, and a re-run then refused `cleanup.absent` with the index, manifest and build prefix left behind |
+| foliage | args, lock; the review and the applied dry run decided | lock → [walk, caches] → applied manifest → its cloud sheet → proposal → review sheet | any two | part of the review | rewrites all four — **fixed**: the proposal and sheet were written before the applied select, whose refusal then left them beside no applied manifest |
+
+**The operator's sequences**, each a test (`operatorSequences.test.ts`):
+
+- **select → tiles → interrupted → select with changed picks → tiles**: the new selection is uploaded
+  and its changed work tiles re-cut; assemble then builds it, and every identity agrees.
+- **The same during assembly** (the seventh review): tiles refuses `tiles.assembling`, the build
+  manifest byte-identical; restoring the selection, tiles has nothing to cut and uploads nothing
+  while the assembler is up; it finishes from what it read, and the record, the published and the
+  build manifests name one build.
+- **The same after publication**: select and tiles refuse `published.otherInputs`, nothing moves.
+- **A build manifest that drifted under a published campaign** (this finding's leftovers, or the race
+  above): the next tiles run with the published selection puts it back — never while the assembler
+  is up — and verify passes again.
+- **Two terminals, one campaign**: the second stage refuses `lock.held`, naming the first; the first
+  finishes and frees the lock.
+- **`--from-current` while its base campaign assembles**: refused `select.fromCurrentUnpublished`
+  (the base's manifest names no archive until it is published), or `select.fromCurrentRead` when
+  the URL doesn't answer yet.
+- **An interrupted cleanup**: the re-run finishes it.
+
 ---
 
 ## §3 — On demand and by cron
@@ -2483,3 +2575,72 @@ Open, for the founder (the three left at the sixth review, read again):
 - **Two pilots on one day** share Machine names; with the guard above, a pilot's assembler now also
   stops the other pilot's tiles stage from spawning (conservative). Pilots are run one at a time;
   not in the plan. Not built.
+
+**The PR's seventh review, and decide before you write (2026-11-27).** Greptile (4/5) on
+`spawn.sh`'s live-assembler check: a refused re-run changes the active build. Real, and reproduced
+(`operatorSequences.test.ts`; `refusals.test.ts`' `tiles.assembling`): re-run select with changed
+picks and then tiles while the campaign's assembler streams, and `cli/tiles.ts` uploaded the new
+manifest over the build key before `spawn.sh` refused; the assembler finished from the one before,
+verify rejected the mismatch, and restoring the selection didn't repair it (tiles saw the matching
+published manifest and uploaded nothing). The last four findings had one shape — a write, then the
+check that refuses — so the fix is the rule and the test of it (§2.8), not one moved line. Nothing
+drawn changed; tiling stays 2.
+
+- **Every stage is a preflight and a body** (§2.8). The tiles stage now reads whether the campaign
+  is published, what the bucket's build manifest names, and whether its assembler is up
+  (`spawn.sh status`, new and read-only) before it writes a unit, a manifest or a Machine; under a
+  live assembler it writes nothing unless the assembler is reading exactly this selection with
+  every work tile landed (then there is nothing to write). A published campaign whose build manifest
+  drifted is put back by the next tiles run, never while the assembler is up.
+- **The inventory, as data**: 95 refusals, each with an id; the scan and the typed table make a new
+  refusal without a case fail the suite. **Before this change, 39 of them broke the rule**: the
+  seventh review's (`spawn.sh`'s live-assembler refusal, after the manifest and snapshot uploads —
+  now two, `tiles.assembling` and `tiles.recutUnderAssembler`) and `spawn.sh`'s can't-list refusal
+  the same way; every tiles refusal after the units were
+  rewritten (the three run-target ones, `R2_BUCKET` and `AERIAL_IMAGE` unset, a published campaign
+  of other inputs, the snapshot's three); every select refusal decided after the walk, which had
+  already beaten the row once a state (the holes, the invariants, `--cells` uncovered, a pick
+  unread, an undatable frame, a published campaign of other inputs, `R2_BUCKET` unset, the four
+  `--from-current` checks, which ran only once the manifest was built); every assemble refusal the
+  Machine decided that the laptop could have — published with or without other inputs, the orphans,
+  a work tile not landed, the manifest's pilot, no work tiles, the base's three — each started a
+  Machine to refuse (the published one now `assemble.publishedNoRecord`); the Machine's own refusals after its first progress write (the date index, an
+  empty archive or zoom, a key that appeared, and the index and copy refusals past the first 25 work
+  tiles); and the foliage review, whose proposal and sheet were written before the applied dry run
+  that could still refuse.
+- **What an interruption leaves** (§2.8's table). Two were unrecoverable by a re-run and are fixed:
+  **cleanup deleted the archive first**, and the archive is what its plan reads, so a cleanup stopped
+  after it refused every re-run (`… is not in the bucket`) with the index, the manifest and the build
+  prefix left — it now deletes the archive last; and **the foliage review's** order, above. One is new
+  as a refusal: an assembly that stopped between its manifest and its record (the sixth review's
+  open item) is refused on the laptop before any Machine, saying to delete the three published keys
+  by hand — the smallest guard that item named. The orphaned archive stays the ruling's by-hand
+  delete.
+- **Two terminals**: nothing was exclusive. Two tiles stages rewrote one units directory under each
+  other's `spawn.sh`, two selects one kept walk; worse, a tiles stage's upload could land while the
+  other terminal's assembler started. Built: **a campaign lock** (`src/campaignLock.ts`), a file
+  created with `O_EXCL` in the scratch root before a stage reads anything, removed when it ends
+  (and on Ctrl-C), naming its holder; a second stage refuses `lock.held`, and one left by a crash
+  refuses `lock.stale` with the path to remove. Its reach is one checkout's scratch — see the open
+  item below.
+- **`--from-current` while its base assembles** is already refused (`select.fromCurrentUnpublished`:
+  the base's manifest names no archive until it is published).
+- **Small changes in what an operator sees**: the select row no longer beats once a state during the
+  walk (its counts arrive with its close); a refused assemble opens no row (it opened one and failed
+  it); every CLI says `refused:` for every refusal (a missing variable said `failed:`); a malformed
+  `--live-since` is refused as `cleanup.liveSinceDay`/`Format`, in the same words, not re-wrapped.
+- **The image must be rebuilt before the next build**: the assembler's progress gating and its
+  earlier key checks are in `assemble.ts`, which the image bundles (as the fifth and sixth reviews'
+  changes already require).
+
+Open, for the founder:
+
+- **The lock's reach.** It lives in the scratch root, so it covers one checkout. Two worktrees of
+  this laptop running one campaign each have their own scratch (their own manifest and lock) and
+  share the bucket. Options: (a) keep it per checkout — a campaign run from two checkouts already
+  diverges in its scratch, and the full build runs from one; (b) move it to one per-user directory
+  (`~/.cache/skating-aerial/locks/`), which covers every checkout on this laptop for one more path
+  outside the repo; (c) a lock in the bucket, which would cover two machines but needs a conditional
+  write `rclone` can't make (R2's `If-None-Match` through `--header-upload` is unverified, and
+  verifying it is an R2 write). Recommendation: (b), a two-line change, if worktrees will ever run
+  stages; otherwise (a) as built.
