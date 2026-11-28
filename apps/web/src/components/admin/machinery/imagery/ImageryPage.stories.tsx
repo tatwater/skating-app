@@ -185,7 +185,7 @@ export const OldImage: Story = {
   play: async ({ canvasElement }) => {
     const detail = detailOf(canvasElement);
     await expect(slot(detail, 'machine-log-note')).toHaveTextContent(
-      'This cutter didn’t keep a log of its own',
+      'The cutter didn’t upload a log of its own',
     );
     await expect(slot(detail, 'machine-log')).toHaveTextContent('from Fly');
     await expect(slot(detail, 'attempt-log')).toHaveTextContent('exit 2');

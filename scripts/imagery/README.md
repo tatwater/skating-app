@@ -640,8 +640,8 @@ reaches it only when that variable changes. Whoever does this tells the founder 
 3. **Pin it:** `convex env set FLY_IMAGE <new ref>` on dev. The pump records the image on its next
    spawn; the next cut's attempt shows its log.
 4. **Roll back** by setting `FLY_IMAGE` to the noted ref. The old image stays in the registry, and the
-   pump runs it unchanged: an image without `cut-log.sh` uploads no log, and its attempts read *This
-   cutter didn't keep a log* while still getting Fly's exit and lines.
+   pump runs it unchanged: an image without `cut-log.sh` uploads no log, and its attempts say the
+   cutter uploaded none while still getting Fly's exit and lines.
 
 The image and the pump can land in either order: a new image under an old pump is passed no
 `CUT_LOG_KEY` and behaves exactly as before; an old image under a new pump just uploads nothing.
