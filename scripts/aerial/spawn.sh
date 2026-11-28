@@ -20,6 +20,11 @@
 #       read-only: the campaign's live Machines, one a line — `assembler`, or `worktile 11/<x>/<y>` —
 #       and exit 0; exit 1 when the app's Machines can't be listed. The stages' preflights read it
 #       (`preflight.ts`) before they write anything, so a refusal starts nothing (B05 §2.8)
+#   spawn.sh drain <campaign>
+#       read-only: returns 0 once none of the campaign's work-tile Machines is up — any selection's,
+#       an earlier run's detached ones included — and 3 if it gave up waiting (a listing that keeps
+#       failing reads as "still up"). The tiles stage runs it before every reconcile, so no work
+#       tile is called landed while a worker may still replace its shard (PR #188's ninth review)
 #
 # **What to cut is decided upstream** (`src/tiles.ts` writes the units, `src/cli/tiles.ts` reconciles
 # by done record and calls this per round), and **how** is the image's (`cut-aerial.sh`). This file is
@@ -83,12 +88,13 @@ usage() {
   echo "usage: spawn.sh tiles <campaign> <units dir> <work tiles file|-> [--drain]" >&2
   echo "       spawn.sh assemble <campaign> [--pilot <name>]" >&2
   echo "       spawn.sh status <campaign>" >&2
+  echo "       spawn.sh drain <campaign>" >&2
   exit 64
 }
 
 MODE="${1:-}"
 CAMPAIGN="${2:-}"
-[[ "$MODE" == tiles || "$MODE" == assemble || "$MODE" == status ]] || usage
+[[ "$MODE" == tiles || "$MODE" == assemble || "$MODE" == status || "$MODE" == drain ]] || usage
 [[ "$CAMPAIGN" =~ ^naip-(pilot-)?[0-9]{8}$ ]] || { echo "spawn.sh: not a campaign: $CAMPAIGN" >&2; usage; }
 STAMP="${CAMPAIGN#naip-}"; STAMP="${STAMP/pilot-/p}"
 
@@ -159,9 +165,19 @@ await_gone() {
   return 1
 }
 
-# --- status: read-only, so no image is needed -----------------------------------------------------
-if [[ "$MODE" == status ]]; then
+# --- status and drain: read-only, so no image is needed -------------------------------------------
+if [[ "$MODE" == status || "$MODE" == drain ]]; then
   (( $# == 2 )) || usage
+fi
+# **Nothing is called landed while a worker may still write.** A worker drops its done record only
+# at the end of its cut, so an earlier selection's worker still running (the laptop lost the stage,
+# then the selection was put back) leaves the old record in place for minutes — and then replaces
+# the pack, the index and the record. The tiles stage waits here before each reconcile.
+if [[ "$MODE" == drain ]]; then
+  await_gone "aerial-${STAMP}-" || exit 3
+  exit 0
+fi
+if [[ "$MODE" == status ]]; then
   if ! running="$(live_names "aerial-")"; then
     echo "[spawn] can't list the app's Machines" >&2
     exit 1

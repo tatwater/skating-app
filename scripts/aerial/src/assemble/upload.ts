@@ -85,6 +85,12 @@ export function rcatSink(target: RcloneTarget, key: string, headers: UploadHeade
       child.stdin.end();
       await exited;
     },
+    // Killed before its stdin ends, `rcat` never completes the upload: a multipart one is left
+    // unfinished (no object; R2 drops it), a short one was only ever in rclone's memory.
+    async abort() {
+      child.kill('SIGKILL');
+      await exited.catch(() => {});
+    },
   };
 }
 

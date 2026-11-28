@@ -505,6 +505,13 @@ export interface RoundsIo {
   readDone: (workTiles: readonly string[]) => Promise<Map<string, ShardDone | null>>;
   /** Spawn these work tiles and return once their Machines have drained. */
   spawn: (workTiles: readonly string[], round: number) => Promise<void>;
+  /**
+   * Wait until none of the campaign's work-tile Machines is up — any selection's, an earlier run's
+   * detached ones included — or throw. Run before every reconcile that decides: a worker drops its
+   * done record only at the end of its cut and then replaces the pack, so a reconcile while one runs
+   * can call a work tile landed on the record it is about to replace (PR #188's ninth review).
+   */
+  settle?: () => Promise<void>;
   /** After each reconcile: what has landed and what is still out. */
   onReconcile?: (round: number, landed: number, outstanding: number) => void;
   /**
@@ -531,7 +538,9 @@ export interface RoundsResult {
 /**
  * Run a set of work units to completion: reconcile, spawn what is outstanding, drain, and again, up
  * to `maxRounds` spawns; then reconcile once more. A round that lands nothing still counts — a work
- * tile that fails three times is reported, never retried forever, and never assumed done.
+ * tile that fails three times is reported, never retried forever, and never assumed done. Every
+ * reconcile waits first for the campaign's live work tiles (`settle`), so what it calls landed is
+ * what the bucket will keep holding.
  */
 export async function runTileRounds(
   campaign: string,
@@ -553,6 +562,7 @@ export async function runTileRounds(
     );
   };
   const reconcile = async (round: number) => {
+    await io.settle?.();
     const result = await status();
     io.onReconcile?.(round, result.landed.length, result.outstanding.length);
     return result;

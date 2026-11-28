@@ -9,7 +9,8 @@
  *    published from these inputs (nothing to cut; a drifted build manifest is put back) or its
  *    assembler is up reading exactly this selection with every work tile landed (nothing to write);
  * 4. opens the `aerial_tiles` row (scope per §2.6) and runs the rounds (`runTileRounds`): what has
- *    landed is read from the done records, the rest spawned by `spawn.sh tiles … --drain`, three
+ *    landed is read from the done records — each read only once none of the campaign's work-tile
+ *    Machines is up (`spawn.sh drain`) — the rest spawned by `spawn.sh tiles … --drain`, three
  *    rounds; a heartbeat every 25 work tiles landed, read every ten minutes while a round runs;
  * 5. closes the row: succeeded only when every work tile landed; otherwise failed, naming them.
  *
@@ -114,6 +115,19 @@ async function tilesBody(args: StageArgs, plan: TilesPlan, world: StageWorld): P
           out.set(w, done);
         }
         return out;
+      },
+      // **Nothing is called landed while a worker of the campaign is up** (PR #188's ninth review):
+      // an earlier selection's worker, detached when the laptop lost its stage, keeps the old done
+      // record until the end of its cut and then replaces the shard. Every reconcile waits for them
+      // first — before the first, so the done records it reads are the ones that stay — and a wait
+      // that gives up fails the stage rather than reporting success over a live worker.
+      async settle() {
+        const status = await world.launch.drain(args.campaign);
+        if (status !== 0) {
+          throw new Error(
+            `spawn.sh drain exited ${status}: ${args.campaign}'s work-tile Machines are still up (or can't be listed), and a worker replaces its shard when it finishes — nothing is called landed while one runs; run the stage again once \`fly machine list --app skating-imagery\` shows none`,
+          );
+        }
       },
       async spawn(workTiles, round) {
         const list = join(paths.dir, `round-${round}.txt`);

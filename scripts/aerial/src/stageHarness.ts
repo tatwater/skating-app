@@ -113,6 +113,16 @@ export class FakeWorld {
   readonly err: string[] = [];
   /** What a round's Machines do (land done records, say); its exit status. */
   onTiles: (campaign: string, unitsDir: string, list: string) => number = () => 0;
+  /**
+   * What happens while the stage waits for the campaign's work-tile Machines to go (`spawn.sh
+   * drain`); its exit status. By default they finish: the listing then names none.
+   */
+  onDrain: (campaign: string) => number = () => {
+    if (!(this.machines instanceof Error)) this.machines = { ...this.machines, workTiles: [] };
+    return 0;
+  };
+  /** How many times a stage waited for the work tiles to drain. */
+  drains = 0;
   /** What the assembler's Machine does before it goes; `spawn.sh assemble`'s exit status. */
   onAssemble: (campaign: string, pilot: string | null) => number = () => 0;
   /** A hook run before each bucket read (a race, in a test). */
@@ -231,6 +241,10 @@ export class FakeWorld {
         tiles: async (campaign, unitsDir, list) => {
           record('fly.tiles', readFileSync(list, 'utf8').trim().split('\n').join(' '));
           return this.onTiles(campaign, unitsDir, list);
+        },
+        drain: async (campaign) => {
+          this.drains++;
+          return this.onDrain(campaign);
         },
         assemble: (campaign, pilot): AssemblerWait => {
           record('fly.assemble', campaign);

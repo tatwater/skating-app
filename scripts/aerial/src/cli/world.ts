@@ -1,6 +1,6 @@
 /**
  * **The real world** (B05 §2.8): the `StageWorld` every stage CLI hands its body — the laptop's
- * rclone remote for R2, `spawn.sh` for Fly (the one file that knows about Fly: `status` to read,
+ * rclone remote for R2, `spawn.sh` for Fly (the one file that knows about Fly: `status` and `drain` to read,
  * `tiles` and `assemble` to start), `convex run` for the rows, this process and the machine's one locks directory for the lock. A process
  * boundary, excluded from coverage by name as the CLIs are; the stages it serves are tested against
  * stand-ins (`stageHarness.ts`). Every value is read by name; nothing here prints one.
@@ -123,6 +123,12 @@ export function realWorld(): StageWorld {
           const child = spawn('bash', [SPAWN, 'tiles', campaign, unitsDir, list, '--drain'], {
             stdio: 'inherit',
           });
+          child.on('error', fail);
+          child.on('close', done);
+        }),
+      drain: (campaign) =>
+        new Promise((done, fail) => {
+          const child = spawn('bash', [SPAWN, 'drain', campaign], { stdio: 'inherit' });
           child.on('error', fail);
           child.on('close', done);
         }),

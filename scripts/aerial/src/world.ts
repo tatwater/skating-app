@@ -70,6 +70,12 @@ export interface Launcher {
   tiles(campaign: string, unitsDir: string, listFile: string): Promise<number | null>;
   /** The assembler (`spawn.sh assemble`), or the one already running, followed. */
   assemble(campaign: string, pilot: string | null): AssemblerWait;
+  /**
+   * Waits until none of the campaign's work-tile Machines is up — an earlier selection's detached
+   * ones too (`spawn.sh drain`); resolves with its exit code (0: none is; 3: it gave up). Starts
+   * nothing: a wait, not a write.
+   */
+  drain(campaign: string): Promise<number | null>;
 }
 
 /** The run row, as far as the stages write it. */

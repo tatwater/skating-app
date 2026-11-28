@@ -231,6 +231,12 @@ interface MachineCase {
   store?: (root: string) => AssembleDeps['store'];
   /** What the Machine runs, if not `assemble` on the manifest. */
   run?: (store: AssembleDeps['store']) => Promise<unknown>;
+  /**
+   * A race the Machine can only see once its stream has begun (`assemble.shardReplaced`): its other
+   * deps (the race's hook), and the bucket keys the race itself writes. Its upload may begin and its
+   * progress be written, but the bucket ends as it was but for the race's keys — nothing published.
+   */
+  race?: { deps: (root: string) => Partial<AssembleDeps>; keys: string[] };
 }
 /** A refusal a stage's arguments refuse first, so only its pure function can show it. */
 interface PureCase {
@@ -850,6 +856,18 @@ const CASES: Record<RefusalId, Case[]> = {
       (w) => assembleLaptop(w),
     ),
   ],
+  'assemble.workTilesRunning': [
+    // **The ninth review's finding**: an earlier selection's workers still up, every work tile's
+    // done record still the build manifest's. No assembler may start beside them.
+    stage(
+      'every work tile landed, but two of its Machines still up',
+      async (w) => {
+        const m = await assembleWorld(w);
+        w.machines = { assembler: false, workTiles: m.workTiles.slice(0, 2).map((x) => x.key) };
+      },
+      (w) => assembleLaptop(w),
+    ),
+  ],
   'assemble.recordNoInputs': [
     stage(
       "the pilot's version-1 record",
@@ -1213,6 +1231,38 @@ const CASES: Record<RefusalId, Case[]> = {
     },
   ],
 
+  'assemble.shardReplaced': [
+    {
+      // **The ninth review's Machine half**: a worker the laptop couldn't see (started from another
+      // machine) re-cuts a work tile while its pack streams. It drops the done record, overwrites the
+      // pack, and lands its own record; the assembler finds the record changed before it completes
+      // the upload, abandons it, and refuses.
+      kind: 'machine',
+      name: 'a work tile re-cut while the archive streams',
+      arrange: async (root) => (await synthetic(root)).manifest,
+      race: {
+        keys: [shardKeys(CAMPAIGN, WORK[1] as (typeof WORK)[number]).done],
+        deps: (root) => {
+          let raced = false;
+          const done = join(root, shardKeys(CAMPAIGN, WORK[1] as (typeof WORK)[number]).done);
+          return {
+            write: {
+              onRun: async () => {
+                if (raced) return;
+                raced = true;
+                const was = JSON.parse(await readFile(done, 'utf8')) as Record<string, unknown>;
+                await writeFile(
+                  done,
+                  JSON.stringify({ ...was, finishedAt: '2026-12-13T00:00:00Z' }),
+                );
+              },
+            },
+          };
+        },
+      },
+    },
+  ],
+
   // ── Cleanup ───────────────────────────────────────────────────────────────────────────────────
   'cleanup.liveSinceDay': [
     clean('a day the calendar lacks', LIVE_NEW, cleanupArgs('--live-since', '2027-02-30')),
@@ -1478,6 +1528,7 @@ describe('every refusal writes nothing', () => {
             progress: (e) => {
               progress.push(e);
             },
+            ...c.race?.deps(root),
           });
         }
       } catch (e) {
@@ -1485,9 +1536,18 @@ describe('every refusal writes nothing', () => {
       }
       expect(caught, `${id} did not refuse`).toBeInstanceOf(StageRefusal);
       expect((caught as StageRefusal).id).toBe(id);
-      expect(uploads).toEqual([]);
-      expect(progress).toEqual([]);
-      expect(diskSnapshot(root)).toEqual(before);
+      if (c.race === undefined) {
+        expect(uploads).toEqual([]);
+        expect(progress).toEqual([]);
+        expect(diskSnapshot(root)).toEqual(before);
+      } else {
+        const raced = (l: string) =>
+          !(c.race as { keys: string[] }).keys.includes(l.split(' ')[0] as string);
+        expect(diskSnapshot(root).filter(raced)).toEqual(before.filter(raced));
+        for (const key of [archiveKey(CAMPAIGN), indexKey(CAMPAIGN), manifestKey(CAMPAIGN)]) {
+          expect(fsSync.existsSync(join(root, key)), key).toBe(false);
+        }
+      }
       return;
     }
     const w = fresh();
@@ -1531,6 +1591,7 @@ describe('any world the tiles and assemble stages refuse in, they leave as they 
     record: fc.constantFrom('none', 'same', 'other', 'v1'),
     assembler: fc.constantFrom('down', 'up', 'unlisted'),
     landed: fc.constantFrom('none', 'all'),
+    workers: fc.boolean(),
     orphan: fc.boolean(),
     bucketDown: fc.boolean(),
     r2Bucket: fc.boolean(),
@@ -1579,7 +1640,10 @@ describe('any world the tiles and assemble stages refuse in, they leave as they 
           w.machines =
             f.assembler === 'unlisted'
               ? new Error('no list')
-              : { assembler: f.assembler === 'up', workTiles: [] };
+              : {
+                  assembler: f.assembler === 'up',
+                  workTiles: f.workers ? [base.workTiles[0]?.key as string] : [],
+                };
           if (!f.r2Bucket) w.env.R2_BUCKET = undefined;
           if (!f.image) w.env.AERIAL_IMAGE = undefined;
           w.deployment = f.deployment === 'dev' ? DEV : f.deployment === 'prod' ? PROD : LOCAL;
@@ -1618,6 +1682,13 @@ describe('any world the tiles and assemble stages refuse in, they leave as they 
           if (f.assembler === 'up') {
             expect(w.objects.get(buildManifestKey(CAMPAIGN))?.text).toBe(buildBefore);
             expect(w.writes.filter((x) => x.kind === 'fly.tiles')).toEqual([]);
+          }
+          // Never an assembler started beside a live worker, nor a tiles run called done over one.
+          if (f.workers && f.assembler === 'down' && f.stage === 'assemble') {
+            expect(w.writes.filter((x) => x.kind === 'fly.assemble')).toEqual([]);
+          }
+          if (w.writes.some((x) => x.kind === 'row.succeed') && f.stage === 'tiles' && f.workers) {
+            expect(w.drains).toBeGreaterThan(0);
           }
           // Never a lock left behind.
           if (f.lock === 'free') expect(fsSync.existsSync(lockPath(w.locks, CAMPAIGN))).toBe(false);

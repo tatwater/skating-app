@@ -16,7 +16,7 @@
 
 import { createHash } from 'node:crypto';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdir, open, stat } from 'node:fs/promises';
+import { mkdir, open, rm, stat } from 'node:fs/promises';
 import { dirname, join, resolve, sep } from 'node:path';
 
 export interface ObjectStore {
@@ -230,6 +230,11 @@ export interface ByteSink {
   write(chunk: Uint8Array): Promise<void>;
   /** Flush and close; resolves once the bytes are durably wherever the sink puts them. */
   end(): Promise<void>;
+  /**
+   * Abandon what was written instead of ending it: nothing is left where `end` would have put it (an
+   * upload never completed, a file removed). A sink without one can't be abandoned.
+   */
+  abort?(): Promise<void>;
 }
 
 /** A local file, created with its directory. */
@@ -241,6 +246,15 @@ export async function fileSink(path: string): Promise<ByteSink> {
     failed = e;
   });
   return {
+    async abort() {
+      if (!stream.closed) {
+        await new Promise<void>((done) => {
+          stream.once('close', () => done());
+          stream.destroy();
+        });
+      }
+      await rm(path, { force: true });
+    },
     write(chunk) {
       if (failed) return Promise.reject(failed);
       return new Promise((done, fail) => {
@@ -267,6 +281,9 @@ export function fileUploads(root: string): (key: string) => ByteSink {
       },
       async end() {
         await (await opened).end();
+      },
+      async abort() {
+        await (await opened).abort?.();
       },
     };
   };
@@ -295,6 +312,9 @@ export function hashingSink(inner: ByteSink): HashingSink {
     async end() {
       await inner.end();
       digest = hash.digest('hex');
+    },
+    async abort() {
+      await inner.abort?.();
     },
     sha256() {
       if (digest === null) throw new Error('the sink has not ended');

@@ -369,6 +369,19 @@ export async function preflightAssemble(args: StageArgs, view: ReadView): Promis
   const live = await facts.machines('assemble.flyUnlisted');
   const stale = await facts.errorAt();
   if (live.assembler) return { kind: 'spawn', attach: true, stale, deployment, target, manifest };
+  // **Never beside a live worker** (PR #188's ninth review). A worker — an earlier selection's,
+  // detached when the laptop lost its tiles stage — keeps its work tile's old done record until
+  // the end of its cut, then replaces the pack, the index and the record; an assembler started now
+  // could take the old record and read the new pack at the old offsets. The tiles stage waits for
+  // every one of them and re-cuts what they replaced; then the done records below mean what they say.
+  if (live.workTiles.length > 0) {
+    const named = live.workTiles.slice(0, 5).join(', ');
+    const more = live.workTiles.length > 5 ? ` and ${live.workTiles.length - 5} more` : '';
+    throw new StageRefusal(
+      'assemble.workTilesRunning',
+      `${live.workTiles.length} of ${args.campaign}'s work-tile Machines are still up (${named}${more}): a worker replaces its work tile's pack, index and done record when it finishes, so an assembly started now could read a pack as it is replaced — nothing was started. Run the tiles stage again (it waits for them, then re-cuts whatever no longer matches the build manifest), then assemble`,
+    );
+  }
 
   // Published, but no record: an assembly that stopped between its manifest and its record (the
   // sixth review's open item), or other inputs. The Machine would refuse either; refused here.

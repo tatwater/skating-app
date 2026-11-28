@@ -105,6 +105,11 @@ export interface WriteOptions {
   /** At most this many runs in flight ahead (default 16). */
   prefetchRuns?: number;
   onRun?: WriteProgress;
+  /**
+   * Asked once every byte has been read and written, before the sink is ended: a throw abandons the
+   * sink (`ByteSink.abort`) and is rethrown — the last chance to refuse what the reads produced.
+   */
+  beforeEnd?: () => Promise<void>;
 }
 
 /** Drop the repeats a run carries, keeping its tiles in order. */
@@ -234,6 +239,14 @@ export async function writeArchive(
     await put(chunk);
     data += chunk.length;
     if (last) await options.onRun?.(data, run);
+  }
+  if (options.beforeEnd !== undefined) {
+    try {
+      await options.beforeEnd();
+    } catch (e) {
+      await sink.abort?.();
+      throw e;
+    }
   }
   await sink.end();
   if (bytes !== plan.bytes) throw new Error(`wrote ${bytes} bytes, the plan says ${plan.bytes}`);

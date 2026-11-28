@@ -86,6 +86,8 @@ export const REFUSALS = {
   'assemble.noManifest': 'no build manifest in the bucket',
   'assemble.flyUnlisted':
     "Fly's Machines can't be listed, so whether the assembler runs can't be told",
+  'assemble.workTilesRunning':
+    'work-tile Machines of the campaign are up, so a pack may be replaced while it is read',
   'assemble.recordNoInputs': 'an assembly record that names no inputs',
   'assemble.recordOtherInputs': 'an assembly record of other inputs than the build manifest',
   'assemble.publishedNoRecord': 'a published campaign with no assembly record',
@@ -108,6 +110,8 @@ export const REFUSALS = {
   'assemble.zoomEmpty': 'an archive zoom with no tile',
   'assemble.orphans': 'an archive or index an earlier assembly left without its manifest',
   'assemble.keyExists': 'a published key already present',
+  'assemble.shardReplaced':
+    'a cut work tile whose done record changed while the assembler read its pack (the Machine, after its stream: the upload abandoned)',
   'assemble.machine':
     "a refusal the Machine made, relayed by the laptop — the one refusal after a write (the Machine), for what only the assembler's own read can decide",
 

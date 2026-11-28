@@ -1072,6 +1072,43 @@ describe('spawn.sh status', () => {
   });
 });
 
+// ── spawn.sh drain ───────────────────────────────────────────────────────────────────────────────
+
+describe('spawn.sh drain', () => {
+  test("returns once the campaign's work tiles have gone — not its assembler's, another campaign's or the pump's — and needs no image", () => {
+    const others = [
+      { name: 'aerial-asm-20261212', state: 'started' },
+      { name: 'aerial-20261213-606-736', state: 'started' },
+      { name: 'granule-s2a-1', state: 'started' },
+    ];
+    const run = spawnSh(['drain', 'naip-20261212'], {
+      env: { AERIAL_IMAGE: '' },
+      lists: [
+        JSON.stringify([{ name: 'aerial-20261212-606-736', state: 'started' }, ...others]),
+        JSON.stringify([{ name: 'aerial-20261212-606-736', state: 'stopping' }, ...others]),
+      ],
+      last: JSON.stringify(others),
+    });
+    expect(run.status).toBe(0);
+    expect(run.calls.filter((c) => c.startsWith('fly machine list'))).toHaveLength(2);
+    expect(run.runs).toEqual([]);
+  });
+
+  test('gives up as 3 on one still up, and reads a listing that keeps failing as still up', () => {
+    const up = spawnSh(['drain', 'naip-20261212'], {
+      last: machine('aerial-20261212-606-736', 'started'),
+      env: { DRAIN_TRIES: '3' },
+    });
+    expect(up.status).toBe(3);
+    expect(up.stderr).toMatch(/still alive — gave up waiting/);
+    const blind = spawnSh(['drain', 'naip-20261212'], {
+      env: { FLY_LIST_FAIL: '1', DRAIN_TRIES: '2' },
+    });
+    expect(blind.status).toBe(3);
+    expect(spawnSh(['drain', 'naip-20261212', 'x']).status).toBe(64);
+  });
+});
+
 // ── Every nonzero exit in the shipped shell, classified (B05 §2.8) ───────────────────────────────
 
 /**
@@ -1163,7 +1200,7 @@ const SHELL_SITES: ShellSite[] = [
   { file: 'spawn.sh', at: '  exit 64\n}', kind: 'definition' },
   {
     file: 'spawn.sh',
-    at: '"$MODE" == status ]] || usage',
+    at: '"$MODE" == drain ]] || usage',
     kind: 'refusal',
     case: () => spawnRun(['nope', 'naip-20261212']),
   },
@@ -1190,6 +1227,18 @@ const SHELL_SITES: ShellSite[] = [
     at: '(( $# == 2 )) || usage',
     kind: 'refusal',
     case: () => spawnRun(['status', 'naip-20261212', 'x']),
+  },
+  {
+    file: 'spawn.sh',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: bash, not a template.
+    at: 'await_gone "aerial-${STAMP}-" || exit 3',
+    kind: 'refusal',
+    // A wait that writes nothing: it gave up while a work tile's Machine was still up.
+    case: () =>
+      spawnRun(['drain', 'naip-20261212'], {
+        last: machine('aerial-20261212-606-736', 'started'),
+        env: { DRAIN_TRIES: '2' },
+      }),
   },
   {
     file: 'spawn.sh',

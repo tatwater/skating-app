@@ -291,6 +291,8 @@ interface WorkTileInput {
   key4: Uint32Array;
   counts: ShardCellCounts;
   copied: boolean;
+  /** The SHA-256 of the done record this work tile was read under (a cut one's), or `null` (copied). */
+  doneSha: string | null;
 }
 
 async function readCut(
@@ -334,6 +336,7 @@ async function readCut(
     key4: new Uint32Array(n * 4),
     counts: record.cellCounts,
     copied: false,
+    doneSha: sha256Hex(doneBytes as Uint8Array),
   };
   index.entries.forEach((e, i) => {
     input.tileId[i] = e.tileId;
@@ -383,6 +386,7 @@ function readCopied(
     key4: new Uint32Array(n * 4),
     counts: prior.cellCounts as ShardCellCounts,
     copied: true,
+    doneSha: null,
   };
   tiles.forEach((t, i) => {
     input.tileId[i] = t.tileId;
@@ -700,6 +704,32 @@ async function run(
   }
 
   // ── 6. Stream the archive, then the index, then the manifest ────────────────────────────────
+  // **A pack replaced while it was read is never published** (PR #188's ninth review). This Machine
+  // can't see Fly: what keeps a worker from re-cutting a work tile under it is the laptop's
+  // preflight (no assembler starts while any of the campaign's work-tile Machines is up) and, after
+  // it, `spawn.sh tiles`' refusal under a live assembler — neither reaches a worker started from
+  // another machine, or one Fly's listing missed. So the reads themselves are checked: a worker
+  // drops its done record before it overwrites the pack and uploads its new record last
+  // (`cut-aerial.sh`), so a pack that changed at any time after step 1 read its record leaves that
+  // record gone or different. Every cut work tile's record is read again once the last pack byte
+  // has been read — before the archive's upload is completed — and any change abandons the upload
+  // (nothing is published) and refuses.
+  const recheck = async (): Promise<void> => {
+    const cut = inputs.filter((i) => i.doneSha !== null);
+    const changed: string[] = [];
+    await mapLimit(cut, concurrency, async (input) => {
+      const now = await deps.store.get(shardKeys(campaign, input.tile, pilot).done);
+      deps.alive?.();
+      if (now === null || sha256Hex(now) !== input.doneSha) changed.push(input.key);
+    });
+    if (changed.length > 0) {
+      changed.sort();
+      refuse(
+        'assemble.shardReplaced',
+        `${changed.length} work tile${changed.length === 1 ? ' was' : 's were'} re-cut while this assembly read ${changed.length === 1 ? 'it' : 'them'} (${changed.slice(0, 5).join(', ')}${changed.length > 5 ? ', …' : ''}: the done record changed under it), so the archive streamed could hold a new pack's bytes at the old offsets — its upload was abandoned and nothing was published. Let the campaign's work tiles finish (run the tiles stage: it waits for them and re-cuts what no longer matches), then assemble again`,
+      );
+    }
+  };
   const sink = hashingSink(
     deps.upload(keys.archive, { contentType: 'application/vnd.pmtiles', cacheControl: IMMUTABLE }),
   );
@@ -718,6 +748,7 @@ async function run(
       }
       await deps.write?.onRun?.(data, run);
     },
+    beforeEnd: recheck,
   });
   lap('write');
   const archive: NaipPublishedObject = { name, bytes: sink.bytes, sha256: sink.sha256() };

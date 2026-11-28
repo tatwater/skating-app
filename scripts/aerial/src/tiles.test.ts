@@ -509,6 +509,44 @@ describe('runTileRounds', () => {
     expect(again).toEqual({ landed: units.map((u) => u.workTile), failed: [], rounds: 0 });
   });
 
+  test('every reconcile waits first for the live work tiles; a wait that gives up decides nothing', async () => {
+    // The ninth review: an earlier selection's worker on 11/2/2 keeps this selection's done record
+    // until the end of its cut, then replaces it with its own. Every work tile has landed as far as
+    // the records say — so only a reconcile after the wait sees that 11/2/2 must be cut again.
+    const dones = new Map(units.map((u) => [u.workTile, done(u.workTile, u.inputHash)]));
+    const order: string[] = [];
+    let workerUp = true;
+    const out = await runTileRounds(CAMPAIGN, units, {
+      settle: async () => {
+        order.push('settle');
+        if (workerUp) dones.set('11/2/2', done('11/2/2', 'h-other-selection'));
+        workerUp = false;
+      },
+      readDone: async (keys) => {
+        order.push('read');
+        return new Map(keys.map((k) => [k, dones.get(k) ?? null] as const));
+      },
+      spawn: async (tiles) => {
+        order.push(`spawn ${tiles.join(',')}`);
+        for (const t of tiles)
+          dones.set(t, done(t, units.find((u) => u.workTile === t)?.inputHash as string));
+      },
+    });
+    expect(order).toEqual(['settle', 'read', 'spawn 11/2/2', 'settle', 'read']);
+    expect(out).toEqual({ landed: units.map((u) => u.workTile), failed: [], rounds: 1 });
+    await expect(
+      runTileRounds(CAMPAIGN, units, {
+        settle: async () => {
+          throw new Error('still up');
+        },
+        readDone: async () => {
+          throw new Error('read before the wait');
+        },
+        spawn: async () => {},
+      }),
+    ).rejects.toThrow('still up');
+  });
+
   test('a long round beats with what has landed so far, and a failed read skips a beat, never the round', async () => {
     vi.useFakeTimers();
     try {
