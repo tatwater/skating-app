@@ -2839,10 +2839,11 @@ test that failed first. Nothing drawn changed; tiling stays 2.
   same way every run: a silent permanent null (a pick cut as partial, a turned frame missing from the
   foliage review). Fixed: a kept thumbnail the decoder refuses (or whose output doesn't parse) is
   dropped and the frame is unreadable, so a re-run reads it afresh; only a fresh read refused is the
-  image's own. Text GDAL might word otherwise (another version) reads as unreadable, never as a
-  permanent null — the safe side. Test: `score.test.ts` (a torn and a garbled kept thumbnail are
-  dropped and unreadable; the re-run fetches and scores both; a fresh read refused is unscored, not
-  unreadable).
+  image's own — and a refused image is never kept (the first cut of this fix kept it, so the next run
+  read it as torn: a pick unreadable every other run, caught by its own test's fourth run). Text GDAL
+  might word otherwise (another version) reads as unreadable, never as a permanent null — the safe
+  side. Test: `score.test.ts` (a torn and a garbled kept thumbnail are dropped and unreadable; the
+  re-run fetches and scores both; a fresh read refused is unscored, not unreadable, on every run).
 - **The tiles stage's wait was silent** (`spawn.sh drain`). Before the first reconcile it can wait
   up to ~90 minutes (`DRAIN_TRIES` × `POLL_SECONDS`) on an earlier selection's workers with nothing
   on the terminal, and its give-up line counted a failing listing as 25 Machines "still alive".

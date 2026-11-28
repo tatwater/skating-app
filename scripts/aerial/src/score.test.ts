@@ -358,13 +358,9 @@ describe('scoreFrames', () => {
       fine: { white: 0, valid: 0.5 },
     });
     expect([...unreadable].sort()).toEqual(['killed', 'lost']);
-    // Every thumbnail was written whole: no part file beside them.
-    expect(readdirSync(thumbsDir).sort()).toEqual([
-      'fine.jpg',
-      'killed.jpg',
-      'lost.jpg',
-      'refused.jpg',
-    ]);
+    // Every thumbnail was written whole: no part file beside them. The one the decoder refused is not
+    // kept (kept, the next run would read it as one an earlier writer tore).
+    expect(readdirSync(thumbsDir).sort()).toEqual(['fine.jpg', 'killed.jpg', 'lost.jpg']);
   });
 });
 
@@ -421,6 +417,11 @@ describe('a kept thumbnail the decoder refuses (PR #188’s tenth review)', () =
     const third = new Set<string>();
     expect(Object.fromEntries(await run(third))).toEqual({ torn: null, garbled: null });
     expect(third.size).toBe(0);
+    // …and stays so on every run after: the refused image is never kept to read as torn next time
+    // (which would make a pick unreadable on every other run, and the same command decide twice).
+    const fourth = new Set<string>();
+    expect(Object.fromEntries(await run(fourth))).toEqual({ torn: null, garbled: null });
+    expect(fourth.size).toBe(0);
   });
 });
 

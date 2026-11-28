@@ -286,11 +286,13 @@ export async function scoreFrames<T>(
     // writer left torn — before thumbnails were written whole, or a crash mid-write — reads as
     // `libjpeg: Premature end of JPEG file` or `not recognized` every time, exactly as a bad image
     // does, and was unscored for good. A kept one the decoder refuses is dropped and the frame is
-    // unreadable, so a re-run reads it afresh; only a fresh read refused is the image's own.
+    // unreadable, so a re-run reads it afresh; only a fresh read refused is the image's own. And a
+    // refused image is never kept, fresh or not: kept, it would read as torn on the next run, and a
+    // pick would be unreadable every other run — the same command deciding two ways.
     const kept = existsSync(jpeg);
     const refusedBy = (e: unknown): null => {
-      if (!kept) return null; // the image's own: the same every run
       rmSync(jpeg, { force: true });
+      if (!kept) return null; // the image's own: the same every run
       throw e;
     };
     if (!kept) {
