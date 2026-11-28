@@ -71,10 +71,25 @@ export type CronRunView = {
   detail: string | null;
   error: string | null;
   counts: Record<string, number> | null;
+  /** How long it ran, or `null` for a mutation job (see {@link durationOf}). */
+  durationMs: number | null;
 };
 
-/** One tick on the strip: when, its outcome's code (core's `CRON_TICK_CODES`), and how long. */
-export type CronTickView = { at: number; code: number; ms: number };
+/**
+ * One tick on the strip: when, its outcome's code (core's `CRON_TICK_CODES`), and how long — `null`
+ * for a mutation job (see {@link durationOf}).
+ */
+export type CronTickView = { at: number; code: number; ms: number | null };
+
+/**
+ * A recorded duration as the reads send it. **A mutation job's is always 0 ms as stored** —
+ * `Date.now()` is frozen for the whole of a mutation, the nested job's included — so it is `null`
+ * here (not measured), never a real 0. An action job's is its measured time. A job no longer in the
+ * registry keeps what was stored.
+ */
+export function durationOf(job: string, ms: number): number | null {
+  return cronJob(job)?.kind === 'mutation' ? null : ms;
+}
 
 /**
  * The runs list's filter: every run, or the failed ones (`by_job_outcome_started` at `failed`, a
@@ -225,7 +240,7 @@ export const strip = query({
         const { offsetSec, code } = unpackTick(row.ticks[i] as number);
         const at = row.bucketStart + offsetSec * 1000;
         if (at < args.from || at > args.to) continue;
-        inRow.push({ at, code, ms: row.ms[i] as number });
+        inRow.push({ at, code, ms: durationOf(args.job, row.ms[i] as number) });
       }
       inRow.sort((a, b) => b.at - a.at);
       for (const tick of inRow) {
@@ -282,6 +297,7 @@ export const runsPage = query({
         detail: run.detail ?? null,
         error: run.error ?? null,
         counts: run.counts ?? null,
+        durationMs: durationOf(run.job, run.finishedAt - run.startedAt),
       });
     }
     return { ...result, page };

@@ -2739,9 +2739,16 @@ describe('machinery.overviewJobs', () => {
       // Began and never finished, past the action limit: it needs a look.
       {
         name: 'killed',
-        hb: { lastTickAt: NOW - 20 * MINUTE, lastOutcome: 'ok', runningSince: NOW - 15 * MINUTE },
+        hb: { lastTickAt: NOW - 45 * MINUTE, lastOutcome: 'ok', runningSince: NOW - 40 * MINUTE },
         state: 'failed',
-        at: NOW - 15 * MINUTE,
+        at: NOW - 40 * MINUTE,
+      },
+      // Inside the measured 30-minute action limit, a long tick is still running, never killed.
+      {
+        name: 'running long',
+        hb: { lastTickAt: NOW - 25 * MINUTE, lastOutcome: 'ok', runningSince: NOW - 20 * MINUTE },
+        state: 'running',
+        at: NOW - 20 * MINUTE,
       },
       {
         name: 'a killed tick recorded',
@@ -2765,6 +2772,75 @@ describe('machinery.overviewJobs', () => {
       expect(view.liveness).toEqual(cronLiveness(view.inputs, view.schedule, NOW));
       expect([c.name, cronJobState(view.liveness, view.lastRun)]).toEqual([c.name, row?.state]);
     }
+  });
+
+  test('a failed run stays failed through the quiet ticks after it, until a later run', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    const pumpState = async () =>
+      (await admin.as.query(api.machinery.overviewJobs, { now: NOW }))?.jobs.find(
+        (j) => j.id === 'imagery-pump',
+      )?.state;
+    for (const outcome of ['failed', 'killed'] as const) {
+      // The pump failed nine minutes ago and has ticked quietly since (backing off): failed.
+      const bad = await cronRun(t, PUMP_JOB, outcome, NOW - 9 * MINUTE);
+      await beat(t, PUMP_JOB, { lastTickAt: NOW - MINUTE, lastOutcome: 'ok', lastRunId: bad });
+      expect([outcome, await pumpState()]).toEqual([outcome, 'failed']);
+      // A run that worked since supersedes it.
+      const good = await cronRun(t, PUMP_JOB, 'ok', NOW - 2 * MINUTE);
+      await beat(t, PUMP_JOB, { lastTickAt: NOW - MINUTE, lastOutcome: 'ok', lastRunId: good });
+      expect([outcome, await pumpState()]).toEqual([outcome, 'ok']);
+    }
+  });
+
+  test('the heartbeats cover what the old owed-since rule guarded', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
+        season: 'winter-2026-27',
+        opensOn: '2026-10-03',
+        openedBy: ['corpus'],
+        winterFrom: '2026-11-05',
+        imageryStartedAt: NOW - 10 * DAY,
+        sitesSampled: 3,
+        detectedAt: NOW - 40 * DAY,
+      }),
+    );
+    const pumpState = async (now: number) =>
+      (await admin.as.query(api.machinery.overviewJobs, { now }))?.jobs.find(
+        (j) => j.id === 'imagery-pump',
+      )?.state;
+    // A quiet pump with nothing to do ticks every three minutes, each tick recorded (`every`):
+    // hours since its last run that did work, it is on its schedule, never a fault.
+    const lastWork = await cronRun(t, PUMP_JOB, 'ok', NOW - 5 * HOUR);
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 2 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: lastWork,
+    });
+    expect(await pumpState(NOW)).toBe('ok');
+    // A pump that is not running while granules wait has stopped ticking: late, then stalled.
+    await t.run((ctx) =>
+      ctx.db.insert('imageryGranules', {
+        season: 'winter-2026-27',
+        granuleId: 'S2A_19TEA_20261005_0_L2A',
+        mission: 's2',
+        slot: '19TEA:20261005',
+        capturedAt: '2026-10-05T15:00:00Z',
+        status: 'queued',
+        attempts: 0,
+        queuedAt: NOW - HOUR,
+      }),
+    );
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 7 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: lastWork,
+    });
+    expect(await pumpState(NOW)).toBe('late');
+    await beat(t, PUMP_JOB, { lastTickAt: NOW - HOUR, lastOutcome: 'ok', lastRunId: lastWork });
+    expect(await pumpState(NOW)).toBe('stalled');
   });
 
   test('right after the deploy that began recording: not yet ticked is quiet, never red or ok', async () => {

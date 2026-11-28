@@ -26,6 +26,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { CRON_JOBS, cronPeriodMs, FREQUENT_CRON_RECORD } from './cronJobs';
+import { TICK_ROW_MAX } from './cronRuns';
 import { CRON_JOB_NAMES, RUNS_PAGE_SIZE, STRIP_MAX_TICKS, STRIP_ROWS } from './machineryCrons';
 import { EVENTS_PAGE_SIZE } from './machineryRuns';
 import schema from './schema';
@@ -121,7 +122,7 @@ async function seedTicks(t: T, job: string, ticks: { at: number; code: number; m
     const row = rows.get(start) ?? { ticks: [], ms: [] };
     row.ticks.push(packTick((tick.at - start) / 1000, tick.code));
     row.ms.push(tick.ms ?? 40);
-    if (row.ticks.length > 60) throw new Error('a tick row holds at most 60');
+    if (row.ticks.length > TICK_ROW_MAX) throw new Error('a tick row holds at most TICK_ROW_MAX');
     rows.set(start, row);
   }
   await t.run(async (ctx) => {
@@ -209,16 +210,17 @@ describe('jobs', () => {
     });
     // late: the index quiet for 25 minutes (2E is 20).
     await seedHeartbeat(t, INDEX, { lastTickAt: NOW - 25 * MINUTE, lastOutcome: 'ok' });
-    // running: the hazard refresh began 5 minutes ago; killed: the geometry began 20 minutes ago.
+    // running: the hazard refresh began 5 minutes ago; killed: the geometry began 40 minutes ago,
+    // past the measured 30-minute action limit and its minute.
     await seedHeartbeat(t, 'refresh hazard weather', {
       lastTickAt: NOW - HOUR,
       lastOutcome: 'ok',
       runningSince: NOW - 5 * MINUTE,
     });
     await seedHeartbeat(t, 'compute body geometry facts', {
-      lastTickAt: NOW - 25 * MINUTE,
+      lastTickAt: NOW - 45 * MINUTE,
       lastOutcome: 'ok',
-      runningSince: NOW - 20 * MINUTE,
+      runningSince: NOW - 40 * MINUTE,
     });
     // stalled: the bounty expiry quiet for three days (10E is 60 hours).
     await seedHeartbeat(t, 'expire bounties', { lastTickAt: NOW - 3 * DAY, lastOutcome: 'worked' });
@@ -303,6 +305,63 @@ describe('jobs', () => {
 });
 
 describe('strip', () => {
+  test('a mutation job’s durations are null (its clock is frozen), never a real 0 ms', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    const FLUSH = 'flush notification queue';
+    expect(CRON_JOBS.find((j) => j.name === FLUSH)?.kind).toBe('mutation');
+    await seedTicks(t, FLUSH, [
+      { at: NOW - 30 * MINUTE, code: 0, ms: 0 },
+      { at: NOW - 10 * MINUTE, code: CRON_TICK_CODES.failed, ms: 0 },
+    ]);
+    const strip = await as.query(api.machineryCrons.strip, {
+      job: FLUSH,
+      from: NOW - HOUR,
+      to: NOW,
+    });
+    expect(strip.ticks.map((k) => k.ms)).toEqual([null, null]);
+    await seedRun(t, FLUSH, {
+      startedAt: NOW - MINUTE,
+      finishedAt: NOW - MINUTE,
+      outcome: 'failed',
+    });
+    const runs = await as.query(api.machineryCrons.runsPage, {
+      job: FLUSH,
+      filter: 'all',
+      paginationOpts: page(25),
+    });
+    expect(runs.page.map((r) => r.durationMs)).toEqual([null]);
+  });
+
+  test('a row written out of order, at the recorder’s cap, reads oldest first', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    // A pump hour holding TICK_ROW_MAX ticks (manual presses beside the cron's), stored newest first.
+    const bucketStart = cronTickBucketStart(NOW - HOUR, HOUR);
+    const ats = Array.from(
+      { length: TICK_ROW_MAX },
+      (_, i) => bucketStart + (TICK_ROW_MAX - i) * 10_000,
+    );
+    await t.run((ctx) =>
+      ctx.db.insert('cronTicks', {
+        job: PUMP,
+        bucketStart,
+        bucketMs: HOUR,
+        ticks: ats.map((at) => packTick((at - bucketStart) / 1000, 0)),
+        ms: ats.map(() => 7),
+        keepUntil: NOW + 35 * DAY,
+      }),
+    );
+    const strip = await as.query(api.machineryCrons.strip, {
+      job: PUMP,
+      from: bucketStart,
+      to: bucketStart + HOUR,
+    });
+    expect(strip.ticks).toHaveLength(TICK_ROW_MAX);
+    expect(strip.ticks.map((k) => k.at)).toEqual([...ats].sort((a, b) => a - b));
+    expect(new Set(strip.ticks.map((k) => k.ms))).toEqual(new Set([7]));
+  });
+
   test('the pump’s ticks over twelve hours, oldest first, unpacked, nothing outside the range', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');
@@ -460,6 +519,7 @@ describe('runsPage', () => {
       detail: 'Started 2 cuts',
       error: null,
       counts: null,
+      durationMs: 5_000,
     });
     expect(first.page[1]).toMatchObject({ by: null, trigger: 'cron', counts: { landed: 29 } });
     const second = await as.query(api.machineryCrons.runsPage, {

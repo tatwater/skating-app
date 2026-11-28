@@ -44,6 +44,19 @@ export interface CronReport {
 }
 
 /**
+ * **A thrown error that carries its run's report** — for an action job that fails but has more to
+ * say than its message (the imagery pump's *backing off 30 minutes*): the dispatcher records the
+ * tick failed with the error's message, and keeps the report's detail, season and counts on the run
+ * row. A thrown value that isn't an `Error` is wrapped in one. (A mutation job's thrown error crosses
+ * a transaction boundary, which keeps only its message, so this is for action jobs.)
+ */
+export function withCronReport(error: unknown, report: CronReport): Error {
+  const e = error instanceof Error ? error : new Error(String(error));
+  (e as Error & { cronReport?: CronReport }).cronReport = report;
+  return e;
+}
+
+/**
  * A tick's outcome as a code, packed into the low three bits of a tick (`refused` is a run's, drawn
  * on the strip). Held in step with the Convex package's `CRON_OUTCOMES` by a guard.
  */

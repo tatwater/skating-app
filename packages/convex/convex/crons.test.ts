@@ -7,7 +7,12 @@
  * are the real ones. Reads no repo file (it imports modules), so it stays in the cached suite.
  */
 
-import { CRON_TICK_CODES, unpackTick } from '@skating/core';
+import {
+  CONVEX_ACTION_LIMIT_MS,
+  CRON_KILLED_AFTER_MS,
+  CRON_TICK_CODES,
+  unpackTick,
+} from '@skating/core';
 import { type FunctionReference, getFunctionName, makeFunctionReference } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
@@ -25,7 +30,6 @@ import {
 import { COPY_PAGE, PRUNE_PAGE } from './cronRunJobs';
 import {
   bucketMsOf,
-  KILLED_AFTER_MS,
   RECORDER_RESERVE,
   readReport,
   recorder,
@@ -655,7 +659,10 @@ describe('an action job', () => {
     const t = convexTest(schema, probeModules);
     const err = quiet();
     await t.run((ctx) =>
-      ctx.db.insert('cronHeartbeats', { job: 'a worked', runningSince: T0 - KILLED_AFTER_MS - 1 }),
+      ctx.db.insert('cronHeartbeats', {
+        job: 'a worked',
+        runningSince: T0 - CRON_KILLED_AFTER_MS - 1,
+      }),
     );
     // begin records the stale kill through the recorder; that write fails, so begin throws.
     vi.spyOn(recorder, 'recordTick').mockRejectedValueOnce(new Error('recorder down'));
@@ -669,12 +676,17 @@ describe('a killed action', () => {
   test('the next begin records a stale runningSince as killed, then runs', async () => {
     const t = convexTest(schema, probeModules);
     quiet();
-    const since = T0 - KILLED_AFTER_MS - 1;
+    const since = T0 - CRON_KILLED_AFTER_MS - 1;
     await t.run((ctx) => ctx.db.insert('cronHeartbeats', { job: 'a quiet', runningSince: since }));
     await tickA(t, 'a quiet');
     const s = await all(t);
     expect(s.runs).toEqual([
-      expect.objectContaining({ outcome: 'killed', startedAt: since, trigger: 'cron' }),
+      expect.objectContaining({
+        outcome: 'killed',
+        startedAt: since,
+        finishedAt: since + CONVEX_ACTION_LIMIT_MS,
+        trigger: 'cron',
+      }),
     ]);
     expect((await ticksOf(t, 'a quiet')).map((x) => x.code).sort()).toEqual([
       CRON_TICK_CODES.ok,
@@ -686,9 +698,25 @@ describe('a killed action', () => {
     expect(hb?.runningSince).toBeUndefined();
   });
 
+  test('the measured limit: a run 11 to 31 minutes old is still live, never recorded killed', async () => {
+    expect(CRON_KILLED_AFTER_MS).toBe(31 * 60_000);
+    for (const ageMin of [11, 20, 30, 31]) {
+      const t = convexTest(schema, probeModules);
+      quiet();
+      const since = T0 - ageMin * 60_000;
+      await t.run((ctx) =>
+        ctx.db.insert('cronHeartbeats', { job: 'a quiet', runningSince: since }),
+      );
+      await tickA(t, 'a quiet');
+      const s = await all(t);
+      expect(s.runs.filter((r) => r.outcome === 'killed')).toEqual([]);
+      expect((await heartbeat(t, 'a quiet'))?.lastFailedAt).toBeUndefined();
+    }
+  });
+
   test('a young runningSince is overwritten, never read as killed; its own finish leaves the newer stamp', async () => {
     const t = convexTest(schema, probeModules);
-    const since = T0 - KILLED_AFTER_MS;
+    const since = T0 - CRON_KILLED_AFTER_MS;
     await t.run((ctx) => ctx.db.insert('cronHeartbeats', { job: 'a quiet', runningSince: since }));
     await t.mutation(internal.cronRuns.begin, { job: 'a quiet', startedAt: T0 });
     expect((await heartbeat(t, 'a quiet'))?.runningSince).toBe(T0);

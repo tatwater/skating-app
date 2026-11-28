@@ -121,7 +121,11 @@ describe('cronLiveness, by hand', () => {
       state: 'killed',
       since: since - 1,
     });
-    expect(CRON_KILLED_AFTER_MS).toBe(11 * MINUTE);
+    expect(CRON_KILLED_AFTER_MS).toBe(31 * MINUTE);
+    // A live action may run the measured 30 minutes: never killed inside them, nor the minute after.
+    for (const d of [10 * MINUTE + 1, 29 * MINUTE, 30 * MINUTE, 31 * MINUTE]) {
+      expect(cronLiveness({ runningSince: NOW - d }, PUMP, NOW).state).toBe('running');
+    }
     // A begin after the last tick is the run; one older than it was never cleared, so isn't.
     const hb = { lastTickAt: NOW - 2 * MINUTE, lastOutcome: 'ok' as const };
     expect(cronLiveness({ ...hb, runningSince: NOW - MINUTE }, PUMP, NOW).state).toBe('running');

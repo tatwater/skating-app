@@ -65,6 +65,7 @@ import {
   selectSarGranules,
   stacDayRange,
   tileSurveyKey,
+  withCronReport,
 } from '@skating/core';
 import { v } from 'convex/values';
 
@@ -614,8 +615,7 @@ export function slotOf(granuleId: string): { slot: string; mission: StacMission 
 const pollArgs = {};
 
 /**
- *
- * (Its body is exported as `pollHandler`, so the cron dispatcher runs it in-process:
+ * The poll's cron body. (Exported as `pollHandler`, so the cron dispatcher runs it in-process:
  * `cronRuns.tickAction`, D347.)
  */
 export async function pollHandler(ctx: ActionCtx): Promise<PollResult> {
@@ -909,8 +909,7 @@ interface RunOutcome {
 const pumpArgs = {};
 
 /**
- *
- * (Its body is exported as `pumpHandler`, so the cron dispatcher runs it in-process:
+ * The pump's cron body. (Exported as `pumpHandler`, so the cron dispatcher runs it in-process:
  * `cronRuns.tickAction`, D347.)
  */
 export async function pumpHandler(
@@ -941,7 +940,13 @@ export async function pumpHandler(
       problem: 'The imagery pump hit an error',
       detail: `${detail}. It backs off for half an hour and tries again.`,
     });
-    throw error;
+    // The run row keeps what the Seasons panel showed before the backbone: that it backs off.
+    throw withCronReport(error, {
+      worked: true,
+      outcome: 'failed',
+      season,
+      detail: `threw: ${detail} — backing off 30 minutes unless an admin says try again`,
+    });
   } finally {
     await ctx.runMutation(internal.imageryLive.end, { key: 'pump', token, ...outcome });
   }

@@ -104,9 +104,12 @@ export const IMAGERY_CARD_JOBS = [
 
 /**
  * A cron's card state, from core's verdict — the one Machinery's cron cards draw, so the two can't
- * disagree. A tick killed mid-run is failed (it needs a look); one that ran on time but whose last
- * run a machine host turned down (the pump backing off) reads retried, as it did before the
- * backbone; `never` is a cron with no tick recorded yet — right after the deploy that began
+ * disagree on lateness. A tick killed mid-run is failed (it needs a look). On time, the card also
+ * reads the cron's **last run** (the newest tick that did work or failed, `lastRunId`), as it read
+ * the newest `imageryRuns` row before the backbone: a run that failed or was killed stays failed
+ * until a later run supersedes it — so the pump's failure doesn't flip to ok on the quiet tick three
+ * minutes on, while it backs off for half an hour — and one a machine host turned down (the pump
+ * backing off) reads retried. `never` is a cron with no tick recorded yet — right after the deploy that began
  * recording, before its first tick (the pump's within three minutes, the poll's within six hours,
  * whether or not the history copy has run) — which the card draws quiet, with no time, never red,
  * and never counts as ok.
@@ -116,6 +119,7 @@ export function cronJobState(liveness: CronLiveness, lastRun: CronJobView['lastR
     case 'killed':
       return 'failed';
     case 'ok':
+      if (lastRun?.outcome === 'failed' || lastRun?.outcome === 'killed') return 'failed';
       return lastRun?.outcome === 'refused' ? 'retried' : 'ok';
     default:
       return liveness.state;

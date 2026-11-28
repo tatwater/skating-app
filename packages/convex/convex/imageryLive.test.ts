@@ -762,6 +762,30 @@ describe('pump — starting cuts', () => {
     });
   });
 
+  test('through the dispatcher, a throw keeps its run’s detail: it backs off', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t);
+    await queue(t, [s2('19TEA', '20261005')]);
+    await t.run(async (ctx) => {
+      await ctx.db.insert('dailyThrottle', { key: 'imagery-fly', lastOn: '2000-01-01' });
+      await ctx.db.insert('dailyThrottle', { key: 'imagery-fly', lastOn: '2000-01-01' });
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 401 })),
+    );
+    await expect(
+      t.action(internal.cronRuns.tickAction, { job: IMAGERY_CRON_JOBS.pump }),
+    ).rejects.toThrow();
+    const [run] = await runs(t);
+    expect(run).toMatchObject({ kind: 'pump', outcome: 'failed', season: expect.any(String) });
+    expect(run?.detail).toMatch(
+      /^threw: .+ — backing off 30 minutes unless an admin says try again$/s,
+    );
+    expect(run?.error).toBeTruthy();
+    expect(run?.detail).toContain(run?.error as string);
+  });
+
   test('does nothing without credentials', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);

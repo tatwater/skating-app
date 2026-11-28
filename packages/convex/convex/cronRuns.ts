@@ -23,8 +23,9 @@
  *   and the outer transaction commits with the job's writes (a nested transaction commits only with
  *   its parent, so rethrowing would undo the job's work). That tick is then unrecorded, or partly
  *   recorded: the recorder's own rows only, never anything of the job's.
- * - *An action job throws*: `finish` records it `failed`, then the dispatcher rethrows, so Convex's
- *   own log of the cron says failed too. An action's writes are each their own transaction, kept.
+ * - *An action job throws*: `finish` records it `failed` (with the report its error carries, if any:
+ *   core's `withCronReport`), then the dispatcher rethrows, so Convex's own log of the cron says
+ *   failed too. An action's writes are each their own transaction, kept.
  * - *`begin` or `finish` throws*: caught and logged; the job still runs (a `begin` that failed only
  *   means a kill of this tick won't be seen), and the job's work is untouched (it committed as it
  *   went).
@@ -38,11 +39,15 @@
  */
 
 import {
+  CONVEX_ACTION_LIMIT_MS,
+  CRON_KILLED_AFTER_MS,
   CRON_REPORT_LINE_MAX,
   CRON_REPORT_MAX_LINES,
   CRON_TICK_CODES,
   type CronReport,
   type CronReportLine,
+  cronTickBucketMs,
+  cronTickBucketStart,
   packTick,
 } from '@skating/core';
 import { v } from 'convex/values';
@@ -59,16 +64,10 @@ import {
 import { type CRON_OUTCOMES, type CRON_RUN_OUTCOMES, CRON_TRIGGERS } from './lib/enums';
 import { literals } from './lib/validators';
 
-const MINUTE_MS = 60_000;
 const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 const KIB = 1024;
 const MIB = 1024 * KIB;
-
-/** Convex's action limit (its docs: "Actions time out after 10 minutes"). */
-export const ACTION_LIMIT_MS = 10 * MINUTE_MS;
-/** A `runningSince` older than this was killed: the limit and a minute's slack (core's rule too). */
-export const KILLED_AFTER_MS = ACTION_LIMIT_MS + MINUTE_MS;
 
 /**
  * **What the recorder keeps back from a mutation job's budget**: the job's nested transaction may
@@ -93,9 +92,9 @@ export const RECORDER_RESERVE = {
   bytesWritten: MIB + 512 * KIB,
 } as const;
 
-/** A tick row's bucket: a UTC hour for a job ticking more often than every 30 minutes, else a day. */
+/** A tick row's bucket, by core's one rule (`cronTickBucketMs`): an hour or a day, from the schedule. */
 export function bucketMsOf(entry: CronJobEntry): number {
-  return cronPeriodMs(entry.schedule) < 30 * MINUTE_MS ? HOUR_MS : DAY_MS;
+  return cronTickBucketMs(cronPeriodMs(entry.schedule));
 }
 
 /**
@@ -335,7 +334,7 @@ async function recordTick(
   }
 
   const bucketMs = bucketMsOf(entry);
-  const bucketStart = Math.floor(tick.startedAt / bucketMs) * bucketMs;
+  const bucketStart = cronTickBucketStart(tick.startedAt, bucketMs);
   const packed = packTick(Math.floor((tick.startedAt - bucketStart) / 1000), out.code);
   const row = await ctx.db
     .query('cronTicks')
@@ -450,7 +449,8 @@ const reportValidator = v.object({
 
 /**
  * An announcing action's start: stamps `runningSince` with this tick's start (so it is never older
- * than the heartbeat's last tick). One already there and stale (past {@link KILLED_AFTER_MS}) is a
+ * than the heartbeat's last tick). One already there and stale (past core's `CRON_KILLED_AFTER_MS`,
+ * the measured action limit and a minute) is a
  * tick that never finished: recorded `killed` first. A young one is overwritten: a run still inside
  * the limit (a manual run beside the cron's) finishes and records as usual (its `finish` leaves the
  * newer stamp alone), and one killed young by a deploy goes unrecorded as killed — its absence is a
@@ -463,10 +463,10 @@ export const begin = internalMutation({
     const entry = requireCronJob(job, 'action');
     const hb = await heartbeatOf(ctx, job);
     const since = hb?.runningSince;
-    if (since !== undefined && startedAt - since > KILLED_AFTER_MS) {
+    if (since !== undefined && startedAt - since > CRON_KILLED_AFTER_MS) {
       const tick: Tick = {
         startedAt: since,
-        finishedAt: since + ACTION_LIMIT_MS,
+        finishedAt: since + CONVEX_ACTION_LIMIT_MS,
         trigger: 'cron',
         killed: true,
         report: null,
@@ -544,7 +544,8 @@ export const tickAction = internalAction({
         startedAt,
         finishedAt,
         ...(thrown !== null ? { error: errorText(thrown.error) } : {}),
-        report: thrown === null ? readReport(result, finishedAt) : null,
+        // A thrown error may carry its run's report (core's `withCronReport`): its detail is kept.
+        report: readReport(thrown === null ? result : thrown.error, finishedAt),
       });
     } catch (err) {
       console.error(

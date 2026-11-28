@@ -7,6 +7,7 @@ import {
   cronTickBucketStart,
   packTick,
   unpackTick,
+  withCronReport,
 } from './cronReport';
 
 const MINUTE = 60_000;
@@ -105,5 +106,26 @@ describe('the tick rows’ buckets', () => {
     expect(cronTickBucketStart(Date.UTC(2026, 10, 27, 14, 37, 5), DAY)).toBe(
       Date.UTC(2026, 10, 27),
     );
+  });
+});
+
+describe('withCronReport', () => {
+  it('attaches the report to the error it was given, the same error', () => {
+    const error = new Error('boom');
+    const out = withCronReport(error, { worked: true, outcome: 'failed', detail: 'backing off' });
+    expect(out).toBe(error);
+    expect(out.message).toBe('boom');
+    expect((out as Error & { cronReport: unknown }).cronReport).toEqual({
+      worked: true,
+      outcome: 'failed',
+      detail: 'backing off',
+    });
+  });
+
+  it('wraps a thrown value that is not an Error', () => {
+    const out = withCronReport('plain', { worked: true });
+    expect(out).toBeInstanceOf(Error);
+    expect(out.message).toBe('plain');
+    expect((out as Error & { cronReport: unknown }).cronReport).toEqual({ worked: true });
   });
 });

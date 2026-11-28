@@ -6,8 +6,8 @@
  *
  * The rule (B01-8b's design, *The liveness rule*): *E* is the interval, or a day, or a week — never
  * less than the input's `quietFloorMs` (the longest quiet the recorder leaves on a healthy job,
- * below). With `runningSince` set: `running` until Convex's action limit and a minute's slack, then
- * `killed`. Else with no tick: `never`. Else, quiet *q* = now − lastTickAt (never negative):
+ * below). With `runningSince` set: `running` until the action limit (30 minutes, as measured) and a
+ * minute's slack, then `killed`. Else with no tick: `never`. Else, quiet *q* = now − lastTickAt (never negative):
  * `stalled` past `RUN_STALLED_FACTOR`·*E*, `late` past `RUN_LATE_FACTOR`·*E* (a fixed-time job:
  * past its next due time plus a twelfth of *E*, at most an hour), else `failed` if the last tick
  * failed or was killed, else `ok`. `nextAt` only for daily and weekly schedules (ruling 17: an
@@ -30,8 +30,13 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const WEEK = 7 * DAY;
 
-/** Convex's limit on one action's run. */
-export const CONVEX_ACTION_LIMIT_MS = 10 * MINUTE;
+/**
+ * The longest one action may run before Convex kills it, as measured (B01-8b-1's build: a local
+ * backend killed a sleeping action at 1,800 s, not the 10 minutes Convex's docs give). The rule
+ * takes the longer of the two so a live action can never read killed; the recorder's `begin`
+ * imports it, so the two can't disagree.
+ */
+export const CONVEX_ACTION_LIMIT_MS = 30 * MINUTE;
 /** A running tick reads killed past the action limit and a minute's slack. */
 export const CRON_KILLED_AFTER_MS = CONVEX_ACTION_LIMIT_MS + MINUTE;
 /** A fixed-time job's grace past its due time: a twelfth of its period, at most this. */

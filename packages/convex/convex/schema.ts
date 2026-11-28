@@ -5663,9 +5663,11 @@ export default defineSchema({
 
   /**
    * **A cron's ticks, one row per job per bucket** (D343's "compact day of ticks", D347): a UTC hour
-   * for a job that ticks more often than every 30 minutes, a UTC day otherwise — at most 60 ticks a
-   * row, far under the array cap. Written by the dispatchers only; read by the tick strip and
-   * Health's failures. Swept by `cronRunJobs.prune` past `keepUntil`.
+   * for a job that ticks more often than every 30 minutes, a UTC day otherwise — a schedule puts at
+   * most 60 ticks in a row, manual runs can add more, and the recorder stops at `TICK_ROW_MAX` (240),
+   * far under the array cap. Ticks are in the order they were recorded, not always by time (an
+   * overlapping run finishes later): readers sort. Written by the dispatchers only; read by the tick
+   * strip and Health's failures. Swept by `cronRunJobs.prune` past `keepUntil`.
    */
   cronTicks: defineTable({
     job: v.string(),
@@ -5673,7 +5675,10 @@ export default defineSchema({
     bucketMs: v.number(),
     /** Per tick, packed: seconds into the bucket × 8 + the outcome's code (core's `packTick`). */
     ticks: v.array(v.number()),
-    /** Per tick, its duration in ms, in step with `ticks`. */
+    /**
+     * Per tick, its duration in ms, in step with `ticks`. Always 0 for a mutation job (its clock is
+     * frozen for the transaction): the reads send `null` for those.
+     */
     ms: v.array(v.number()),
     keepUntil: v.number(),
   })
