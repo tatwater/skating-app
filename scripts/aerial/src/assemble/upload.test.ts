@@ -92,16 +92,18 @@ async function parent(how: How): Promise<{ status: number | null; landed: boolea
   return { status, landed: existsSync(out) };
 }
 
-describe('rcatSink', () => {
+// Each case starts a Node child through tsx (a second or two here, several times that on CI).
+describe('rcatSink', { timeout: 120_000 }, () => {
   test('an upload that was ended lands', async () => {
     expect(await parent('end')).toEqual({ status: 0, landed: true });
   });
 
   test('a parent that exits, throws or is stopped mid-stream lands nothing', async () => {
-    for (const how of ['exit', 'throw', 'sigterm'] as const) {
-      const run = await parent(how);
-      expect(run.status, how).not.toBe(0);
-      expect(run.landed, how).toBe(false);
-    }
+    const hows = ['exit', 'throw', 'sigterm'] as const;
+    const runs = await Promise.all(hows.map((how) => parent(how)));
+    runs.forEach((run, i) => {
+      expect(run.status, hows[i]).not.toBe(0);
+      expect(run.landed, hows[i]).toBe(false);
+    });
   });
 });
