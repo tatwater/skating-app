@@ -934,19 +934,28 @@ export async function pumpHandler(
     return result.cronReport ? { ...result.counts, cronReport: result.cronReport } : result.counts;
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    await ctx.runMutation(internal.imageryLive.alertAdmins, {
-      key: 'imagery-pump-error',
-      season,
-      problem: 'The imagery pump hit an error',
-      detail: `${detail}. It backs off for half an hour and tries again.`,
-    });
     // The run row keeps what the Seasons panel showed before the backbone: that it backs off.
-    throw withCronReport(error, {
+    const failure = withCronReport(error, {
       worked: true,
       outcome: 'failed',
       season,
       detail: `threw: ${detail} — backing off 30 minutes unless an admin says try again`,
     });
+    // The pump's own error stays the run's word: an alert that fails too is logged, never thrown in
+    // its place (before the backbone, the run row was written before the alert was tried).
+    try {
+      await ctx.runMutation(internal.imageryLive.alertAdmins, {
+        key: 'imagery-pump-error',
+        season,
+        problem: 'The imagery pump hit an error',
+        detail: `${detail}. It backs off for half an hour and tries again.`,
+      });
+    } catch (alertError) {
+      console.error(
+        `imagery pump: the admins' alert failed too: ${alertError instanceof Error ? alertError.message : String(alertError)}`,
+      );
+    }
+    throw failure;
   } finally {
     await ctx.runMutation(internal.imageryLive.end, { key: 'pump', token, ...outcome });
   }

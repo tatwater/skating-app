@@ -102,6 +102,10 @@ export const IMAGERY_CARD_JOBS = [
   { job: 'rebuild the live imagery index', id: 'imagery-index', name: 'Imagery index' },
 ] as const;
 
+/** A last run that failed or was killed: the card stays failed until a later run supersedes it. */
+const lastRunFailed = (lastRun: CronJobView['lastRun']) =>
+  lastRun?.outcome === 'failed' || lastRun?.outcome === 'killed';
+
 /**
  * A cron's card state, from core's verdict — the one Machinery's cron cards draw, so the two can't
  * disagree on lateness. A tick killed mid-run is failed (it needs a look). On time, the card also
@@ -118,16 +122,31 @@ export function cronJobState(liveness: CronLiveness, lastRun: CronJobView['lastR
   switch (liveness.state) {
     case 'killed':
       return 'failed';
+    case 'running':
+      // A tick under way hasn't superseded a failed run yet: the pump backing off from one starts
+      // (and skips) a tick every three minutes, and the card must not flicker off failed for each.
+      return lastRunFailed(lastRun) ? 'failed' : 'running';
     case 'ok':
-      if (lastRun?.outcome === 'failed' || lastRun?.outcome === 'killed') return 'failed';
+      if (lastRunFailed(lastRun)) return 'failed';
       return lastRun?.outcome === 'refused' ? 'retried' : 'ok';
     default:
       return liveness.state;
   }
 }
 
-/** When the row says it last ran: the last tick, the start of the tick still running, or none. */
-function cronJobAt(liveness: CronLiveness): number | null {
+/**
+ * When the row says it last ran: the last run, when the row's state is that run's (a failed or
+ * refused one the ticks since haven't superseded); else the last tick, the start of the tick still
+ * running, or none.
+ */
+function cronJobAt(
+  liveness: CronLiveness,
+  lastRun: CronJobView['lastRun'],
+  state: JobState,
+): number | null {
+  if (lastRun !== null && (state === 'failed' || state === 'retried')) {
+    if (liveness.state === 'running' || liveness.state === 'ok') return lastRun.startedAt;
+  }
   if (liveness.state === 'running' || liveness.state === 'killed') return liveness.since;
   if (liveness.state === 'never') return null;
   return liveness.lastTickAt;
@@ -146,11 +165,12 @@ async function trackedJobs(ctx: QueryCtx, now: number): Promise<JobRow[]> {
   for (const [i, view] of views.entries()) {
     // The views come back in the order asked, every name a registry entry (pinned by a test).
     const card = IMAGERY_CARD_JOBS[i] as (typeof IMAGERY_CARD_JOBS)[number];
+    const state = cronJobState(view.liveness, view.lastRun);
     rows.push({
       id: card.id,
       name: card.name,
-      state: cronJobState(view.liveness, view.lastRun),
-      at: cronJobAt(view.liveness),
+      state,
+      at: cronJobAt(view.liveness, view.lastRun, state),
     });
   }
 

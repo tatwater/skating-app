@@ -786,6 +786,44 @@ describe('pump — starting cuts', () => {
     expect(run?.detail).toContain(run?.error as string);
   });
 
+  test('a throw whose alert fails too keeps the pump’s own error and its backing off', async () => {
+    const t = convexTest(schema, modules);
+    const err = vi.spyOn(console, 'error').mockImplementation(() => {});
+    await openSeason(t);
+    await queue(t, [s2('19TEA', '20261005')]);
+    await t.run(async (ctx) => {
+      // Two rows under one key make that key's alert throw: the Fly one (the pump's own error),
+      // then the pump error's own alert.
+      for (const key of [
+        'imagery-fly',
+        'imagery-fly',
+        'imagery-pump-error',
+        'imagery-pump-error',
+      ]) {
+        await ctx.db.insert('dailyThrottle', { key, lastOn: '2000-01-01' });
+      }
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('', { status: 401 })),
+    );
+    try {
+      await expect(
+        t.action(internal.cronRuns.tickAction, { job: IMAGERY_CRON_JOBS.pump }),
+      ).rejects.toThrow();
+      const [run] = await runs(t);
+      expect(run).toMatchObject({ kind: 'pump', outcome: 'failed' });
+      expect(run?.detail).toMatch(/— backing off 30 minutes unless an admin says try again$/s);
+      expect(run?.detail).toContain(run?.error as string);
+      expect(err.mock.calls.some((c) => /the admins' alert failed too/.test(String(c[0])))).toBe(
+        true,
+      );
+      expect((await runState(t))?.backoffUntil).toBeGreaterThan(Date.now());
+    } finally {
+      err.mockRestore();
+    }
+  });
+
   test('does nothing without credentials', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);

@@ -354,16 +354,23 @@ async function recordTick(
   }
 
   const failed = out.heartbeat === 'failed' || out.heartbeat === 'killed';
+  // An older tick recorded after a newer one (a manual run beside the cron's, finishing later, or
+  // a kill found late) never moves the last good or last failed tick back, as `lastTickAt` doesn't.
+  const newest = (at: number | undefined) => at === undefined || tick.startedAt >= at;
   const fields = {
     lastTickAt: Math.max(hb?.lastTickAt ?? 0, tick.startedAt),
     lastOutcome: out.heartbeat,
     lastMs: ms,
     ...(failed
-      ? {
-          lastFailedAt: tick.startedAt,
-          lastError: tick.error ?? r?.detail ?? (tick.killed ? 'killed' : out.heartbeat),
-        }
-      : { lastOkAt: tick.startedAt }),
+      ? newest(hb?.lastFailedAt)
+        ? {
+            lastFailedAt: tick.startedAt,
+            lastError: tick.error ?? r?.detail ?? (tick.killed ? 'killed' : out.heartbeat),
+          }
+        : {}
+      : newest(hb?.lastOkAt)
+        ? { lastOkAt: tick.startedAt }
+        : {}),
     ...(runId !== undefined ? { lastRunId: runId } : {}),
   };
   if (hb === null) await ctx.db.insert('cronHeartbeats', { job, ...fields });
@@ -380,7 +387,9 @@ function logTick(entry: CronJobEntry, tick: Tick, wrote: 'recorded' | 'skipped' 
   const took = Math.round(tick.finishedAt - tick.startedAt);
   const line = `cron "${entry.name}": ${out.run ?? out.heartbeat} in ${took} ms (${wrote})`;
   if (out.heartbeat === 'failed' || out.heartbeat === 'killed') {
-    console.error(`${line}: ${tick.error ?? tick.report?.detail ?? ''}`);
+    console.error(
+      `${line}: ${tick.error ?? tick.report?.detail ?? (tick.killed ? 'never finished' : out.heartbeat)}`,
+    );
   } else console.log(line);
 }
 

@@ -732,6 +732,31 @@ describe('a killed action', () => {
     expect(hb?.runningSince).toBe(T0);
     expect((await all(t)).runs.map((r) => r.outcome)).toEqual(['ok']);
   });
+
+  test('an older tick recorded after a newer one never moves the last good or failed tick back', async () => {
+    const t = convexTest(schema, probeModules);
+    quiet();
+    const finish = (startedAt: number, error?: string) =>
+      t.mutation(internal.cronRuns.finish, {
+        job: 'a quiet',
+        trigger: 'cron',
+        startedAt,
+        finishedAt: T0 + 5_000,
+        ...(error !== undefined ? { error } : {}),
+        report: null,
+      });
+    await finish(T0);
+    await finish(T0 - 60_000);
+    expect(await heartbeat(t, 'a quiet')).toMatchObject({ lastTickAt: T0, lastOkAt: T0 });
+    await finish(T0 + 1_000, 'the newer failure');
+    await finish(T0 - 30_000, 'the older failure');
+    expect(await heartbeat(t, 'a quiet')).toMatchObject({
+      lastTickAt: T0 + 1_000,
+      lastOkAt: T0,
+      lastFailedAt: T0 + 1_000,
+      lastError: 'the newer failure',
+    });
+  });
 });
 
 // ─── Recording mode ─────────────────────────────────────────────────────────────────────────────

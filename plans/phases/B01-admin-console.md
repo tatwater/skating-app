@@ -18064,7 +18064,7 @@ backfill from `fan-out.sh`, a person's `docker run`) the log stays local and not
 host-neutral contract (`docker run <image> <granule-id>`) holds. The uploader uses the rclone config
 the script already writes, never prints a variable's value, and is tested in vitest by running
 `cut-log.sh` under a stand-in `rclone` on `PATH`: the stamps, the upload cadence, the last upload on
-exit and on a signalled child, the exit status unchanged when every upload fails, nothing uploaded
+exit and on a signaled child, the exit status unchanged when every upload fails, nothing uploaded
 without the key.
 
 **Compatibility, both orders.** An old image under the new pump: it uploads nothing; the attempt

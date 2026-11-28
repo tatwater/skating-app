@@ -231,7 +231,10 @@ export const strip = query({
       )
       .order('desc')
       .take(STRIP_ROWS + 1);
-    let truncated = rows.length > STRIP_ROWS;
+    // Cut only if the newest row left out reaches `from`: the range reads a day of rows before it
+    // (a row may start up to a day early), and an hour row ending before `from` holds no tick in it.
+    const cut = rows[STRIP_ROWS];
+    let truncated = cut !== undefined && cut.bucketStart + cut.bucketMs > args.from;
     const newestFirst: CronTickView[] = [];
     for (const row of rows.slice(0, STRIP_ROWS)) {
       const inRow: CronTickView[] = [];

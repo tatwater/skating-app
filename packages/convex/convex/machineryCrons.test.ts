@@ -448,6 +448,27 @@ describe('strip', () => {
     ).toEqual({ ticks: [], truncated: false });
   });
 
+  test('rows cut from before the range are not a cut: every tick in it came back', async () => {
+    const t = harness();
+    const { as } = await seedUser(t, 'admin');
+    // An hour row each for STRIP_ROWS hours inside the range and ten before it: the read reaches a
+    // day before `from` (a daily row may start there), so the oldest of those are what's left out.
+    const hours = STRIP_ROWS + 10;
+    await seedTicks(
+      t,
+      PUMP,
+      Array.from({ length: hours }, (_, i) => ({ at: NOW - (i + 1) * HOUR + MINUTE, code: 0 })),
+    );
+    const strip = await as.query(api.machineryCrons.strip, {
+      job: PUMP,
+      from: NOW - STRIP_ROWS * HOUR,
+      to: NOW,
+    });
+    expect(strip.ticks).toHaveLength(STRIP_ROWS);
+    expect(strip.ticks[0]?.at).toBe(NOW - STRIP_ROWS * HOUR + MINUTE);
+    expect(strip.truncated).toBe(false);
+  });
+
   test('past the tick bound, the newest ticks are kept', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');

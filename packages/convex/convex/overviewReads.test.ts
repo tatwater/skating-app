@@ -2793,6 +2793,36 @@ describe('machinery.overviewJobs', () => {
     }
   });
 
+  test('a tick under way keeps a failed run failed, and the row is dated by that run', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    const pumpRow = async () =>
+      (await admin.as.query(api.machinery.overviewJobs, { now: NOW }))?.jobs.find(
+        (j) => j.id === 'imagery-pump',
+      );
+    const bad = await cronRun(t, PUMP_JOB, 'failed', NOW - 9 * MINUTE);
+    // Backing off, the pump still starts a tick every three minutes (and skips): one is running.
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 3 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: bad,
+      runningSince: NOW - 10_000,
+    });
+    expect(await pumpRow()).toMatchObject({ state: 'failed', at: NOW - 9 * MINUTE });
+    // That tick finished quietly: still failed, still dated by the run that failed.
+    await beat(t, PUMP_JOB, { lastTickAt: NOW - 10_000, lastOutcome: 'ok', lastRunId: bad });
+    expect(await pumpRow()).toMatchObject({ state: 'failed', at: NOW - 9 * MINUTE });
+    // With no failed run behind it, a tick under way is running, dated by its start.
+    const good = await cronRun(t, PUMP_JOB, 'ok', NOW - 6 * MINUTE);
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 3 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: good,
+      runningSince: NOW - 10_000,
+    });
+    expect(await pumpRow()).toMatchObject({ state: 'running', at: NOW - 10_000 });
+  });
+
   test('the heartbeats cover what the old owed-since rule guarded', async () => {
     const t = harness();
     const admin = await seedUser(t, 'adm', 'admin');
