@@ -17,6 +17,7 @@ import {
   planAssembly,
   storeReader,
 } from './assemble';
+import { followAssembly } from './orchestrate';
 import { fileStore, fileUploads } from './stores';
 import { hashRenderer, syntheticTile, writeSyntheticBuild } from './synthetic';
 
@@ -491,5 +492,59 @@ describe('the pieces', () => {
     for await (const c of reader.stream('memory:x', 0, 3)) chunks.push(c);
     for await (const c of reader.stream('obj', 3, 2)) chunks.push(c);
     expect(Buffer.concat(chunks)).toEqual(Buffer.from([9, 8, 7, 4, 5]));
+  });
+});
+
+describe('a deepest zoom that outlasts the laptop’s quiet limit (PR #188’s review)', () => {
+  const MINUTE = 60_000;
+
+  it('beats inside the zoom, so the laptop follows a healthy assembly to its record', async () => {
+    // Six work tiles, each zoom's run 20 minutes of the Machine's time: the deepest zoom takes two
+    // hours — at region scale it is ~59% of the archive, ~54 minutes at the pilot's 47.5 MB/s.
+    const work = [603, 604, 605].flatMap((x) => [731, 732].map((y) => ({ z: 11, x, y })));
+    const build = await writeSyntheticBuild(root, {
+      campaign: 'naip-20261212',
+      workTiles: work,
+      tiles: TILES,
+    });
+    const start = Date.parse('2026-12-12T00:00:00Z');
+    let machine = start;
+    const timeline: { at: number; event: AssembleProgress }[] = [];
+    const record = await assemble(build.manifest, {
+      ...depsFor().deps,
+      now: () => new Date(machine),
+      progress: (event) => {
+        timeline.push({ at: machine, event });
+      },
+      write: {
+        onRun: () => {
+          machine += 20 * MINUTE;
+        },
+      },
+    });
+    const finished = machine;
+    const deepest = timeline.filter((t) => t.event.step === 'zoom' && t.event.zoom === 17);
+    expect(finished - (deepest[0]?.at ?? finished)).toBeGreaterThan(90 * MINUTE);
+    // More than one beat inside the zoom, and never a gap near the laptop's limit.
+    expect(deepest.length).toBeGreaterThan(1);
+
+    // The laptop polls the progress object the Machine rewrites, on its own clock.
+    let laptop = start;
+    const followed = await followAssembly({
+      readProgress: async () => {
+        const last = timeline.filter((t) => t.at <= laptop).at(-1);
+        return last === undefined
+          ? null
+          : { at: new Date(last.at).toISOString(), event: last.event };
+      },
+      readRecord: async () => (laptop >= finished ? record : null),
+      machineDone: async () => false,
+      logger: { count: () => {}, flush: () => {} },
+      sleep: async (ms) => {
+        laptop += ms;
+      },
+      now: () => laptop,
+    });
+    expect(followed).toBe(record);
   });
 });

@@ -155,13 +155,28 @@ export interface AssembleDeps {
   upload(key: string, options: PublishOptions): ByteSink;
   renderer: OverviewRenderer;
   progress?(event: AssembleProgress): void | Promise<void>;
+  /** The Machine's clock: the record's times, and when a zoom's next heartbeat is due. */
   now?(): Date;
+  /** The longest a zoom being written goes without a progress event (default {@link HEARTBEAT_MS}). */
+  heartbeatMs?: number;
   /** Peak memory so far (`process.resourceUsage().maxRSS` on a Machine). */
   memory?(): { rss: number; heap: number };
   write?: WriteOptions;
   /** Concurrent reads of the indexes and the top tiles (default 16). */
   concurrency?: number;
 }
+
+/**
+ * **A heartbeat inside a zoom**, five minutes at most between progress events while the archive is
+ * written. Zoom by zoom alone was a beat per level, and the deepest level is most of the archive: at
+ * the pilot's per-zoom tile sizes tile zoom 17 is ~59% of the bytes, ~154 GB of a ~260 GB region,
+ * ~54 minutes at the pilot's 47.5 MB/s (46–62 over 220–300 GB, longer on a slower link) — against the
+ * laptop's hour of quiet before it called the assembly dead (PR #188's review). The beat rides the
+ * runs, which are one work tile's zoom each (at most a few hundred MB, seconds at that rate), so a
+ * stalled read or upload stops it — which is how the laptop and the Machine's own watchdog
+ * (`orchestrate.ts`) tell a stuck assembly from a long one.
+ */
+export const HEARTBEAT_MS = 5 * 60_000;
 
 /** Public, immutable, and cached for a year: the keys are never overwritten. */
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
@@ -559,12 +574,16 @@ async function run(
     deps.upload(keys.archive, { contentType: 'application/vnd.pmtiles', cacheControl: IMMUTABLE }),
   );
   let zoom = -1;
+  let beatAt = 0;
+  const heartbeat = deps.heartbeatMs ?? HEARTBEAT_MS;
   await writeArchive(plan, layout, reader, sink, {
     ...deps.write,
     onRun: async (data, run) => {
       const reached = zoomOf(run.tileId);
-      if (reached !== zoom) {
+      const at = now().getTime();
+      if (reached !== zoom || at - beatAt >= heartbeat) {
         zoom = reached;
+        beatAt = at;
         await deps.progress?.({ step: 'zoom', zoom, dataBytes: data, totalBytes: plan.bytes });
       }
       await deps.write?.onRun?.(data, run);

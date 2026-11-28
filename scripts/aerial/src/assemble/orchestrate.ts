@@ -101,10 +101,71 @@ export function beat(logger: Heartbeat, event: AssembleProgress): void {
   logger.flush();
 }
 
+/** How often the laptop reads the progress object. */
+export const FOLLOW_INTERVAL_MS = 30_000;
+
+/**
+ * **The laptop's quiet limit**: this long of reading the bucket with no new progress event, while
+ * `spawn.sh` still sees the Machine up, is an assembly that has stopped moving. Sized against the
+ * Machine's beat (`HEARTBEAT_MS`, five minutes inside a zoom; the longest step between events, the
+ * overviews, is about a minute at region scale) and above the Machine's own watchdog
+ * ({@link MACHINE_STALL_MS}), so a stuck Machine normally stops itself first and says why.
+ */
+export const FOLLOW_QUIET_MS = 30 * 60_000;
+
+/**
+ * A gap between two polls longer than this is the laptop asleep (or a call that hung), never quiet
+ * the Machine kept: the quiet clock counts only time the laptop was awake and reading.
+ */
+export const FOLLOW_GAP_MS = 4 * FOLLOW_INTERVAL_MS;
+
+/** Reads of the record, an interval apart, once the Machine has gone and the bucket won't answer. */
+export const LATE_READS = 10;
+
+/**
+ * **The Machine's own watchdog**: an assembler that has emitted no progress event for this long
+ * writes its error object and exits, so a stuck read or upload frees its Machine (and the cap's
+ * slot) instead of idling until someone looks — and a re-run never attaches to a corpse.
+ */
+export const MACHINE_STALL_MS = 20 * 60_000;
+
+/**
+ * Read a bucket object for the follower: the parsed value, `null` when it isn't there, and a throw
+ * when the bucket can't be reached — which the follower never counts as the Machine's silence.
+ * `read` is `rclone cat`; rclone says a key isn't there with exit 3 or 4 ("directory not found",
+ * "file not found"), or, on some backends, with nothing at all.
+ */
+export async function readObject<T>(read: () => Promise<string>): Promise<T | null> {
+  let text: string;
+  try {
+    text = await read();
+  } catch (e) {
+    if (/exited [34]\b|not found/i.test((e as Error).message)) return null;
+    throw e;
+  }
+  if (text.trim() === '') return null;
+  return JSON.parse(text) as T;
+}
+
+/** What a non-zero exit of `spawn.sh assemble` means for the assembly. */
+export function spawnExitMessage(code: number | null): string {
+  if (code === 3) {
+    return 'spawn.sh stopped waiting for the assembler Machine, which is still up: far past any healthy assembly — read its logs (fly logs --app skating-imagery) and stop it before running the stage again';
+  }
+  return `spawn.sh exited ${code ?? 'on a signal'} before the assembler Machine finished (see its output above): no assembler may be running`;
+}
+
 /**
  * Follow a Machine's assembly: poll `readProgress` every `intervalMs`, beat on each new event, and
  * resolve with the record once `readRecord` finds it. Rejects when `machineDone` reports the Machine
- * stopped with no record, or after `timeoutMs` without a new event.
+ * stopped with no record (or throws: `spawn.sh` failed), or after `quietMs` of quiet.
+ *
+ * **Quiet is counted only while the laptop is awake and reading** (PR #188's review). A read that
+ * throws — the bucket unreachable: a network blip, the laptop waking — and a gap between polls past
+ * `gapMs` — the laptop asleep — add nothing to it, so losing the event stream never fails a live
+ * assembly; whether the Machine is still up is `spawn.sh`'s answer (`machineDone`), from Fly's own
+ * list, which reads a failed listing as "still up". Only a Machine Fly lists as up, whose progress
+ * the laptop can read and which hasn't moved for `quietMs`, is called stuck.
  */
 export async function followAssembly(args: {
   readProgress: () => Promise<ProgressObject | null>;
@@ -114,32 +175,98 @@ export async function followAssembly(args: {
   sleep: (ms: number) => Promise<void>;
   now: () => number;
   intervalMs?: number;
-  timeoutMs?: number;
+  quietMs?: number;
+  gapMs?: number;
 }): Promise<AssemblyRecord> {
-  const interval = args.intervalMs ?? 30_000;
-  const timeout = args.timeoutMs ?? 3_600_000;
+  const interval = args.intervalMs ?? FOLLOW_INTERVAL_MS;
+  const limit = args.quietMs ?? FOLLOW_QUIET_MS;
+  const maxGap = args.gapMs ?? FOLLOW_GAP_MS;
   let lastAt = '';
-  let lastChange = args.now();
+  let quiet = 0;
+  let before = args.now();
   for (;;) {
-    const record = await args.readRecord();
-    if (record !== null) return record;
-    const progress = await args.readProgress();
-    if (progress !== null && progress.at !== lastAt) {
-      lastAt = progress.at;
-      lastChange = args.now();
-      beat(args.logger, progress.event);
+    let reached = true;
+    let moved = false;
+    try {
+      const record = await args.readRecord();
+      if (record !== null) return record;
+      const progress = await args.readProgress();
+      if (progress !== null && progress.at !== lastAt) {
+        lastAt = progress.at;
+        moved = true;
+        beat(args.logger, progress.event);
+      }
+    } catch {
+      reached = false;
     }
+    const at = args.now();
+    const gap = at - before;
+    before = at;
+    if (moved) quiet = 0;
+    else if (reached && gap <= maxGap) quiet += gap;
     if (await args.machineDone()) {
-      // The record is the last write; read once more in case it landed as the Machine stopped.
-      const late = await args.readRecord();
-      if (late !== null) return late;
+      // The record is the last write; read once more in case it landed as the Machine stopped —
+      // and a bucket that can't be read then says nothing about how the Machine ended.
+      for (let tries = 1; ; tries++) {
+        try {
+          const late = await args.readRecord();
+          if (late !== null) return late;
+          break;
+        } catch {
+          if (tries >= LATE_READS) {
+            throw new Error(
+              'the assembler Machine has gone and the bucket can’t be read to say how it ended: run the stage again once it can (a finished assembly is taken from its record, never run twice)',
+            );
+          }
+          await args.sleep(interval);
+        }
+      }
       throw new Error(
         'the assembler Machine stopped without an assembly record: it refused or failed (see its logs)',
       );
     }
-    if (args.now() - lastChange > timeout) {
-      throw new Error(`no progress from the assembler for ${Math.round(timeout / 60_000)} minutes`);
+    if (quiet > limit) {
+      throw new Error(
+        `no progress from the assembler for ${Math.round(limit / 60_000)} minutes while its Machine is still up: it is stuck — read its logs (fly logs --app skating-imagery), stop it, and run the stage again`,
+      );
     }
     await args.sleep(interval);
   }
+}
+
+/**
+ * The Machine's watchdog ({@link MACHINE_STALL_MS}): `touch` on every progress event; `onStall` runs
+ * once when `stallMs` passes with none. Timers injectable for the tests (vitest's fake ones).
+ */
+export function stallWatch(args: {
+  stallMs?: number;
+  onStall: () => void;
+  setTimer?: (fn: () => void, ms: number) => unknown;
+  clearTimer?: (handle: unknown) => void;
+}): { touch(): void; stop(): void } {
+  const ms = args.stallMs ?? MACHINE_STALL_MS;
+  const set = args.setTimer ?? ((fn, wait) => setTimeout(fn, wait));
+  const clear = args.clearTimer ?? ((h) => clearTimeout(h as ReturnType<typeof setTimeout>));
+  let handle: unknown = null;
+  let stopped = false;
+  const arm = (): void => {
+    if (handle !== null) clear(handle);
+    // `stop` clears a pending timer, so one that fires finds the watch live.
+    handle = set(() => {
+      handle = null;
+      stopped = true;
+      args.onStall();
+    }, ms);
+  };
+  arm();
+  return {
+    touch() {
+      if (!stopped) arm();
+    },
+    stop() {
+      stopped = true;
+      if (handle !== null) clear(handle);
+      handle = null;
+    },
+  };
 }

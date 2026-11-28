@@ -550,7 +550,10 @@ describe('the Dockerfile', () => {
 
 // ── spawn.sh ─────────────────────────────────────────────────────────────────────────────────────
 
-/** A `fly` that records each call and answers `machine list` from a queue of listings. */
+/**
+ * A `fly` that records each call and answers `machine list` from a queue of listings — a listing
+ * that reads `FAIL` is an API error, as the real one's exit 1 with nothing on stdout.
+ */
 function flyTools(dir: string): string {
   const b = join(dir, 'bin');
   mkdirSync(b);
@@ -563,6 +566,7 @@ if [ "$1 $2" = "machine list" ]; then
   n=$(cat "$LISTS/next" 2>/dev/null || echo 1)
   f="$LISTS/$n.json"; [ -f "$f" ] || f="$LISTS/last.json"
   echo $((n + 1)) > "$LISTS/next"
+  [ "$(cat "$f")" = FAIL ] && { echo "Error: failed to list machines" >&2; exit 1; }
   cat "$f"; exit 0
 fi
 if [ "$1 $2" = "machine run" ]; then [ -n "\${FLY_RUN_FAIL:-}" ] && exit 1; exit 0; fi
@@ -572,14 +576,17 @@ exit 0
   return b;
 }
 
-function spawnSh(args: string[], opts: { lists?: string[]; env?: Record<string, string> } = {}) {
+function spawnSh(
+  args: string[],
+  opts: { lists?: string[]; last?: string; env?: Record<string, string> } = {},
+) {
   const dir = tmp();
   const b = flyTools(dir);
   const lists = join(dir, 'lists');
   mkdirSync(lists);
   const queue = opts.lists ?? [];
   for (const [i, l] of queue.entries()) writeFileSync(join(lists, `${i + 1}.json`), l);
-  writeFileSync(join(lists, 'last.json'), '[]');
+  writeFileSync(join(lists, 'last.json'), opts.last ?? '[]');
   const units = join(dir, 'units');
   mkdirSync(units);
   for (const t of ['11_606_736', '11_607_736']) writeFileSync(join(units, `${t}.json`), '{}');
@@ -624,8 +631,9 @@ describe('spawn.sh tiles', () => {
       expect(r).toContain('--vm-size performance-4x --vm-memory 8192 --detach --rm --restart no');
       expect(r).toContain('--metadata aerial=naip-20261212');
       expect(r).toContain(`--env AERIAL_IMAGE=${IMAGE}`);
+      // Under a deadline: a hung worker is killed (the next round re-cuts it), never left billing.
       expect(r).toMatch(
-        /--file-local \/data\/unit\.json=\S+\/units\/11_60[67]_736\.json -- cut-aerial \/data\/unit\.json$/,
+        /--file-local \/data\/unit\.json=\S+\/units\/11_60[67]_736\.json -- timeout --kill-after=60 3600 cut-aerial \/data\/unit\.json$/,
       );
     }
     expect(run.runs.map((r) => r.match(/--name (\S+)/)?.[1]).sort()).toEqual([
@@ -657,7 +665,9 @@ describe('spawn.sh tiles', () => {
 
   test('a failed list is read as the cap, so it waits rather than floods — and never spawns past it', () => {
     const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
-      env: { FLY_LIST_FAIL: '1', CAPACITY_TRIES: '2' },
+      lists: ['[]'],
+      last: 'FAIL',
+      env: { CAPACITY_TRIES: '2' },
     });
     expect(run.stderr).toMatch(/still 25 Machines alive after waiting/);
     // Waiting out the cap is not room under it: the round fails, and the next one resumes.
@@ -670,16 +680,83 @@ describe('spawn.sh tiles', () => {
       Array.from({ length: 25 }, (_, i) => ({ name: `granule-s2a-${i}`, state: 'started' })),
     );
     const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
-      lists: [full, full, full],
+      last: full,
       env: { CAPACITY_TRIES: '3' },
     });
     expect(run.status).toBe(1);
     expect(run.runs).toEqual([]);
   });
 
+  test('a work tile whose Machine is still up is waited for, never spawned a second time', () => {
+    const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      lists: [
+        JSON.stringify([
+          { name: 'aerial-20261212-606-736', state: 'started' },
+          // Gone, or another campaign's: neither is this round's.
+          { name: 'aerial-20261212-607-736', state: 'stopped' },
+          { name: 'aerial-20261213-607-736', state: 'started' },
+        ]),
+      ],
+    });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(/11\/606\/736 is still running/);
+    expect(run.runs).toHaveLength(1);
+    expect(run.runs[0]).toContain('--name aerial-20261212-607-736');
+  });
+
+  test('can’t tell is never none: a listing that keeps failing spawns nothing', () => {
+    const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      env: { FLY_LIST_FAIL: '1', LIST_TRIES: '3' },
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/which work tiles are still running can't be told/);
+    expect(run.calls.filter((c) => c.startsWith('fly machine list'))).toHaveLength(3);
+    expect(run.runs).toEqual([]);
+    // A listing that fails once and then answers is a listing.
+    const blip = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      lists: ['FAIL', '[]'],
+    });
+    expect(blip.status).toBe(0);
+    expect(blip.runs).toHaveLength(2);
+  });
+
+  test('the deadline is whole seconds, or nothing starts', () => {
+    const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      env: { AERIAL_TILE_DEADLINE: '1h' },
+    });
+    expect(run.status).toBe(64);
+    expect(run.runs).toEqual([]);
+    const short = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      env: { AERIAL_TILE_DEADLINE: '900' },
+    });
+    expect(short.runs[0]).toContain('-- timeout --kill-after=60 900 cut-aerial');
+  });
+
+  // The real coreutils `timeout` (the image's Ubuntu has it; CI's Linux too), never a stand-in: the
+  // flags spawn.sh passes must parse, and a worker's children — GDAL under cut-aerial — must die with it.
+  const hasTimeout = spawnSync('timeout', ['--version'], { encoding: 'utf8' }).stdout?.includes(
+    'coreutils',
+  );
+  test.skipIf(!hasTimeout)('the deadline kills a hung worker and its children, with 124', () => {
+    const dir = tmp();
+    const pidFile = join(dir, 'child.pid');
+    const started = Date.now();
+    const res = spawnSync(
+      'timeout',
+      ['--kill-after=60', '1', 'bash', '-c', `sleep 30 & echo $! > ${pidFile}; wait`],
+      { encoding: 'utf8' },
+    );
+    expect(res.status).toBe(124);
+    expect(Date.now() - started).toBeLessThan(15_000);
+    const child = Number(readFileSync(pidFile, 'utf8').trim());
+    expect(spawnSync('kill', ['-0', String(child)]).status).not.toBe(0);
+  });
+
   test('--drain waits until the campaign’s Machines have gone, not the app’s', () => {
     const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt', '--drain'], {
       lists: [
+        // What is still running, then the room under the cap, then the drain.
+        '[]',
         '[]',
         machine('aerial-20261212-606-736', 'started'),
         machine('aerial-20261212-606-736', 'stopping'),
@@ -689,14 +766,15 @@ describe('spawn.sh tiles', () => {
     });
     expect(run.status).toBe(0);
     expect(run.stdout).toMatch(/drained/);
-    expect(run.calls.filter((c) => c.startsWith('fly machine list'))).toHaveLength(3);
+    expect(run.calls.filter((c) => c.startsWith('fly machine list'))).toHaveLength(4);
   });
 });
 
 describe('spawn.sh assemble', () => {
   test('one Machine, 4 GB, the assembler’s entrypoint with the pilot; returns when it has gone', () => {
     const run = spawnSh(['assemble', 'naip-pilot-20261125', '--pilot', 'champlain-nhma-me-ny'], {
-      lists: [machine('aerial-asm-p20261125', 'started'), '[]'],
+      // Not already running; room under the cap; up, then gone.
+      lists: ['[]', '[]', machine('aerial-asm-p20261125', 'started'), '[]'],
     });
     expect(run.status).toBe(0);
     expect(run.runs).toHaveLength(1);
@@ -714,11 +792,37 @@ describe('spawn.sh assemble', () => {
       Array.from({ length: 25 }, (_, i) => ({ name: `granule-s2a-${i}`, state: 'started' })),
     );
     const run = spawnSh(['assemble', 'naip-20261212'], {
-      lists: [full, full],
+      last: full,
       env: { CAPACITY_TRIES: '2' },
     });
     expect(run.status).toBe(1);
     expect(run.runs).toEqual([]);
+  });
+
+  test('a re-run attaches to the assembler already running, and starts no second one', () => {
+    const up = machine('aerial-asm-20261212', 'started');
+    const run = spawnSh(['assemble', 'naip-20261212'], { lists: [up, up, up, '[]'] });
+    expect(run.status).toBe(0);
+    expect(run.stdout).toMatch(/aerial-asm-20261212 is already running: following it/);
+    expect(run.runs).toEqual([]);
+    expect(run.stdout).toMatch(/has gone/);
+  });
+
+  test('starts nothing when whether one is running can’t be told; says 3 when it gives up on a live one', () => {
+    const blind = spawnSh(['assemble', 'naip-20261212'], {
+      env: { FLY_LIST_FAIL: '1', LIST_TRIES: '2' },
+    });
+    expect(blind.status).toBe(1);
+    expect(blind.stderr).toMatch(/whether aerial-asm-20261212 is already running can't be told/);
+    expect(blind.runs).toEqual([]);
+    const slow = spawnSh(['assemble', 'naip-20261212'], {
+      lists: ['[]', '[]'],
+      last: machine('aerial-asm-20261212', 'started'),
+      env: { ASSEMBLE_TRIES: '3' },
+    });
+    expect(slow.runs).toHaveLength(1);
+    expect(slow.status).toBe(3);
+    expect(slow.stderr).toMatch(/still alive — gave up waiting/);
   });
 
   test('a failed spawn fails; a stray argument is refused', () => {

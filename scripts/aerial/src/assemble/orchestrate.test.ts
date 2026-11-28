@@ -1,6 +1,20 @@
-import { describe, expect, it } from 'vitest';
-import type { AssemblyRecord } from './assemble';
-import { assembleScope, assemblyCounts, beat, followAssembly, oneAtATime } from './orchestrate';
+import { describe, expect, it, vi } from 'vitest';
+import { type AssemblyRecord, HEARTBEAT_MS } from './assemble';
+import {
+  assembleScope,
+  assemblyCounts,
+  beat,
+  FOLLOW_GAP_MS,
+  FOLLOW_INTERVAL_MS,
+  FOLLOW_QUIET_MS,
+  followAssembly,
+  LATE_READS,
+  MACHINE_STALL_MS,
+  oneAtATime,
+  readObject,
+  spawnExitMessage,
+  stallWatch,
+} from './orchestrate';
 
 const record = {
   archive: { bytes: 100 },
@@ -63,7 +77,7 @@ describe('the run row around the Machine', () => {
       },
       now: () => clock,
       intervalMs: 1000,
-      timeoutMs: 5000,
+      quietMs: 5000,
     });
   };
 
@@ -96,6 +110,206 @@ describe('the run row around the Machine', () => {
     await expect(follow({ progress: [null], record: [null], done: [false] })).rejects.toThrow(
       'no progress from the assembler',
     );
+  });
+});
+
+describe('following through a lost stream (PR #188’s review)', () => {
+  const MINUTE = 60_000;
+  const quietLogger = { count: () => {}, flush: () => {} };
+  const progress = (at: string) => ({ at, event: { step: 'overviews' as const, tiles: 1 } });
+
+  it('sizes the limits against each other: the beat, the Machine’s watchdog, the laptop’s quiet', () => {
+    expect(3 * HEARTBEAT_MS).toBeLessThanOrEqual(MACHINE_STALL_MS);
+    expect(MACHINE_STALL_MS).toBeLessThan(FOLLOW_QUIET_MS);
+    expect(FOLLOW_GAP_MS).toBeLessThan(HEARTBEAT_MS);
+    expect(FOLLOW_GAP_MS).toBeGreaterThan(FOLLOW_INTERVAL_MS);
+  });
+
+  it('never counts an unreachable bucket as quiet: three hours of failed reads, then the record', async () => {
+    let clock = 0;
+    const followed = await followAssembly({
+      readProgress: async () => {
+        throw new Error('rclone cat exited 1: dial tcp: no route to host');
+      },
+      readRecord: async () => {
+        if (clock < 3 * 60 * MINUTE) throw new Error('rclone cat exited 1: network is unreachable');
+        return record;
+      },
+      machineDone: async () => false,
+      logger: quietLogger,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    });
+    expect(followed).toBe(record);
+  });
+
+  it('never counts the laptop asleep as quiet: a three-hour gap between polls, then the record', async () => {
+    let clock = 0;
+    let polls = 0;
+    const followed = await followAssembly({
+      readProgress: async () => progress('a'),
+      readRecord: async () => (polls >= 4 ? record : null),
+      machineDone: async () => false,
+      logger: quietLogger,
+      sleep: async (ms) => {
+        polls++;
+        // The second sleep is the lid closed for three hours.
+        clock += polls === 2 ? 3 * 60 * MINUTE : ms;
+      },
+      now: () => clock,
+    });
+    expect(followed).toBe(record);
+  });
+
+  it('calls a Machine that is up, readable and unmoving stuck, after the quiet limit and not before', async () => {
+    let clock = 0;
+    const sleeps: number[] = [];
+    await expect(
+      followAssembly({
+        readProgress: async () => progress('a'),
+        readRecord: async () => null,
+        machineDone: async () => false,
+        logger: quietLogger,
+        sleep: async (ms) => {
+          sleeps.push(ms);
+          clock += ms;
+        },
+        now: () => clock,
+      }),
+    ).rejects.toThrow(
+      /no progress from the assembler for 30 minutes while its Machine is still up/,
+    );
+    expect(clock).toBeGreaterThanOrEqual(FOLLOW_QUIET_MS);
+    expect(clock).toBeLessThanOrEqual(FOLLOW_QUIET_MS + FOLLOW_INTERVAL_MS);
+    expect(new Set(sleeps)).toEqual(new Set([FOLLOW_INTERVAL_MS]));
+  });
+
+  it('a new event resets the quiet clock', async () => {
+    let clock = 0;
+    const followed = await followAssembly({
+      // A new event every 20 minutes for two hours, then the record.
+      readProgress: async () => progress(String(Math.floor(clock / (20 * MINUTE)))),
+      readRecord: async () => (clock >= 120 * MINUTE ? record : null),
+      machineDone: async () => false,
+      logger: quietLogger,
+      sleep: async (ms) => {
+        clock += ms;
+      },
+      now: () => clock,
+    });
+    expect(followed).toBe(record);
+  });
+
+  it('once the Machine has gone, reads the record through a blip, and says so when it can’t', async () => {
+    let reads = 0;
+    const flaky = followAssembly({
+      readProgress: async () => null,
+      readRecord: async () => {
+        reads++;
+        // The loop's own read, then two failed late reads, then the record.
+        if (reads === 1) return null;
+        if (reads <= 3) throw new Error('rclone cat exited 1: timeout');
+        return record;
+      },
+      machineDone: async () => true,
+      logger: quietLogger,
+      sleep: async () => {},
+      now: () => 0,
+    });
+    await expect(flaky).resolves.toBe(record);
+    let late = 0;
+    await expect(
+      followAssembly({
+        readProgress: async () => null,
+        readRecord: async () => {
+          if (late++ === 0) return null;
+          throw new Error('rclone cat exited 1: timeout');
+        },
+        machineDone: async () => true,
+        logger: quietLogger,
+        sleep: async () => {},
+        now: () => 0,
+      }),
+    ).rejects.toThrow(/has gone and the bucket can’t be read/);
+    expect(late).toBe(1 + LATE_READS);
+  });
+
+  it('a spawn.sh that failed fails the follow with its reason', async () => {
+    await expect(
+      followAssembly({
+        readProgress: async () => null,
+        readRecord: async () => null,
+        machineDone: async () => {
+          throw new Error(spawnExitMessage(3));
+        },
+        logger: quietLogger,
+        sleep: async () => {},
+        now: () => 0,
+      }),
+    ).rejects.toThrow(/still up/);
+  });
+
+  it('reads an object, an absent one, and an unreachable bucket three ways', async () => {
+    expect(await readObject(async () => '{"a":1}')).toEqual({ a: 1 });
+    expect(await readObject(async () => '  \n')).toBeNull();
+    for (const message of [
+      'rclone cat exited 3: directory not found',
+      'rclone cat exited 4: file not found',
+      'rclone cat exited 9: object not found',
+    ]) {
+      expect(
+        await readObject(async () => {
+          throw new Error(message);
+        }),
+      ).toBeNull();
+    }
+    await expect(
+      readObject(async () => {
+        throw new Error('rclone cat exited 1: dial tcp: i/o timeout');
+      }),
+    ).rejects.toThrow('i/o timeout');
+    // A code that merely starts with 3 or 4 is not rclone's "not found".
+    await expect(
+      readObject(async () => {
+        throw new Error('rclone cat exited 30: other');
+      }),
+    ).rejects.toThrow('exited 30');
+  });
+
+  it('says what each spawn.sh exit means', () => {
+    expect(spawnExitMessage(3)).toMatch(/still up/);
+    expect(spawnExitMessage(1)).toMatch(/exited 1 .*no assembler may be running/);
+    expect(spawnExitMessage(null)).toMatch(/exited on a signal/);
+  });
+});
+
+describe('stallWatch, the Machine’s own watchdog', () => {
+  it('fires once after the stall limit with no touch, never while touched, never once stopped', () => {
+    vi.useFakeTimers();
+    try {
+      let stalls = 0;
+      const watch = stallWatch({ onStall: () => stalls++ });
+      for (let i = 0; i < 10; i++) {
+        vi.advanceTimersByTime(MACHINE_STALL_MS - 1);
+        watch.touch();
+      }
+      expect(stalls).toBe(0);
+      vi.advanceTimersByTime(MACHINE_STALL_MS);
+      expect(stalls).toBe(1);
+      watch.touch();
+      vi.advanceTimersByTime(10 * MACHINE_STALL_MS);
+      expect(stalls).toBe(1);
+      watch.stop();
+      const stopped = stallWatch({ stallMs: 1000, onStall: () => stalls++ });
+      stopped.stop();
+      stopped.touch();
+      vi.advanceTimersByTime(10_000);
+      expect(stalls).toBe(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

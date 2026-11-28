@@ -27,11 +27,20 @@ import {
   type AssembleDeps,
   type AssembleProgress,
   AssembleRefusal,
+  type AssemblyRecord,
   assemble,
   assemblyKeys,
   planAssembly,
 } from '../assemble/assemble';
-import { assembleScope, assemblyCounts, followAssembly, oneAtATime } from '../assemble/orchestrate';
+import {
+  assembleScope,
+  assemblyCounts,
+  followAssembly,
+  oneAtATime,
+  readObject,
+  spawnExitMessage,
+  stallWatch,
+} from '../assemble/orchestrate';
 import { gdalRenderer } from '../assemble/overviews';
 import { fileStore, fileUploads, httpStore, type ObjectStore } from '../assemble/stores';
 import { type RcloneTarget, rcatSink, rcloneRun, serveHttp } from '../assemble/upload';
@@ -86,10 +95,33 @@ async function onMachine(campaign: string, pilot?: string): Promise<void> {
     await sink.write(new TextEncoder().encode(JSON.stringify(value)));
     await sink.end();
   };
-  // Concurrent index readers can report at once; two rcats to one key race (`oneAtATime`).
-  const progress = oneAtATime((event: AssembleProgress) =>
-    putJson(keys.progress, { at: new Date().toISOString(), event }),
+  const errorKey = keys.progress.replace(/progress\.json$/, 'error.json');
+  // A stuck read or upload stops the beat; the watchdog then frees the Machine, saying why, rather
+  // than leave it idling under the cap until someone looks (`MACHINE_STALL_MS`).
+  const watch = stallWatch({
+    onStall: () => {
+      const message =
+        'the assembler made no progress for 20 minutes: a read or the upload is stuck';
+      process.stderr.write(`failed: ${message}\n`);
+      const exit = () => process.exit(1);
+      setTimeout(exit, 60_000).unref();
+      putJson(errorKey, { at: new Date().toISOString(), refused: false, message }).then(exit, exit);
+    },
+  });
+  // Concurrent index readers can report at once; two rcats to one key race (`oneAtATime`). And a
+  // heartbeat is bookkeeping: one that fails (a transient R2 error on a tiny `rcat`) is reported
+  // and skipped, never the assembly's failure, and the stream never waits on it.
+  const write = oneAtATime((event: AssembleProgress) =>
+    putJson(keys.progress, { at: new Date().toISOString(), event }).catch((e) => {
+      process.stderr.write(
+        `[assemble] a progress write failed (the assembly carries on): ${(e as Error).message}\n`,
+      );
+    }),
   );
+  const progress = (event: AssembleProgress): void => {
+    watch.touch();
+    void write(event);
+  };
   try {
     const store = httpStore(server.baseUrl);
     const manifest = await readManifest(store, campaign, pilot);
@@ -102,13 +134,14 @@ async function onMachine(campaign: string, pilot?: string): Promise<void> {
     });
     process.stdout.write(`${JSON.stringify(assemblyCounts(record))}\n`);
   } catch (e) {
-    await putJson(keys.progress.replace(/progress\.json$/, 'error.json'), {
+    await putJson(errorKey, {
       at: new Date().toISOString(),
       refused: e instanceof AssembleRefusal,
       message: (e as Error).message,
     }).catch(() => {});
     throw e;
   } finally {
+    watch.stop();
     server.stop();
   }
 }
@@ -166,17 +199,29 @@ async function fromLaptop(
     scope: assembleScope(pilot ?? null),
     call: convexRun,
   });
-  logger.start();
   const keys = assemblyKeys(campaign, pilot);
-  const cat = async (key: string): Promise<unknown | null> => {
-    try {
-      return JSON.parse(
-        await rcloneRun(target, ['cat', `${target.remote}:${target.bucket}/${key}`]),
-      );
-    } catch {
-      return null;
-    }
-  };
+  const errorKey = keys.progress.replace(/progress\.json$/, 'error.json');
+  // `null` when the object isn't there; a throw when the bucket can't be reached, which the
+  // follower never counts as the Machine's silence (`readObject`).
+  const cat = <T>(key: string): Promise<T | null> =>
+    readObject<T>(() => rcloneRun(target, ['cat', `${target.remote}:${target.bucket}/${key}`]));
+
+  // **A re-run never starts a second assembly.** A record means an earlier run finished (it is the
+  // assembler's last write): the stage takes it, whatever that run's row says (a laptop that lost
+  // its stream marked it failed). A running assembler is attached to by `spawn.sh`, never doubled.
+  const finished = await cat<AssemblyRecord>(keys.record);
+  logger.start();
+  if (finished !== null) {
+    for (const [name, value] of Object.entries(assemblyCounts(finished))) logger.count(name, value);
+    logger.succeed([
+      `already assembled (${finished.finishedAt}): archive ${finished.archive.key}`,
+      `index ${finished.cellIndex.key}`,
+    ]);
+    process.stdout.write(`already assembled: ${keys.record} names ${finished.archive.key}\n`);
+    return;
+  }
+  // An earlier attempt's error object, so its message is never read as this run's.
+  const stale = (await cat<{ at?: string }>(errorKey).catch(() => null))?.at ?? null;
   const machine = spawn(
     'bash',
     [
@@ -189,15 +234,19 @@ async function fromLaptop(
       stdio: 'inherit',
     },
   );
-  let exited = false;
-  machine.on('close', () => {
-    exited = true;
+  let exit: number | null | undefined;
+  machine.on('close', (code) => {
+    exit = code;
   });
   try {
     const record = await followAssembly({
-      readProgress: async () => (await cat(keys.progress)) as never,
-      readRecord: async () => (await cat(keys.record)) as never,
-      machineDone: async () => exited,
+      readProgress: () => cat(keys.progress),
+      readRecord: () => cat(keys.record),
+      machineDone: async () => {
+        if (exit === undefined) return false;
+        if (exit === 0) return true;
+        throw new Error(spawnExitMessage(exit));
+      },
       logger,
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       now: () => Date.now(),
@@ -205,11 +254,12 @@ async function fromLaptop(
     for (const [name, value] of Object.entries(assemblyCounts(record))) logger.count(name, value);
     logger.succeed([`archive ${record.archive.key}`, `index ${record.cellIndex.key}`]);
   } catch (e) {
-    const err = (await cat(keys.progress.replace(/progress\.json$/, 'error.json'))) as {
-      message?: string;
-    } | null;
-    logger.failed(err?.message ? new Error(err.message) : e);
-    throw err?.message ? new Error(err.message) : e;
+    // Stop the wait (never the Machine: `spawn.sh` only watches it).
+    if (exit === undefined) machine.kill('SIGTERM');
+    const err = await cat<{ at?: string; message?: string }>(errorKey).catch(() => null);
+    const own = err?.message && err.at !== stale ? new Error(err.message) : null;
+    logger.failed(own ?? e);
+    throw own ?? e;
   }
 }
 

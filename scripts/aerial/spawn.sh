@@ -6,11 +6,15 @@
 #
 #   spawn.sh tiles <campaign> <units dir> <work tiles file|-> [--drain]
 #       one Machine per listed work tile (`11/<x>/<y>` a line), its unit (`11_<x>_<y>.json`) handed
-#       in as a file; at most MAX_PARALLEL Machines alive on the app; `--drain` returns only once
-#       every aerial Machine has gone
+#       in as a file — except a work tile whose Machine is still running (an earlier round's, or an
+#       earlier run's that the laptop lost), which is waited for, never doubled; at most
+#       MAX_PARALLEL Machines alive on the app; each worker killed past AERIAL_TILE_DEADLINE;
+#       `--drain` returns only once every aerial Machine has gone
 #   spawn.sh assemble <campaign> [--pilot <name>]
-#       one Machine running `assemble-aerial`; returns once it has gone (the assembler's own record
-#       in the bucket says whether it succeeded — `cli/assemble.ts` follows it)
+#       one Machine running `assemble-aerial` — or, when it is already running, that one, attached
+#       to and never doubled; returns 0 once it has gone (the assembler's own record in the bucket
+#       says whether it succeeded — `cli/assemble.ts` follows it), 3 if it gave up waiting while the
+#       Machine was still up, 1 when it started nothing
 #
 # **What to cut is decided upstream** (`src/tiles.ts` writes the units, `src/cli/tiles.ts` reconciles
 # by done record and calls this per round), and **how** is the image's (`cut-aerial.sh`). This file is
@@ -27,6 +31,7 @@
 #   MAX_PARALLEL         default 25 live Machines on the app, the winter pump's included
 #   FLY_VM_SIZE / FLY_VM_MEMORY             default performance-4x / 8192 (a work tile; see below)
 #   FLY_ASSEMBLE_VM_SIZE / FLY_ASSEMBLE_MEMORY  default shared-cpu-4x / 4096 (P measured ~2 GB)
+#   AERIAL_TILE_DEADLINE default 3600 s: a worker still running then is killed (below)
 set -euo pipefail
 
 if (( BASH_VERSINFO[0] < 4 )); then
@@ -55,7 +60,18 @@ ASSEMBLE_MEMORY="${FLY_ASSEMBLE_MEMORY:-4096}"
 SPAWN_TIMEOUT="${SPAWN_TIMEOUT:-120}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
 CAPACITY_TRIES="${CAPACITY_TRIES:-240}"
-DRAIN_TRIES="${DRAIN_TRIES:-720}"
+# The drain outlasts a hung worker's deadline (AERIAL_TILE_DEADLINE, below) with room to spare.
+DRAIN_TRIES="${DRAIN_TRIES:-1080}"
+LIST_TRIES="${LIST_TRIES:-5}"
+# **A hung worker is killed, not left on the bill.** Nothing in GDAL bounds a stalled read (no
+# GDAL_HTTP_TIMEOUT or low-speed limit is set), and a Machine whose worker never exits holds a slot
+# under the cap and bills until someone looks — once in a pilot's 28 work tiles is unlikely, once in
+# the region's 1,764 isn't. The pilot's slowest work tile took 356 s (256 s the mean) and the border
+# tiles read most (2.5 GB, about 3× the mean), so an hour is ~10× the mean and kills only a hung
+# one; it dies without a done record and the next round re-cuts it. coreutils' `timeout`, in the
+# image's Ubuntu base, signals the worker's whole process group (GDAL's children too), then KILLs.
+TILE_DEADLINE="${AERIAL_TILE_DEADLINE:-3600}"
+[[ "$TILE_DEADLINE" =~ ^[1-9][0-9]*$ ]] || { echo "AERIAL_TILE_DEADLINE must be whole seconds" >&2; exit 64; }
 IMAGE="${AERIAL_IMAGE:-}"
 
 usage() {
@@ -100,6 +116,24 @@ live_machines() {
     || echo "$MAX_PARALLEL"
 }
 
+# The names of the app's live Machines that start with `prefix`, one a line. **Can't tell is never
+# none**: a listing that keeps failing (LIST_TRIES of them) fails here, and the caller starts
+# nothing — a lost listing read as "not running" would start a second worker or assembler beside a
+# live one, both writing the same keys.
+live_names() {
+  local prefix="$1" listed names
+  for _ in $(seq 1 "$LIST_TRIES"); do
+    if listed="$(fly machine list --app "$APP" --json 2>/dev/null)" \
+      && names="$(jq -r --arg p "$prefix" '.[] | select((.name // "") | startswith($p))
+        | select(.state | test("^(created|starting|started|replacing)$")) | .name' <<<"$listed")"; then
+      [[ -n "$names" ]] && printf '%s\n' "$names"
+      return 0
+    fi
+    sleep "$POLL_SECONDS"
+  done
+  return 1
+}
+
 # Room for a whole batch before spawning it, or the cap is really MAX_PARALLEL + BATCH. **Waiting
 # out the cap is not room under it**: fan-out.sh continues anyway after 20 minutes, which on a list
 # that keeps failing (read as the cap, above) or an app the winter pump keeps full spawns past the
@@ -137,24 +171,36 @@ if [[ "$MODE" == assemble ]]; then
   fi
   NAME="aerial-asm-${STAMP}"
   echo "[spawn] assemble $CAMPAIGN -> app=$APP region=$ASSEMBLE_REGION vm=$ASSEMBLE_VM_SIZE/${ASSEMBLE_MEMORY}MB"
-  # One Machine, but under the same cap as every other: the app is shared with the winter pump.
-  BATCH=1 await_capacity || exit 1
-  # ⚠ No comments inside this command: a `#` between continuations drops every argument after it.
-  timeout "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
-    --app "$APP" \
-    --region "$ASSEMBLE_REGION" \
-    --vm-size "$ASSEMBLE_VM_SIZE" \
-    --vm-memory "$ASSEMBLE_MEMORY" \
-    --detach \
-    --rm \
-    --restart no \
-    --name "$NAME" \
-    --metadata "aerial=$CAMPAIGN" \
-    --env "AERIAL_IMAGE=$IMAGE" \
-    -- assemble-aerial "$CAMPAIGN" ${PILOT[@]+"${PILOT[@]}"} \
-    >/dev/null 2>&1 || { echo "[spawn] FAILED to spawn the assembler" >&2; exit 1; }
-  echo "[spawn] spawned $NAME; waiting for it to finish (fly logs --app $APP)"
-  DRAIN_TRIES="${ASSEMBLE_TRIES:-4320}" await_gone "$NAME"
+  # **A re-run attaches; it never starts a second assembler.** Two would stream the same archive to
+  # the same key, each past the other's "never overwrite" check (it runs before the first byte).
+  if ! running="$(live_names "$NAME")"; then
+    echo "[spawn] can't list the app's Machines, so whether $NAME is already running can't be told — starting none" >&2
+    exit 1
+  fi
+  if grep -qx -- "$NAME" <<<"$running"; then
+    echo "[spawn] $NAME is already running: following it, not starting a second assembler"
+  else
+    # One Machine, but under the same cap as every other: the app is shared with the winter pump.
+    BATCH=1 await_capacity || exit 1
+    # ⚠ No comments inside this command: a `#` between continuations drops every argument after it.
+    timeout "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
+      --app "$APP" \
+      --region "$ASSEMBLE_REGION" \
+      --vm-size "$ASSEMBLE_VM_SIZE" \
+      --vm-memory "$ASSEMBLE_MEMORY" \
+      --detach \
+      --rm \
+      --restart no \
+      --name "$NAME" \
+      --metadata "aerial=$CAMPAIGN" \
+      --env "AERIAL_IMAGE=$IMAGE" \
+      -- assemble-aerial "$CAMPAIGN" ${PILOT[@]+"${PILOT[@]}"} \
+      >/dev/null 2>&1 || { echo "[spawn] FAILED to spawn the assembler" >&2; exit 1; }
+    echo "[spawn] spawned $NAME; waiting for it to finish (fly logs --app $APP)"
+  fi
+  # 8,640 polls of at least 5 s is 12 h: ~8× the region's ~1.5 h assembly. The Machine's own
+  # watchdog stops a stuck one long before; giving up here means one still moving, far too slowly.
+  DRAIN_TRIES="${ASSEMBLE_TRIES:-8640}" await_gone "$NAME" || exit 3
   echo "[spawn] $NAME has gone — its record in the bucket says how it ended"
   exit 0
 fi
@@ -185,15 +231,36 @@ for tile in "${TILES[@]}"; do
   [[ -f "$UNITS/${tile//\//_}.json" ]] || { echo "spawn.sh: no unit for $tile in $UNITS" >&2; exit 1; }
 done
 
-echo "[spawn] ${#TILES[@]} work tiles -> app=$APP region=$REGION vm=$VM_SIZE/${VM_MEMORY}MB, at most $MAX_PARALLEL alive"
+# A work tile whose Machine is still up is not spawned again: its own worker lands it (or dies, and
+# a later round re-cuts it). That is a round after a drain that gave up, a re-run after the laptop
+# lost a round (asleep, offline, a failed reconcile), or a spawn whose `fly machine run` timed out
+# after creating its Machine — two Machines on one work tile would race on its keys.
+if ! running="$(live_names "aerial-${STAMP}-")"; then
+  echo "[spawn] can't list the app's Machines, so which work tiles are still running can't be told — spawning none" >&2
+  exit 1
+fi
+declare -A RUNNING=()
+# An `if`, not `[[ … ]] && …`: an empty last line would make the loop's status 1, and `set -e` exit.
+while IFS= read -r n; do if [[ -n "$n" ]]; then RUNNING["$n"]=1; fi; done <<<"$running"
+TODO=()
+for tile in "${TILES[@]}"; do
+  IFS=/ read -r _ x y <<<"$tile"
+  if [[ -n "${RUNNING["aerial-${STAMP}-${x}-${y}"]:-}" ]]; then
+    echo "[spawn]   $tile is still running: waiting for it, not spawning a second"
+  else
+    TODO+=("$tile")
+  fi
+done
+
+echo "[spawn] ${#TODO[@]} of ${#TILES[@]} work tiles -> app=$APP region=$REGION vm=$VM_SIZE/${VM_MEMORY}MB, at most $MAX_PARALLEL alive"
 BATCH=$(( MAX_PARALLEL / 4 ))
 (( BATCH < 1 )) && BATCH=1
 SPAWNED=0
-for tile in "${TILES[@]}"; do
+for tile in ${TODO[@]+"${TODO[@]}"}; do
   # `wait` before polling, or spawns since the last poll aren't in the count (fan-out.sh).
   if (( SPAWNED % BATCH == 0 )); then
     wait
-    await_capacity || { echo "[spawn] stopped after $SPAWNED of ${#TILES[@]} spawn calls" >&2; exit 1; }
+    await_capacity || { echo "[spawn] stopped after $SPAWNED of ${#TODO[@]} spawn calls" >&2; exit 1; }
   fi
   SPAWNED=$((SPAWNED + 1))
   IFS=/ read -r _ x y <<<"$tile"
@@ -201,7 +268,8 @@ for tile in "${TILES[@]}"; do
   name="aerial-${STAMP}-${x}-${y}"
   (
     # --rm --restart no: a batch job, never a crash loop on the bill. --detach: return once created.
-    # --file-local: the unit, written into the Machine at /data/unit.json. No comments below.
+    # --file-local: the unit, written into the Machine at /data/unit.json. `timeout`: the deadline,
+    # above. No comments below.
     timeout "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
       --app "$APP" \
       --region "$REGION" \
@@ -214,14 +282,14 @@ for tile in "${TILES[@]}"; do
       --metadata "aerial=$CAMPAIGN" \
       --env "AERIAL_IMAGE=$IMAGE" \
       --file-local "/data/unit.json=$unit" \
-      -- cut-aerial /data/unit.json \
+      -- timeout --kill-after=60 "$TILE_DEADLINE" cut-aerial /data/unit.json \
       >/dev/null 2>&1 \
       && echo "[spawn]   spawned $tile" \
       || echo "[spawn]   FAILED to spawn $tile" >&2
   ) &
 done
 wait
-echo "[spawn] all ${#TILES[@]} spawn calls returned (a spawn is not a result: the done records are)"
+echo "[spawn] all ${#TODO[@]} spawn calls returned (a spawn is not a result: the done records are)"
 if [[ "$DRAIN" == true ]]; then
   echo "[spawn] waiting for the aerial Machines to drain…"
   await_gone "aerial-${STAMP}-" || true
