@@ -28,11 +28,18 @@ import { runAssembleStage } from './stage/assembleStage';
 import { runCleanupStage } from './stage/cleanupStage';
 import { runSelectStage } from './stage/selectRun';
 import { runTilesStage } from './stage/tilesStage';
-import { doneRecord, FakeWorld, fixtureManifest, fixtureSources, LOCAL } from './stageHarness';
+import {
+  doneRecord,
+  FakeWorld,
+  fixtureCellsFile,
+  fixtureManifest,
+  fixtureSources,
+  LOCAL,
+} from './stageHarness';
 
 const CAMPAIGN = 'naip-pilot-20261212';
-// A pilot names its area (`select.pilotUnbounded`): one state of the fixture.
-const PILOT = ['--pilot', 'champlain', '--states', 'NY'];
+// A pilot names its cells (`args.pilotNoCells`): one state's cells of the fixture.
+const PILOT = ['--pilot', 'champlain', '--cells', fixtureCellsFile('NY')];
 
 const worlds: FakeWorld[] = [];
 afterEach(() => {

@@ -46,16 +46,20 @@ import { runSelectStage, type SelectSources } from './stage/selectRun';
 import { runTilesStage } from './stage/tilesStage';
 import { runVerifyStage } from './stage/verifyStage';
 import {
+  cellsText,
   DEV,
   doneRecord,
   FakeWorld,
   FIXTURE_ITEMS,
+  FIXTURE_PICKS,
+  fixtureCellsFile,
   fixtureManifest,
   fixtureSources,
   LOCAL,
   PROD,
   type Write,
 } from './stageHarness';
+import { parseStageArgs } from './stages';
 
 const SRC = dirname(fileURLToPath(import.meta.url));
 const CAMPAIGN = 'naip-20261212';
@@ -319,8 +323,14 @@ async function assembleWorld(
   return m;
 }
 
-/** A pilot's arguments over the fixture: one state of it, so a part of its cells. */
-const PILOT_ARGS = ['naip-pilot-20261212', '--pilot', 'champlain', '--states', 'ME'];
+/** A pilot's arguments over the fixture: one state's cells (a pilot takes --cells only), so a part of it. */
+const PILOT_ARGS = [
+  'naip-pilot-20261212',
+  '--pilot',
+  'champlain',
+  '--cells',
+  fixtureCellsFile('ME'),
+];
 
 const PROPOSED = {
   itemId: 'x',
@@ -348,6 +358,22 @@ const CASES: Record<RefusalId, Case[]> = {
   'args.pilotName': [args(['naip-pilot-20261212', '--pilot', 'Not A Name'])],
   'args.pilotMissing': [args(['naip-pilot-20261212'])],
   'args.pilotNotPilotCampaign': [args([CAMPAIGN, '--pilot', 'champlain'])],
+  // The governor's ruling (PR #188's ninth review): a pilot takes --cells only.
+  'args.pilotStates': [
+    args(['naip-pilot-20261212', '--pilot', 'champlain', '--states', 'ME'], (w, ...a) =>
+      select(w, a),
+    ),
+    args(['naip-pilot-20261212', '--pilot', 'champlain', '--states', 'ME']),
+  ],
+  'args.pilotNoCells': [
+    args(['naip-pilot-20261212', '--pilot', 'champlain'], (w, ...a) => select(w, a)),
+    // `run-aerial.sh`'s own read (`tilesRunArgs.ts`): `all` runs the select, so it needs --cells.
+    {
+      kind: 'pure',
+      name: 'run-aerial.sh naip-pilot-20261212 --pilot champlain (all)',
+      run: () => parseStageArgs(['naip-pilot-20261212', '--pilot', 'champlain']),
+    },
+  ],
   'args.cleanupOld': [args(['naip-20270801'], (w, ...a) => cleanup(w, {}, ...a))],
   'args.oldKey': [args(['naip-20270801', '--old', 'nope'], (w, ...a) => cleanup(w, {}, ...a))],
   'args.cleanupFlags': [
@@ -691,24 +717,14 @@ const CASES: Record<RefusalId, Case[]> = {
   ],
   'select.pilotUnbounded': [
     stage(
-      'a pilot given no area, refused before the walk',
+      'a pilot whose --cells list every cell: the region',
       (w) => {
         w.deployment = LOCAL;
       },
       (w) =>
-        select(w, ['naip-pilot-20261212', '--pilot', 'champlain'], {
-          walk: async () => {
-            throw new Error('walked');
-          },
+        select(w, ['naip-pilot-20261212', '--pilot', 'champlain', '--cells', 'all.txt'], {
+          readCellList: () => cellsText(FIXTURE_PICKS.map((p) => p.key)),
         }),
-    ),
-    stage(
-      'a pilot whose --states reach every cell: the region',
-      (w) => {
-        w.deployment = LOCAL;
-      },
-      (w) =>
-        select(w, ['naip-pilot-20261212', '--pilot', 'champlain', '--states', 'CT,MA,ME,NY,RI']),
     ),
   ],
 

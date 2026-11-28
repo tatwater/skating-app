@@ -31,6 +31,8 @@ export const REFUSALS = {
   'args.pilotName': '--pilot is not lowercase words joined by hyphens',
   'args.pilotMissing': 'a pilot campaign without --pilot',
   'args.pilotNotPilotCampaign': '--pilot on a production campaign',
+  'args.pilotStates': '--states on a pilot (a pilot takes --cells only)',
+  'args.pilotNoCells': "a pilot's select (alone or in all) without --cells",
   'args.cleanupOld': 'cleanup without --old',
   'args.oldKey': '--old is not an archive key',
   'args.cleanupFlags': 'cleanup given a build flag',
@@ -68,7 +70,7 @@ export const REFUSALS = {
   'select.fromCurrentRule': "a narrowed build on another rule's manifest",
   'select.fromCurrentKind': 'a build based on the other kind of build',
   'select.fromCurrentPilot': "a build based on a pilot's manifest (a pilot is never a base)",
-  'select.pilotUnbounded': 'a pilot whose plan would cut past its --cells/--states area',
+  'select.pilotUnbounded': 'a pilot whose --cells would cut every work tile of the region',
 
   // ── Tiles (`stage/tilesStage.ts`, `tiles.ts`' `selectUploads`) ─────────────────────────────────
   'tiles.noManifest': 'no select manifest in the scratch',

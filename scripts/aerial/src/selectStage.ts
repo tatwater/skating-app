@@ -47,7 +47,6 @@ import {
   framesShowing,
   manifestCounts,
   type Narrowing,
-  pilotUnbounded,
   SelectRefusal,
 } from './selectManifest';
 import { parseCellList, type StageArgs } from './stages';
@@ -159,11 +158,6 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
           `--cells: not quarter-quads: ${bad.join(', ')}`,
         );
       narrowing = { cells: keys };
-    }
-    // **A pilot never cuts the region** (PR #188's ninth review): it builds only the cells it is
-    // given. Decided before the walk, so nothing is scored for a region-sized pilot either.
-    if (args.pilot !== null && narrowing === null) {
-      throw new SelectRefusal('select.pilotUnbounded', pilotUnbounded(args.pilot));
     }
     const current = args.fromCurrent ? await deps.readCurrent() : null;
     if (current !== null) checkCurrent(current, { narrowing, pilot: args.pilot });

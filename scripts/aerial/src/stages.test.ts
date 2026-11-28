@@ -53,7 +53,30 @@ describe('parseStageArgs: what it reads', () => {
   });
 
   test('a pilot names itself, on a pilot campaign', () => {
-    expect(parse(`${PILOT} --pilot champlain-nhma`).pilot).toBe('champlain-nhma');
+    expect(parse(`${PILOT} --pilot champlain-nhma --cells c.txt`).pilot).toBe('champlain-nhma');
+  });
+
+  test('a pilot takes --cells only: --states on any stage, and a select (or all) without --cells, are refused', () => {
+    expect(parse(`${PILOT} --pilot p --cells c.txt`).cells).toBe('c.txt');
+    expect(parse(`${PILOT} --pilot p --stage select --cells c.txt`).cells).toBe('c.txt');
+    // Its later stages read the manifest, not the area: a re-run needs no --cells.
+    for (const stage of ['tiles', 'assemble', 'verify']) {
+      expect(parse(`${PILOT} --pilot p --stage ${stage}`).cells).toBeNull();
+    }
+    const id = (argv: string, forStage?: 'select') => {
+      try {
+        parseStageArgs(argv.split(' '), forStage);
+      } catch (e) {
+        return (e as StageArgsError).id;
+      }
+      return null;
+    };
+    expect(id(`${PILOT} --pilot p`)).toBe('args.pilotNoCells');
+    expect(id(`${PILOT} --pilot p --stage select`)).toBe('args.pilotNoCells');
+    expect(id(`${PILOT} --pilot p`, 'select')).toBe('args.pilotNoCells');
+    expect(id(`${PILOT} --pilot p --states ME`)).toBe('args.pilotStates');
+    expect(id(`${PILOT} --pilot p --stage tiles --states ME`)).toBe('args.pilotStates');
+    expect(id(`${BUILD} --states ME`)).toBeNull();
   });
 
   test('cleanup takes --old, a published archive key, and --live-since, the day its replacement went live', () => {
@@ -161,9 +184,12 @@ describe('stageArgsToOptions', () => {
     expect(stageArgsToOptions(parse(BUILD))).toEqual({ stage: 'all' });
     expect(
       stageArgsToOptions(
-        parse(`${PILOT} --pilot p --stage tiles --states ME --from-current --dry-run`),
+        parse(`${PILOT} --pilot p --stage select --cells c.txt --from-current --dry-run`),
       ),
-    ).toEqual({ stage: 'tiles', states: ['ME'], fromCurrent: true, pilot: 'p', dryRun: true });
+    ).toEqual({ stage: 'select', cells: 'c.txt', fromCurrent: true, pilot: 'p', dryRun: true });
+    expect(
+      stageArgsToOptions(parse(`${BUILD} --stage tiles --states ME --from-current --dry-run`)),
+    ).toEqual({ stage: 'tiles', states: ['ME'], fromCurrent: true, dryRun: true });
     expect(stageArgsToOptions(parse(`${BUILD} --cells c.txt`))).toEqual({
       stage: 'all',
       cells: 'c.txt',

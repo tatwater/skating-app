@@ -51,7 +51,14 @@ describe('run-aerial.sh’s refusals', () => {
 
   test('a dry run writes no row, so its target is not checked (as no stage checks it)', () => {
     expect(run(['naip-20261212', '--dry-run'], 'unknown').status).toBe(0);
-    const pilot = ['naip-pilot-20261125', '--pilot', 'champlain-nhma-me-ny', '--dry-run'];
+    const pilot = [
+      'naip-pilot-20261125',
+      '--pilot',
+      'champlain-nhma-me-ny',
+      '--cells',
+      'c.txt',
+      '--dry-run',
+    ];
     expect(run(pilot, 'dev:quick-fox-123').out).toEqual(['select', 'tiles', 'assemble', 'verify']);
   });
 

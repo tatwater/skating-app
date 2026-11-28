@@ -70,11 +70,11 @@ describe('the README’s commands', () => {
     }
   });
 
-  test('a pilot command names its area, and the pilot list it names is in the package', () => {
+  test('a pilot command names its cells (a pilot takes --cells only), and the list it names is in the package', () => {
     const pilots = commands.filter((a) => a.includes('--pilot') && a[0]?.startsWith('naip-pilot'));
     expect(pilots.length).toBeGreaterThan(0);
     for (const argv of pilots) {
-      expect(argv.includes('--cells') || argv.includes('--states'), argv.join(' ')).toBe(true);
+      expect(argv.includes('--cells') && !argv.includes('--states'), argv.join(' ')).toBe(true);
     }
     expect(FOLDED).toContain('--cells scripts/aerial/pilots/champlain-nhma-me-ny.txt');
     expect(shipped('pilots/champlain-nhma-me-ny.txt').length).toBeGreaterThan(0);
@@ -140,7 +140,7 @@ describe('the README’s commands', () => {
                 '2027-08-11',
               ]
             : flag === '--pilot'
-              ? ['naip-pilot-20261212', '--pilot', 'p']
+              ? ['naip-pilot-20261212', '--pilot', 'p', '--cells', 'c.txt']
               : [
                   'naip-20261212',
                   ...(['--dry-run', '--from-current'].includes(flag)

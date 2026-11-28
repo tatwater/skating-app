@@ -16,10 +16,13 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:f
 import { tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 import {
+  NAIP_EXCLUSIONS,
+  NAIP_FOLIAGE_STRIKES,
   NAIP_STATES,
   type NaipCatalogItem,
   type NaipManifest,
   type NaipState,
+  selectNaipPicks,
 } from '@skating/core';
 import type { CatalogSnapshot } from './catalog';
 import type { DeploymentTarget } from './runTarget';
@@ -297,6 +300,28 @@ const PER_STATE = Object.fromEntries(
   NAIP_STATES.map((s) => [s, FIXTURE_ITEMS.filter((i) => i.state === s).length]),
 ) as Record<NaipState, number>;
 
+/** The cells the fixture's selection picks (every one a `--cells` file may list), with their states. */
+export const FIXTURE_PICKS: readonly { key: string; states: readonly NaipState[] }[] =
+  selectNaipPicks(FIXTURE_ITEMS, NAIP_EXCLUSIONS, NAIP_FOLIAGE_STRIKES).picks;
+
+/**
+ * A pilot's `--cells` file over the fixture (a pilot takes `--cells` only): the name a test passes,
+ * which `fixtureSources`' reader answers with every picked cell `state` lists — what `--states`
+ * would have reached, as cells: a part of the fixture.
+ */
+export const fixtureCellsFile = (state: NaipState): string => `fixture-cells-${state}.txt`;
+
+/** The text of a `--cells` file listing `keys`. */
+export const cellsText = (keys: Iterable<string>): string =>
+  `${[...new Set(keys)].sort().join('\n')}\n`;
+
+function readFixtureCells(path: string): string {
+  const state = /^fixture-cells-([A-Z]{2})\.txt$/.exec(path)?.[1] as NaipState | undefined;
+  return state === undefined
+    ? ''
+    : cellsText(FIXTURE_PICKS.filter((p) => p.states.includes(state)).map((p) => p.key));
+}
+
 /** The select stage's sources over the fixture: every frame scored clean, nothing written. */
 export function fixtureSources(over: Partial<SelectSources> = {}): SelectSources {
   const snapshot: CatalogSnapshot = {
@@ -315,7 +340,7 @@ export function fixtureSources(over: Partial<SelectSources> = {}): SelectSources
       new Map<string, ThumbnailScore | null>(
         targets.map((t) => [t.itemId, { white: 0.001, valid: 1 }]),
       ),
-    readCellList: () => '',
+    readCellList: readFixtureCells,
     log: () => {},
     fetchCurrent: async () => {
       throw new Error('not asked');

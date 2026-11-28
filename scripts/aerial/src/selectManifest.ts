@@ -152,11 +152,6 @@ export function checkCurrent(
   }
 }
 
-/** The refusal for a pilot given no area (`select.pilotUnbounded`, decided before the walk). */
-export function pilotUnbounded(pilot: string): string {
-  return `pilot ${pilot} names no area: a pilot builds only the cells it is given (--cells <file> or --states), never the region — nothing was walked or scored`;
-}
-
 /** The manifest, from the rule's answer and its scores. Throws on a `current` it can't build from. */
 export function buildManifest(input: ManifestInput): NaipManifest {
   const { current, narrowing } = input;
@@ -239,8 +234,9 @@ export function buildManifest(input: ManifestInput): NaipManifest {
     });
   }
   workTiles.sort((a, b) => (a.key < b.key ? -1 : 1));
-  // **The dangerous outcome itself, whatever its cause**: a pilot that would cut every work tile
-  // its cells touch is the region (`--states` naming all seven, say), not a pilot.
+  // **The dangerous outcome itself, whatever its cause**: a pilot that would cut every work tile of
+  // the region is the region, not a pilot (a `--cells` file listing it all, say; `parseStageArgs`
+  // already refuses a pilot with `--states` or with no `--cells`).
   if (input.pilot !== null && workTiles.filter((w) => w.retile).length >= byTile.size) {
     throw new SelectRefusal(
       'select.pilotUnbounded',

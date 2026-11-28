@@ -156,6 +156,22 @@ export function parseStageArgs(argv: readonly string[], forStage?: AerialStageNa
       `--pilot needs a pilot campaign (naip-pilot-<YYYYMMDD>), not ${campaign}`,
     );
   }
+  // **A pilot takes `--cells` only** (the governor's ruling at PR #188's ninth review): a pilot is a
+  // small area named cell by cell, and a state — a third of the region, ~550 work tiles — is no
+  // pilot. Refused here, before any stage reads anything: `--states` on any stage of a pilot, and
+  // a pilot's select (alone or in `all`) with no `--cells`; its later stages read the manifest.
+  if (pilot !== null && states !== null) {
+    refuse(
+      'args.pilotStates',
+      `--states is for a build, not pilot ${pilot}: a pilot names its cells (--cells <file>) — a state is no pilot`,
+    );
+  }
+  if (pilot !== null && cells === null && (stage === 'select' || stage === 'all')) {
+    refuse(
+      'args.pilotNoCells',
+      `pilot ${pilot} names no cells: a pilot's select builds only the cells it is given (--cells <file>), never the region`,
+    );
+  }
 
   const old = values.get('old') ?? null;
   const liveSince = values.get('live-since') ?? null;

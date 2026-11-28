@@ -50,10 +50,20 @@ const runArb: fc.Arbitrary<{ campaign: string; options: AerialRunOptions }> = fc
       fromCurrent: fc.option(fc.constant(true), { nil: undefined }),
       dryRun: fc.option(fc.constant(true), { nil: undefined }),
     })
-    .map(({ pilot, stage, narrow, fromCurrent, dryRun }) => ({
-      campaign: pilot === undefined ? 'naip-20270712' : 'naip-pilot-20270712',
-      options: { stage, pilot, fromCurrent, dryRun, ...narrow } as AerialRunOptions,
-    })),
+    .map(({ pilot, stage, narrow, fromCurrent, dryRun }) => {
+      // A pilot takes --cells only, and its select (alone or in `all`) needs them.
+      const selects = stage === 'select' || stage === 'all' || stage === undefined;
+      const area =
+        pilot === undefined || 'cells' in narrow
+          ? narrow
+          : selects
+            ? { cells: 'pilot-cells.txt' }
+            : {};
+      return {
+        campaign: pilot === undefined ? 'naip-20270712' : 'naip-pilot-20270712',
+        options: { stage, pilot, fromCurrent, dryRun, ...area } as AerialRunOptions,
+      };
+    }),
   fc
     .record({
       pilot: fc.option(pilotName, { nil: undefined }),
