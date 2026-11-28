@@ -69,6 +69,7 @@ function deps(over: Partial<SelectDeps> = {}) {
     readCurrent: async () => {
       throw new Error('not asked');
     },
+    readPublished: async () => null,
     readCellList: () => '',
     writeManifest: (m) => {
       written.manifest = m;
@@ -281,6 +282,52 @@ describe('runSelect', () => {
     expect(readCurrent).toHaveBeenCalledOnce();
     expect(out.manifest.basedOn?.archive).toBe('naip-summer-20261125.pmtiles');
     expect(out.manifest.workTiles.every((w) => !w.retile)).toBe(true);
+  });
+});
+
+describe('a campaign already published (PR #188’s review)', () => {
+  /** What the campaign published: this selection, as the assembler completed it. */
+  const publish = async () => {
+    const { manifest } = await runSelect(args(), deps().deps);
+    return {
+      ...manifest,
+      archive: { name: 'naip-summer-20261125.pmtiles', bytes: 1, sha256: '0'.repeat(64) },
+    } as NaipManifest;
+  };
+
+  test('refuses other inputs before writing anything, saying what differs and what to do', async () => {
+    // Published before the founder struck a frame; selected again after.
+    const published = await publish();
+    const struck: NaipFoliageStrike = {
+      itemId: GLARE,
+      reason: 'turned',
+      reviewedBy: 'founder',
+      reviewedOn: '2026-11-28',
+    };
+    const d = deps({ readPublished: async () => published, foliageStrikes: [struck] });
+    await expect(runSelect(args(), d.deps)).rejects.toThrow(
+      new SelectRefusal(
+        'naip-20261125 is already published from other inputs (foliage strikes: changed; cells: 1 changed (4007326nw); work tiles: 4 changed (11/603/770, 11/603/771, 11/604/770, …)). A published key is never overwritten, so naip-20261125 stays as it was built — make the change a new campaign: run-aerial.sh naip-<YYYYMMDD> --from-current, with NAIP_MANIFEST_URL at naip-summer-20261125-manifest.json, copies its unchanged work tiles',
+      ),
+    );
+    expect(d.written.manifest).toBeUndefined();
+    expect(d.run.failed).toHaveBeenCalledOnce();
+  });
+
+  test('the same inputs go ahead (a re-run of every stage), and a dry run never asks', async () => {
+    const published = await publish();
+    const same = deps({
+      readPublished: async () => published,
+      now: () => new Date('2026-11-26T08:00:00Z'),
+    });
+    const out = await runSelect(args(), same.deps);
+    expect(same.written.manifest).toBe(out.manifest);
+    expect(same.lines).toContain(
+      '[select] naip-20261125 is already published from these inputs: nothing changes',
+    );
+    const readPublished = vi.fn(async () => published);
+    await runSelect(args('--dry-run'), deps({ readPublished }).deps);
+    expect(readPublished).not.toHaveBeenCalled();
   });
 });
 

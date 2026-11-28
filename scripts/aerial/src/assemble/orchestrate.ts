@@ -6,8 +6,9 @@
  * record lands or the Machine stops without one. Where the row may go is `runTarget.ts`' rule.
  */
 
-import { NAIP_STATES } from '@skating/core';
-import type { AssembleProgress, AssemblyRecord } from './assemble';
+import { NAIP_STATES, type NaipManifest, naipBuildInputsHash } from '@skating/core';
+import { publishedConflict } from '../publishedBuild';
+import { type AssembleProgress, AssembleRefusal, type AssemblyRecord } from './assemble';
 
 /**
  * **One write at a time, in order** — for the progress object the Machine rewrites under one key.
@@ -145,6 +146,34 @@ export async function readObject<T>(read: () => Promise<string>): Promise<T | nu
   }
   if (text.trim() === '') return null;
   return JSON.parse(text) as T;
+}
+
+/**
+ * **A re-run's answer to the record an earlier assembly left** (PR #188's review): the record when
+ * it was assembled from `manifest`'s inputs — the record's `inputs` is core's `naipBuildInputsHash`
+ * of the manifest it assembled, compared with the build's manifest now — so the stage takes it as
+ * done and never starts a second assembler; `null` when there is none. A record of **other inputs**
+ * (the picks changed and were re-cut after the archive was published) is refused, never read as
+ * "already assembled": what differs is read off the manifest that assembly published. So is a record
+ * that names no inputs (the pilot's, version 1): what it was built from can't be told.
+ */
+export async function finishedAssembly(
+  record: AssemblyRecord | null,
+  manifest: NaipManifest,
+  readPublished: () => Promise<NaipManifest | null>,
+): Promise<AssemblyRecord | null> {
+  if (record === null) return null;
+  if (typeof record.inputs === 'string' && record.inputs === naipBuildInputsHash(manifest)) {
+    return record;
+  }
+  const published = await readPublished();
+  const conflict = published === null ? null : publishedConflict(published, manifest);
+  throw new AssembleRefusal(
+    conflict ??
+      (typeof record.inputs !== 'string'
+        ? `${record.campaign}'s assembly record (version ${String(record.version)}) names no inputs, so what its archive was built from can't be told — it is not taken as this build's`
+        : `${record.campaign}'s assembly record names other inputs than ${published === null ? 'the build’s manifest, and no manifest is published beside its archive' : 'the manifest published beside its archive'}: run verify, which holds the record, the published manifest and the build's to one another`),
+  );
 }
 
 /** What a non-zero exit of `spawn.sh assemble` means for the assembly. */

@@ -5,7 +5,9 @@
  * 1. reads the select stage's manifest from the campaign's scratch and writes one work unit per
  *    work tile it cuts (`<scratch>/<campaign>/units/11_<x>_<y>.json`);
  * 2. `--dry-run` stops there: the plan, no upload, no Machine, no row;
- * 3. uploads the manifest to `buildManifestKey` and the catalog snapshot to `inventoryKey`
+ * 3. reads the campaign's published manifest: already published from these inputs, it stops with
+ *    nothing to cut; from other inputs it refuses (`publishedBuild.ts`) — otherwise
+ *    uploads the manifest to `buildManifestKey` and the catalog snapshot to `inventoryKey`
  *    (`selectUploads`) — the assembler and verify read them from the bucket;
  * 4. opens the `aerial_tiles` row (scope per §2.6) and runs the rounds (`runTileRounds`): what has
  *    landed is read from the done records in the bucket, the rest spawned by `spawn.sh tiles …
@@ -25,7 +27,10 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import type { NaipManifest } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
-import { buildPrefix, scratchPaths } from '../keys';
+import { readObject } from '../assemble/orchestrate';
+import { rcloneRun } from '../assemble/upload';
+import { buildPrefix, manifestKey, scratchPaths } from '../keys';
+import { againstPublished, PublishedBuildRefusal } from '../publishedBuild';
 import { checkRunTarget, RunTargetRefusal } from '../runTarget';
 import { parseShardDone, type ShardDone } from '../shard';
 import { parseStageArgs, StageArgsError } from '../stages';
@@ -84,6 +89,22 @@ async function main(): Promise<void> {
   checkRunTarget(args.pilot, deployment);
   const remote = process.env.R2_REMOTE || 'r2';
   const bucket = need('R2_BUCKET');
+
+  // **Never over a published campaign's inputs** (PR #188's review): the upload below replaces the
+  // bucket's manifest, which is what the assembler and verify read. A campaign already published
+  // from these inputs has nothing to cut; from other inputs it is refused, saying what differs.
+  const published = await readObject<NaipManifest>(() =>
+    rcloneRun({ remote, bucket }, [
+      'cat',
+      `${remote}:${bucket}/${manifestKey(args.campaign, args.pilot ?? undefined)}`,
+    ]),
+  );
+  if (againstPublished(published, manifest) === 'published') {
+    process.stdout.write(
+      `${args.campaign} is already published from these inputs: nothing to cut, nothing uploaded\n`,
+    );
+    return;
+  }
   need('AERIAL_IMAGE');
 
   for (const up of selectUploads(manifest)) {
@@ -189,7 +210,7 @@ async function main(): Promise<void> {
 
 main().catch((e) => {
   process.stderr.write(
-    `${e instanceof StageArgsError || e instanceof RunTargetRefusal ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
+    `${e instanceof StageArgsError || e instanceof RunTargetRefusal || e instanceof PublishedBuildRefusal ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
   );
   process.exit(1);
 });

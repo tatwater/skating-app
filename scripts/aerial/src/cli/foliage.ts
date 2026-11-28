@@ -95,6 +95,7 @@ async function main(): Promise<void> {
         onProgress: progress('select'),
       }),
     readCurrent: () => Promise.reject(new Error('the foliage review builds from nothing')),
+    readPublished: () => Promise.reject(new Error('the foliage review is a dry run')),
     readCellList: () => '',
     writeManifest: (manifest) => {
       writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);

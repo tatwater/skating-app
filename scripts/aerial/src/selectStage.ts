@@ -11,7 +11,10 @@
  * - any violation of the rule's invariants on the whole catalog (`checkSelection`);
  * - a frame verify couldn't date (`checkManifestFrames`): caught here, before a Machine is paid for,
  *   never at assembly after the tiles are cut;
- * - a `--cells` key no frame covers (a typo would otherwise build nothing there, quietly).
+ * - a `--cells` key no frame covers (a typo would otherwise build nothing there, quietly);
+ * - in anything but a dry run, **a campaign already published from other inputs**
+ *   (`publishedBuild.ts`): its keys are never overwritten, so the change is a new campaign, and the
+ *   scratch manifest the published archive was built from is kept as it is.
  */
 
 import {
@@ -30,6 +33,7 @@ import {
 } from '@skating/core';
 import type { RunLogger } from '@skating/run-log';
 import type { CatalogSnapshot } from './catalog';
+import { publishedConflict } from './publishedBuild';
 import type { ScoreTarget, ThumbnailScore } from './score';
 import type { CloudCandidates } from './scoreSheet';
 import { cloudCandidates } from './scoreSheet';
@@ -52,6 +56,12 @@ export interface SelectDeps {
   score: (targets: readonly ScoreTarget[]) => Promise<Map<string, ThumbnailScore | null>>;
   /** The current build's manifest, for `--from-current`. */
   readCurrent: () => Promise<NaipManifest>;
+  /**
+   * The manifest published under this campaign's own keys, or `null` when nothing is: read in
+   * anything but a dry run, before the manifest is written. A read that fails throws (can't tell is
+   * never "nothing published").
+   */
+  readPublished: () => Promise<NaipManifest | null>;
   /** A `--cells` file's text. */
   readCellList: (path: string) => string;
   /** Writes the manifest; returns where. */
@@ -208,6 +218,16 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
       throw new SelectRefusal(
         `${undatable.length} of the manifest's frames can't be dated as verify will date them: ${undatable.slice(0, 20).join('; ')}`,
       );
+    }
+    if (!args.dryRun) {
+      const published = await deps.readPublished();
+      if (published !== null) {
+        const conflict = publishedConflict(published, manifest);
+        if (conflict !== null) throw new SelectRefusal(conflict);
+        deps.log(
+          `[select] ${args.campaign} is already published from these inputs: nothing changes`,
+        );
+      }
     }
     const counts = {
       ...manifestCounts(manifest),

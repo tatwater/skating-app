@@ -5,20 +5,21 @@ import { gunzipSync } from 'node:zlib';
 import type { NaipCellIndex, NaipManifest } from '@skating/core';
 import { PMTiles, tileIdToZxy } from 'pmtiles';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { archiveKey, indexKey, manifestKey, shardKeys } from '../keys';
+import { archiveKey, buildManifestKey, indexKey, manifestKey, shardKeys } from '../keys';
 import { readArchiveEntries, storeSource } from './archiveRead';
 import {
   type AssembledManifest,
   type AssembleProgress,
   AssembleRefusal,
+  type AssemblyRecord,
   archiveMetadata,
   assemble,
   assemblyKeys,
   planAssembly,
   storeReader,
 } from './assemble';
-import { followAssembly } from './orchestrate';
-import { fileStore, fileUploads } from './stores';
+import { finishedAssembly, followAssembly } from './orchestrate';
+import { fileStore, fileUploads, sha256Hex } from './stores';
 import { hashRenderer, syntheticTile, writeSyntheticBuild } from './synthetic';
 
 const TILES = { meanBytes: 64, dupEvery: 13, density: (z: number) => (z <= 12 ? 1 : 0.02) };
@@ -312,7 +313,30 @@ describe('assemble refuses, and publishes nothing, when', () => {
   it('a published key already exists (keys are immutable)', async () => {
     const build = await setup();
     await assemble(build.manifest, depsFor().deps);
-    await expect(assemble(build.manifest, depsFor().deps)).rejects.toThrow('already exists');
+    // Published from these inputs: refused as done before anything is read (above, the other inputs).
+    await expect(assemble(build.manifest, depsFor().deps)).rejects.toThrow(
+      'is already assembled from these inputs',
+    );
+    // And a manifest that lands while this assembly reads its inputs (another assembler, racing)
+    // still stops it before the first byte.
+    const { deps } = depsFor();
+    let first = true;
+    const racing = {
+      ...deps,
+      store: {
+        ...deps.store,
+        get: async (key: string) => {
+          if (key === manifestKey('naip-20261212') && first) {
+            first = false;
+            return null;
+          }
+          return deps.store.get(key);
+        },
+      },
+    };
+    await expect(assemble(build.manifest, racing)).rejects.toThrow(
+      `${archiveKey('naip-20261212')} already exists: a published key is never overwritten`,
+    );
   });
 
   it('an earlier assembly that stopped before its manifest says how to recover', async () => {
@@ -492,6 +516,92 @@ describe('the pieces', () => {
     for await (const c of reader.stream('memory:x', 0, 3)) chunks.push(c);
     for await (const c of reader.stream('obj', 3, 2)) chunks.push(c);
     expect(Buffer.concat(chunks)).toEqual(Buffer.from([9, 8, 7, 4, 5]));
+  });
+});
+
+describe('a re-run after the picks changed (PR #188’s review)', () => {
+  const campaign = 'naip-20261212';
+
+  /**
+   * The founder strikes a frame after the campaign was assembled: one cell's pick becomes its
+   * fallback, so its work tiles' input hashes change, and the tiles stage re-cuts them (the worker
+   * writes done records at the new hashes). Returns the new manifest.
+   */
+  const changePicksAndRecut = async (manifest: NaipManifest): Promise<NaipManifest> => {
+    const cell = manifest.cells[0] as NaipManifest['cells'][number];
+    const recut = new Set(cell.workTiles);
+    const changed: NaipManifest = {
+      ...manifest,
+      createdAt: '2026-12-14T09:00:00.000Z',
+      cells: manifest.cells.map((c) =>
+        c.key === cell.key ? { ...c, pick: c.stack[0] as string, stack: [c.pick] } : c,
+      ),
+      workTiles: manifest.workTiles.map((w) =>
+        recut.has(w.key) ? { ...w, inputHash: sha256Hex(`recut:${w.key}`) } : w,
+      ),
+    };
+    for (const w of changed.workTiles.filter((w) => recut.has(w.key))) {
+      const [, x, y] = w.key.split('/').map(Number);
+      const keys = shardKeys(campaign, { z: 11, x: x as number, y: y as number });
+      const done = await readJson<Record<string, unknown>>(keys.done);
+      await writeFile(join(root, keys.done), JSON.stringify({ ...done, inputHash: w.inputHash }));
+    }
+    await writeFile(join(root, buildManifestKey(campaign)), JSON.stringify(changed));
+    return changed;
+  };
+  const readPublished = async () => readJson<NaipManifest>(manifestKey(campaign));
+
+  it('the laptop refuses an earlier assembly of other inputs, saying what differs and what to do', async () => {
+    const build = await writeSyntheticBuild(root, { campaign, workTiles: WORK, tiles: TILES });
+    const first = await assemble(build.manifest, depsFor().deps);
+    const changed = await changePicksAndRecut(build.manifest);
+    const record = await readJson<AssemblyRecord>(assemblyKeys(campaign).record);
+
+    // Before the fix: "already assembled", the archive keeping the earlier selection.
+    await expect(finishedAssembly(record, changed, readPublished)).rejects.toThrow(
+      new RegExp(
+        `^naip-20261212 is already published from other inputs \\(cells: 1 changed \\(${build.manifest.cells[0]?.key}\\); work tiles: 1 changed \\(11/603/731\\)\\)\\. A published key is never overwritten, so naip-20261212 stays as it was built — make the change a new campaign: run-aerial\\.sh naip-<YYYYMMDD> --from-current, with NAIP_MANIFEST_URL at naip-summer-20261212-manifest\\.json, copies its unchanged work tiles$`,
+      ),
+    );
+    // The same inputs, written again by a re-run of the select stage: already assembled.
+    expect(
+      await finishedAssembly(
+        record,
+        { ...build.manifest, createdAt: '2026-12-15T00:00:00.000Z' },
+        readPublished,
+      ),
+    ).toEqual(first);
+    expect(await finishedAssembly(null, changed, readPublished)).toBeNull();
+  });
+
+  it('the Machine refuses too, before it reads a shard, and the archive stays the first one', async () => {
+    const build = await writeSyntheticBuild(root, { campaign, workTiles: WORK, tiles: TILES });
+    const first = await assemble(build.manifest, depsFor().deps);
+    const changed = await changePicksAndRecut(build.manifest);
+    const { deps, uploads } = depsFor();
+    const read: string[] = [];
+    const store = deps.store;
+    const watched = {
+      ...deps,
+      store: {
+        ...store,
+        get: (key: string) => {
+          read.push(key);
+          return store.get(key);
+        },
+      },
+    };
+    await expect(assemble(changed, watched)).rejects.toThrow(
+      /^naip-20261212 is already published from other inputs \(cells: 1 changed/,
+    );
+    await expect(assemble(build.manifest, watched)).rejects.toThrow(
+      new AssembleRefusal(
+        'naip-20261212 is already assembled from these inputs (dev/naip/naip-summer-20261212-manifest.json): nothing to assemble',
+      ),
+    );
+    expect(read).toEqual([manifestKey(campaign), manifestKey(campaign)]);
+    expect(uploads).toEqual([]);
+    expect((await readPublished()).archive?.sha256).toBe(first.archive.sha256);
   });
 });
 

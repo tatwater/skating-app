@@ -8,9 +8,9 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { storeSource } from './assemble/archiveRead';
 import { type AssembledManifest, assemble, assemblyKeys } from './assemble/assemble';
 import { fileStore, fileUploads, type ObjectStore, sha256Hex } from './assemble/stores';
-import { hashRenderer, writeSyntheticBuild } from './assemble/synthetic';
+import { hashRenderer, writeBuildManifest, writeSyntheticBuild } from './assemble/synthetic';
 import { tileBox, worldPixel } from './assemble/tileGrid';
-import { archiveKey, indexKey, manifestKey, shardKeys } from './keys';
+import { archiveKey, buildManifestKey, indexKey, manifestKey, shardKeys } from './keys';
 import { pmtilesCliCheck, publicUrl, sampleIds, verifyBuild } from './verify';
 import { boxPixelsAtZ16, coverage, seams, tileAt, writeReport } from './verifyReport';
 
@@ -266,6 +266,35 @@ describe('verify refuses', () => {
     expect((await problemsOf()).all).toContain('is not published');
   });
 
+  it('a build manifest re-selected after the assembly: the archive keeps the earlier selection', async () => {
+    // The founder confirms a foliage strike that moves no pick, and the select and tiles stages
+    // run again under the same campaign: nothing is re-cut, every shard still lands — and the
+    // published manifest no longer says what the build now is (PR #188's review).
+    const key = buildManifestKey(CAMPAIGN, PILOT);
+    await rewriteJson(key, (m) => ({ ...m, foliageStrikesHash: '0'.repeat(64) }));
+    const { out, all } = await problemsOf();
+    expect(out.ok).toBe(false);
+    expect(all).toContain(
+      "the build's manifest has changed since the archive was assembled (foliage strikes: changed): the archive keeps the earlier selection, and make the change a new campaign: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain --from-current, with NAIP_MANIFEST_URL at naip-summer-20261212-manifest.json, copies its unchanged work tiles",
+    );
+    await rm(join(root, key));
+    expect((await problemsOf()).all).toContain(
+      `the build's manifest (${key}) is missing, so what the archive was built from can't be checked`,
+    );
+  });
+
+  it('a record whose inputs are not the published manifest’s, or that names none', async () => {
+    const recordKey = assemblyKeys(CAMPAIGN, PILOT).record;
+    await rewriteJson(recordKey, (r) => ({ ...r, inputs: '0'.repeat(64) }));
+    expect((await problemsOf()).all).toContain(
+      'the assembly record names other inputs than the published manifest',
+    );
+    await rewriteJson(recordKey, ({ inputs: _, ...r }) => ({ ...r, version: 1 }));
+    expect((await problemsOf()).all).toContain(
+      "the assembly record names no inputs, so what the archive was built from can't be checked",
+    );
+  });
+
   it('an archive that can’t be read at all', async () => {
     await writeFile(join(root, archiveKey(CAMPAIGN, PILOT)), 'not an archive');
     const { out, all } = await problemsOf();
@@ -313,6 +342,7 @@ describe('verify, on a build that copied work tiles from the current archive', (
           : w;
       }),
     };
+    await writeBuildManifest(root, next);
     const upload = fileUploads(root);
     await assemble(next, {
       store: fileStore(root),

@@ -35,6 +35,7 @@ import {
 import {
   assembleScope,
   assemblyCounts,
+  finishedAssembly,
   followAssembly,
   oneAtATime,
   readObject,
@@ -44,7 +45,7 @@ import {
 import { gdalRenderer } from '../assemble/overviews';
 import { fileStore, fileUploads, httpStore, type ObjectStore } from '../assemble/stores';
 import { type RcloneTarget, rcatSink, rcloneRun, serveHttp } from '../assemble/upload';
-import { buildManifestKey } from '../keys';
+import { buildManifestKey, manifestKey } from '../keys';
 import { checkRunTarget, RunTargetRefusal } from '../runTarget';
 import { parseStageArgs, StageArgsError } from '../stages';
 
@@ -206,22 +207,39 @@ async function fromLaptop(
   const cat = <T>(key: string): Promise<T | null> =>
     readObject<T>(() => rcloneRun(target, ['cat', `${target.remote}:${target.bucket}/${key}`]));
 
-  // **A re-run never starts a second assembly.** A record means an earlier run finished (it is the
-  // assembler's last write): the stage takes it, whatever that run's row says (a laptop that lost
-  // its stream marked it failed). A running assembler is attached to by `spawn.sh`, never doubled.
+  const readPublished = () => cat<NaipManifest>(manifestKey(campaign, pilot));
+
+  // Read before the row opens, and a read that fails starts nothing (can't tell is never "none"):
+  // an earlier run's record, the build's manifest it is held to, and an earlier attempt's error
+  // object, so that message is never read as this run's.
   const finished = await cat<AssemblyRecord>(keys.record);
+  const manifest = await cat<NaipManifest>(buildManifestKey(campaign, pilot));
+  if (manifest === null) {
+    throw new Error(`no manifest at ${buildManifestKey(campaign, pilot)}: run the tiles stage`);
+  }
+  const stale = finished === null ? ((await cat<{ at?: string }>(errorKey))?.at ?? null) : null;
   logger.start();
-  if (finished !== null) {
-    for (const [name, value] of Object.entries(assemblyCounts(finished))) logger.count(name, value);
+  // **A re-run never starts a second assembly** — and never takes an earlier one of other inputs
+  // as this one (PR #188's review). A record means an earlier run finished (it is the assembler's
+  // last write): the stage takes it, whatever that run's row says (a laptop that lost its stream
+  // marked it failed), when its `inputs` are this build manifest's; otherwise it refuses, saying
+  // what differs (`finishedAssembly`). A running assembler is attached to by `spawn.sh`.
+  let taken: AssemblyRecord | null;
+  try {
+    taken = await finishedAssembly(finished, manifest, readPublished);
+  } catch (e) {
+    logger.failed(e);
+    throw e;
+  }
+  if (taken !== null) {
+    for (const [name, value] of Object.entries(assemblyCounts(taken))) logger.count(name, value);
     logger.succeed([
-      `already assembled (${finished.finishedAt}): archive ${finished.archive.key}`,
-      `index ${finished.cellIndex.key}`,
+      `already assembled (${taken.finishedAt}): archive ${taken.archive.key}`,
+      `index ${taken.cellIndex.key}`,
     ]);
-    process.stdout.write(`already assembled: ${keys.record} names ${finished.archive.key}\n`);
+    process.stdout.write(`already assembled: ${keys.record} names ${taken.archive.key}\n`);
     return;
   }
-  // An earlier attempt's error object, so its message is never read as this run's.
-  const stale = (await cat<{ at?: string }>(errorKey).catch(() => null))?.at ?? null;
   const machine = spawn(
     'bash',
     [
@@ -239,7 +257,7 @@ async function fromLaptop(
     exit = code;
   });
   try {
-    const record = await followAssembly({
+    const followed = await followAssembly({
       readProgress: () => cat(keys.progress),
       readRecord: () => cat(keys.record),
       machineDone: async () => {
@@ -251,13 +269,22 @@ async function fromLaptop(
       sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
       now: () => Date.now(),
     });
+    // The record that landed is held to the same inputs: an assembler attached to (or one that
+    // read the manifest before a re-run of the tiles stage replaced it) may have built other ones.
+    const record = (await finishedAssembly(followed, manifest, readPublished)) as AssemblyRecord;
     for (const [name, value] of Object.entries(assemblyCounts(record))) logger.count(name, value);
     logger.succeed([`archive ${record.archive.key}`, `index ${record.cellIndex.key}`]);
   } catch (e) {
     // Stop the wait (never the Machine: `spawn.sh` only watches it).
     if (exit === undefined) machine.kill('SIGTERM');
-    const err = await cat<{ at?: string; message?: string }>(errorKey).catch(() => null);
-    const own = err?.message && err.at !== stale ? new Error(err.message) : null;
+    const err = await cat<{ at?: string; message?: string; refused?: boolean }>(errorKey).catch(
+      () => null,
+    );
+    // The Machine's refusal stays a refusal (a published campaign's inputs, an incomplete set).
+    const own =
+      err?.message && err.at !== stale
+        ? new (err.refused === true ? AssembleRefusal : Error)(err.message)
+        : null;
     logger.failed(own ?? e);
     throw own ?? e;
   }

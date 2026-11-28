@@ -7,7 +7,9 @@
  *
  * The run row (`aerial_select`) goes to Convex dev for a production campaign and to a local backend
  * for a pilot (§3.1: a pilot's rows never reach dev); a dry run writes none, and needs no backend.
- * Prod is refused outright (the founder, F-4 a: dev only).
+ * Prod is refused outright (the founder, F-4 a: dev only). Anything but a dry run reads the
+ * campaign's published manifest first (`R2_BUCKET`), and refuses to select other inputs for a
+ * campaign already published (`publishedBuild.ts`).
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -15,8 +17,10 @@ import { dirname, join } from 'node:path';
 import process from 'node:process';
 import { NAIP_STATES, type NaipManifest, NaipSasSigner } from '@skating/core';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
+import { readObject } from '../assemble/orchestrate';
+import { rcloneRun } from '../assemble/upload';
 import { walkCatalog } from '../catalog';
-import { AERIAL_SCRATCH, scratchPaths } from '../keys';
+import { AERIAL_SCRATCH, manifestKey, scratchPaths } from '../keys';
 import { checkRunTarget } from '../runTarget';
 import { gdalDecode, ScoreCache, scoreFrames } from '../score';
 import { readPrescreen, writeContactSheet } from '../scoreSheet';
@@ -78,6 +82,17 @@ async function main(): Promise<void> {
       const res = await fetch(from);
       if (!res.ok) throw new SelectRefusal(`the live manifest answered ${res.status}`);
       return (await res.json()) as NaipManifest;
+    },
+    // What this campaign has published, through the laptop's rclone remote (`R2_REMOTE`, default
+    // `r2`; `R2_BUCKET`): `null` when nothing is; a bucket that can't be read fails the stage.
+    readPublished: () => {
+      const bucket = process.env.R2_BUCKET;
+      if (!bucket) throw new SelectRefusal('R2_BUCKET is not set (scripts/aerial/.env.local)');
+      const target = { remote: process.env.R2_REMOTE || 'r2', bucket };
+      const key = manifestKey(args.campaign, args.pilot ?? undefined);
+      return readObject<NaipManifest>(() =>
+        rcloneRun(target, ['cat', `${target.remote}:${target.bucket}/${key}`]),
+      );
     },
     readCellList: (path) => readFileSync(path, 'utf8'),
     writeManifest: (manifest) => {

@@ -5,6 +5,9 @@
  *
  * The order of work, so nothing is written that a later step could refuse:
  *
+ * 0. **A published campaign is never assembled again** (`publishedBuild.ts`): its manifest names
+ *    what its archive was built from (core's `naipBuildInputsHash`), so the same inputs are refused
+ *    as already done and other inputs as a new campaign's, before anything is read.
  * 1. **Read every input's index.** A work tile the build cut must have **landed** — a done record
  *    for this campaign, this work tile and the manifest's input hash (`shardLanded`, never presence)
  *    — and its index must agree with the record. An unchanged work tile (`retile: false`) is read out
@@ -28,6 +31,7 @@ import {
   type NaipManifest,
   type NaipManifestWorkTile,
   type NaipPublishedObject,
+  naipBuildInputsHash,
   naipTileZoom,
   parseWorkTileKey,
   type WorkTile,
@@ -45,6 +49,7 @@ import {
   publishPrefix,
   shardKeys,
 } from '../keys';
+import { publishedConflict } from '../publishedBuild';
 import {
   checkShardIndex,
   parseShardDone,
@@ -89,11 +94,16 @@ export type AssembledManifest = Omit<NaipManifest, 'workTiles' | 'archive' | 'ce
 
 /** What the assembler leaves for verify and the run row, at `<build prefix>assembly.json`. */
 export interface AssemblyRecord {
-  version: 1;
+  version: typeof ASSEMBLY_RECORD_VERSION;
   campaign: string;
   pilot: string | null;
   startedAt: string;
   finishedAt: string;
+  /**
+   * What the archive was built from: core's `naipBuildInputsHash` of the manifest assembled — the
+   * one identity a re-run (`orchestrate.ts`' `finishedAssembly`) and verify compare (§2.4).
+   */
+  inputs: string;
   archive: NaipPublishedObject & { key: string };
   cellIndex: NaipPublishedObject & { key: string; gzipBytes: number };
   manifest: { key: string; bytes: number; sha256: string };
@@ -122,7 +132,8 @@ export interface AssemblyRecord {
   memory: { peakRssBytes: number; peakHeapBytes: number };
 }
 
-export const ASSEMBLY_RECORD_VERSION = 1;
+/** 2 (PR #188's review, 2026-11-27): `inputs`. The pilot's record is version 1 and has none. */
+export const ASSEMBLY_RECORD_VERSION = 2;
 
 /** `<build prefix>assembly.json` and `<build prefix>assembly-progress.json`. */
 export function assemblyKeys(
@@ -395,6 +406,21 @@ async function run(
   }
   if (manifest.workTiles.length === 0) refuse('the manifest has no work tiles');
 
+  // ── 0. A campaign already published is never assembled again ────────────────────────────────
+  // Its manifest names what its archive was built from (`publishedBuild.ts`): the same inputs are
+  // done, other inputs a new campaign's — said here, before a shard is read, never at step 5 as a
+  // bare "already exists" (PR #188's review).
+  const publishedKey = manifestKey(campaign, pilot);
+  const publishedBytes = await deps.store.get(publishedKey);
+  if (publishedBytes !== null) {
+    const published = JSON.parse(new TextDecoder().decode(publishedBytes)) as NaipManifest;
+    refuse(
+      publishedConflict(published, manifest) ??
+        `${campaign} is already assembled from these inputs (${publishedKey}): nothing to assemble`,
+    );
+  }
+  const builtFrom = naipBuildInputsHash(manifest);
+
   // ── 1. Inputs ───────────────────────────────────────────────────────────────────────────────
   const copiedTiles = manifest.workTiles.filter((w) => !w.retile);
   let old: { key: string; archive: ArchiveEntries; manifest: NaipManifest } | null = null;
@@ -632,6 +658,7 @@ async function run(
     pilot: manifest.pilot,
     startedAt: startedAt.toISOString(),
     finishedAt: now().toISOString(),
+    inputs: builtFrom,
     archive: { ...archive, key: keys.archive },
     cellIndex: { ...cellIndex, key: keys.index, gzipBytes: encodedIndex.gzip.length },
     manifest: { key: keys.manifest, bytes: manifestBytes.length, sha256: sha256Hex(manifestBytes) },

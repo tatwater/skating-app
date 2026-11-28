@@ -12,6 +12,9 @@ import {
   NAIP_CELL_INDEX_VERSION,
   NAIP_TILING_VERSION,
   type NaipCellIndex,
+  type NaipManifest,
+  naipBuildInputsDiff,
+  naipBuildInputsHash,
   naipCreditRange,
   naipExclusionsHash,
   naipFoliageStrikesHash,
@@ -436,6 +439,177 @@ describe('naipExclusionsHash', () => {
       naipExclusionsHash([{ ...a, reviewedOn: '2026-11-27' }, b]),
     ];
     expect(new Set(hashes).size).toBe(hashes.length);
+  });
+});
+
+// ── What a build is built from ──────────────────────────────────────────────────────────────────
+
+describe('naipBuildInputsHash and naipBuildInputsDiff', () => {
+  const frame = (acquired: string, gsd = 0.3) => ({
+    acquired,
+    gsd,
+    year: 2025,
+    state: 'VT' as const,
+  });
+  const base: NaipManifest = {
+    version: 2,
+    campaign: 'naip-20261212',
+    pilot: null,
+    createdAt: '2026-12-12T01:00:00.000Z',
+    ruleVersion: 2,
+    catalog: { walkedOn: '2026-12-11', items: 3, perState: { VT: 2, NY: 1 }, archivedAt: null },
+    exclusionsHash: 'e'.repeat(64),
+    foliageStrikesHash: 'f'.repeat(64),
+    offSeasonCells: [{ key: '4407236sw', why: 'noLeafOn' }],
+    basedOn: null,
+    frames: { a: frame('2025-07-14'), b: frame('2023-08-02', 0.6), c: frame('2025-07-15') },
+    cells: [
+      {
+        key: '4407236se',
+        states: ['VT'],
+        pick: 'a',
+        step: 'leafOn',
+        stack: ['b'],
+        partial: false,
+        cloudScore: 0.01,
+        workTiles: ['11/610/742'],
+      },
+      {
+        key: '4407236sw',
+        states: ['VT'],
+        pick: 'c',
+        step: 'offSeason',
+        stack: [],
+        partial: true,
+        cloudScore: null,
+        workTiles: ['11/610/742'],
+      },
+    ],
+    workTiles: [
+      {
+        key: '11/610/742',
+        inputHash: 'a'.repeat(64),
+        cells: ['4407236se', '4407236sw'],
+        retile: true,
+      },
+    ],
+  };
+  const hash = naipBuildInputsHash(base);
+
+  test('is the decision, not when it was written nor what the assembler adds', () => {
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+    // The select stage re-run on the same walk: the same build.
+    expect(naipBuildInputsHash({ ...base, createdAt: '2026-12-13T00:00:00.000Z' })).toBe(hash);
+    // The manifest as the assembler publishes it: archive, index and counts added.
+    const published: NaipManifest = {
+      ...base,
+      archive: { name: 'naip-summer-20261212.pmtiles', bytes: 1, sha256: '0'.repeat(64) },
+      cellIndex: { name: 'naip-summer-20261212-cells.json', bytes: 1, sha256: '1'.repeat(64) },
+      workTiles: base.workTiles.map((w) => ({ ...w, cellCounts: { '4407236se': { a: 9 } } })),
+    };
+    expect(naipBuildInputsHash(published)).toBe(hash);
+    expect(naipBuildInputsDiff(base, published)).toEqual([]);
+    // …and read back from JSON, a state's count listed in another order.
+    const read = JSON.parse(JSON.stringify(published)) as NaipManifest;
+    read.catalog.perState = { NY: 1, VT: 2 };
+    expect(naipBuildInputsHash(read)).toBe(hash);
+  });
+
+  test('changes with every part of the decision, and the difference says which', () => {
+    const variants: [Partial<NaipManifest>, string][] = [
+      [{ version: 1 as never }, 'format: 2 → 1'],
+      [{ campaign: 'naip-20261213' }, 'campaign: "naip-20261212" → "naip-20261213"'],
+      [{ pilot: 'champlain' }, 'pilot: null → "champlain"'],
+      [{ ruleVersion: 3 }, 'rule: 2 → 3'],
+      [{ catalog: { ...base.catalog, walkedOn: '2026-12-12' } }, 'catalog: changed'],
+      [
+        { catalog: { ...base.catalog, archivedAt: 'naip/inventory/2026-12-11/' } },
+        'catalog: changed',
+      ],
+      [{ exclusionsHash: '0'.repeat(64) }, 'exclusion list: changed'],
+      [{ foliageStrikesHash: '0'.repeat(64) }, 'foliage strikes: changed'],
+      [{ offSeasonCells: [{ key: '4407236sw', why: 'allTurned' }] }, 'off-season cells: changed'],
+      [{ basedOn: { archive: 'x.pmtiles', manifest: 'x-manifest.json' } }, 'based on: changed'],
+      [{ frames: { ...base.frames, b: frame('2023-08-03', 0.6) } }, 'frames: 1 changed (b)'],
+      [{ frames: { ...base.frames, d: frame('2021-07-01') } }, 'frames: 1 added (d)'],
+      [
+        {
+          cells: [
+            { ...(base.cells[0] as NaipManifest['cells'][number]), pick: 'b', stack: ['a'] },
+            base.cells[1] as never,
+          ],
+        },
+        'cells: 1 changed (4407236se)',
+      ],
+      [{ cells: [base.cells[0] as never] }, 'cells: 1 removed (4407236sw)'],
+      [
+        { cells: base.cells.map((c) => ({ ...c, cloudScore: 0.5 })) },
+        'cells: 2 changed (4407236se, 4407236sw)',
+      ],
+      [
+        { workTiles: base.workTiles.map((w) => ({ ...w, inputHash: 'b'.repeat(64) })) },
+        'work tiles: 1 changed (11/610/742)',
+      ],
+      [
+        { workTiles: base.workTiles.map((w) => ({ ...w, retile: false })) },
+        'work tiles: 1 changed (11/610/742)',
+      ],
+    ];
+    const hashes = new Set([hash]);
+    for (const [patch, said] of variants) {
+      const next = { ...base, ...patch } as NaipManifest;
+      hashes.add(naipBuildInputsHash(next));
+      expect(naipBuildInputsDiff(base, next)).toEqual([said]);
+    }
+    expect(hashes.size).toBe(variants.length + 1);
+  });
+
+  test('names a few keys of a long difference, and every section that differs', () => {
+    const many = Object.fromEntries('pqrstu'.split('').map((id) => [id, frame('2021-07-01')]));
+    const next = { ...base, ruleVersion: 3, frames: { ...many, a: base.frames.a } } as NaipManifest;
+    expect(naipBuildInputsDiff(base, next)).toEqual([
+      'rule: 2 → 3',
+      'frames: 6 added (p, q, r, …), 2 removed (b, c)',
+    ]);
+  });
+
+  test('reads an older manifest (no foliage hash) as one that differs, and refuses a key twice', () => {
+    const { foliageStrikesHash: _, ...older } = base;
+    expect(naipBuildInputsDiff(base, older as NaipManifest)).toEqual([`foliage strikes: changed`]);
+    const twice = { ...base, cells: [base.cells[0], base.cells[0]] } as NaipManifest;
+    expect(() => naipBuildInputsHash(twice)).toThrow('lists cells 4407236se twice');
+    expect(() => naipBuildInputsDiff(base, twice)).toThrow('twice');
+  });
+
+  test('the hash agrees exactly when the difference is empty (property)', () => {
+    const mutations: ((m: NaipManifest) => NaipManifest)[] = [
+      (m) => m,
+      (m) => ({ ...m, createdAt: '2027-01-01T00:00:00.000Z' }),
+      (m) => ({ ...m, ruleVersion: m.ruleVersion + 1 }),
+      (m) => ({
+        ...m,
+        cells: m.cells.map((c, i) => (i === 0 ? { ...c, partial: !c.partial } : c)),
+      }),
+      (m) => ({ ...m, cells: [...m.cells].reverse() }),
+      (m) => ({
+        ...m,
+        workTiles: m.workTiles.map((w) => ({ ...w, cells: [...w.cells].reverse() })),
+      }),
+      (m) => ({ ...m, frames: Object.fromEntries(Object.entries(m.frames).reverse()) }),
+      (m) => ({ ...m, catalog: { ...m.catalog, items: m.catalog.items + 1 } }),
+    ];
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: mutations.length - 1 }),
+        fc.integer({ min: 0, max: mutations.length - 1 }),
+        (i, j) => {
+          const a = (mutations[i] as (m: NaipManifest) => NaipManifest)(base);
+          const b = (mutations[j] as (m: NaipManifest) => NaipManifest)(base);
+          const same = naipBuildInputsHash(a) === naipBuildInputsHash(b);
+          return same === (naipBuildInputsDiff(a, b).length === 0);
+        },
+      ),
+    );
   });
 });
 

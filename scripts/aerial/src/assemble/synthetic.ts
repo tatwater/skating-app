@@ -23,7 +23,7 @@ import {
   type WorkTile,
   workTileKey,
 } from '@skating/core';
-import { shardKeys } from '../keys';
+import { buildManifestKey, shardKeys } from '../keys';
 import type { ShardCellCounts, ShardDone, ShardIndex } from '../shard';
 import { prng } from './prng';
 import { workTileIdRange } from './tileGrid';
@@ -233,7 +233,15 @@ export async function writeSyntheticBuild(
     cells: [...cells.values()].sort((a, b) => (a.key < b.key ? -1 : 1)),
     workTiles,
   };
+  await writeBuildManifest(root, manifest);
   return { manifest, counts, tiles: tilesPer, bytes: total };
+}
+
+/** The manifest where the tiles stage uploads it (`buildManifestKey`): what verify holds a build to. */
+export async function writeBuildManifest(root: string, manifest: NaipManifest): Promise<void> {
+  const path = join(root, buildManifestKey(manifest.campaign, manifest.pilot ?? undefined));
+  await mkdir(dirname(path), { recursive: true });
+  await writeFile(path, JSON.stringify(manifest));
 }
 
 /** A renderer for synthetic tiles: a parent is a hash of its children, so it is deterministic. */

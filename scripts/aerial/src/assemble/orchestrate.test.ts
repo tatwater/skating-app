@@ -1,5 +1,6 @@
+import { type NaipManifest, naipBuildInputsHash } from '@skating/core';
 import { describe, expect, it, vi } from 'vitest';
-import { type AssemblyRecord, HEARTBEAT_MS } from './assemble';
+import { AssembleRefusal, type AssemblyRecord, HEARTBEAT_MS } from './assemble';
 import {
   assembleScope,
   assemblyCounts,
@@ -7,6 +8,7 @@ import {
   FOLLOW_GAP_MS,
   FOLLOW_INTERVAL_MS,
   FOLLOW_QUIET_MS,
+  finishedAssembly,
   followAssembly,
   LATE_READS,
   MACHINE_STALL_MS,
@@ -342,5 +344,47 @@ describe('assembleScope', () => {
       complete: true,
     });
     expect(assembleScope('champlain-nhma-me-ny').complete).toBe(false);
+  });
+});
+
+describe('finishedAssembly: a record is taken only for the inputs it was built from', () => {
+  const manifest = {
+    version: 2,
+    campaign: 'naip-20261212',
+    pilot: null,
+    createdAt: '2026-12-12T00:00:00.000Z',
+    ruleVersion: 2,
+    catalog: { walkedOn: '2026-12-11', items: 0, perState: {}, archivedAt: null },
+    exclusionsHash: 'e'.repeat(64),
+    foliageStrikesHash: 'f'.repeat(64),
+    offSeasonCells: [],
+    basedOn: null,
+    frames: {},
+    cells: [],
+    workTiles: [],
+  } as NaipManifest;
+  const of = (patch: object) =>
+    ({ campaign: 'naip-20261212', version: 2, ...patch }) as unknown as AssemblyRecord;
+
+  it('refuses a record that names no inputs (the pilot’s version 1): it can’t be told', async () => {
+    await expect(finishedAssembly(of({ version: 1 }), manifest, async () => null)).rejects.toThrow(
+      new AssembleRefusal(
+        "naip-20261212's assembly record (version 1) names no inputs, so what its archive was built from can't be told — it is not taken as this build's",
+      ),
+    );
+  });
+
+  it('refuses a record that disagrees with a published manifest of the same inputs, or with none', async () => {
+    const other = of({ inputs: '0'.repeat(64) });
+    await expect(finishedAssembly(other, manifest, async () => manifest)).rejects.toThrow(
+      'names other inputs than the manifest published beside its archive: run verify',
+    );
+    await expect(finishedAssembly(other, manifest, async () => null)).rejects.toThrow(
+      'no manifest is published beside its archive',
+    );
+    const same = of({ inputs: naipBuildInputsHash(manifest) });
+    const read = vi.fn(async () => null);
+    expect(await finishedAssembly(same, manifest, read)).toBe(same);
+    expect(read).not.toHaveBeenCalled();
   });
 });

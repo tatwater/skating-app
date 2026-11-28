@@ -5,7 +5,9 @@
  * The checks that refuse (any problem fails the run, and the build is not published):
  *
  * - **archive** — the header the web will read: spec 3, clustered, WebP, uncompressed tiles, tile
- *   zooms 7–17; the object's length and the manifest's, the assembly record's hash and the manifest's.
+ *   zooms 7–17; the object's length and the manifest's, the assembly record's hash and the manifest's;
+ *   and what the archive was built from (core's `naipBuildInputsHash`) one value in the record, the
+ *   published manifest and the build's manifest as it is now.
  * - **counts** — every addressed tile id, walked out of the published directories, is exactly the
  *   union of the landed shards' indexes, the tiles copied from the current archive and the
  *   overviews; the header's count agrees; every work tile in the manifest either landed (its done
@@ -20,7 +22,15 @@
  * low-zoom quilt, and the viewer page.
  */
 
-import { NAIP_WORK_ZOOM, type NaipCellIndex, naipTileZoom, parseWorkTileKey } from '@skating/core';
+import {
+  NAIP_WORK_ZOOM,
+  type NaipCellIndex,
+  type NaipManifest,
+  naipBuildInputsDiff,
+  naipBuildInputsHash,
+  naipTileZoom,
+  parseWorkTileKey,
+} from '@skating/core';
 import { type Header, PMTiles, tileIdToZxy } from 'pmtiles';
 import {
   type ArchiveEntries,
@@ -39,7 +49,16 @@ import { prng } from './assemble/prng';
 import type { ProcessRunner } from './assemble/process';
 import { type ObjectStore, sha256Hex } from './assemble/stores';
 import { tileBox, workTileIdRange } from './assemble/tileGrid';
-import { archiveKey, archiveName, indexKey, manifestKey, publishPrefix, shardKeys } from './keys';
+import {
+  archiveKey,
+  archiveName,
+  buildManifestKey,
+  indexKey,
+  manifestKey,
+  publishPrefix,
+  shardKeys,
+} from './keys';
+import { describeDifference, newCampaignAdvice } from './publishedBuild';
 import { checkShardIndex, parseShardDone, SHARD_TILE_ZOOMS, shardLanded } from './shard';
 import { type CellsIn, checkCellIndex, undatedTiles } from './verifyDates';
 
@@ -166,6 +185,31 @@ export async function verifyBuild(
   }
   if (manifest.archive?.sha256 !== record.archive.sha256) {
     archive.problems.push("the manifest's archive hash is not the one the assembler streamed");
+  }
+  // **What the archive was built from** (core's `naipBuildInputsHash`, the one identity): the
+  // record's, the published manifest's and the build's manifest's now must be one value — a build
+  // manifest re-selected after the assembly (other picks, re-cut) would otherwise pass here while
+  // the archive keeps the earlier selection (PR #188's review).
+  const published = asManifest(manifest);
+  if (record.inputs !== naipBuildInputsHash(published)) {
+    archive.problems.push(
+      typeof record.inputs === 'string'
+        ? 'the assembly record names other inputs than the published manifest'
+        : "the assembly record names no inputs, so what the archive was built from can't be checked",
+    );
+  }
+  const buildBytes = await deps.build.get(buildManifestKey(campaign, p));
+  if (buildBytes === null) {
+    archive.problems.push(
+      `the build's manifest (${buildManifestKey(campaign, p)}) is missing, so what the archive was built from can't be checked`,
+    );
+  } else {
+    const diff = naipBuildInputsDiff(published, decodeJson(buildBytes) as NaipManifest);
+    if (diff.length > 0) {
+      archive.problems.push(
+        `the build's manifest has changed since the archive was assembled (${describeDifference(diff)}): the archive keeps the earlier selection, and ${newCampaignAdvice(published)}`,
+      );
+    }
   }
   const size = await deps.published.size(key);
   if (size !== manifest.archive.bytes) {

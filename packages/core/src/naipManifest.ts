@@ -360,6 +360,142 @@ export function naipWorkTileInputHash(
   );
 }
 
+// ── What a build is built from (§2.4) ─────────────────────────────────────────────────────────────
+
+/** One section of a build's inputs: a named field, or a keyed table (frames, cells, work tiles). */
+type BuildInputSection =
+  | { name: string; value: string }
+  | { name: string; rows: ReadonlyMap<string, string> };
+
+/** Rows by key, each canonical JSON; a key listed twice is a malformed manifest, refused. */
+function keyedRows<T>(
+  name: string,
+  items: readonly T[],
+  key: (t: T) => string,
+  row: (t: T) => unknown,
+): BuildInputSection {
+  const rows = new Map<string, string>();
+  for (const item of items) {
+    const k = key(item);
+    if (rows.has(k)) throw new Error(`the manifest lists ${name} ${k} twice`);
+    rows.set(k, JSON.stringify(row(item)));
+  }
+  return { name, rows };
+}
+
+/**
+ * The select stage's decision, field by field, in a fixed order and canonical form: everything it
+ * writes but **when** it wrote it (`createdAt` — a re-run that decides the same build is the same
+ * build), and none of what the assembler adds (`archive`, `cellIndex`, a work tile's `cellCounts`).
+ */
+function buildInputSections(m: NaipManifest): BuildInputSection[] {
+  const perState = Object.fromEntries(
+    Object.entries(m.catalog.perState).sort(([a], [b]) => (a < b ? -1 : 1)),
+  );
+  const field = (name: string, value: unknown): BuildInputSection => ({
+    name,
+    value: JSON.stringify(value) ?? 'null',
+  });
+  return [
+    field('format', m.version),
+    field('campaign', m.campaign),
+    field('pilot', m.pilot),
+    field('rule', m.ruleVersion),
+    field('catalog', [m.catalog.walkedOn, m.catalog.items, perState, m.catalog.archivedAt]),
+    field('exclusion list', m.exclusionsHash),
+    field('foliage strikes', m.foliageStrikesHash),
+    field(
+      'off-season cells',
+      m.offSeasonCells.map((c) => [c.key, c.why]),
+    ),
+    field('based on', m.basedOn === null ? null : [m.basedOn.archive, m.basedOn.manifest]),
+    keyedRows(
+      'frames',
+      Object.entries(m.frames),
+      ([id]) => id,
+      ([, f]) => [f.acquired, f.gsd, f.year, f.state],
+    ),
+    keyedRows(
+      'cells',
+      m.cells,
+      (c) => c.key,
+      (c) => [c.states, c.pick, c.step, c.stack, c.partial, c.cloudScore, c.workTiles],
+    ),
+    keyedRows(
+      'work tiles',
+      m.workTiles,
+      (w) => w.key,
+      (w) => [w.inputHash, w.cells, w.retile],
+    ),
+  ];
+}
+
+/**
+ * **The one identity of what an archive is built from** (B05 §2.4): hex SHA-256 over the select
+ * stage's whole decision (`buildInputSections`: the format, campaign, rule, the catalog read, both
+ * review lists' hashes, the off-season cells, `basedOn`, every frame, every cell, every work tile's
+ * input hash, cells and `retile`) — never `createdAt`, never what the assembler adds. So the select
+ * stage's manifest and the one published beside the archive hash alike exactly when they name the
+ * same build. The assembly record carries it (`inputs`); the assembler, the laptop's re-run and verify
+ * each compare it, and the select and tiles stages refuse to replace a published campaign's inputs
+ * with others (`scripts/aerial`'s `publishedBuild.ts`). {@link naipBuildInputsDiff} says what differs.
+ */
+export function naipBuildInputsHash(manifest: NaipManifest): string {
+  const parts = buildInputSections(manifest).map((s) => {
+    if ('value' in s) return `${JSON.stringify(s.name)}:${s.value}`;
+    const keys = [...s.rows.keys()].sort();
+    const rows = keys.map((k) => `${JSON.stringify(k)}:${s.rows.get(k) as string}`);
+    return `${JSON.stringify(s.name)}:{${rows.join(',')}}`;
+  });
+  return sha256Hex(`{${parts.join(',')}}`);
+}
+
+/** At most this many keys are named per table in a difference. */
+const DIFF_SAMPLE = 3;
+
+/**
+ * What differs between two manifests' inputs, one line a section, empty exactly when
+ * {@link naipBuildInputsHash} agrees (both read the same sections): `rule: 2 → 3`, `foliage strikes:
+ * changed`, `cells: 1 changed (4407236se)`. For a refusal's message: a person must be able to tell a
+ * new pick from a re-walked catalog. A key listed twice in either is refused (it throws), as the hash
+ * refuses it.
+ */
+export function naipBuildInputsDiff(a: NaipManifest, b: NaipManifest): string[] {
+  const before = buildInputSections(a);
+  const after = buildInputSections(b);
+  const out: string[] = [];
+  // The two lists are the same sections in the same order, so each pair is of one kind.
+  before.forEach((was, i) => {
+    if ('value' in was) {
+      const now = (after[i] as { value: string }).value;
+      if (was.value === now) return;
+      const short = was.value.length <= 24 && now.length <= 24;
+      out.push(short ? `${was.name}: ${was.value} → ${now}` : `${was.name}: changed`);
+      return;
+    }
+    const now = (after[i] as { rows: ReadonlyMap<string, string> }).rows;
+    const changed: string[] = [];
+    const removed: string[] = [];
+    for (const [k, row] of was.rows) {
+      const next = now.get(k);
+      if (next === undefined) removed.push(k);
+      else if (next !== row) changed.push(k);
+    }
+    const added = [...now.keys()].filter((k) => !was.rows.has(k));
+    const named = (what: string, keys: string[]) =>
+      keys.length === 0
+        ? null
+        : `${keys.length} ${what} (${keys
+            .sort()
+            .slice(0, DIFF_SAMPLE)
+            .join(', ')}${keys.length > DIFF_SAMPLE ? ', …' : ''})`;
+    const said = [named('changed', changed), named('added', added), named('removed', removed)];
+    const parts = said.filter((s): s is string => s !== null);
+    if (parts.length > 0) out.push(`${was.name}: ${parts.join(', ')}`);
+  });
+  return out;
+}
+
 /**
  * The exclusion list's hash, for the manifest (`exclusionsHash`): hex SHA-256 of the list sorted by
  * item id, each entry's four fields in a fixed order — so two lists that strike the same frames for
