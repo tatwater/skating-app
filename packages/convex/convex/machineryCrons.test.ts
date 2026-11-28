@@ -469,6 +469,43 @@ describe('strip', () => {
     expect(strip.truncated).toBe(false);
   });
 
+  test('the tick bound filled exactly at a row’s end: an older tick says it was cut, none says not', async () => {
+    const perRow = 50;
+    const fullRows = STRIP_MAX_TICKS / perRow;
+    expect(Number.isInteger(fullRows)).toBe(true);
+    const seed = async (t: ReturnType<typeof harness>, rows: number) =>
+      await t.run(async (ctx) => {
+        for (let h = 0; h < rows; h++) {
+          await ctx.db.insert('cronTicks', {
+            job: FLUSH,
+            bucketStart: cronTickBucketStart(NOW - (h + 1) * HOUR, HOUR),
+            bucketMs: HOUR,
+            ticks: Array.from({ length: perRow }, (_, i) =>
+              packTick(i * 60, CRON_TICK_CODES.failed),
+            ),
+            ms: Array.from({ length: perRow }, () => 5),
+            keepUntil: NOW + DAY,
+          });
+        }
+      });
+    const args = { job: FLUSH, from: NOW - 30 * DAY, to: NOW };
+
+    // Exactly the bound, nothing older: every tick came back.
+    const exact = harness();
+    await seed(exact, fullRows);
+    const all = await (await seedUser(exact, 'admin')).as.query(api.machineryCrons.strip, args);
+    expect(all.ticks).toHaveLength(STRIP_MAX_TICKS);
+    expect(all.truncated).toBe(false);
+
+    // One row older than the bound: its failures were left out, and the strip says so.
+    const over = harness();
+    await seed(over, fullRows + 1);
+    const cut = await (await seedUser(over, 'admin')).as.query(api.machineryCrons.strip, args);
+    expect(cut.ticks).toHaveLength(STRIP_MAX_TICKS);
+    expect(cut.truncated).toBe(true);
+    expect(cut.ticks[0]?.at).toBe(cronTickBucketStart(NOW - fullRows * HOUR, HOUR));
+  });
+
   test('past the tick bound, the newest ticks are kept', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');

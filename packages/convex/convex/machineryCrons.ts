@@ -253,7 +253,9 @@ export const strip = query({
         }
         newestFirst.push(tick);
       }
-      if (newestFirst.length >= STRIP_MAX_TICKS) break;
+      // Stop only once a tick has been left out: a bound filled exactly at a row's end says
+      // nothing yet, so the older rows (already read) are still looked at for one more tick.
+      if (truncated && newestFirst.length >= STRIP_MAX_TICKS) break;
     }
     return { ticks: newestFirst.reverse(), truncated };
   },
