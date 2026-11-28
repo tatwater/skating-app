@@ -67,10 +67,13 @@ export const REFUSALS = {
   'select.fromCurrentUnpublished': 'the current manifest names no archive',
   'select.fromCurrentRule': "a narrowed build on another rule's manifest",
   'select.fromCurrentKind': 'a build based on the other kind of build',
+  'select.fromCurrentPilot': "a build based on a pilot's manifest (a pilot is never a base)",
+  'select.pilotUnbounded': 'a pilot whose plan would cut past its --cells/--states area',
 
   // ── Tiles (`stage/tilesStage.ts`, `tiles.ts`' `selectUploads`) ─────────────────────────────────
   'tiles.noManifest': 'no select manifest in the scratch',
   'tiles.otherCampaign': "the scratch manifest is another campaign's",
+  'tiles.pilotBased': "a pilot's manifest built on another build (it would cut past its area)",
   'tiles.flyUnlisted':
     "Fly's Machines can't be listed, so whether the campaign assembles can't be told",
   'tiles.assembling': "the campaign's assembler is up and the selection differs from what it reads",

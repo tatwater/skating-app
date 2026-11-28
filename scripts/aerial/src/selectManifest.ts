@@ -123,6 +123,20 @@ export function checkCurrent(
   }
   if (current.archive === undefined)
     refuse('select.fromCurrentUnpublished', 'names no archive (it was never published)');
+  // **A pilot is never a base** (PR #188's ninth review). A pilot's manifest records every cell of
+  // the region but builds only its own area, so a build from it found no hash to copy outside that
+  // area and cut every other work tile — a pilot rebuild repeating its `--cells` started a
+  // region-sized cut. Pilots are throwaway: a changed pilot is a new pilot, from nothing.
+  if (current.pilot !== null) {
+    refuse(
+      'select.fromCurrentPilot',
+      `is pilot ${current.pilot}'s, and a pilot is never a base: it built only its own area, so a build from it would cut every other work tile of the region — ${
+        input.pilot === null
+          ? 'base a production build on a published production campaign, or build it from nothing'
+          : `a changed pilot is a new pilot, from nothing: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot ${input.pilot} --cells <file>`
+      }`,
+    );
+  }
   if (input.narrowing !== null && current.ruleVersion !== NAIP_RULE_VERSION) {
     refuse(
       'select.fromCurrentRule',
@@ -136,6 +150,11 @@ export function checkCurrent(
       `is ${kind(current.pilot)}; this build is ${kind(input.pilot)}`,
     );
   }
+}
+
+/** The refusal for a pilot given no area (`select.pilotUnbounded`, decided before the walk). */
+export function pilotUnbounded(pilot: string): string {
+  return `pilot ${pilot} names no area: a pilot builds only the cells it is given (--cells <file> or --states), never the region — nothing was walked or scored`;
 }
 
 /** The manifest, from the rule's answer and its scores. Throws on a `current` it can't build from. */
@@ -220,6 +239,14 @@ export function buildManifest(input: ManifestInput): NaipManifest {
     });
   }
   workTiles.sort((a, b) => (a.key < b.key ? -1 : 1));
+  // **The dangerous outcome itself, whatever its cause**: a pilot that would cut every work tile
+  // its cells touch is the region (`--states` naming all seven, say), not a pilot.
+  if (input.pilot !== null && workTiles.filter((w) => w.retile).length >= byTile.size) {
+    throw new SelectRefusal(
+      'select.pilotUnbounded',
+      `pilot ${input.pilot} would cut all ${byTile.size} work tiles of the region: a pilot builds only a small area (--cells <file>), never the region — nothing was written`,
+    );
+  }
 
   return {
     version: NAIP_MANIFEST_VERSION,

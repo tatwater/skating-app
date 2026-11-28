@@ -251,6 +251,18 @@ export async function preflightTiles(args: StageArgs, view: ReadView): Promise<T
       `the manifest is ${manifest.campaign}'s, not this run's`,
     );
   }
+  // **A pilot never starts a cut past its own area** (PR #188's ninth review), however its manifest
+  // came to be (one selected `--from-current` before the select stage refused a pilot base): a pilot
+  // built on another build found no saved hash outside its area and marked every other work tile cut.
+  if (
+    manifest.pilot !== null &&
+    (manifest.basedOn !== null || manifest.workTiles.some((w) => !w.retile))
+  ) {
+    throw new StageRefusal(
+      'tiles.pilotBased',
+      `pilot ${manifest.pilot}'s manifest is built on ${manifest.basedOn?.manifest ?? 'another build'}: a pilot is never based on a build (from one it would cut every work tile outside its own area) — select it again from nothing (run-aerial.sh ${args.campaign} --pilot ${manifest.pilot} --cells <file> --stage select); nothing was written`,
+    );
+  }
   const units = workUnitsFor(manifest);
   if (args.dryRun) return { kind: 'dry', manifest, units };
 
@@ -288,7 +300,7 @@ export async function preflightTiles(args: StageArgs, view: ReadView): Promise<T
     if (!sameInputs(build, manifest)) {
       throw new StageRefusal(
         'tiles.assembling',
-        `${args.campaign}'s assembler is running from ${build === null ? 'no build manifest' : 'the build manifest in the bucket'}, and this selection differs from it: replacing that manifest now would leave the archive built from one selection and the bucket naming another — nothing was uploaded. Let the assembly finish (then a changed selection is a new campaign: --from-current), or stop it first`,
+        `${args.campaign}'s assembler is running from ${build === null ? 'no build manifest' : 'the build manifest in the bucket'}, and this selection differs from it: replacing that manifest now would leave the archive built from one selection and the bucket naming another — nothing was uploaded. Let the assembly finish (then a changed selection is ${args.pilot === null ? 'a new campaign: --from-current' : 'a new pilot, from nothing'}), or stop it first`,
       );
     }
     const done = await facts.done();

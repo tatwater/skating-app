@@ -275,7 +275,7 @@ describe('verify refuses', () => {
     const { out, all } = await problemsOf();
     expect(out.ok).toBe(false);
     expect(all).toContain(
-      "the build's manifest has changed since the archive was assembled (foliage strikes: changed): the archive keeps the earlier selection, and make the change a new campaign: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain --from-current, with NAIP_MANIFEST_URL at naip-summer-20261212-manifest.json, copies its unchanged work tiles",
+      "the build's manifest has changed since the archive was assembled (foliage strikes: changed): the archive keeps the earlier selection, and make the change a new pilot, from nothing: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain --cells <file> (a pilot is never a base for --from-current)",
     );
     await rm(join(root, key));
     expect((await problemsOf()).all).toContain(

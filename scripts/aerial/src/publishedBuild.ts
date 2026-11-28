@@ -15,7 +15,8 @@
  *
  * The same inputs are "already done": nothing to cut, nothing to assemble. Other inputs are refused,
  * saying what differs and what to do — the change is a new campaign (`--from-current` copies what is
- * unchanged), never an overwrite and never a silent success over the earlier selection.
+ * unchanged; a pilot's is a new pilot from nothing), never an overwrite and never a silent success
+ * over the earlier selection.
  */
 
 import { type NaipManifest, naipBuildInputsDiff } from '@skating/core';
@@ -36,13 +37,17 @@ export function describeDifference(diff: readonly string[]): string {
   return `${diff.slice(0, SAID).join('; ')}${more}`;
 }
 
-/** How to make the change instead: a new campaign, copying the published one's unchanged tiles. */
+/**
+ * How to make the change instead: a new campaign. A production one copies the published campaign's
+ * unchanged work tiles (`--from-current`); a pilot is never a base (it built only its own area, so a
+ * build from it would cut the rest of the region: `select.fromCurrentPilot`), so a changed pilot is
+ * a new pilot, from nothing.
+ */
 export function newCampaignAdvice(published: Pick<NaipManifest, 'campaign' | 'pilot'>): string {
-  const again =
-    published.pilot === null
-      ? 'naip-<YYYYMMDD>'
-      : `naip-pilot-<YYYYMMDD> --pilot ${published.pilot}`;
-  return `make the change a new campaign: run-aerial.sh ${again} --from-current, with NAIP_MANIFEST_URL at ${manifestName(published.campaign)}, copies its unchanged work tiles`;
+  if (published.pilot !== null) {
+    return `make the change a new pilot, from nothing: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot ${published.pilot} --cells <file> (a pilot is never a base for --from-current)`;
+  }
+  return `make the change a new campaign: run-aerial.sh naip-<YYYYMMDD> --from-current, with NAIP_MANIFEST_URL at ${manifestName(published.campaign)}, copies its unchanged work tiles`;
 }
 
 /**

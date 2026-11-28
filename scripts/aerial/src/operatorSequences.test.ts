@@ -31,7 +31,8 @@ import { runTilesStage } from './stage/tilesStage';
 import { doneRecord, FakeWorld, fixtureManifest, fixtureSources, LOCAL } from './stageHarness';
 
 const CAMPAIGN = 'naip-pilot-20261212';
-const PILOT = ['--pilot', 'champlain'];
+// A pilot names its area (`select.pilotUnbounded`): one state of the fixture.
+const PILOT = ['--pilot', 'champlain', '--states', 'NY'];
 
 const worlds: FakeWorld[] = [];
 afterEach(() => {
@@ -55,10 +56,13 @@ function world(): FakeWorld {
   return w;
 }
 
-/** A frame strike, confirmed, on the first pick that has a fallback: the picks change. */
+/** A frame strike, confirmed, on the first pick in the pilot's area that has a fallback: the picks change. */
 async function strikeOne(): Promise<NaipFoliageStrike[]> {
   const m = await fixtureManifest(CAMPAIGN, ['--dry-run', ...PILOT]);
-  const cell = m.cells.find((c) => c.stack.length > 0) as NaipManifest['cells'][number];
+  const built = new Set(m.workTiles.map((w) => w.key));
+  const cell = m.cells.find(
+    (c) => c.stack.length > 0 && c.workTiles.some((t) => built.has(t)),
+  ) as NaipManifest['cells'][number];
   return [{ itemId: cell.pick, reason: 'turned', reviewedBy: 'founder', reviewedOn: '2026-12-12' }];
 }
 

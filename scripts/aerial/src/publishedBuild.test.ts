@@ -34,10 +34,12 @@ describe('a stage against what its campaign has published', () => {
     expect(publishedConflict(manifest, manifest)).toBeNull();
   });
 
+  // A pilot's advice is a new pilot from nothing: it was `--from-current` until the ninth review, and
+  // a pilot base expands to the whole region (`select.fromCurrentPilot`).
   it('refuses other inputs, naming what differs and the way to make the change', () => {
     const next = { ...manifest, ruleVersion: 3, foliageStrikesHash: '0'.repeat(64) };
     const said =
-      'naip-pilot-20261212 is already published from other inputs (rule: 2 → 3; foliage strikes: changed). A published key is never overwritten, so naip-pilot-20261212 stays as it was built — make the change a new campaign: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain --from-current, with NAIP_MANIFEST_URL at naip-summer-20261212-manifest.json, copies its unchanged work tiles';
+      'naip-pilot-20261212 is already published from other inputs (rule: 2 → 3; foliage strikes: changed). A published key is never overwritten, so naip-pilot-20261212 stays as it was built — make the change a new pilot, from nothing: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain --cells <file> (a pilot is never a base for --from-current)';
     expect(() => againstPublished(manifest, next)).toThrow(
       new PublishedBuildRefusal('published.otherInputs', said),
     );

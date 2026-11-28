@@ -11,6 +11,7 @@ import {
 } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
+import { StageRefusal } from './refusals';
 import type { ThumbnailScore } from './score';
 import {
   buildManifest,
@@ -205,6 +206,51 @@ describe('buildManifest, narrowed from nothing (the pilot)', () => {
     expect(m.workTiles.every((w) => w.retile)).toBe(true);
   });
 
+  test("a pilot is never a base: rebuilt --from-current it would cut the region's other work tiles", () => {
+    // The ninth review: a pilot records every cell but builds only its area, so a rebuild from it
+    // found no saved hash outside that area and cut every other work tile, even with --cells again.
+    const pilot = {
+      ...buildManifest(
+        input({ campaign: 'naip-pilot-20261201', narrowing: { cells: [K3] }, pilot: 'p' }),
+      ),
+      archive: { name: 'naip-summer-20261201.pmtiles', bytes: 1, sha256: 'x' },
+    };
+    expect(pilot.workTiles.map((w) => w.key)).toEqual(workTilesOf(K3).map(workTileKey));
+    let refused: unknown;
+    try {
+      buildManifest(
+        input({
+          campaign: 'naip-pilot-20261202',
+          pilot: 'p',
+          narrowing: { cells: [K3] },
+          current: pilot,
+        }),
+      );
+    } catch (e) {
+      refused = e;
+    }
+    expect(refused).toBeInstanceOf(StageRefusal);
+    expect((refused as StageRefusal).id).toBe('select.fromCurrentPilot');
+    expect((refused as Error).message).toMatch(
+      /is pilot p's, and a pilot is never a base: .* a new pilot, from nothing: run-aerial\.sh naip-pilot-<YYYYMMDD> --pilot p --cells <file>$/,
+    );
+  });
+
+  test('a pilot narrowed to nothing would be the whole region: refused', () => {
+    let refused: unknown;
+    try {
+      buildManifest(input({ campaign: 'naip-pilot-20261201', pilot: 'p' }));
+    } catch (e) {
+      refused = e;
+    }
+    expect((refused as StageRefusal).id).toBe('select.pilotUnbounded');
+    // Narrowed, every work tile it cuts is one its cells touch.
+    const m = buildManifest(
+      input({ campaign: 'naip-pilot-20261201', pilot: 'p', narrowing: { states: ['NY'] } }),
+    );
+    expect(m.workTiles.map((w) => w.key)).toEqual(workTilesOf(K3).map(workTileKey));
+  });
+
   test('--states: the cells a state lists', () => {
     const m = buildManifest(input({ narrowing: { states: ['NY'] } }));
     expect(m.workTiles.map((w) => w.key)).toEqual(workTilesOf(K3).map(workTileKey));
@@ -332,7 +378,7 @@ describe('buildManifest, from the current build', () => {
   test("refuses a production build on a pilot's manifest, and a pilot on production's", () => {
     const pilot = { ...current, campaign: 'naip-pilot-20261201', pilot: 'champlain' };
     expect(() => buildManifest(input({ current: pilot, campaign: 'naip-20270712' }))).toThrow(
-      /is pilot champlain's; this build is production/,
+      /is pilot champlain's, and a pilot is never a base: .* base a production build on a published production campaign, or build it from nothing$/,
     );
     expect(() =>
       buildManifest(input({ current, campaign: 'naip-pilot-20270712', pilot: 'champlain' })),

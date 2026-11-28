@@ -313,6 +313,9 @@ async function assembleWorld(
   return m;
 }
 
+/** A pilot's arguments over the fixture: one state of it, so a part of its cells. */
+const PILOT_ARGS = ['naip-pilot-20261212', '--pilot', 'champlain', '--states', 'ME'];
+
 const PROPOSED = {
   itemId: 'x',
   reason: 'turned',
@@ -641,10 +644,66 @@ const CASES: Record<RefusalId, Case[]> = {
     ]),
   ],
   'select.fromCurrentKind': [
-    fromCurrent("a pilot's manifest under a build", (m) => ({
+    stage(
+      "a pilot on production's manifest",
+      (w) => {
+        w.deployment = LOCAL;
+        w.env.NAIP_MANIFEST_URL = '/a/local/copy.json';
+      },
+      async (w) => {
+        const base = await fixtureManifest('naip-20261201');
+        return select(w, [...PILOT_ARGS, '--from-current'], {
+          fetchCurrent: async () => published(base),
+        });
+      },
+    ),
+  ],
+  'select.fromCurrentPilot': [
+    // **The ninth review's finding**: a pilot rebuilt --from-current, its --cells repeated, would
+    // cut every work tile of the region outside its area.
+    stage(
+      "a pilot on a pilot's manifest",
+      (w) => {
+        w.deployment = LOCAL;
+        w.env.NAIP_MANIFEST_URL = '/a/local/copy.json';
+      },
+      async (w) => {
+        const base = await fixtureManifest('naip-pilot-20261201', [
+          '--dry-run',
+          ...PILOT_ARGS.slice(1),
+        ]);
+        return select(w, [...PILOT_ARGS, '--from-current'], {
+          fetchCurrent: async () => published(base),
+        });
+      },
+    ),
+    fromCurrent("production on a pilot's manifest", (m) => ({
       ...published(m),
+      campaign: 'naip-pilot-20261201',
       pilot: 'champlain',
     })),
+  ],
+  'select.pilotUnbounded': [
+    stage(
+      'a pilot given no area, refused before the walk',
+      (w) => {
+        w.deployment = LOCAL;
+      },
+      (w) =>
+        select(w, ['naip-pilot-20261212', '--pilot', 'champlain'], {
+          walk: async () => {
+            throw new Error('walked');
+          },
+        }),
+    ),
+    stage(
+      'a pilot whose --states reach every cell: the region',
+      (w) => {
+        w.deployment = LOCAL;
+      },
+      (w) =>
+        select(w, ['naip-pilot-20261212', '--pilot', 'champlain', '--states', 'CT,MA,ME,NY,RI']),
+    ),
   ],
 
   // ── Tiles ─────────────────────────────────────────────────────────────────────────────────────
@@ -714,14 +773,36 @@ const CASES: Record<RefusalId, Case[]> = {
       (w) => tiles(w),
     ),
   ],
+  'tiles.pilotBased': [
+    // A pilot manifest selected --from-current before the select stage refused a pilot base (an old
+    // scratch, a hand edit): never cut.
+    archived(
+      'a pilot built on another build',
+      async () => {
+        const m = await fixtureManifest('naip-pilot-20261212', [
+          '--dry-run',
+          ...PILOT_ARGS.slice(1),
+        ]);
+        return {
+          ...m,
+          basedOn: {
+            archive: 'naip-summer-20261201.pmtiles',
+            manifest: 'naip-summer-20261201-manifest.json',
+          },
+          workTiles: m.workTiles.map((x, i) => (i === 0 ? { ...x, retile: false } : x)),
+        };
+      },
+      ['naip-pilot-20261212', '--pilot', 'champlain'],
+      LOCAL,
+    ),
+  ],
   'tiles.pilotArchive': [
     archived(
       'a pilot asking to archive the catalog',
       async () => {
         const m = await fixtureManifest('naip-pilot-20261212', [
           '--dry-run',
-          '--pilot',
-          'champlain',
+          ...PILOT_ARGS.slice(1),
         ]);
         return { ...m, catalog: { ...m.catalog, archivedAt: 'naip/inventory/2026-11-25/' } };
       },
