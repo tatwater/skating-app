@@ -1995,15 +1995,45 @@ function byOldestPartial(a: PartialCandidate, b: PartialCandidate): number {
 }
 
 /**
- * Cut the queue to what the budget could ever buy (every refetch weighs at least 1.2): the oldest
- * kept, the rest deferred to tomorrow's run and counted.
+ * The queue's longest oldest-first prefix the budget buys, each refetch at its own weight (the span
+ * its oldest partial day sets): what a run would refetch if the walk ended now. The rest is deferred.
  */
-function trimQueue(state: PartialRepair, tally: StepTally): void {
-  const max = Math.floor(state.budget / archiveWeight(1));
-  if (state.queue.length <= max) return;
-  state.queue.sort(byOldestPartial);
-  for (const dropped of state.queue.splice(max)) tally.add('partialDeferred', dropped.days.length);
+function admitQueue(
+  queue: readonly PartialCandidate[],
+  budget: number,
+  toMs: number,
+): { admitted: PartialCandidate[]; deferred: PartialCandidate[] } {
+  const sorted = [...queue].sort(byOldestPartial);
+  let left = budget;
+  let n = 0;
+  for (const candidate of sorted) {
+    const w = archiveWeight(repairSpanDays(candidate.days[0] ?? toMs, toMs));
+    if (w > left) break;
+    left -= w;
+    n++;
+  }
+  return { admitted: sorted.slice(0, n), deferred: sorted.slice(n) };
 }
+
+/**
+ * Cut the queue, as each walk batch ends, to what the budget could still buy ({@link admitQueue}):
+ * the budget only shrinks as the walk goes on, so a cell cut here could never be refetched this run,
+ * and the queue the walk carries in every batch's arguments stays as small as the refetches it can
+ * pay for. The rest is deferred to the next run and counted.
+ */
+function trimQueue(state: PartialRepair, tally: StepTally, toMs: number): void {
+  const { admitted, deferred } = admitQueue(state.queue, state.budget, toMs);
+  for (const dropped of deferred) tally.add('partialDeferred', dropped.days.length);
+  state.queue = admitted;
+}
+
+/**
+ * The pause between two batches of partial-day refetches. A batch is 40 requests of up to 3.6
+ * weighted calls each, asked back to back: without a pause a fast provider could see ~144 weighted
+ * calls every few seconds, past Open-Meteo's 600 a minute; with it a batch and its pause take at
+ * least 20 seconds, so at most ~430 a minute.
+ */
+export const PARTIAL_REFETCH_PAUSE_MS = 20_000;
 
 /** The gap repair's counts a tier's end line reads, carried as the branch's totals so far. */
 const GAP_TOTALS = [
@@ -2146,7 +2176,7 @@ export const sweepWeatherDayGaps = internalAction({
           succeeded: recovered,
         });
       }
-      trimQueue(state, tally);
+      trimQueue(state, tally, toMs);
     }
 
     if (!tierDone && lastKey !== undefined && cells.length > 0) {
@@ -2161,18 +2191,8 @@ export const sweepWeatherDayGaps = internalAction({
     }
 
     // The walk is done: the queued partial days, oldest first, while the budget lasts.
-    state.queue.sort(byOldestPartial);
-    const admitted: PartialCandidate[] = [];
-    let budget = state.budget;
-    for (const candidate of state.queue) {
-      const w = archiveWeight(repairSpanDays(candidate.days[0] ?? toMs, toMs));
-      if (w > budget) break;
-      budget -= w;
-      admitted.push(candidate);
-    }
-    for (const deferred of state.queue.slice(admitted.length)) {
-      tally.add('partialDeferred', deferred.days.length);
-    }
+    const { admitted, deferred } = admitQueue(state.queue, state.budget, toMs);
+    for (const d of deferred) tally.add('partialDeferred', d.days.length);
     const next = admitted.length > 0;
     const so = cronRun ? await endGapStep(ctx, cronRun, tier, tally, next) : undefined;
     if (next) {
@@ -2226,11 +2246,15 @@ export const refetchPartialDays = internalAction({
     const next = rest.length > 0;
     const so = cronRun ? await endGapStep(ctx, cronRun, tier, tally, next) : undefined;
     if (next) {
-      await ctx.scheduler.runAfter(0, internal.weatherArchive.refetchPartialDays, {
-        tier,
-        cells: rest,
-        ...(cronRun && so ? { cronRun: nextCronRun(cronRun, so) } : {}),
-      });
+      await ctx.scheduler.runAfter(
+        PARTIAL_REFETCH_PAUSE_MS,
+        internal.weatherArchive.refetchPartialDays,
+        {
+          tier,
+          cells: rest,
+          ...(cronRun && so ? { cronRun: nextCronRun(cronRun, so) } : {}),
+        },
+      );
     }
     return { done: !next, refetched: batch.length };
   },

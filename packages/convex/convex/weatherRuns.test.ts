@@ -26,6 +26,7 @@ import {
   maybeRefreshFilterTierHandler,
   maybeSweepGapsHandler,
   maybeSyncWeatherCellsHandler,
+  PARTIAL_REFETCH_PAUSE_MS,
   PARTIAL_REPAIR_BUDGET,
   PARTIAL_REPAIR_DAY_CEILING,
   partialBudgetFor,
@@ -1224,6 +1225,50 @@ describe('the gap repair completes partial past days (fork 2 (b))', () => {
     expect(urls.map(indexOf)).toEqual([2, 0]);
     expect(summed()).toMatchObject({ partialDays: 4, partialFilled: 2, partialDeferred: 2 });
     expect((await dayRow(t, 1, ago(2)))?.hours).toBe(10);
+  });
+
+  test('the queue a walk carries in its next batch is cut to what the budget can still buy', async () => {
+    const t = convexTest(schema, modules);
+    await seedCells(t, 90);
+    // Every cell holds a partial day 28 days back: a refetch of 29 past days and today, 30 days,
+    // weight 3.6 (36 ×10).
+    for (let i = 0; i < 90; i++) await seedDays(t, i, 28, 1, [written(ago(28))]);
+    // A run's budget of 30 weighted calls: 24 for filter (240 ×10) buys six of them.
+    await meterAt(t, PARTIAL_REPAIR_DAY_CEILING - 30);
+    standIn();
+    await t.action(internal.weatherArchive.sweepWeatherDayGaps, {
+      tier: 'filter',
+      cronRun: { runId: await anyRun(t), step: 1 },
+    });
+    // Not drained: the next batch's arguments, as stored, carry six candidates, not forty.
+    const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
+    const next = scheduled.find((f) => f.name.includes('sweepWeatherDayGaps'));
+    const queue = (next?.args[0] as { partial: { queue: unknown[] } }).partial.queue;
+    expect(queue).toHaveLength(6);
+    expect(summed()).toMatchObject({ partialDays: 40, partialDeferred: 34 });
+    await drain(t);
+    // Over the whole walk: six refetched, the other 84 left for the next run, each counted once.
+    expect(summed()).toMatchObject({ partialDays: 90, partialFilled: 6, partialDeferred: 84 });
+  });
+
+  test('the refetch batches are paced: a batch of 40 and its pause take at least 20 seconds', async () => {
+    const t = convexTest(schema, modules);
+    await seedCells(t, 50);
+    for (let i = 0; i < 50; i++) await seedDays(t, i, 6, 1, [written(ago(2))]);
+    const at: number[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        at.push(Date.now());
+        return answer(url);
+      }),
+    );
+    await sweep(t);
+    expect(at).toHaveLength(50);
+    expect(PARTIAL_REFETCH_PAUSE_MS).toBe(20_000);
+    // The 41st request (the second batch's first) waits out the pause after the first batch.
+    expect((at[40] ?? 0) - (at[39] ?? 0)).toBeGreaterThanOrEqual(PARTIAL_REFETCH_PAUSE_MS);
+    expect(summed()).toMatchObject({ partialFilled: 50 });
   });
 
   test('one call over the budget waits for the next run', async () => {
