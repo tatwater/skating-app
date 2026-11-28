@@ -6,7 +6,7 @@
  * stand-ins (`stageHarness.ts`). Every value is read by name; nothing here prints one.
  */
 
-import { spawn, spawnSync } from 'node:child_process';
+import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { homedir, hostname, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
@@ -21,6 +21,30 @@ import type { Bucket, BucketTarget, StageWorld } from '../world';
 const HERE = dirname(fileURLToPath(import.meta.url));
 /** `spawn.sh`, beside the package. */
 export const SPAWN = join(HERE, '..', '..', 'spawn.sh');
+
+/**
+ * **A launcher never outlives this process** (PR #188's tenth review). `spawn.sh tiles` queues a
+ * round's `fly machine run`s and spawns them a batch at a time, so a stage that exits mid-round — a
+ * stop from the console (the run row's `process.exit(130)`), a crash — left it spawning paid
+ * Machines for the rest of the round, past the released lock, while a re-run rewrote the units it
+ * reads. Each launcher runs as its own process group, and this process's exit signals the whole
+ * group (`spawn.sh`, its queued and in-flight spawn calls); Machines already started run on and land
+ * their own shards. A Ctrl-C now reaches only this process, whose handlers exit (`releaseOnExit`),
+ * which stops the group the same way. Prepended, so the group is signalled before the lock goes.
+ */
+export function launched(args: readonly string[]): ChildProcess & { stopGroup: () => void } {
+  const child = spawn('bash', [...args], { stdio: 'inherit', detached: true });
+  const stop = (): void => {
+    try {
+      if (child.pid !== undefined) process.kill(-child.pid, 'SIGTERM');
+    } catch {
+      // gone already
+    }
+  };
+  process.prependListener('exit', stop);
+  child.on('close', () => process.off('exit', stop));
+  return Object.assign(child, { stopGroup: stop });
+}
 
 /** rclone's "not there" (`readObject`'s reading): exit 3 or 4, or an object/file/directory not found. */
 const ABSENT = /exited [34]\b|\b(?:object|file|directory) not found\b/i;
@@ -120,29 +144,23 @@ export function realWorld(): StageWorld {
       tiles: (campaign, unitsDir, list) =>
         // Not `spawnSync`: the round's beats run on this process's timers meanwhile.
         new Promise((done, fail) => {
-          const child = spawn('bash', [SPAWN, 'tiles', campaign, unitsDir, list, '--drain'], {
-            stdio: 'inherit',
-          });
+          const child = launched([SPAWN, 'tiles', campaign, unitsDir, list, '--drain']);
           child.on('error', fail);
           child.on('close', done);
         }),
       drain: (campaign) =>
         new Promise((done, fail) => {
-          const child = spawn('bash', [SPAWN, 'drain', campaign], { stdio: 'inherit' });
+          const child = launched([SPAWN, 'drain', campaign]);
           child.on('error', fail);
           child.on('close', done);
         }),
       assemble(campaign, pilot) {
-        const child = spawn(
-          'bash',
-          [SPAWN, 'assemble', campaign, ...(pilot ? ['--pilot', pilot] : [])],
-          { stdio: 'inherit' },
-        );
+        const child = launched([SPAWN, 'assemble', campaign, ...(pilot ? ['--pilot', pilot] : [])]);
         let exit: number | null | undefined;
         child.on('close', (code) => {
           exit = code;
         });
-        return { exit: () => exit, stop: () => child.kill('SIGTERM') };
+        return { exit: () => exit, stop: () => child.stopGroup() };
       },
     },
     row: (options) => new RunLogger({ ...options, call: convexRun }),

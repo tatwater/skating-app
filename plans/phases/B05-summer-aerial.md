@@ -2884,6 +2884,23 @@ moved above `tiles.pilotBased`'s preflight and a Machine started above `assemble
 each failed its case; so did removing either `args.pilot*` check, the writer's abandon, the exit
 kill, and the kept-thumbnail drop.
 
+**Greptile's tenth review (4/5 on `d5d4008a2`), two comments.**
+
+- **A stopped tiles stage kept launching** (`cli/world.ts`) — real. The console's stop is the run
+  row's `process.exit(130)`, which drops the lock; `spawn.sh tiles`, a child Node never killed, went
+  on spawning the rest of its round's paid Machines a batch at a time, and a re-run could rewrite
+  the units it was reading. Fixed: every `spawn.sh` call runs as its own process group (`launched`),
+  signalled as a whole on this process's exit — prepended, so before the lock goes; Machines already
+  started land their own shards. A Ctrl-C now reaches only the stage, whose handlers exit, which
+  stops the group the same way. Test: `launcher.test.ts` (a stand-in launcher spawning forever, with
+  a call in flight; the stage exits 130; both are gone and nothing more is spawned) — fails without
+  the group and the exit stop.
+- **Cleanup breaks a later verify of a `--from-current` build** (`cleanup.ts`) — real, not fixed: a
+  verify of B re-run after cleanup deleted its base A fails `counts` (A's directories are what tell it
+  which tile ids B's copied work tiles hold) and can't byte-compare them. B's archive itself is whole
+  (copied tiles are copied bytes). A fix means choosing what a re-verify may stop checking, so it is
+  the founder's call (below, and in the report).
+
 Residual, not fixed (small, recorded): two pilots of one campaign date share Machine names
 (`aerial-p<date>-*`, `aerial-asm-p<date>`), so one's live assembler reads as the other's — a tiles
 stage refuses or a laptop follows the wrong Machine and then finds no record; nothing is
