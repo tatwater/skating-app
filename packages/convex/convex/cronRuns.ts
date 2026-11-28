@@ -297,7 +297,8 @@ async function recordTick(
   entry: CronJobEntry,
   tick: Tick,
 ): Promise<'recorded' | 'skipped'> {
-  const hb = await heartbeatOf(ctx, entry.name);
+  const job = entry.name;
+  const hb = await heartbeatOf(ctx, job);
   if (sparseSkips(entry, hb, tick)) return 'skipped';
   const out = outcomesOf(tick);
   const ms = Math.max(0, Math.round(tick.finishedAt - tick.startedAt));
@@ -306,7 +307,7 @@ async function recordTick(
   let runId: Id<'cronRuns'> | undefined;
   if (out.run !== null) {
     runId = await ctx.db.insert('cronRuns', {
-      job: entry.name,
+      job,
       startedAt: tick.startedAt,
       finishedAt: tick.finishedAt,
       outcome: out.run,
@@ -338,11 +339,11 @@ async function recordTick(
   const packed = packTick(Math.floor((tick.startedAt - bucketStart) / 1000), out.code);
   const row = await ctx.db
     .query('cronTicks')
-    .withIndex('by_job_bucket', (q) => q.eq('job', entry.name).eq('bucketStart', bucketStart))
+    .withIndex('by_job_bucket', (q) => q.eq('job', job).eq('bucketStart', bucketStart))
     .first();
   if (row === null) {
     await ctx.db.insert('cronTicks', {
-      job: entry.name,
+      job,
       bucketStart,
       bucketMs,
       ticks: [packed],
@@ -366,7 +367,7 @@ async function recordTick(
       : { lastOkAt: tick.startedAt }),
     ...(runId !== undefined ? { lastRunId: runId } : {}),
   };
-  if (hb === null) await ctx.db.insert('cronHeartbeats', { job: entry.name, ...fields });
+  if (hb === null) await ctx.db.insert('cronHeartbeats', { job, ...fields });
   else await ctx.db.patch(hb._id, fields);
   return 'recorded';
 }
