@@ -52,9 +52,14 @@
  * counts say what it would repair. A read that fails past its retries still pages the operator.
  */
 
-import { v } from 'convex/values';
+import { type ObjectType, v } from 'convex/values';
 import { internal } from './_generated/api';
-import { internalAction, internalMutation, internalQuery } from './_generated/server';
+import {
+  type ActionCtx,
+  internalAction,
+  internalMutation,
+  internalQuery,
+} from './_generated/server';
 import { type ClerkAnswer, clerkRequest, type LockWish, lockWish, retryOrPage } from './clerkAdmin';
 import { DOC_MAX, ReadBudget } from './lib/readBudget';
 import { clearFailure, forgetFailuresBefore, recordFailure } from './lib/recurringWork';
@@ -196,230 +201,237 @@ async function readUsers(key: string, query: string): Promise<UsersAnswer> {
   return { ok: true, users, listed: answer.body.length };
 }
 
+const runArgs = {
+  dryRun: v.optional(v.boolean()),
+  /** The run's start — set by its first step, carried by the rest. */
+  runId: v.optional(v.number()),
+  side: v.optional(literals(SIDES)),
+  /** The Convex side's page cursor. */
+  cursor: v.optional(v.union(v.string(), v.null())),
+  /**
+   * The Clerk side's place: the `created_at_before` of its next page (absent: the newest), and the
+   * ids already read at the millisecond just under it.
+   */
+  before: v.optional(v.number()),
+  seen: v.optional(v.array(v.string())),
+  /** Retry counter of the read that failed — 0 (absent) otherwise. */
+  attempt: v.optional(v.number()),
+  tally: v.optional(tallyValidator),
+  /** The earliest the run's next repair may run — its start at first, carried by the rest. */
+  repairAt: v.optional(v.number()),
+};
+
 /**
  * **One step of the daily reconcile** — the cron's tick starts a run (`{}`); each step continues it.
  * Never throws on a Clerk failure (the retry schedule, then the operator); a Convex failure stops the
  * chain with its side and counts in the log and the run counted under {@link RUN_KEY}, and the next
  * day's tick starts afresh.
+ *
+ * (Its body is exported as `runHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
-export const run = internalAction({
-  args: {
-    dryRun: v.optional(v.boolean()),
-    /** The run's start — set by its first step, carried by the rest. */
-    runId: v.optional(v.number()),
-    side: v.optional(literals(SIDES)),
-    /** The Convex side's page cursor. */
-    cursor: v.optional(v.union(v.string(), v.null())),
-    /**
-     * The Clerk side's place: the `created_at_before` of its next page (absent: the newest), and the
-     * ids already read at the millisecond just under it.
-     */
-    before: v.optional(v.number()),
-    seen: v.optional(v.array(v.string())),
-    /** Retry counter of the read that failed — 0 (absent) otherwise. */
-    attempt: v.optional(v.number()),
-    tally: v.optional(tallyValidator),
-    /** The earliest the run's next repair may run — its start at first, carried by the rest. */
-    repairAt: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<RunOutcome> => {
-    const dryRun = args.dryRun === true;
-    const tally: Tally = { ...EMPTY_TALLY, ...args.tally };
-    const key = process.env.CLERK_SECRET_KEY;
-    if (!key) {
-      console.warn(
-        'CLERK_SECRET_KEY not set — skipping the Clerk ban-lock reconcile (the Convex status gate still applies)',
-      );
-      return { dryRun, state: 'skipped', tally };
-    }
-    const runId = args.runId ?? Date.now();
-    let side: Side = args.side ?? 'clerk';
-    let cursor = args.cursor ?? null;
-    let before = args.before;
-    let seen = args.seen ?? [];
-    /** Where the run is, for a retry or the next step. */
-    const place = () => ({
-      side,
-      cursor,
-      ...(before !== undefined ? { before } : {}),
-      ...(seen.length > 0 ? { seen } : {}),
-    });
-    let attempt = args.attempt ?? 0;
-    let repairAt = args.repairAt ?? runId;
+export async function runHandler(
+  ctx: ActionCtx,
+  args: ObjectType<typeof runArgs>,
+): Promise<RunOutcome> {
+  const dryRun = args.dryRun === true;
+  const tally: Tally = { ...EMPTY_TALLY, ...args.tally };
+  const key = process.env.CLERK_SECRET_KEY;
+  if (!key) {
+    console.warn(
+      'CLERK_SECRET_KEY not set — skipping the Clerk ban-lock reconcile (the Convex status gate still applies)',
+    );
+    return { dryRun, state: 'skipped', tally };
+  }
+  const runId = args.runId ?? Date.now();
+  let side: Side = args.side ?? 'clerk';
+  let cursor = args.cursor ?? null;
+  let before = args.before;
+  let seen = args.seen ?? [];
+  /** Where the run is, for a retry or the next step. */
+  const place = () => ({
+    side,
+    cursor,
+    ...(before !== undefined ? { before } : {}),
+    ...(seen.length > 0 ? { seen } : {}),
+  });
+  let attempt = args.attempt ?? 0;
+  let repairAt = args.repairAt ?? runId;
 
-    /** Out-of-step locks, asked of `setBanned` (spaced one after another) or, dry, only counted. */
-    const nominate = async (clerkUserIds: string[], banned: boolean) => {
-      if (clerkUserIds.length === 0) return;
-      const asked = tally.lockRepairs + tally.unlockRepairs;
-      const take = clerkUserIds.slice(0, Math.max(0, MAX_REPAIRS_PER_RUN - asked));
-      tally.overCap += clerkUserIds.length - take.length;
-      if (take.length === 0) return;
-      if (!dryRun) {
-        repairAt = await ctx.runMutation(internal.clerkReconcile.repair, {
-          runId,
-          seq: asked,
-          from: repairAt,
-          items: take.map((clerkUserId) => ({ clerkUserId, banned })),
-        });
-      }
-      if (banned) tally.lockRepairs += take.length;
-      else tally.unlockRepairs += take.length;
-    };
-
-    /** A read that failed: `setBanned`'s path — retried from this same position, then the operator. */
-    const fail = async (answer: Exclude<ClerkAnswer, { ok: true }>): Promise<RunOutcome> => {
-      const asked = dryRun ? 0 : tally.lockRepairs + tally.unlockRepairs;
-      const next = await retryOrPage(ctx, {
-        what: 'reconcile',
-        subject: 'the daily ban-lock check',
-        attempt,
-        failure: answer.failure,
-        retryable: answer.retryable,
-        retry: (delayMs, nextAttempt) =>
-          ctx.scheduler.runAfter(delayMs, internal.clerkReconcile.run, {
-            dryRun,
-            runId,
-            ...place(),
-            attempt: nextAttempt,
-            tally,
-            repairAt,
-          }),
-        fix: `The daily check of Clerk sign-in locks against Convex stopped before it finished. ${
-          asked > 0
-            ? `The ${asked} repair(s) it had already asked for still run through the usual sync, and it runs again tomorrow.`
-            : 'Its failure changed nothing, and it runs again tomorrow.'
-        } If it keeps failing, check that CLERK_SECRET_KEY is valid and that Clerk is up.`,
+  /** Out-of-step locks, asked of `setBanned` (spaced one after another) or, dry, only counted. */
+  const nominate = async (clerkUserIds: string[], banned: boolean) => {
+    if (clerkUserIds.length === 0) return;
+    const asked = tally.lockRepairs + tally.unlockRepairs;
+    const take = clerkUserIds.slice(0, Math.max(0, MAX_REPAIRS_PER_RUN - asked));
+    tally.overCap += clerkUserIds.length - take.length;
+    if (take.length === 0) return;
+    if (!dryRun) {
+      repairAt = await ctx.runMutation(internal.clerkReconcile.repair, {
+        runId,
+        seq: asked,
+        from: repairAt,
+        items: take.map((clerkUserId) => ({ clerkUserId, banned })),
       });
-      if (next === 'paged' && !dryRun) {
-        await ctx.runMutation(internal.clerkReconcile.recordUnfinished, {});
-      }
-      return { dryRun, state: next === 'retried' ? 'retrying' : 'stopped', tally };
-    };
+    }
+    if (banned) tally.lockRepairs += take.length;
+    else tally.unlockRepairs += take.length;
+  };
 
-    const finish = async (state: 'done' | 'capped'): Promise<RunOutcome> => {
-      // Counts only: the tally holds no name, email or id.
-      console.log(
-        `Clerk ban-lock reconcile${dryRun ? ' (dry run)' : ''} ${state}: ${JSON.stringify(tally)}`,
-      );
-      if (!dryRun) await ctx.runMutation(internal.clerkReconcile.finishRun, { state, tally });
-      return { dryRun, state, tally };
-    };
+  /** A read that failed: `setBanned`'s path — retried from this same position, then the operator. */
+  const fail = async (answer: Exclude<ClerkAnswer, { ok: true }>): Promise<RunOutcome> => {
+    const asked = dryRun ? 0 : tally.lockRepairs + tally.unlockRepairs;
+    const next = await retryOrPage(ctx, {
+      what: 'reconcile',
+      subject: 'the daily ban-lock check',
+      attempt,
+      failure: answer.failure,
+      retryable: answer.retryable,
+      retry: (delayMs, nextAttempt) =>
+        ctx.scheduler.runAfter(delayMs, internal.clerkReconcile.run, {
+          dryRun,
+          runId,
+          ...place(),
+          attempt: nextAttempt,
+          tally,
+          repairAt,
+        }),
+      fix: `The daily check of Clerk sign-in locks against Convex stopped before it finished. ${
+        asked > 0
+          ? `The ${asked} repair(s) it had already asked for still run through the usual sync, and it runs again tomorrow.`
+          : 'Its failure changed nothing, and it runs again tomorrow.'
+      } If it keeps failing, check that CLERK_SECRET_KEY is valid and that Clerk is up.`,
+    });
+    if (next === 'paged' && !dryRun) {
+      await ctx.runMutation(internal.clerkReconcile.recordUnfinished, {});
+    }
+    return { dryRun, state: next === 'retried' ? 'retrying' : 'stopped', tally };
+  };
 
-    const step = async (): Promise<RunOutcome> => {
-      let reads = 0;
-      let convexPages = 0;
-      while (reads < READS_PER_STEP && convexPages < CONVEX_PAGES_PER_STEP) {
-        if (tally.clerkReads >= MAX_READS_PER_RUN) return await finish('capped');
-        if (side === 'convex') {
-          convexPages++;
-          const page = await ctx.runQuery(internal.clerkReconcile.bannedPage, { cursor });
-          // A fake person from the dev seed has no Clerk account (D287): counted, never asked
-          // about and never repaired.
-          const clerkUserIds = page.clerkUserIds.filter((id) => !isSeedProfile(id));
-          const skipped = page.clerkUserIds.length - clerkUserIds.length;
-          if (skipped > 0) tally.seedSkipped = (tally.seedSkipped ?? 0) + skipped;
-          if (clerkUserIds.length > 0) {
-            reads++;
-            tally.clerkReads++;
-            const query = [
-              ...clerkUserIds.map((id) => `user_id=${encodeURIComponent(id)}`),
-              `limit=${CLERK_PAGE}`,
-            ].join('&');
-            const answer = await readUsers(key, query);
-            if (!answer.ok) return await fail(answer);
-            attempt = 0;
-            const locked = new Map(answer.users.map((u) => [u.id, u.banned]));
-            const toLock: string[] = [];
-            for (const id of clerkUserIds) {
-              tally.convexChecked++;
-              const isLocked = locked.get(id);
-              if (isLocked === undefined) tally.notInClerk++;
-              else if (!isLocked) toLock.push(id);
-            }
-            await nominate(toLock, true);
-          }
-          if (page.isDone) return await finish('done');
-          cursor = page.continueCursor;
-        } else {
+  const finish = async (state: 'done' | 'capped'): Promise<RunOutcome> => {
+    // Counts only: the tally holds no name, email or id.
+    console.log(
+      `Clerk ban-lock reconcile${dryRun ? ' (dry run)' : ''} ${state}: ${JSON.stringify(tally)}`,
+    );
+    if (!dryRun) await ctx.runMutation(internal.clerkReconcile.finishRun, { state, tally });
+    return { dryRun, state, tally };
+  };
+
+  const step = async (): Promise<RunOutcome> => {
+    let reads = 0;
+    let convexPages = 0;
+    while (reads < READS_PER_STEP && convexPages < CONVEX_PAGES_PER_STEP) {
+      if (tally.clerkReads >= MAX_READS_PER_RUN) return await finish('capped');
+      if (side === 'convex') {
+        convexPages++;
+        const page = await ctx.runQuery(internal.clerkReconcile.bannedPage, { cursor });
+        // A fake person from the dev seed has no Clerk account (D287): counted, never asked
+        // about and never repaired.
+        const clerkUserIds = page.clerkUserIds.filter((id) => !isSeedProfile(id));
+        const skipped = page.clerkUserIds.length - clerkUserIds.length;
+        if (skipped > 0) tally.seedSkipped = (tally.seedSkipped ?? 0) + skipped;
+        if (clerkUserIds.length > 0) {
           reads++;
           tally.clerkReads++;
-          const upTo = before === undefined ? '' : `&created_at_before=${before}`;
-          const answer = await readUsers(key, `banned=true&limit=${CLERK_PAGE}${upTo}`);
+          const query = [
+            ...clerkUserIds.map((id) => `user_id=${encodeURIComponent(id)}`),
+            `limit=${CLERK_PAGE}`,
+          ].join('&');
+          const answer = await readUsers(key, query);
           if (!answer.ok) return await fail(answer);
           attempt = 0;
-          // What this page adds: not read already at the boundary, and — Clerk's filter, read again
-          // from each user — still locked (one Clerk no longer locks needs nothing).
-          const already = new Set(seen);
-          const ids = answer.users.filter((u) => u.banned && !already.has(u.id)).map((u) => u.id);
-          const wishes = await wishesFor(ids, (remaining) =>
-            ctx.runQuery(internal.clerkReconcile.lockWishes, { clerkUserIds: remaining }),
-          );
-          const toUnlock: string[] = [];
-          ids.forEach((id, i) => {
-            tally.clerkChecked++;
-            const wish = wishes[i];
-            if (wish === null) tally.noProfile++;
-            else if (wish === 'gone') tally.beingDeleted++;
-            else if (wish === false) toUnlock.push(id);
-          });
-          await nominate(toUnlock, false);
-          // The last page is the one Clerk answered short — counted by what it listed, read or not;
-          // then the Convex side.
-          if (answer.listed < CLERK_PAGE) {
-            side = 'convex';
-            cursor = null;
-            before = undefined;
-            seen = [];
-            continue;
+          const locked = new Map(answer.users.map((u) => [u.id, u.banned]));
+          const toLock: string[] = [];
+          for (const id of clerkUserIds) {
+            tally.convexChecked++;
+            const isLocked = locked.get(id);
+            if (isLocked === undefined) tally.notInClerk++;
+            else if (!isLocked) toLock.push(id);
           }
-          const edge = answer.users.at(-1)?.createdAt ?? null;
-          if (edge === null) {
-            return await fail({
-              ok: false,
-              failure: 'a full page whose last user has no creation time',
-              retryable: false,
-            });
-          }
-          // The next page: created at or before this page's last millisecond, skipping who was read
-          // there. A full page that adds no one is more than a page of users created in one
-          // millisecond — the list can't be walked past it.
-          if (answer.users.every((u) => already.has(u.id))) {
-            return await fail({
-              ok: false,
-              failure: `more than ${CLERK_PAGE} locked users share one creation time`,
-              retryable: false,
-            });
-          }
-          const atEdge = answer.users.filter((u) => u.createdAt === edge).map((u) => u.id);
-          seen = before === edge + 1 ? [...new Set([...seen, ...atEdge])] : atEdge;
-          before = edge + 1;
+          await nominate(toLock, true);
         }
+        if (page.isDone) return await finish('done');
+        cursor = page.continueCursor;
+      } else {
+        reads++;
+        tally.clerkReads++;
+        const upTo = before === undefined ? '' : `&created_at_before=${before}`;
+        const answer = await readUsers(key, `banned=true&limit=${CLERK_PAGE}${upTo}`);
+        if (!answer.ok) return await fail(answer);
+        attempt = 0;
+        // What this page adds: not read already at the boundary, and — Clerk's filter, read again
+        // from each user — still locked (one Clerk no longer locks needs nothing).
+        const already = new Set(seen);
+        const ids = answer.users.filter((u) => u.banned && !already.has(u.id)).map((u) => u.id);
+        const wishes = await wishesFor(ids, (remaining) =>
+          ctx.runQuery(internal.clerkReconcile.lockWishes, { clerkUserIds: remaining }),
+        );
+        const toUnlock: string[] = [];
+        ids.forEach((id, i) => {
+          tally.clerkChecked++;
+          const wish = wishes[i];
+          if (wish === null) tally.noProfile++;
+          else if (wish === 'gone') tally.beingDeleted++;
+          else if (wish === false) toUnlock.push(id);
+        });
+        await nominate(toUnlock, false);
+        // The last page is the one Clerk answered short — counted by what it listed, read or not;
+        // then the Convex side.
+        if (answer.listed < CLERK_PAGE) {
+          side = 'convex';
+          cursor = null;
+          before = undefined;
+          seen = [];
+          continue;
+        }
+        const edge = answer.users.at(-1)?.createdAt ?? null;
+        if (edge === null) {
+          return await fail({
+            ok: false,
+            failure: 'a full page whose last user has no creation time',
+            retryable: false,
+          });
+        }
+        // The next page: created at or before this page's last millisecond, skipping who was read
+        // there. A full page that adds no one is more than a page of users created in one
+        // millisecond — the list can't be walked past it.
+        if (answer.users.every((u) => already.has(u.id))) {
+          return await fail({
+            ok: false,
+            failure: `more than ${CLERK_PAGE} locked users share one creation time`,
+            retryable: false,
+          });
+        }
+        const atEdge = answer.users.filter((u) => u.createdAt === edge).map((u) => u.id);
+        seen = before === edge + 1 ? [...new Set([...seen, ...atEdge])] : atEdge;
+        before = edge + 1;
       }
-      await ctx.scheduler.runAfter(STEP_GAP_MS, internal.clerkReconcile.run, {
-        dryRun,
-        runId,
-        ...place(),
-        tally,
-        repairAt,
-      });
-      return { dryRun, state: 'continued', tally };
-    };
-
-    try {
-      return await step();
-    } catch (err) {
-      // A Convex failure (a Clerk one never throws): the chain stops here and tomorrow's tick starts
-      // afresh — never silently: its side and counts in the log (no id), the run counted unfinished.
-      console.error(
-        `Clerk ban-lock reconcile${dryRun ? ' (dry run)' : ''} stopped on the ${side} side by a Convex failure: ${JSON.stringify(tally)}`,
-      );
-      if (!dryRun) {
-        await ctx.runMutation(internal.clerkReconcile.recordUnfinished, {}).catch(() => undefined);
-      }
-      throw err;
     }
-  },
-});
+    await ctx.scheduler.runAfter(STEP_GAP_MS, internal.clerkReconcile.run, {
+      dryRun,
+      runId,
+      ...place(),
+      tally,
+      repairAt,
+    });
+    return { dryRun, state: 'continued', tally };
+  };
+
+  try {
+    return await step();
+  } catch (err) {
+    // A Convex failure (a Clerk one never throws): the chain stops here and tomorrow's tick starts
+    // afresh — never silently: its side and counts in the log (no id), the run counted unfinished.
+    console.error(
+      `Clerk ban-lock reconcile${dryRun ? ' (dry run)' : ''} stopped on the ${side} side by a Convex failure: ${JSON.stringify(tally)}`,
+    );
+    if (!dryRun) {
+      await ctx.runMutation(internal.clerkReconcile.recordUnfinished, {}).catch(() => undefined);
+    }
+    throw err;
+  }
+}
+
+export const run = internalAction({ args: runArgs, handler: runHandler });
 
 /**
  * Every id's lock wish, asked a query at a time until all are answered (each answers what its read

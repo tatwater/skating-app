@@ -52,6 +52,7 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { IMAGERY_CRON_JOBS } from './imageryLive';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { busyUntil, setBusyUntil } from './lib/dailyThrottle';
@@ -650,7 +651,12 @@ export const startImagery = mutation({
       imageryStartedBy: row.imageryStartedBy ?? admin._id,
       imageryPausedAt: undefined,
     });
-    await ctx.scheduler.runAfter(0, internal.imageryLive.poll, {});
+    // Through the cron dispatcher (D347): the press is a recorded poll run, with who pressed it.
+    await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
+      job: IMAGERY_CRON_JOBS.poll,
+      trigger: 'manual',
+      byUserId: admin._id,
+    });
     // Pressing *Start* is also how an admin says "I fixed it" — clear any backoff.
     await clearBackoff(ctx, 'pump');
     return null;

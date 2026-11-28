@@ -51,6 +51,8 @@ import {
   addDaysIso,
   archiveSeasonAt,
   buildSeasonIndex,
+  type CronReport,
+  type CronReportLine,
   durationInWords,
   type FrameManifest,
   type GranuleCandidate,
@@ -63,6 +65,7 @@ import {
   selectSarGranules,
   stacDayRange,
   tileSurveyKey,
+  withCronReport,
 } from '@skating/core';
 import { v } from 'convex/values';
 
@@ -215,20 +218,19 @@ export const liveState = internalQuery({
   },
 });
 
-export const recordRun = internalMutation({
-  args: {
-    season: v.string(),
-    kind: literals(['poll', 'pump', 'index'] as const),
-    startedAt: v.number(),
-    outcome: literals(['ok', 'capped', 'failed', 'refused', 'skipped'] as const),
-    detail: v.optional(v.string()),
-    counts: v.optional(v.record(v.string(), v.number())),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.insert('imageryRuns', { ...args, finishedAt: Date.now() });
-    return null;
-  },
-});
+/**
+ * **The three imagery crons' registered names** (`cronJobs.ts`), by the `imageryRuns` kind each
+ * replaced. Since B01-8b (D347) their runs are the cron backbone's: each job returns its run as a
+ * `cronReport` and the dispatcher writes it to `cronRuns`; `imageryRuns` is no longer written, and
+ * `cronRunJobs.copyImageryRuns` carries its history over. A press (*Start imagery*, *Retry failed*,
+ * *Try again now*) schedules the dispatcher with `trigger: 'manual'` and the person, so it is a
+ * recorded run with who pressed it.
+ */
+export const IMAGERY_CRON_JOBS = {
+  poll: 'poll for new satellite imagery',
+  pump: 'pump live satellite imagery',
+  index: 'rebuild the live imagery index',
+} as const;
 
 /**
  * Email the admins, at most once per `key` per New York day. A misconfigured job polls four times a
@@ -610,34 +612,47 @@ export function slotOf(granuleId: string): { slot: string; mission: StacMission 
 
 // ─── 1. Poll ────────────────────────────────────────────────────────────────────────────────────
 
-export const poll = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ outcome: Outcome; detail?: string }> => {
-    const startedAt = Date.now();
-    // The pump's own 3-minute tick picks up whatever this queues.
-    return await pollOnce(ctx, archiveSeasonAt(startedAt), startedAt);
-  },
-});
+const pollArgs = {};
 
-async function pollOnce(
-  ctx: ActionCtx,
-  season: string,
-  startedAt: number,
-): Promise<{ outcome: Outcome; detail?: string }> {
+/**
+ * The poll's cron body. (Exported as `pollHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
+ */
+export async function pollHandler(ctx: ActionCtx): Promise<PollResult> {
+  const startedAt = Date.now();
+  // The pump's own 3-minute tick picks up whatever this queues.
+  return await pollOnce(ctx, archiveSeasonAt(startedAt), startedAt);
+}
+
+export const poll = internalAction({ args: pollArgs, handler: pollHandler });
+
+/** What a poll answers: its outcome, and (when it ran) its report for the cron dispatcher. */
+type PollResult = { outcome: Outcome; detail?: string; cronReport?: CronReport };
+
+async function pollOnce(ctx: ActionCtx, season: string, startedAt: number): Promise<PollResult> {
   const state = await ctx.runQuery(internal.imageryLive.liveState, { season });
   // Not started (or paused, or over) is the normal state most of the year — no run row, no noise.
   if (!state.runnable) return { outcome: 'skipped', detail: state.reason };
 
-  const finish = async (outcome: Outcome, detail?: string, counts?: Record<string, number>) => {
-    await ctx.runMutation(internal.imageryLive.recordRun, {
-      season,
-      kind: 'poll',
-      startedAt,
+  // The run's log (D347): what it did, in order — the window, each mission's search, the queue.
+  const lines: CronReportLine[] = [];
+  const log = (text: string, kind: CronReportLine['kind'] = 'line') =>
+    lines.push({ kind, text, loggedAt: Date.now() });
+  const finish = async (
+    outcome: Exclude<Outcome, 'skipped'>,
+    detail?: string,
+    counts?: Record<string, number>,
+  ): Promise<PollResult> => {
+    if (outcome === 'failed' || outcome === 'refused') log(detail ?? outcome, 'fail');
+    const cronReport: CronReport = {
+      worked: true,
       outcome,
+      season,
       ...(detail ? { detail } : {}),
       ...(counts ? { counts } : {}),
-    });
-    return { outcome, ...(detail ? { detail } : {}) };
+      lines,
+    };
+    return { outcome, ...(detail ? { detail } : {}), cronReport };
   };
   const refuse = async (key: string, problem: string, detail: string) => {
     await ctx.runMutation(internal.imageryLive.alertAdmins, { key, season, problem, detail });
@@ -680,6 +695,7 @@ async function pollOnce(
     // biome-ignore lint/complexity/useMathMinMax: ISO days compare lexically; Math.max returns NaN.
     const from = overlap > state.opensOn ? overlap : state.opensOn;
     const datetime = stacDayRange(from, today);
+    log(`Window ${from} → ${today}`, 'stage');
     const search = async (mission: StacMission) =>
       (
         await searchStac(fetch, {
@@ -689,6 +705,8 @@ async function pollOnce(
         })
       ).items;
     const [s2, s1] = await Promise.all([search('s2'), search('s1')]);
+    log(`Sentinel-2: ${s2.length} passes found`);
+    log(`Sentinel-1: ${s1.length} passes found`);
 
     // A06e's selection, unchanged: no cloud gate (we cut and keep everything), the empty-tile
     // prefilter for optical, the DV/IW/GRDH filter for radar.
@@ -730,6 +748,9 @@ async function pollOnce(
       examined = i + Math.min(batch.length, result.queued + result.known);
     }
     const capped = examined < items.length;
+    log(`Selected ${items.length}; queued ${queued}, already queued ${known}`);
+    if (capped)
+      log(`Hit the cap of ${POLL_CAP}; ${items.length - examined} left for the next poll`, 'warn');
 
     // ⚠ **A capped poll advances its window only to the newest pass it queued**, never to today. The
     // next poll starts from there (less the overlap) and picks up the rest; advancing to today would
@@ -740,7 +761,11 @@ async function pollOnce(
     await ctx.runMutation(internal.imageryLive.setWindowTo, { season, windowTo });
     // Start on what was just queued now rather than at the next 3-minute tick; the lease makes it
     // safe whether or not a tick is already running.
-    if (queued > 0) await ctx.scheduler.runAfter(0, internal.imageryLive.pump, {});
+    if (queued > 0) {
+      await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
+        job: IMAGERY_CRON_JOBS.pump,
+      });
+    }
 
     const counts = {
       s2Considered: s2Selected.counts.considered,
@@ -881,53 +906,74 @@ interface RunOutcome {
   blindTicks?: number;
 }
 
-export const pump = internalAction({
-  args: {},
-  handler: async (ctx): Promise<PumpCounts | { skipped: string }> => {
-    const startedAt = Date.now();
-    const season = archiveSeasonAt(startedAt);
-    // Most ticks: nothing queued or cutting — one read, no lease, no write.
-    if (!(await ctx.runQuery(internal.imageryLive.hasWork, { season }))) {
-      return { skipped: 'nothing to do' };
-    }
-    const token = crypto.randomUUID();
-    const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'pump', token });
-    if (!begun.ok) return { skipped: begun.reason };
-    // ⚠ A run that throws backs off, leaves a run row, and tells the admins — the same as any
-    // other failure, rather than a silent gap.
-    let outcome: RunOutcome = { backoff: true };
+const pumpArgs = {};
+
+/**
+ * The pump's cron body. (Exported as `pumpHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
+ */
+export async function pumpHandler(
+  ctx: ActionCtx,
+): Promise<(PumpCounts & { cronReport?: CronReport }) | { skipped: string }> {
+  const startedAt = Date.now();
+  const season = archiveSeasonAt(startedAt);
+  // Most ticks: nothing queued or cutting — one read, no lease, no write.
+  if (!(await ctx.runQuery(internal.imageryLive.hasWork, { season }))) {
+    return { skipped: 'nothing to do' };
+  }
+  const token = crypto.randomUUID();
+  const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'pump', token });
+  if (!begun.ok) return { skipped: begun.reason };
+  // ⚠ A run that throws backs off, tells the admins, and rethrows: the cron dispatcher records it
+  // as a failed run with its message (D347) — the same as any other failure, never a silent gap.
+  let outcome: RunOutcome = { backoff: true };
+  try {
+    const result = await pumpOnce(ctx, season, begun.refusalStreak, begun.blindTicks);
+    outcome = result.outcome;
+    if ('skipped' in result.counts) return result.counts;
+    return result.cronReport ? { ...result.counts, cronReport: result.cronReport } : result.counts;
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    // The run row keeps what the Seasons panel showed before the backbone: that it backs off.
+    const failure = withCronReport(error, {
+      worked: true,
+      outcome: 'failed',
+      season,
+      detail: `threw: ${detail} — backing off 30 minutes unless an admin says try again`,
+    });
+    // The pump's own error stays the run's word: an alert that fails too is logged, never thrown in
+    // its place (before the backbone, the run row was written before the alert was tried).
     try {
-      const result = await pumpOnce(ctx, season, begun.refusalStreak, begun.blindTicks);
-      outcome = result.outcome;
-      return result.counts;
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : String(error);
-      await ctx.runMutation(internal.imageryLive.recordRun, {
-        season,
-        kind: 'pump',
-        startedAt,
-        outcome: 'failed',
-        detail: `threw: ${detail} — backing off 30 minutes unless an admin says try again`,
-      });
       await ctx.runMutation(internal.imageryLive.alertAdmins, {
         key: 'imagery-pump-error',
         season,
         problem: 'The imagery pump hit an error',
         detail: `${detail}. It backs off for half an hour and tries again.`,
       });
-      throw error;
-    } finally {
-      await ctx.runMutation(internal.imageryLive.end, { key: 'pump', token, ...outcome });
+    } catch (alertError) {
+      console.error(
+        `imagery pump: the admins' alert failed too: ${alertError instanceof Error ? alertError.message : String(alertError)}`,
+      );
     }
-  },
-});
+    throw failure;
+  } finally {
+    await ctx.runMutation(internal.imageryLive.end, { key: 'pump', token, ...outcome });
+  }
+}
+
+export const pump = internalAction({ args: pumpArgs, handler: pumpHandler });
 
 async function pumpOnce(
   ctx: ActionCtx,
   season: string,
   refusalStreakIn: number,
   blindTicksIn: number,
-): Promise<{ counts: PumpCounts | { skipped: string }; outcome: RunOutcome }> {
+): Promise<{
+  counts: PumpCounts | { skipped: string };
+  outcome: RunOutcome;
+  /** Present when the run did something (settled, spawned, was refused) or backed off. */
+  cronReport?: CronReport;
+}> {
   const startedAt = Date.now();
   const config = configured();
   // `poll` refuses and alerts on configuration; the pump just has nothing it can do.
@@ -1024,17 +1070,38 @@ async function pumpOnce(
       detail: `${failures.slice(0, 10).join(', ')}${failures.length > 10 ? ', …' : ''}. Read the Machine logs with \`fly logs --app skating-imagery\` while they last; *Retry failed* on the Seasons page queues them again.`,
     });
   }
-  if (settled.length + counts.spawned + counts.refused > 0 || backoff) {
-    await ctx.runMutation(internal.imageryLive.recordRun, {
-      season,
-      kind: 'pump',
-      startedAt,
-      outcome: backoff || failures.length > 0 ? 'failed' : 'ok',
-      ...(backoff ? { detail: 'backing off 30 minutes' } : {}),
-      counts: { ...counts },
-    });
+  const runOutcome: RunOutcome = { backoff, refusalStreak: streak, blindTicks };
+  if (settled.length + counts.spawned + counts.refused === 0 && !backoff) {
+    return { counts, outcome: runOutcome };
   }
-  return { counts, outcome: { backoff, refusalStreak: streak, blindTicks } };
+  const at = Date.now();
+  const cronReport: CronReport = {
+    worked: true,
+    outcome: backoff || failures.length > 0 ? 'failed' : 'ok',
+    season,
+    ...(backoff ? { detail: 'backing off 30 minutes' } : {}),
+    counts: { ...counts },
+    lines: [
+      {
+        kind: 'stage',
+        text: `Checked ${inFlight.length} cut${inFlight.length === 1 ? '' : 's'} in flight`,
+        loggedAt: at,
+      },
+      {
+        kind: 'line',
+        text: `Landed ${counts.landed}, empty ${counts.empty}, requeued ${counts.requeued}, failed ${counts.failed}; ${counts.running} still running, ${counts.unknown} not checked`,
+        loggedAt: at,
+      },
+      ...failures.slice(0, 50).map((f) => ({ kind: 'fail' as const, text: f, loggedAt: at })),
+      {
+        kind: 'line',
+        text: `Started ${counts.spawned}, refused ${counts.refused}, unconfirmed ${counts.unconfirmed}; ${counts.live} live of ${MAX_LIVE_MACHINES}`,
+        loggedAt: at,
+      },
+      ...(backoff ? [{ kind: 'warn' as const, text: 'Backing off 30 minutes', loggedAt: at }] : []),
+    ],
+  };
+  return { counts, outcome: runOutcome, cronReport };
 }
 
 /**
@@ -1151,7 +1218,7 @@ async function startCuts(
 export const retryFailed = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireCapability(ctx, 'machinery.imagery');
+    const admin = await requireCapability(ctx, 'machinery.imagery');
     const season = archiveSeasonAt(Date.now());
     const ledger = new Ledger(ctx);
     const rows = await ctx.db
@@ -1169,7 +1236,11 @@ export const retryFailed = mutation({
     await ledger.flush();
     await clearBackoff(ctx, 'pump');
     // Safe at once: if a run holds the lease this one skips, and that run is already working.
-    await ctx.scheduler.runAfter(0, internal.imageryLive.pump, {});
+    await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
+      job: IMAGERY_CRON_JOBS.pump,
+      trigger: 'manual',
+      byUserId: admin._id,
+    });
     return { requeued: rows.length };
   },
 });
@@ -1181,11 +1252,16 @@ export const retryFailed = mutation({
 export const tryAgainNow = mutation({
   args: {},
   handler: async (ctx) => {
-    await requireCapability(ctx, 'machinery.imagery');
+    const admin = await requireCapability(ctx, 'machinery.imagery');
     await clearBackoff(ctx, 'pump');
     await retryNow(ctx, 'index');
-    await ctx.scheduler.runAfter(0, internal.imageryLive.pump, {});
-    await ctx.scheduler.runAfter(0, internal.imageryLive.buildIndex, {});
+    for (const job of [IMAGERY_CRON_JOBS.pump, IMAGERY_CRON_JOBS.index]) {
+      await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
+        job,
+        trigger: 'manual',
+        byUserId: admin._id,
+      });
+    }
     return null;
   },
 });
@@ -1246,51 +1322,66 @@ export function frameFromManifest(manifestKey: string, m: FrameManifest, etag?: 
   };
 }
 
+const buildIndexArgs = {};
+
 /**
  * Rebuild this season's index when a frame has landed — under its own lease, because two builds
  * writing `index/<season>.json` out of order would let an older listing overwrite a newer one.
  * **Compare-and-clear**: the request it satisfies is marked built only after the build succeeds, so
  * a failed build — or one killed by the action limit — leaves it standing for the next tick.
+ *
+ * (Its body is exported as `buildIndexHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
-export const buildIndex = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ frames: number } | null> => {
-    const seq = await ctx.runQuery(internal.imageryLive.indexOutstanding, { now: Date.now() });
-    if (seq === null) return null;
-    const token = crypto.randomUUID();
-    const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'index', token });
-    if (!begun.ok) return null;
-    try {
-      const result = await buildIndexOnce(ctx);
-      if (result === null) return null;
-      // Built even with a manifest it could not read, so a frame landing later is not held back;
-      // what it could not read is retried after a wait that doubles while it keeps failing. With
-      // readable manifests still unread (the read budget ran out) the request stands, and the next
-      // tick goes on — the unreadable ones get their wait and alert all the same.
-      const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
-        seq,
-        unreadable: result.unreadable,
-        complete: result.deferred === 0,
-      });
-      if (retryInMs !== null) {
-        const n = result.unreadable;
-        await ctx.runMutation(internal.imageryLive.alertAdmins, {
-          key: 'imagery-index-unreadable',
-          season: result.season,
-          problem: 'Some cut frames cannot be read into the imagery index',
-          detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read: a new frame stays off the public timeline until it reads, and a recut one keeps its old details. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
-        });
-      }
-      return { frames: result.frames };
-    } finally {
-      await ctx.runMutation(internal.imageryLive.end, { key: 'index', token });
-    }
-  },
-});
-
-async function buildIndexOnce(
+export async function buildIndexHandler(
   ctx: ActionCtx,
-): Promise<{ frames: number; unreadable: number; deferred: number; season: string } | null> {
+): Promise<{ frames?: number; cronReport: CronReport } | null> {
+  const seq = await ctx.runQuery(internal.imageryLive.indexOutstanding, { now: Date.now() });
+  if (seq === null) return null;
+  const token = crypto.randomUUID();
+  const begun = await ctx.runMutation(internal.imageryLive.begin, { key: 'index', token });
+  if (!begun.ok) return null;
+  try {
+    const result = await buildIndexOnce(ctx);
+    if (result === null) return null;
+    if ('failed' in result) return { cronReport: result.cronReport };
+    // Built even with a manifest it could not read, so a frame landing later is not held back;
+    // what it could not read is retried after a wait that doubles while it keeps failing. With
+    // readable manifests still unread (the read budget ran out) the request stands, and the next
+    // tick goes on — the unreadable ones get their wait and alert all the same.
+    const { retryInMs } = await ctx.runMutation(internal.imageryLive.markIndexBuilt, {
+      seq,
+      unreadable: result.unreadable,
+      complete: result.deferred === 0,
+    });
+    if (retryInMs !== null) {
+      const n = result.unreadable;
+      await ctx.runMutation(internal.imageryLive.alertAdmins, {
+        key: 'imagery-index-unreadable',
+        season: result.season,
+        problem: 'Some cut frames cannot be read into the imagery index',
+        detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read: a new frame stays off the public timeline until it reads, and a recut one keeps its old details. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
+      });
+    }
+    return { frames: result.frames, cronReport: result.cronReport };
+  } finally {
+    await ctx.runMutation(internal.imageryLive.end, { key: 'index', token });
+  }
+}
+
+export const buildIndex = internalAction({ args: buildIndexArgs, handler: buildIndexHandler });
+
+async function buildIndexOnce(ctx: ActionCtx): Promise<
+  | {
+      frames: number;
+      unreadable: number;
+      deferred: number;
+      season: string;
+      cronReport: CronReport;
+    }
+  | { failed: true; cronReport: CronReport }
+  | null
+> {
   const startedAt = Date.now();
   const season = archiveSeasonAt(startedAt);
   const config = configured();
@@ -1441,11 +1532,11 @@ async function buildIndexOnce(
           ]
         : []),
     ];
-    await ctx.runMutation(internal.imageryLive.recordRun, {
-      season,
-      kind: 'index',
-      startedAt,
+    const at = Date.now();
+    const cronReport: CronReport = {
+      worked: true,
       outcome: unreadable > 0 ? 'failed' : 'ok',
+      season,
       ...(details.length > 0 ? { detail: details.join('; ') } : {}),
       counts: {
         manifests: listed.length,
@@ -1455,8 +1546,35 @@ async function buildIndexOnce(
         ...(deferred > 0 ? { deferred } : {}),
         frames: index.frames.length,
       },
-    });
-    return { frames: index.frames.length, unreadable, deferred, season };
+      lines: [
+        {
+          kind: 'stage',
+          text: `Listed ${listed.length} manifests in frames/${season}/`,
+          loggedAt: at,
+        },
+        {
+          kind: 'line',
+          text: `Read ${added.length} new or changed, removed ${remove.length}; the index holds ${index.frames.length} frames`,
+          loggedAt: at,
+        },
+        ...(deferred > 0
+          ? [
+              {
+                kind: 'line' as const,
+                text: `${deferred} left for the next build (out of time)`,
+                loggedAt: at,
+              },
+            ]
+          : []),
+        ...(unreadable > 0
+          ? [{ kind: 'warn' as const, text: `${unreadable} manifests unreadable`, loggedAt: at }]
+          : []),
+        ...(turnedOver
+          ? [{ kind: 'line' as const, text: `index/latest.json → ${season}`, loggedAt: at }]
+          : []),
+      ],
+    };
+    return { frames: index.frames.length, unreadable, deferred, season, cronReport };
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     await ctx.runMutation(internal.imageryLive.alertAdmins, {
@@ -1465,26 +1583,60 @@ async function buildIndexOnce(
       problem: 'The imagery index could not be rebuilt',
       detail,
     });
-    await ctx.runMutation(internal.imageryLive.recordRun, {
-      season,
-      kind: 'index',
-      startedAt,
-      outcome: 'failed',
-      detail,
-    });
-    return null;
+    return {
+      failed: true,
+      cronReport: {
+        worked: true,
+        outcome: 'failed',
+        season,
+        detail,
+        lines: [{ kind: 'fail', text: detail, loggedAt: Date.now() }],
+      },
+    };
   }
 }
 
 // ─── The admin page ─────────────────────────────────────────────────────────────────────────────
 
-/** Recent runs and this season's ledger, for `/admin/seasons`. */
+/** How many recent runs the panel lists. */
+const ACTIVITY_RUNS = 40;
+
+/**
+ * Recent runs and this season's ledger, for `/admin/seasons`. The runs are the three imagery crons'
+ * from the backbone (`cronRuns`, D347): each job's newest {@link ACTIVITY_RUNS} (one `eq` range each),
+ * merged newest first, in the panel's old shape (`kind` the job's `imageryRuns` kind).
+ */
 export const activity = query({
   args: {},
   handler: async (ctx) => {
     await requireCapability(ctx, 'machinery.read');
     const season = archiveSeasonAt(Date.now());
-    const runs = await ctx.db.query('imageryRuns').withIndex('by_started').order('desc').take(40);
+    const runs = (
+      await Promise.all(
+        (Object.entries(IMAGERY_CRON_JOBS) as [keyof typeof IMAGERY_CRON_JOBS, string][]).map(
+          async ([kind, job]) =>
+            (
+              await ctx.db
+                .query('cronRuns')
+                .withIndex('by_job_started', (q) => q.eq('job', job))
+                .order('desc')
+                .take(ACTIVITY_RUNS)
+            ).map((r) => ({
+              _id: r._id,
+              kind,
+              season: r.season ?? season,
+              startedAt: r.startedAt,
+              finishedAt: r.finishedAt,
+              outcome: r.outcome,
+              ...((r.detail ?? r.error) ? { detail: r.detail ?? r.error } : {}),
+              ...(r.counts ? { counts: r.counts } : {}),
+            })),
+        ),
+      )
+    )
+      .flat()
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, ACTIVITY_RUNS);
     const ledger = await ctx.db
       .query('imageryCounts')
       .withIndex('by_season', (q) => q.eq('season', season))

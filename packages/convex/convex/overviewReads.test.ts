@@ -12,17 +12,18 @@
  *  - **the capability map decides who reads what** — moderators read Metrics and the season summary,
  *    support's half and Machinery stay admin's.
  */
-import { DEFAULT_SEASON_WATCH_SETTINGS, metricDay } from '@skating/core';
+import { cronLiveness, DEFAULT_SEASON_WATCH_SETTINGS, metricDay } from '@skating/core';
 import { convexTest } from 'convex-test';
 import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { api, internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { rollupBountiesDay, rollupDay, rollupPulseDay } from './analyticsRollup';
+import { cronJob } from './cronJobs';
 import { contributorsBetween } from './lib/contributions';
 import { flagBodyId } from './lib/openFlags';
 import { refreshPersonRow } from './lib/peopleRows';
-import { cardRows, type JobRow } from './machinery';
+import { cardRows, cronJobState, IMAGERY_CARD_JOBS, type JobRow, type JobState } from './machinery';
 import { contributorSplit } from './metrics';
 import schema from './schema';
 import {
@@ -758,15 +759,35 @@ describe('console.systemFeed — what the machines did', () => {
         failures: [],
         failuresTotal: 0,
       });
-      for (const [i, outcome] of (['ok', 'refused', 'failed'] as const).entries()) {
-        await ctx.db.insert('imageryRuns', {
-          season: 'winter-2026-27',
-          kind: 'pump' as const,
+      // The imagery crons' runs, as the backbone records them (`cronRuns`).
+      for (const [i, outcome] of (['ok', 'refused', 'failed', 'capped'] as const).entries()) {
+        await ctx.db.insert('cronRuns', {
+          job: 'pump live satellite imagery',
           startedAt: NOW - 30 * MINUTE + i * MINUTE,
           finishedAt: NOW - 29 * MINUTE + i * MINUTE,
           outcome,
+          trigger: 'cron' as const,
+          season: 'winter-2026-27',
+          keepUntil: NOW + 200 * DAY,
         });
       }
+      await ctx.db.insert('cronRuns', {
+        job: 'poll for new satellite imagery',
+        startedAt: NOW - 20 * MINUTE,
+        finishedAt: NOW - 20 * MINUTE,
+        outcome: 'killed' as const,
+        trigger: 'cron' as const,
+        keepUntil: NOW + 200 * DAY,
+      });
+      // Another cron's failure is not imagery's, and not the feed's (Health draws every cron, later).
+      await ctx.db.insert('cronRuns', {
+        job: 'expire bounties',
+        startedAt: NOW - 10 * MINUTE,
+        finishedAt: NOW - 10 * MINUTE,
+        outcome: 'failed' as const,
+        trigger: 'cron' as const,
+        keepUntil: NOW + 30 * DAY,
+      });
       await ctx.db.insert('imageryIngestSeasons', {
         season: 'winter-2026-27',
         opensOn: '2026-10-03',
@@ -784,13 +805,17 @@ describe('console.systemFeed — what the machines did', () => {
     await seedRuns(t);
     const rows = await admin.as.query(api.console.systemFeed, {});
     expect(rows.map((r) => [r.action, r.target.label])).toEqual([
+      ['Run cut off', 'Imagery poll'],
       ['Run failed', 'Imagery pump'],
       ['Run refused', 'Imagery pump'],
       ['Run failed', 'VT canonical water'],
       ['Opened ice watch', 'Winter 2026–27'],
     ]);
     expect(rows.every((r) => r.actor === null)).toBe(true);
-    expect(rows[2]?.target).toEqual(
+    expect(rows[1]?.target).toEqual(
+      expect.objectContaining({ type: 'cronRun', label: 'Imagery pump' }),
+    );
+    expect(rows[3]?.target).toEqual(
       expect.objectContaining({ type: 'importRun', label: 'VT canonical water' }),
     );
   });
@@ -2600,77 +2625,285 @@ describe('machinery.overviewJobs', () => {
     expect(await mod.as.query(api.machinery.overviewJobs, {})).toBeNull();
   });
 
+  const POLL_JOB = 'poll for new satellite imagery';
+  const PUMP_JOB = 'pump live satellite imagery';
+  const INDEX_JOB = 'rebuild the live imagery index';
+  type Beat = Omit<Doc<'cronHeartbeats'>, '_id' | '_creationTime' | 'job'>;
+  const beat = (t: T, job: string, hb: Beat) =>
+    t.run(async (ctx) => {
+      const old = await ctx.db
+        .query('cronHeartbeats')
+        .withIndex('by_job', (q) => q.eq('job', job))
+        .first();
+      if (old !== null) await ctx.db.delete(old._id);
+      await ctx.db.insert('cronHeartbeats', { job, ...hb });
+    });
+  const cronRun = (t: T, job: string, outcome: Doc<'cronRuns'>['outcome'], at: number) =>
+    t.run((ctx) =>
+      ctx.db.insert('cronRuns', {
+        job,
+        startedAt: at,
+        finishedAt: at,
+        outcome,
+        trigger: 'cron' as const,
+        keepUntil: at + 200 * DAY,
+      }),
+    );
+
   test('trouble first, then a few ok; the untracked crons are never called ok', async () => {
     const t = harness();
     const admin = await seedUser(t, 'adm', 'admin');
-    await t.run(async (ctx) => {
-      await ctx.db.insert('imageryIngestSeasons', {
+    const refused = await cronRun(t, INDEX_JOB, 'refused', NOW - 5 * MINUTE);
+    await beat(t, POLL_JOB, { lastTickAt: NOW - HOUR, lastOutcome: 'failed' });
+    await beat(t, PUMP_JOB, { lastTickAt: NOW - MINUTE, lastOutcome: 'ok' });
+    await beat(t, INDEX_JOB, {
+      lastTickAt: NOW - 5 * MINUTE,
+      lastOutcome: 'worked',
+      lastRunId: refused,
+    });
+    // The old record is read by nothing now: a failure there changes no row.
+    await t.run((ctx) =>
+      ctx.db.insert('imageryRuns', {
+        season: 'winter-2026-27',
+        kind: 'pump',
+        startedAt: NOW - MINUTE,
+        finishedAt: NOW - MINUTE,
+        outcome: 'failed',
+      }),
+    );
+    await snapshot(t, 'flag_queue_depth', TODAY, { scalar: 0, meta: {} });
+
+    const card = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
+    expect(card?.jobs.map((j) => [j.id, j.state, j.at])).toEqual([
+      ['imagery-poll', 'failed', NOW - HOUR],
+      // On time, but its last run was a cut the machine host turned down: retried.
+      ['imagery-index', 'retried', NOW - 5 * MINUTE],
+      ['imagery-pump', 'ok', NOW - MINUTE],
+      ['metrics-rollup', 'ok', expect.any(Number)],
+      ['coverage-sweep', 'never', null],
+    ]);
+    expect(card?.untracked).toBeGreaterThan(0);
+    expect(card?.moreAllOk).toBe(false);
+  });
+
+  test('the imagery rows name registered crons, in the card’s order', () => {
+    expect(IMAGERY_CARD_JOBS.map((j) => cronJob(j.job)?.pipeline)).toEqual([
+      'imagery',
+      'imagery',
+      'imagery',
+    ]);
+  });
+
+  test('each imagery row is the cron cards’ verdict at the same now', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    const cases: { name: string; hb: Beat | null; state: JobState; at: number | null }[] = [
+      { name: 'never', hb: null, state: 'never', at: null },
+      {
+        name: 'ok',
+        hb: { lastTickAt: NOW - MINUTE, lastOutcome: 'ok' },
+        state: 'ok',
+        at: NOW - MINUTE,
+      },
+      {
+        name: 'worked',
+        hb: { lastTickAt: NOW - 2 * MINUTE, lastOutcome: 'worked' },
+        state: 'ok',
+        at: NOW - 2 * MINUTE,
+      },
+      {
+        name: 'failed',
+        hb: { lastTickAt: NOW - MINUTE, lastOutcome: 'failed', lastError: 'Fly 503' },
+        state: 'failed',
+        at: NOW - MINUTE,
+      },
+      // The pump ticks every three minutes: late past six, stalled past thirty.
+      {
+        name: 'late',
+        hb: { lastTickAt: NOW - 7 * MINUTE, lastOutcome: 'ok' },
+        state: 'late',
+        at: NOW - 7 * MINUTE,
+      },
+      {
+        name: 'stalled',
+        hb: { lastTickAt: NOW - HOUR, lastOutcome: 'ok' },
+        state: 'stalled',
+        at: NOW - HOUR,
+      },
+      {
+        name: 'running',
+        hb: { lastTickAt: NOW - 4 * MINUTE, lastOutcome: 'ok', runningSince: NOW - MINUTE },
+        state: 'running',
+        at: NOW - MINUTE,
+      },
+      // Began and never finished, past the action limit: it needs a look.
+      {
+        name: 'killed',
+        hb: { lastTickAt: NOW - 45 * MINUTE, lastOutcome: 'ok', runningSince: NOW - 40 * MINUTE },
+        state: 'failed',
+        at: NOW - 40 * MINUTE,
+      },
+      // Inside the measured 30-minute action limit, a long tick is still running, never killed.
+      {
+        name: 'running long',
+        hb: { lastTickAt: NOW - 25 * MINUTE, lastOutcome: 'ok', runningSince: NOW - 20 * MINUTE },
+        state: 'running',
+        at: NOW - 20 * MINUTE,
+      },
+      {
+        name: 'a killed tick recorded',
+        hb: { lastTickAt: NOW - MINUTE, lastOutcome: 'killed' },
+        state: 'failed',
+        at: NOW - MINUTE,
+      },
+    ];
+    for (const c of cases) {
+      await t.run(async (ctx) => {
+        for (const row of await ctx.db.query('cronHeartbeats').collect())
+          await ctx.db.delete(row._id);
+      });
+      if (c.hb !== null) await beat(t, PUMP_JOB, c.hb);
+      const card = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
+      const row = card?.jobs.find((j) => j.id === 'imagery-pump');
+      expect([c.name, row?.state, row?.at]).toEqual([c.name, c.state, c.at]);
+      // The same rows at the same now, read the way Machinery's cron cards read them.
+      const [view] = await admin.as.query(api.machineryCrons.jobs, { names: [PUMP_JOB], now: NOW });
+      if (view === undefined) throw new Error('no view');
+      expect(view.liveness).toEqual(cronLiveness(view.inputs, view.schedule, NOW));
+      expect([c.name, cronJobState(view.liveness, view.lastRun)]).toEqual([c.name, row?.state]);
+    }
+  });
+
+  test('a failed run stays failed through the quiet ticks after it, until a later run', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    const pumpState = async () =>
+      (await admin.as.query(api.machinery.overviewJobs, { now: NOW }))?.jobs.find(
+        (j) => j.id === 'imagery-pump',
+      )?.state;
+    for (const outcome of ['failed', 'killed'] as const) {
+      // The pump failed nine minutes ago and has ticked quietly since (backing off): failed.
+      const bad = await cronRun(t, PUMP_JOB, outcome, NOW - 9 * MINUTE);
+      await beat(t, PUMP_JOB, { lastTickAt: NOW - MINUTE, lastOutcome: 'ok', lastRunId: bad });
+      expect([outcome, await pumpState()]).toEqual([outcome, 'failed']);
+      // A run that worked since supersedes it.
+      const good = await cronRun(t, PUMP_JOB, 'ok', NOW - 2 * MINUTE);
+      await beat(t, PUMP_JOB, { lastTickAt: NOW - MINUTE, lastOutcome: 'ok', lastRunId: good });
+      expect([outcome, await pumpState()]).toEqual([outcome, 'ok']);
+    }
+  });
+
+  test('a tick under way keeps a failed run failed, and the row is dated by that run', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    const pumpRow = async () =>
+      (await admin.as.query(api.machinery.overviewJobs, { now: NOW }))?.jobs.find(
+        (j) => j.id === 'imagery-pump',
+      );
+    const bad = await cronRun(t, PUMP_JOB, 'failed', NOW - 9 * MINUTE);
+    // Backing off, the pump still starts a tick every three minutes (and skips): one is running.
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 3 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: bad,
+      runningSince: NOW - 10_000,
+    });
+    expect(await pumpRow()).toMatchObject({ state: 'failed', at: NOW - 9 * MINUTE });
+    // That tick finished quietly: still failed, still dated by the run that failed.
+    await beat(t, PUMP_JOB, { lastTickAt: NOW - 10_000, lastOutcome: 'ok', lastRunId: bad });
+    expect(await pumpRow()).toMatchObject({ state: 'failed', at: NOW - 9 * MINUTE });
+    // With no failed run behind it, a tick under way is running, dated by its start.
+    const good = await cronRun(t, PUMP_JOB, 'ok', NOW - 6 * MINUTE);
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 3 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: good,
+      runningSince: NOW - 10_000,
+    });
+    expect(await pumpRow()).toMatchObject({ state: 'running', at: NOW - 10_000 });
+  });
+
+  test('the heartbeats cover what the old owed-since rule guarded', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    await t.run((ctx) =>
+      ctx.db.insert('imageryIngestSeasons', {
         season: 'winter-2026-27',
         opensOn: '2026-10-03',
-        openedBy: ['sentinel'],
-        winterFrom: null,
+        openedBy: ['corpus'],
+        winterFrom: '2026-11-05',
         imageryStartedAt: NOW - 10 * DAY,
         sitesSampled: 3,
         detectedAt: NOW - 40 * DAY,
-      });
-      await ctx.db.insert('imageryRuns', {
-        season: 'winter-2026-27',
-        kind: 'poll',
-        startedAt: NOW - HOUR,
-        finishedAt: NOW - HOUR,
-        outcome: 'failed',
-      });
-      await ctx.db.insert('imageryRuns', {
-        season: 'winter-2026-27',
-        kind: 'pump',
-        startedAt: NOW - 2 * HOUR,
-        finishedAt: NOW - 2 * HOUR,
-        outcome: 'ok',
-      });
-      await ctx.db.insert('imageryRuns', {
-        season: 'winter-2026-27',
-        kind: 'index',
-        startedAt: NOW - 5 * MINUTE,
-        outcome: 'refused',
-      });
+      }),
+    );
+    const pumpState = async (now: number) =>
+      (await admin.as.query(api.machinery.overviewJobs, { now }))?.jobs.find(
+        (j) => j.id === 'imagery-pump',
+      )?.state;
+    // A quiet pump with nothing to do ticks every three minutes, each tick recorded (`every`):
+    // hours since its last run that did work, it is on its schedule, never a fault.
+    const lastWork = await cronRun(t, PUMP_JOB, 'ok', NOW - 5 * HOUR);
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 2 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: lastWork,
     });
-    await snapshot(t, 'flag_queue_depth', TODAY, { scalar: 0, meta: {} });
-
-    // Nothing queued: a pump that has had nothing to do for two hours is the schedule, not a fault.
-    const idle = await admin.as.query(api.machinery.overviewJobs, {});
-    expect(idle?.jobs.find((j) => j.id === 'imagery-pump')?.state).toBe('ok');
-
-    // A cut queued an hour ago and no beat since: late.
+    expect(await pumpState(NOW)).toBe('ok');
+    // A pump that is not running while granules wait has stopped ticking: late, then stalled.
     await t.run((ctx) =>
       ctx.db.insert('imageryGranules', {
-        granuleId: 'g1',
-        slot: 's2_tile_2026-11-13',
-        mission: 's2' as const,
         season: 'winter-2026-27',
-        capturedAt: '2026-11-13T10:00:00Z',
-        status: 'queued' as const,
+        granuleId: 'S2A_19TEA_20261005_0_L2A',
+        mission: 's2',
+        slot: '19TEA:20261005',
+        capturedAt: '2026-10-05T15:00:00Z',
+        status: 'queued',
         attempts: 0,
         queuedAt: NOW - HOUR,
       }),
     );
-    const card = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
-    expect(card?.jobs.map((j) => [j.id, j.state])).toEqual([
-      ['imagery-poll', 'failed'],
-      // The pump beats every three minutes; an hour of silence with a cut waiting is late.
-      ['imagery-pump', 'late'],
-      ['imagery-index', 'retried'],
-      ['metrics-rollup', 'ok'],
-      ['coverage-sweep', 'never'],
-    ]);
-    expect(card?.untracked).toBeGreaterThan(0);
-    expect(card?.moreAllOk).toBe(false);
+    await beat(t, PUMP_JOB, {
+      lastTickAt: NOW - 7 * MINUTE,
+      lastOutcome: 'ok',
+      lastRunId: lastWork,
+    });
+    expect(await pumpState(NOW)).toBe('late');
+    await beat(t, PUMP_JOB, { lastTickAt: NOW - HOUR, lastOutcome: 'ok', lastRunId: lastWork });
+    expect(await pumpState(NOW)).toBe('stalled');
+  });
 
-    // A beat that took the lease a minute ago, with the cut still in flight, is on schedule.
-    await t.run((ctx) =>
-      ctx.db.insert('imageryPump', { key: 'pump', runningUntil: 0, runStartedAt: NOW - MINUTE }),
+  test('right after the deploy that began recording: not yet ticked is quiet, never red or ok', async () => {
+    const t = harness();
+    const admin = await seedUser(t, 'adm', 'admin');
+    // The history copy may have run (or not): a copied failure is history, not the cron's state.
+    await cronRun(t, POLL_JOB, 'failed', NOW - 3 * HOUR);
+    await snapshot(t, 'flag_queue_depth', TODAY, { scalar: 0, meta: {} });
+    const card = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
+    const imagery = card?.jobs.filter((j) => j.id.startsWith('imagery-'));
+    expect(imagery?.map((j) => [j.id, j.state, j.at])).toEqual([
+      ['imagery-poll', 'never', null],
+      ['imagery-pump', 'never', null],
+      ['imagery-index', 'never', null],
+    ]);
+    // Nothing needs a look, and the card never says "all ok" over a cron it hasn't heard from.
+    expect(card?.jobs[0]?.id).toBe('metrics-rollup');
+    expect(card?.moreAllOk).toBe(false);
+    // A never-ticked cron left off the card keeps its foot from saying all ok.
+    const left = cardRows(
+      ['a', 'b', 'c', 'd', 'e', 'f'].map((id) => ({
+        id,
+        name: id,
+        state: 'never' as const,
+        at: null,
+      })),
+      0,
     );
-    const beating = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
-    expect(beating?.jobs.find((j) => j.id === 'imagery-pump')?.state).toBe('ok');
+    expect([left.more, left.moreAllOk]).toEqual([1, false]);
+    // The pump's first tick, three minutes on, and its row reads its own verdict.
+    await beat(t, PUMP_JOB, { lastTickAt: NOW, lastOutcome: 'ok' });
+    const after = await admin.as.query(api.machinery.overviewJobs, { now: NOW });
+    expect(after?.jobs.find((j) => j.id === 'imagery-pump')?.state).toBe('ok');
   });
 
   test('the caller’s clock moves a job late, but only within a minute of the server’s', async () => {

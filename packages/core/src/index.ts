@@ -35,6 +35,8 @@ export * from './corpusFacts';
 export * from './corpusRequests';
 export * from './corpusRunPlan';
 export * from './corpusTasks';
+export * from './cronLiveness';
+export * from './cronReport';
 export * from './dedup';
 export * from './depthMatch';
 export * from './detailTabs';

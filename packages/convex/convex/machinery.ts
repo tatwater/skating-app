@@ -1,27 +1,28 @@
 /**
  * The Overview's Machinery card (B01 §5.1): the jobs that need a look first, then a few that don't.
  *
- * **Only what a record can tell.** A job is listed when something it writes says how its last run
- * went: the live imagery's poll, pump and index (`imageryRuns`), the 6-hourly metric rollup and the
- * weekly coverage sweep (the `metricSnapshots` rows they stamp), and the newest corpus run Machinery
- * lists (`importRuns`, D341) — running, late or stalled by core's `runLiveness`, the same verdict
- * Machinery's sidebar draws (`machineryRuns.corpusTail`). Every other cron leaves no trace yet —
- * that is §5's heartbeat (D218) — so it is counted in `more` and never called ok: `moreAllOk` is
- * true only when nothing left out is unknown.
+ * **Only what a record can tell.** A job is listed when something records how its last run went:
+ * the live imagery's poll, pump and index (their heartbeats, read through core's `cronLiveness`
+ * exactly as Machinery's cron cards read them, `machineryCrons.cronJobViews`), the 6-hourly metric
+ * rollup and the weekly coverage sweep (the `metricSnapshots` rows they stamp), and the newest
+ * corpus run Machinery lists (`importRuns`, D341) — running, late or stalled by core's
+ * `runLiveness`, the same verdict Machinery's sidebar draws (`machineryRuns.corpusTail`). Every
+ * other cron is counted in `more` and never called ok (`moreAllOk` is true only when nothing left
+ * out is unknown) until Health (B01-8e) reads every cron from the backbone.
  *
  * Admin only, as Machinery is (`machinery.read`): a moderator's read is `null`, which the card draws
  * as *Not recorded yet*.
  */
 
-import type { RunLiveness } from '@skating/core';
-import { archiveSeasonAt, callerNow } from '@skating/core';
+import type { CronLiveness, RunLiveness } from '@skating/core';
+import { callerNow } from '@skating/core';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import crons from './crons';
 import { hasCapability, requireCapability } from './lib/auth';
-import { jobRow } from './lib/imageryPump';
 import { latestMetric } from './lib/metricReads';
+import { type CronJobView, cronJobViews } from './machineryCrons';
 import { corpusTail } from './machineryRuns';
 
 const MINUTE = 60_000;
@@ -94,87 +95,82 @@ function byAge(at: number | null, intervalMs: number, now: number): JobState {
   return now - at > lateAfter(intervalMs) ? 'late' : 'ok';
 }
 
-const IMAGERY_KINDS = [
-  { kind: 'poll', id: 'imagery-poll', name: 'Imagery poll', every: 6 * HOUR },
-  { kind: 'pump', id: 'imagery-pump', name: 'Imagery pump', every: 3 * MINUTE },
-  { kind: 'index', id: 'imagery-index', name: 'Imagery index', every: 10 * MINUTE },
+/** The imagery crons the card lists, by their registry names. */
+export const IMAGERY_CARD_JOBS = [
+  { job: 'poll for new satellite imagery', id: 'imagery-poll', name: 'Imagery poll' },
+  { job: 'pump live satellite imagery', id: 'imagery-pump', name: 'Imagery pump' },
+  { job: 'rebuild the live imagery index', id: 'imagery-index', name: 'Imagery index' },
 ] as const;
 
+/** A last run that failed or was killed: the card stays failed until a later run supersedes it. */
+const lastRunFailed = (lastRun: CronJobView['lastRun']) =>
+  lastRun?.outcome === 'failed' || lastRun?.outcome === 'killed';
+
 /**
- * An imagery run's state: a failure is failed, a refusal (a cut the machine host turned down, now
- * backing off) is retried, anything else ran. Its lateness counts only while the job owes work —
- * `owedSince`, the instant it began to, or `null` — because the pump and the index write a run only
- * when a beat changed something: a quiet one with nothing to do is the schedule, not a fault. Late
- * is measured from whichever came last: the last run, the last beat that took the lease
- * (`beganAt`), or the work arriving.
+ * A cron's card state, from core's verdict — the one Machinery's cron cards draw, so the two can't
+ * disagree on lateness. A tick killed mid-run is failed (it needs a look). On time, the card also
+ * reads the cron's **last run** (the newest tick that did work or failed, `lastRunId`), as it read
+ * the newest `imageryRuns` row before the backbone: a run that failed or was killed stays failed
+ * until a later run supersedes it — so the pump's failure doesn't flip to ok on the quiet tick three
+ * minutes on, while it backs off for half an hour — and one a machine host turned down (the pump
+ * backing off) reads retried. `never` is a cron with no tick recorded yet — right after the deploy that began
+ * recording, before its first tick (the pump's within three minutes, the poll's within six hours,
+ * whether or not the history copy has run) — which the card draws quiet, with no time, never red,
+ * and never counts as ok.
  */
-function imageryState(
-  run: Doc<'imageryRuns'> | null,
-  every: number,
-  owedSince: number | null,
-  beganAt: number | null,
-  now: number,
-): JobState {
-  if (run === null) return 'never';
-  if (run.outcome === 'failed') return 'failed';
-  if (run.outcome === 'refused') return 'retried';
-  if (owedSince === null) return 'ok';
-  return byAge(Math.max(run.finishedAt ?? run.startedAt, beganAt ?? 0, owedSince), every, now);
+export function cronJobState(liveness: CronLiveness, lastRun: CronJobView['lastRun']): JobState {
+  switch (liveness.state) {
+    case 'killed':
+      return 'failed';
+    case 'running':
+      // A tick under way hasn't superseded a failed run yet: the pump backing off from one starts
+      // (and skips) a tick every three minutes, and the card must not flicker off failed for each.
+      return lastRunFailed(lastRun) ? 'failed' : 'running';
+    case 'ok':
+      if (lastRunFailed(lastRun)) return 'failed';
+      return lastRun?.outcome === 'refused' ? 'retried' : 'ok';
+    default:
+      return liveness.state;
+  }
+}
+
+/**
+ * When the row says it last ran: the last run, when the row's state is that run's (a failed or
+ * refused one the ticks since haven't superseded); else the last tick, the start of the tick still
+ * running, or none.
+ */
+function cronJobAt(
+  liveness: CronLiveness,
+  lastRun: CronJobView['lastRun'],
+  state: JobState,
+): number | null {
+  if (lastRun !== null && (state === 'failed' || state === 'retried')) {
+    if (liveness.state === 'running' || liveness.state === 'ok') return lastRun.startedAt;
+  }
+  if (liveness.state === 'running' || liveness.state === 'killed') return liveness.since;
+  if (liveness.state === 'never') return null;
+  return liveness.lastTickAt;
 }
 
 /** Every job a record can tell, worst first. */
 async function trackedJobs(ctx: QueryCtx, now: number): Promise<JobRow[]> {
   const rows: JobRow[] = [];
 
-  const label = archiveSeasonAt(now);
-  const season = await ctx.db
-    .query('imageryIngestSeasons')
-    .withIndex('by_season', (q) => q.eq('season', label))
-    .unique();
-  const imageryRunning =
-    season?.imageryStartedAt !== undefined &&
-    season.imageryPausedAt === undefined &&
-    season.closesOn === undefined;
-
-  // What each imagery job owes while imagery runs, and since when. The poll owes a search every
-  // tick. The pump owes a beat while a cut is queued or in flight — since the oldest of them was
-  // queued. The index owes a build only once one is asked for, and nothing records when that was,
-  // so a quiet index is never called late: that waits for §5's heartbeat.
-  const waiting = async (status: 'queued' | 'spawned') =>
-    await ctx.db
-      .query('imageryGranules')
-      .withIndex('by_season_status', (q) => q.eq('season', label).eq('status', status))
-      .first();
-  let pumpOwed: number | null = null;
-  if (imageryRunning) {
-    const queuedAts = [await waiting('spawned'), await waiting('queued')].flatMap((g) =>
-      g === null ? [] : [g.queuedAt],
-    );
-    pumpOwed = queuedAts.length > 0 ? Math.min(...queuedAts) : null;
-  }
-  const owed = {
-    poll: imageryRunning ? (season?.imageryStartedAt ?? null) : null,
-    pump: pumpOwed,
-    index: null,
-  };
-  // Every beat that had work takes the job's lease, recorded or not.
-  const beganAt = {
-    poll: null,
-    pump: (await jobRow(ctx, 'pump'))?.runStartedAt ?? null,
-    index: null,
-  };
-
-  for (const job of IMAGERY_KINDS) {
-    const run = await ctx.db
-      .query('imageryRuns')
-      .withIndex('by_kind_started', (q) => q.eq('kind', job.kind))
-      .order('desc')
-      .first();
+  // The imagery crons, by their heartbeats: the verdict Machinery's cron cards draw.
+  const views = await cronJobViews(
+    ctx,
+    IMAGERY_CARD_JOBS.map((j) => j.job),
+    now,
+  );
+  for (const [i, view] of views.entries()) {
+    // The views come back in the order asked, every name a registry entry (pinned by a test).
+    const card = IMAGERY_CARD_JOBS[i] as (typeof IMAGERY_CARD_JOBS)[number];
+    const state = cronJobState(view.liveness, view.lastRun);
     rows.push({
-      id: job.id,
-      name: job.name,
-      state: imageryState(run, job.every, owed[job.kind], beganAt[job.kind], now),
-      at: run === null ? null : (run.finishedAt ?? run.startedAt),
+      id: card.id,
+      name: card.name,
+      state,
+      at: cronJobAt(view.liveness, view.lastRun, state),
     });
   }
 

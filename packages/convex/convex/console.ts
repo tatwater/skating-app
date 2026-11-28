@@ -240,8 +240,21 @@ export const colleagues = query({
 /** The most rows the feed asks for. */
 const SYSTEM_FEED_MAX = 100;
 
-/** Imagery runs looked through for the failures among them (the pump beats every few minutes). */
-const IMAGERY_RUN_SCAN = 200;
+/**
+ * The imagery crons' runs the feed names when they went wrong (`cronRuns`, by
+ * `by_job_outcome_started` at each outcome: a defined value, so never a bare range), and the words
+ * for each: a failure, a cut the machine host turned down, a tick cut off mid-run.
+ */
+const IMAGERY_FEED_JOBS = [
+  { job: 'poll for new satellite imagery', label: 'Imagery poll' },
+  { job: 'pump live satellite imagery', label: 'Imagery pump' },
+  { job: 'rebuild the live imagery index', label: 'Imagery index' },
+] as const;
+const IMAGERY_FEED_OUTCOMES = [
+  { outcome: 'failed', action: 'Run failed' },
+  { outcome: 'refused', action: 'Run refused' },
+  { outcome: 'killed', action: 'Run cut off' },
+] as const;
 
 /** `winter-2026-27` → "Winter 2026–27", the season's name as the console writes it. */
 function seasonName(label: string): string {
@@ -255,7 +268,7 @@ type SystemFeedRow = {
   at: number;
   actor: null;
   action: string;
-  target: { type: 'importRun' | 'imageryRun' | 'seasonWatch'; id: string; label: string };
+  target: { type: 'importRun' | 'cronRun' | 'seasonWatch'; id: string; label: string };
 };
 
 /**
@@ -263,12 +276,14 @@ type SystemFeedRow = {
  * with `moderation.listActions` by time, newest first:
  *
  * - **imports** (`importRuns`), each as it finished — admins only (`machinery.read`), as Machinery is;
- * - **live imagery runs that failed or were refused** — admins only; the ordinary beats would bury
- *   everything else;
+ * - **live imagery runs that failed, were refused or were cut off** (`cronRuns`, the backbone's
+ *   record of the poll, pump and index) — admins only; the ordinary beats would bury everything
+ *   else;
  * - **the season watch** opening and closing (the instants they were recorded), for every moderator
  *   (`season.summary`). Air temperatures opened it; nothing here says a lake froze (D3).
  *
- * Bounded: `limit` rows at most from each source, newest first.
+ * Bounded: `limit` rows at most from each source (each imagery cron and outcome its own source),
+ * newest first.
  */
 export const systemFeed = query({
   args: { limit: v.optional(v.number()) },
@@ -296,19 +311,23 @@ export const systemFeed = query({
           target: { type: 'importRun', id: run._id, label: run.label },
         });
       }
-      const imagery = await ctx.db
-        .query('imageryRuns')
-        .withIndex('by_started')
-        .order('desc')
-        .take(IMAGERY_RUN_SCAN);
-      for (const run of imagery.filter((r) => r.outcome === 'failed' || r.outcome === 'refused')) {
-        rows.push({
-          id: `imagery:${run._id}`,
-          at: run.finishedAt ?? run.startedAt,
-          actor: null,
-          action: run.outcome === 'failed' ? 'Run failed' : 'Run refused',
-          target: { type: 'imageryRun', id: run._id, label: `Imagery ${run.kind}` },
-        });
+      for (const { job, label } of IMAGERY_FEED_JOBS) {
+        for (const { outcome, action } of IMAGERY_FEED_OUTCOMES) {
+          const runs = await ctx.db
+            .query('cronRuns')
+            .withIndex('by_job_outcome_started', (q) => q.eq('job', job).eq('outcome', outcome))
+            .order('desc')
+            .take(limit);
+          for (const run of runs) {
+            rows.push({
+              id: `cron:${run._id}`,
+              at: run.finishedAt,
+              actor: null,
+              action,
+              target: { type: 'cronRun', id: run._id, label },
+            });
+          }
+        }
       }
     }
 

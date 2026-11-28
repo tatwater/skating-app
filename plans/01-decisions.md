@@ -9816,3 +9816,19 @@ the moment it matters.
 **Why:** each is the honest version of what the boards drew.
 
 **Related:** D219, D340, D343.
+
+## D347 — Every cron runs through one recorder, kept true by a registry and a guard (B01-8b)
+
+**Decided (2026-11-27, B01-8b's design, ruled by the governor; the founder ruled its forks the same
+day).** The crons are entries in one registry (`convex/cronJobs.ts`); two dispatchers run each job (a
+mutation as a nested transaction with a reserve, an action's handler in-process), record a tick per
+execution in a heartbeat and an hourly or daily tick row, and a run row with its log for a tick that
+did work or failed. A job says it did work through its return value. A test fails when a cron is
+registered outside the registry. Each entry carries its recording mode: the five crons that tick
+every one to three minutes record their failures and work as they happen and their quiet ticks once
+an hour (the founder's fork 1, option c: the app stays well inside Convex's free plan); every other
+cron records every tick.
+
+**Why:** a record every pipeline page and Health can read, which no job can forget to write.
+
+**Related:** D343, D346, [`phase-B01`](./phases/B01-admin-console.md) *B01-8b — The design*.

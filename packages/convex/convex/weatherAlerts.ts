@@ -21,7 +21,13 @@ import {
 } from '@skating/core';
 import { v } from 'convex/values';
 import { internal } from './_generated/api';
-import { internalAction, internalMutation, internalQuery, query } from './_generated/server';
+import {
+  type ActionCtx,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  query,
+} from './_generated/server';
 import { resolveSurvivor } from './lib/bodies';
 import { errorClassOf } from './lib/readBudget';
 import { asItem } from './lib/recurringWork';
@@ -209,54 +215,65 @@ export const sweepStaleAlerts = internalMutation({
   },
 });
 
-/** The cron entry point: poll every covered state, replace each independently. */
-export const refreshAlerts = internalAction({
-  args: {},
-  handler: async (ctx): Promise<{ statesRefreshed: number; statesFailed: number }> => {
-    let refreshed = 0;
-    const failed: { key: string; errorClass: string }[] = [];
-    const written: string[] = [];
-    for (const state of KNOWN_STATE_CODES) {
-      const alerts = await fetchStateAlerts(state);
-      if (alerts === null) continue; // see `replaceStateAlerts` — a blip must not clear a state
-      // **One state whose write throws no longer skips the states after it** (D258): it keeps the
-      // alerts it had, exactly as a state that did not answer does, and the rest are written. Each
-      // failure is counted (never parked: a state is polled every tick).
-      try {
-        // **Stamped per state, after that state's response, not once before the loop.** The poll is
-        // sequential and a 429 costs a 5 s pause, so five states can span minutes — long enough for
-        // NWS to re-issue an alert in between. One shared timestamp would mark two genuinely
-        // different versions as equally fresh, and the dedupe would then pick between them by
-        // insertion order.
-        await asItem(state, () =>
-          ctx.runMutation(internal.weatherAlerts.replaceStateAlerts, {
-            state,
-            alerts,
-            fetchedAt: Date.now(),
-          }),
-        );
-        written.push(state);
-        refreshed++;
-      } catch (err) {
-        // `asItem` has logged it; only its class is kept here.
-        failed.push({ key: state, errorClass: errorClassOf(err) });
-      }
+const refreshAlertsArgs = {};
+
+/**
+ * The cron entry point: poll every covered state, replace each independently.
+ *
+ * (Its body is exported as `refreshAlertsHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
+ */
+export async function refreshAlertsHandler(
+  ctx: ActionCtx,
+): Promise<{ statesRefreshed: number; statesFailed: number }> {
+  let refreshed = 0;
+  const failed: { key: string; errorClass: string }[] = [];
+  const written: string[] = [];
+  for (const state of KNOWN_STATE_CODES) {
+    const alerts = await fetchStateAlerts(state);
+    if (alerts === null) continue; // see `replaceStateAlerts` — a blip must not clear a state
+    // **One state whose write throws no longer skips the states after it** (D258): it keeps the
+    // alerts it had, exactly as a state that did not answer does, and the rest are written. Each
+    // failure is counted (never parked: a state is polled every tick).
+    try {
+      // **Stamped per state, after that state's response, not once before the loop.** The poll is
+      // sequential and a 429 costs a 5 s pause, so five states can span minutes — long enough for
+      // NWS to re-issue an alert in between. One shared timestamp would mark two genuinely
+      // different versions as equally fresh, and the dedupe would then pick between them by
+      // insertion order.
+      await asItem(state, () =>
+        ctx.runMutation(internal.weatherAlerts.replaceStateAlerts, {
+          state,
+          alerts,
+          fetchedAt: Date.now(),
+        }),
+      );
+      written.push(state);
+      refreshed++;
+    } catch (err) {
+      // `asItem` has logged it; only its class is kept here.
+      failed.push({ key: state, errorClass: errorClassOf(err) });
     }
-    await ctx.runMutation(internal.weatherAlerts.sweepStaleAlerts, {});
-    const { keys }: { keys: string[] } = await ctx.runQuery(internal.recurringJobs.failingKeys, {
+  }
+  await ctx.runMutation(internal.weatherAlerts.sweepStaleAlerts, {});
+  const { keys }: { keys: string[] } = await ctx.runQuery(internal.recurringJobs.failingKeys, {
+    job: 'nwsAlerts',
+  });
+  const recovered = written.filter((s) => keys.includes(s));
+  if (failed.length > 0 || recovered.length > 0) {
+    await ctx.runMutation(internal.recurringJobs.settle, {
       job: 'nwsAlerts',
+      failed,
+      succeeded: recovered,
+      park: false,
     });
-    const recovered = written.filter((s) => keys.includes(s));
-    if (failed.length > 0 || recovered.length > 0) {
-      await ctx.runMutation(internal.recurringJobs.settle, {
-        job: 'nwsAlerts',
-        failed,
-        succeeded: recovered,
-        park: false,
-      });
-    }
-    return { statesRefreshed: refreshed, statesFailed: failed.length };
-  },
+  }
+  return { statesRefreshed: refreshed, statesFailed: failed.length };
+}
+
+export const refreshAlerts = internalAction({
+  args: refreshAlertsArgs,
+  handler: refreshAlertsHandler,
 });
 
 /** Every cached alert. Bounded by design — five states of active winter products is tens of rows. */

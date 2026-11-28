@@ -486,7 +486,13 @@ describe('reset, imagery and field dates', () => {
     const started = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
     expect(started).toMatchObject({ imageryStartedBy: admin.id });
     // A poll to queue what is new; the pump's own 3-minute tick starts the cuts.
-    expect((await scheduled(t, 'imageryLive')).map((j) => j.name)).toEqual(['imageryLive:poll']);
+    // Through the cron dispatcher (D347): a recorded poll run, with who pressed it.
+    expect((await scheduled(t, 'cronRuns')).map((j) => [j.name, j.args[0]])).toEqual([
+      [
+        'cronRuns:tickAction',
+        { job: 'poll for new satellite imagery', trigger: 'manual', byUserId: expect.any(String) },
+      ],
+    ]);
 
     await admin.as.mutation(api.seasonWatch.pauseImagery, { season: 'winter-2026-27' });
     expect(
