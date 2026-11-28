@@ -5,7 +5,8 @@
  *  - **F1** 429 checked after the 4xx rule (`refused` first): *a status decides first*;
  *  - **F2** a 2xx read as `refused` (the status rule's `>= 400` as `>= 200`): *a 2xx is no failure
  *    by status*;
- *  - **F3** `empty` checked before the error: *an error says more than empty*;
+ *  - **F3** `empty` checked before the error: *each cause, from what a fetch or a write really
+ *    throws* (a timed-out request that also came back empty is a timeout);
  *  - **F4** the `cause` chain not followed (depth 1): *Node's fetch failed, by its cause*;
  *  - **F5** the query-string redaction dropped: *a sample never carries a query, a credential or a
  *    secret*;
@@ -63,6 +64,7 @@ describe('fetchFailureCause', () => {
       [{ status: 200, error: new SyntaxError('Unexpected token < in JSON') }, 'badAnswer'],
       [{ error: new Error('terminated') }, 'badAnswer'],
       [{ status: 200, empty: true }, 'emptyAnswer'],
+      [{ status: 200, empty: true, error: named('TimeoutError') }, 'timeout'],
       [{ empty: true }, 'emptyAnswer'],
       [
         {

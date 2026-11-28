@@ -2,14 +2,18 @@
  * A chained run's rules (D349). Mutation-checked: each mutation of `cronChain.ts` below was run and
  * seen to fail the tests named, then the source restored —
  *
- *  - **C1** the quiet's clamp dropped (`now − progressAt`): *a clock behind the server*;
+ *  - **C1** `quiet` checked before `stopped` (so nothing is ever stopped): *the edges* (the quiet's
+ *    clamp at 0 is no mutation: a negative quiet is under both thresholds either way; *a clock
+ *    behind the server* pins the reading);
  *  - **C2** `stopped` at the bare action limit (`CONVEX_ACTION_LIMIT_MS`, no minute's slack): *the
  *    edges* and *never stopped inside the action limit and its minute*;
  *  - **C3** `closed` read as `open < 0`: *closed only at open 0*;
  *  - **C4** `quiet` at `≥ CHAIN_QUIET_MS`: *the edges*;
  *  - **C5** a `Max` key summed: *a tally adds…* and *order-free*;
- *  - **C6** the tail's drop range to `tailFrom` rather than `min(tailFrom, before)`: *the model*;
- *  - **C7** the head kept through `seq <= CHAIN_LINES_HEAD`: *the model*.
+ *  - **C6** the tail's drop range to `tailFrom` rather than `min(tailFrom, before)`: *a step bigger
+ *    than the window…*;
+ *  - **C7** the head kept through `seq <= CHAIN_LINES_HEAD`: *a step bigger than the window…*, *the
+ *    model*.
  */
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
