@@ -38,9 +38,11 @@ import {
   finishedAssembly,
   followAssembly,
   oneAtATime,
+  PROGRESS_WRITE_MS,
   readObject,
   spawnExitMessage,
   stallWatch,
+  withDeadline,
 } from '../assemble/orchestrate';
 import { gdalRenderer } from '../assemble/overviews';
 import { fileStore, fileUploads, httpStore, type ObjectStore } from '../assemble/stores';
@@ -112,8 +114,12 @@ async function onMachine(campaign: string, pilot?: string): Promise<void> {
   // Concurrent index readers can report at once; two rcats to one key race (`oneAtATime`). And a
   // heartbeat is bookkeeping: one that fails (a transient R2 error on a tiny `rcat`) is reported
   // and skipped, never the assembly's failure, and the stream never waits on it.
+  // A write that hangs is abandoned after `PROGRESS_WRITE_MS`, so it never holds the ones after it.
   const write = oneAtATime((event: AssembleProgress) =>
-    putJson(keys.progress, { at: new Date().toISOString(), event }).catch((e) => {
+    withDeadline(
+      () => putJson(keys.progress, { at: new Date().toISOString(), event }),
+      PROGRESS_WRITE_MS,
+    ).catch((e) => {
       process.stderr.write(
         `[assemble] a progress write failed (the assembly carries on): ${(e as Error).message}\n`,
       );
@@ -294,7 +300,12 @@ async function main(): Promise<void> {
   const args = parseStageArgs(process.argv.slice(2), 'assemble');
   const pilot = args.pilot ?? undefined;
   if (process.env.AERIAL_LOCAL_BUCKET) return locally(args.campaign, pilot, args.dryRun);
-  if (process.env.FLY_MACHINE_ID) return onMachine(args.campaign, pilot);
+  if (process.env.FLY_MACHINE_ID) {
+    await onMachine(args.campaign, pilot);
+    // The record is written (`assemble` awaited it): a progress write still in flight — abandoned
+    // past its deadline, its `rcat` not yet given up — must not hold the Machine up, billing.
+    process.exit(0);
+  }
   return fromLaptop(args.campaign, pilot, args.dryRun);
 }
 

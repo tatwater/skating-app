@@ -13,9 +13,11 @@ import {
   LATE_READS,
   MACHINE_STALL_MS,
   oneAtATime,
+  PROGRESS_WRITE_MS,
   readObject,
   spawnExitMessage,
   stallWatch,
+  withDeadline,
 } from './orchestrate';
 
 const record = {
@@ -278,6 +280,14 @@ describe('following through a lost stream (PR #188’s review)', () => {
         throw new Error('rclone cat exited 30: other');
       }),
     ).rejects.toThrow('exited 30');
+    // Nor is a missing config's notice: the bucket was never reached (PR #188's review).
+    await expect(
+      readObject(async () => {
+        throw new Error(
+          'rclone cat exited 1: NOTICE: Config file "/Users/x/.config/rclone/rclone.conf" not found - using defaults\nFailed to create file system for "r2:b/k": didn\'t find section in config file',
+        );
+      }),
+    ).rejects.toThrow('didn');
   });
 
   it('says what each spawn.sh exit means', () => {
@@ -312,6 +322,58 @@ describe('stallWatch, the Machine’s own watchdog', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('withDeadline: a progress write never holds the ones after it', () => {
+  it('abandons a write that hangs, so the next event is written', async () => {
+    vi.useFakeTimers();
+    try {
+      const wrote: string[] = [];
+      let hung = true;
+      const write = oneAtATime((event: string) =>
+        withDeadline(
+          () =>
+            hung
+              ? new Promise<void>(() => {
+                  hung = false; // only the first write hangs, forever
+                })
+              : Promise.resolve().then(() => {
+                  wrote.push(event);
+                }),
+          PROGRESS_WRITE_MS,
+        ).catch(() => {}),
+      );
+      void write('25 of 1764');
+      const next = write('50 of 1764');
+      await vi.advanceTimersByTimeAsync(PROGRESS_WRITE_MS - 1);
+      expect(wrote).toEqual([]);
+      await vi.advanceTimersByTimeAsync(1);
+      await next;
+      expect(wrote).toEqual(['50 of 1764']);
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('passes a write’s own answer through, its timer cleared', async () => {
+    const cleared: unknown[] = [];
+    const timers = { set: () => 'h', clear: (h: unknown) => cleared.push(h) };
+    await withDeadline(async () => {}, 10, timers);
+    await expect(
+      withDeadline(() => Promise.reject(new Error('rcat exited 1')), 10, timers),
+    ).rejects.toThrow('rcat exited 1');
+    expect(cleared).toEqual(['h', 'h']);
+    await expect(
+      withDeadline(() => new Promise(() => {}), 120_000, {
+        set: (fn) => {
+          fn();
+          return 'h';
+        },
+        clear: () => {},
+      }),
+    ).rejects.toThrow('no answer after 120 s: abandoned');
   });
 });
 

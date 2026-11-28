@@ -26,6 +26,50 @@ export function oneAtATime<A>(write: (arg: A) => Promise<void>): (arg: A) => Pro
 }
 
 /**
+ * **The longest one progress write may take** before it is abandoned. A progress write is
+ * bookkeeping (the Machine reports a failed one and carries on), but the writes are serialized
+ * ({@link oneAtATime}), so one `rclone rcat` that hangs — an upload R2 accepted and then stalled —
+ * held every later event behind it: the laptop read an unmoving progress object while the archive
+ * streamed on, called a healthy assembly stuck after {@link FOLLOW_QUIET_MS}, and told the operator
+ * to stop it (PR #188's review). rclone's own idle timeout and retries bound a stall only to tens of
+ * minutes. The Machine's watchdog is fed by the events themselves, never by their writes, so neither
+ * a hung write nor an abandoned one moves it. An abandoned `rcat` may still finish later, racing the
+ * next write to the key; whichever loses is reported and skipped like any failed write, and the
+ * laptop compares the object's `at` for identity only, so an older event landing late is movement.
+ */
+export const PROGRESS_WRITE_MS = 2 * 60_000;
+
+/** `op`, or a rejection once `ms` passes without it settling (timers injectable for the tests). */
+export function withDeadline(
+  op: () => Promise<void>,
+  ms: number,
+  timers: {
+    set: (fn: () => void, ms: number) => unknown;
+    clear: (handle: unknown) => void;
+  } = {
+    set: (fn, wait) => setTimeout(fn, wait),
+    clear: (h) => clearTimeout(h as ReturnType<typeof setTimeout>),
+  },
+): Promise<void> {
+  return new Promise((done, fail) => {
+    const handle = timers.set(
+      () => fail(new Error(`no answer after ${Math.round(ms / 1000)} s: abandoned`)),
+      ms,
+    );
+    op().then(
+      () => {
+        timers.clear(handle);
+        done();
+      },
+      (e: unknown) => {
+        timers.clear(handle);
+        fail(e);
+      },
+    );
+  });
+}
+
+/**
  * The assembler's run scope (and verify's): the archive, the seven states, and the whole region —
  * except a pilot's, which builds a few dozen cells and must not read as a complete build (its rows
  * did, until the pilot, 2026-11-26).
@@ -134,14 +178,19 @@ export const MACHINE_STALL_MS = 20 * 60_000;
  * Read a bucket object for the follower: the parsed value, `null` when it isn't there, and a throw
  * when the bucket can't be reached — which the follower never counts as the Machine's silence.
  * `read` is `rclone cat`; rclone says a key isn't there with exit 3 or 4 ("directory not found",
- * "file not found"), or, on some backends, with nothing at all.
+ * "file not found"), with "object not found", or, on some backends, with nothing at all. Never with
+ * a bare "not found" anywhere in its output: a laptop whose rclone has no config prints `Config file
+ * "…" not found - using defaults` before it fails to reach the bucket, which read as "absent" —
+ * can't tell, read as none (PR #188's review).
  */
 export async function readObject<T>(read: () => Promise<string>): Promise<T | null> {
   let text: string;
   try {
     text = await read();
   } catch (e) {
-    if (/exited [34]\b|not found/i.test((e as Error).message)) return null;
+    if (/exited [34]\b|\b(?:object|file|directory) not found\b/i.test((e as Error).message)) {
+      return null;
+    }
     throw e;
   }
   if (text.trim() === '') return null;
