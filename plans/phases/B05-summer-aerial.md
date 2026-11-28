@@ -625,9 +625,9 @@ heartbeat as it reports progress, so Machinery can draw a build whole by its cam
 
 | Kind | Stage | Scope (`pass`, `states`, `complete`) | Progress (the heartbeat) | Lands in |
 | --- | --- | --- | --- | --- |
-| `aerial_select` | §2.1 | `archive`, the seven, `true` (a `--states` run: those, `false`) | per state enumerated | B05-1 |
+| `aerial_select` | §2.1 | `archive`, the seven, `true` (a `--states` run: those, `false`) | none until its close, which carries the per-state counts (§2.8: a refused select's row is its open and its failed close) | B05-1 |
 | `aerial_tiles` | §2.2 | `archive`, the states its work tiles touch, `true` only for a full build | every 25 work tiles landed (the done records read every ten minutes during a round) | B05-1 |
-| `aerial_assemble` | §2.3–§2.5 (assembly, upload, the index, verify) | `archive`, the seven, `true` | per zoom written and at least every five minutes within one, then per verify check | B05-1 |
+| `aerial_assemble` | §2.3–§2.5 (assembly, upload, the index, verify) | `archive`, the seven, `true` | from when the assembler has decided (its index reads, overviews and layout are behind it: §2.8), per zoom written and at least every five minutes within one; then per verify check | B05-1 |
 | `aerial_reassess` | §3.3 | `survey` (new), the seven, `true` | at start and finish | B05-2 |
 
 **`survey`** is a ninth scope (widen-only): *reads a third-party catalog to learn what changed and
@@ -726,19 +726,21 @@ refusal: the report is written (no later stage reads it) and the row closes fail
   laptop first (published, orphans, landed, the base), so a Machine is started only for these.
 - **The record that lands** is held to the build manifest again (`finishedAssembly`): an assembler
   attached to, or one that started from a manifest replaced between the laptop's preflight and its
-  own read, may have built other inputs. Reachable only from a second checkout or machine (the lock
-  covers this one); never exposed — verify refuses it and nothing points the web at an archive verify
+  own read, may have built other inputs. Reachable only from a second machine (the lock covers
+  every checkout on this one); never exposed — verify refuses it and nothing points the web at an archive verify
   hasn't passed.
 - **`spawn.sh tiles`' own assembler check** stays, for an assembler started between the preflight's
-  listing and the spawn (from another checkout); it refuses before any `fly machine run`, but after
+  listing and the spawn (from another machine); it refuses before any `fly machine run`, but after
   the manifest upload — and the next tiles run, with the published selection, puts a drifted build
   manifest back (below).
 - **A round's capacity wait past its first batch** fails after some spawns, by design: those Machines
   land their own shards, and the next round or a re-run (which waits for live work tiles) carries on.
 
 **Writes in order, and what an interruption between two leaves** (each stage takes the campaign's
-lock first and releases it last; a crash leaves it, and every later stage refuses `lock.stale`,
-naming the file to remove):
+lock first — `${XDG_CACHE_HOME:-$HOME/.cache}/skating-aerial/locks/<campaign>.lock`, one directory for
+every checkout on the machine — and releases it last, however the process ends short of `kill -9` or
+a power loss; one left so is refused `lock.stale` by every later stage, naming the file to remove and
+the holder's log):
 
 | Stage | Facts read before any write | Writes, in order | Interrupted between … | Leaves | A re-run |
 | --- | --- | --- | --- | --- | --- |
@@ -769,8 +771,8 @@ naming the file to remove):
 - **A build manifest that drifted under a published campaign** (this finding's leftovers, or the race
   above): the next tiles run with the published selection puts it back — never while the assembler
   is up — and verify passes again.
-- **Two terminals, one campaign**: the second stage refuses `lock.held`, naming the first; the first
-  finishes and frees the lock.
+- **Two terminals, one campaign** (from one checkout or two): the second stage refuses `lock.held`,
+  naming the first and its checkout; the first finishes and frees the lock.
 - **`--from-current` while its base campaign assembles**: refused `select.fromCurrentUnpublished`
   (the base's manifest names no archive until it is published), or `select.fromCurrentRead` when
   the URL doesn't answer yet.
@@ -2643,4 +2645,54 @@ Open, for the founder:
   outside the repo; (c) a lock in the bucket, which would cover two machines but needs a conditional
   write `rclone` can't make (R2's `If-None-Match` through `--header-upload` is unverified, and
   verifying it is an R2 write). Recommendation: (b), a two-line change, if worktrees will ever run
-  stages; otherwise (a) as built.
+  stages; otherwise (a) as built. **Ruled (the governor, 2026-11-28): (b)**, built at the independent
+  pass below.
+
+**The independent pass over the eighth review (2026-11-28).** A reviewer who didn't write the
+restructuring read it against the pushed code (`ef1d0470f`), stage by stage, before the commit
+messages. Three findings, each confirmed first, and the governor's ruling built:
+
+- **The lock was left by two of the ways a stage's process ends.** It was released in the body's
+  `finally` and on SIGINT, SIGTERM and SIGHUP — but `process.exit` and an uncaught exception or
+  rejection skip every `finally`. The first is the run logger's own answer to Machinery's *Stop*
+  (B01-8a, #189): it closes the row and calls `process.exit(130)` from inside the stage, so every
+  stage stopped from the console left its lock, and the campaign's next stage refused `lock.stale`
+  until the operator removed it by hand. Reproduced in a real process (`tsx`, the real world, a
+  temporary lock directory): `process.exit(130)` and an uncaught throw each left the lock; SIGTERM
+  didn't. Fixed: the release also runs on the process's `exit` event (`releaseOnExit`,
+  `campaignLock.ts`), and `campaignLock.test.ts` runs eight endings in a real process — returns,
+  throws, `process.exit`, uncaught, unhandled rejection, SIGTERM, SIGINT, SIGHUP — none leaving a
+  lock. `kill -9` and a power loss still leave one, refused as stale.
+- **The governor's ruling: one lock directory for the machine.** The lock sat in each checkout's
+  scratch, so two worktrees took "the" lock of one campaign at once (reproduced). It is now
+  `${XDG_CACHE_HOME:-$HOME/.cache}/skating-aerial/locks/<campaign>.lock`, created on demand
+  (`lockDir`; `AERIAL_LOCK_DIR` overrides it — every test points it at a temporary directory, never
+  home); the holder records its checkout's scratch, so `lock.held` names the checkout and
+  `lock.stale` names the full lock path and the holder's own log. The recording world gives each
+  test its own lock directory and holds it byte-identical with the bucket and the scratch.
+- **Fly unlisted read as a verdict.** `tiles.flyUnlisted` and `assemble.flyUnlisted` were, before
+  the restructuring, a failed `spawn.sh` listing (`failed: … exited 1`, retry); as refusals they said
+  only that nothing was started. The message now says to run the stage again once `fly machine
+  list` answers.
+- **Doc drift fixed** (§2.6): the select row no longer beats per state (its counts come with its
+  close; Machinery has no `RUN_QUIET_MS` entry for an aerial kind, so a silent row is never called
+  late or stalled — nothing misreads it), and the assembler's row beats only once it has decided
+  (index reads, overviews and layout are behind it; its counts for those arrive with the record).
+
+Checked and sound: every stage's happy path against `ef1d0470f` (arguments, variables read, writes
+and their order, exit codes, `run-aerial.sh`'s stage loop — nothing greps a message); each late
+guard (`spawn.sh tiles`' live-assembler check before any `fly machine run`; the record that lands
+held to the build manifest again; the Machine's own key checks at step 0 and before the first byte);
+the fake world against the real one (`rclone cat` of a missing key exits 0 with nothing; a done-record
+copy and an `lsjson` of a missing prefix are empty — read from R2 here; a missing config throws;
+`spawn.sh status` on an app with no aerial Machine prints nothing and exits 0, read from Fly here);
+cleanup's order — no partly cleaned campaign is ever the newest archive or a base `--from-current`
+can take wrongly (its published manifest goes before its archive, and a base is read by that
+manifest); `spawn.sh status` is read-only and its bash guard intact. Mutations, each caught: the
+tiles upload, the select manifest, the cleanup prefix delete each moved above its refusal; the
+assemble landed check and the tiles live-assembler check each removed; a catalog id and a case
+each deleted (`check-types`). One weakness, not changed: the property test's 300 random worlds over
+thirteen facts reach the dangerous combination (a live assembler, a changed selection, every
+cheap fact passing) about once in 500, so the case tests are what hold it. The real-tool tests
+(`cutAerialServed`, `aerialCounts`, GDAL 3.13.2) and the stream proof (1.8 GB through real `rclone
+rcat`, 15 parts, `pmtiles verify` clean) pass on this branch.
