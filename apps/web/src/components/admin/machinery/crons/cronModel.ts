@@ -168,10 +168,10 @@ export function tickAt(marks: readonly TickMark[], x: number, reach = 6): TickMa
   for (const m of marks) {
     const d = Math.abs(m.x - x);
     if (d > reach) continue;
-    if (
-      d < bestD ||
-      (d === bestD && best !== null && (weight(m.kind) > weight(best.kind) || m.at > best.at))
-    ) {
+    // At the same distance the louder wins; only between equals does the newer.
+    const louder = best !== null && weight(m.kind) > weight(best.kind);
+    const newerEqual = best !== null && weight(m.kind) === weight(best.kind) && m.at > best.at;
+    if (d < bestD || (d === bestD && (louder || newerEqual))) {
       best = m;
       bestD = d;
     }

@@ -131,7 +131,11 @@ export function cronLivenessInputOf(
     ...(hb?.lastOutcome === undefined ? {} : { lastOutcome: hb.lastOutcome }),
     ...(hb?.runningSince === undefined ? {} : { runningSince: hb.runningSince }),
     // Who started the run under way (Ma27 (b)): carried for the card's words, never read by the rule.
-    ...(hb?.runningSince === undefined || hb.runningTrigger === undefined
+    // A manual run with no presser (one job chaining another, the poll's follow-on pump) was pressed
+    // by no one, so the card isn't told it was: it reads as the cron's own run.
+    ...(hb?.runningSince === undefined ||
+    hb.runningTrigger === undefined ||
+    (hb.runningTrigger === 'manual' && hb.runningByUserId === undefined)
       ? {}
       : { runningTrigger: hb.runningTrigger }),
     ...(floor > 0 ? { quietFloorMs: floor } : {}),

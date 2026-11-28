@@ -394,6 +394,21 @@ describe('What to check', () => {
     expect(whatToCheck(LANDED_VIEW.attempts, 0)).toEqual([]);
     expect(whatToCheck([], 0)).toEqual([]);
   });
+
+  test('an attempt with no Machine keeps no log, and that is never blamed on the image', () => {
+    // As the server writes them: a refused spawn and a never-confirmed one are `log: 'none'`.
+    const refused = {
+      ...need(OOM_VIEW.attempts[0]),
+      verdict: 'refused' as const,
+      machineId: null,
+      exitCode: null,
+      oomKilled: null,
+      log: 'none' as const,
+    };
+    expect(whatToCheck([refused], 3).map((r) => r.label)).toEqual(['Spawn refused']);
+    const lost = { ...refused, verdict: 'unconfirmed' as const };
+    expect(whatToCheck([lost], 0).map((r) => r.label)).toEqual(['Never confirmed']);
+  });
 });
 
 describe('days and the lows', () => {
@@ -404,6 +419,11 @@ describe('days and the lows', () => {
     expect(relativeDay(NOW - HOUR, NOW, ZONE)).toBe('Today');
     expect(relativeDay(NOW - 24 * HOUR, NOW, ZONE)).toBe('Yesterday');
     expect(relativeDay(NOW - 72 * HOUR, NOW, ZONE)).toBe('Sun 11 Oct');
+    // Just after midnight on the day after a 23-hour day, yesterday is still yesterday.
+    const afterSpringForward = Date.parse('2027-03-15T04:30:00Z'); // 00:30 EDT
+    expect(relativeDay(Date.parse('2027-03-14T16:00:00Z'), afterSpringForward, ZONE)).toBe(
+      'Yesterday',
+    );
   });
 
   test('the lows’ facts and each sentinel against the line', () => {

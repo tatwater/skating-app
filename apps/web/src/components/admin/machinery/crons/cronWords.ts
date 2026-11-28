@@ -110,3 +110,17 @@ export function countsLine(counts: Record<string, number> | null, max = 3): stri
     .map(([k, n]) => countWords(k, n));
   return parts.length === 0 ? null : parts.join(' · ');
 }
+
+/**
+ * Who started a run, beside its outcome: *Run now · Teagan* for a press (*Run now* when the
+ * presser's name is gone), nothing for a scheduled run — nor for a manual run with no presser at
+ * all, which another job started (the poll's pump run is `manual` only so its stamp keeps the age
+ * rule): nobody pressed *Run now*.
+ */
+export function runPressedWords(run: {
+  trigger: 'cron' | 'manual';
+  by: { name: string } | null;
+}): string | null {
+  if (run.trigger !== 'manual' || run.by === null) return null;
+  return run.by.name !== '' ? CRON_WORDS.pressedBy(run.by.name) : CRON_WORDS.pressed;
+}

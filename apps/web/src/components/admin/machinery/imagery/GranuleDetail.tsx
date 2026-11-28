@@ -350,13 +350,17 @@ function MachineLog({
   narrow: boolean;
 }) {
   const failed = attemptFailed(attempt.verdict);
+  // No Machine was ever confirmed (Fly turned the spawn down, or its answer never came): nothing
+  // ran that the pump knows of, so there is no log — never "an image from before logs were kept".
+  const noMachine = attempt.machineId === null && attempt.verdict !== 'cutting';
   // A phone keeps the attempt's number alone: the corner never pushes the page sideways.
-  const corner = narrow
-    ? W.attemptNumber(attempt.attempt)
-    : W.logOrigins(
-        attempt.attempt,
-        W.logFrom(attempt.log, attempt.verdict === 'landed' || attempt.verdict === 'empty'),
-      );
+  const corner =
+    narrow || noMachine
+      ? W.attemptNumber(attempt.attempt)
+      : W.logOrigins(
+          attempt.attempt,
+          W.logFrom(attempt.log, attempt.verdict === 'landed' || attempt.verdict === 'empty'),
+        );
   const cornerNode = (
     <span className="font-(family-name:--family-mono) text-mono-sm text-fg3 uppercase">
       {corner}
@@ -365,6 +369,12 @@ function MachineLog({
   let body: ReactNode;
   if (attempt.verdict === 'cutting') {
     body = <p className="m-0 text-assist text-fg3">{W.LOG_CUTTING}</p>;
+  } else if (noMachine) {
+    body = (
+      <Note data-slot="machine-log-note">
+        {attempt.verdict === 'refused' ? W.LOG_REFUSED : W.LOG_UNCONFIRMED}
+      </Note>
+    );
   } else if (attempt.log === 'pending') {
     body = <p className="m-0 text-assist text-fg3">{W.LOG_PENDING}</p>;
   } else {

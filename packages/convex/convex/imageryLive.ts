@@ -84,12 +84,9 @@ import {
   internalMutation,
   internalQuery,
   type MutationCtx,
-  mutation,
   type QueryCtx,
-  query,
 } from './_generated/server';
 import { typed, writeAudit } from './lib/audit';
-import { requireCapability } from './lib/auth';
 import { firstToday } from './lib/dailyThrottle';
 import {
   createCutMachine,
@@ -1223,6 +1220,17 @@ const errorMessage = (error: unknown) => (error instanceof Error ? error.message
 export const CAPTURE_RETRY_MS = 60 * 60_000;
 /** Owed captures one run retries, oldest first. */
 const CAPTURES_PER_RUN = 10;
+/**
+ * How long a run may spend on owed captures before it settles what is cutting. They run first, and
+ * each can take a few 30 s calls (R2, Fly's log API): bounded by the check deadline alone, ten slow
+ * ones would use all of it and leave the cuts in flight unchecked, run after run, for the hour.
+ */
+const CAPTURE_RETRY_BUDGET_MS = 60_000;
+/**
+ * The most owed captures the run's report counts (its *still owed*): read once, past the ten a run
+ * retries, so the count isn't capped at what one run can do.
+ */
+const CAPTURES_OWED_COUNTED = 100;
 /** Stopped cut Machines one run's sweep looks at. */
 const SWEEP_PER_RUN = 25;
 /**
@@ -1584,7 +1592,8 @@ async function captureLog(
 
 /**
  * Retry the captures still owed, oldest first: each for an hour from its settle, then `missing`.
- * Bounded by count and by the run's check deadline.
+ * Bounded by count and by its own budget ({@link CAPTURE_RETRY_BUDGET_MS}), so the settles after it
+ * always keep most of the check deadline.
  */
 async function retryCaptures(
   ctx: ActionCtx,
@@ -1596,7 +1605,6 @@ async function retryCaptures(
     limit: CAPTURES_PER_RUN,
   });
   for (const attempt of owed) {
-    if (Date.now() - startedAt >= CHECK_DEADLINE_MS) break;
     if (startedAt - (attempt.settledAt ?? startedAt) > CAPTURE_RETRY_MS) {
       await ctx.runMutation(internal.imageryLive.closeAttemptLog, {
         attemptId: attempt._id,
@@ -1605,6 +1613,7 @@ async function retryCaptures(
       });
       continue;
     }
+    if (Date.now() - startedAt >= CAPTURE_RETRY_BUDGET_MS) break;
     const granule = await ctx.runQuery(internal.imageryLive.granuleOf, {
       id: attempt.granuleRowId,
     });
@@ -1794,6 +1803,12 @@ async function pumpOnce(
   const failures: string[] = [];
   let backoff = false;
   let streak = refusalStreakIn;
+  /**
+   * Settled cuts whose stopped Machine this run didn't destroy (the destroy failed, or the deadline
+   * came first): the sweep's. Carried into `stoppedMachines` when the run's listing didn't happen or
+   * failed, so the next tick lists and sweeps even with nothing in flight and imagery paused.
+   */
+  let leftForSweep = 0;
 
   // ── Captures an earlier run owes first (each for an hour from its settle): a few, bounded ──
   await retryCaptures(ctx, config, startedAt, counts);
@@ -1848,8 +1863,13 @@ async function pumpOnce(
 
     // ── Each closed attempt: its log copied, then its Machine destroyed (its exit is on the attempt
     //    now). Past the check deadline both wait: a later run copies, the sweep destroys. ──
-    if (Date.now() - startedAt >= CHECK_DEADLINE_MS) continue;
     const closedSet = new Set<string>(closed);
+    if (Date.now() - startedAt >= CHECK_DEADLINE_MS) {
+      leftForSweep += settling.filter(
+        (v) => v.capture?.destroyable === true && closedSet.has(v.capture.attempt._id),
+      ).length;
+      continue;
+    }
     const fresh: Doc<'imageryAttempts'>[] = await ctx.runQuery(internal.imageryLive.attemptsById, {
       ids: closed,
     });
@@ -1878,6 +1898,7 @@ async function pumpOnce(
             counts.destroyed++;
           } catch {
             // Left stopped: the sweep destroys it (its attempt is settled).
+            leftForSweep++;
           }
         }
         if (result !== null && result !== 'owed') counts.captured++;
@@ -1956,7 +1977,7 @@ async function pumpOnce(
     }
   }
   counts.capturesOwed = (
-    await ctx.runQuery(internal.imageryLive.pendingCaptures, { limit: CAPTURES_PER_RUN })
+    await ctx.runQuery(internal.imageryLive.pendingCaptures, { limit: CAPTURES_OWED_COUNTED })
   ).length;
 
   if (failures.length > 0) {
@@ -1971,7 +1992,13 @@ async function pumpOnce(
     backoff,
     refusalStreak: streak,
     blindTicks,
-    ...(listed ? { stoppedMachines: counts.stopped } : {}),
+    // Listed: the sweep's count. Not listed (or the listing failed): what this run left stopped is
+    // still owed a sweep, so the next tick lists even with nothing in flight.
+    ...(listed
+      ? { stoppedMachines: counts.stopped }
+      : leftForSweep > stoppedIn
+        ? { stoppedMachines: leftForSweep }
+        : {}),
   };
   const did = settled.length + counts.spawned + counts.refused + counts.captured + counts.destroyed;
   if (did === 0 && !backoff) {

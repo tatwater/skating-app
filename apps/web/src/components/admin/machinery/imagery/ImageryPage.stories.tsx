@@ -16,6 +16,7 @@ import {
   NO_WATCH_PAGE,
   OLD_IMAGE_VIEW,
   PAUSED_PAGE,
+  REFUSED_VIEW,
   RUNNING_PAGE,
   UNCONFIGURED_PAGE,
   WAITING_PAGE,
@@ -191,6 +192,19 @@ export const OldImage: Story = {
     await expect(slot(detail, 'what-to-check')).toHaveTextContent('No cutter log');
     // A machine time read only from the settle is an estimate.
     await expect(slot(detail, 'attempts-table')).toHaveTextContent('about 2 m 00');
+  },
+};
+
+/** Every spawn turned down: no Machine ran, so no log — and never blamed on an old image. */
+export const RefusedSpawns: Story = {
+  args: { initialOpen: REFUSED_VIEW.row.id, rows: [REFUSED_VIEW.row] },
+  play: async ({ canvasElement }) => {
+    const detail = detailOf(canvasElement);
+    await expect(slot(detail, 'machine-log-note')).toHaveTextContent('Fly turned this one down');
+    await expect(slot(detail, 'machine-log')).not.toHaveTextContent('from Fly');
+    await expect(detail.querySelector('[data-slot="attempt-log"]')).toBeNull();
+    await expect(slot(detail, 'what-to-check')).toHaveTextContent('Spawn refused');
+    await expect(slot(detail, 'what-to-check')).not.toHaveTextContent('No cutter log');
   },
 };
 

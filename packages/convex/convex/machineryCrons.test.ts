@@ -694,9 +694,18 @@ describe('the rule’s inputs carry who started a run under way (Ma27 (b))', () 
     ({ job: 'x', ...fields }) as Doc<'cronHeartbeats'>;
   test('the trigger with its stamp, never without one; the rule doesn’t read it', () => {
     const entry = { record: 'every' as const };
-    expect(cronLivenessInputOf(entry, hb({ runningSince: 5, runningTrigger: 'manual' }))).toEqual({
+    const pressed = hb({
       runningSince: 5,
       runningTrigger: 'manual',
+      runningByUserId: 'p' as Doc<'cronHeartbeats'>['runningByUserId'],
+    });
+    expect(cronLivenessInputOf(entry, pressed)).toEqual({
+      runningSince: 5,
+      runningTrigger: 'manual',
+    });
+    // A run chained by another job is manual with no presser: nobody pressed Run now.
+    expect(cronLivenessInputOf(entry, hb({ runningSince: 5, runningTrigger: 'manual' }))).toEqual({
+      runningSince: 5,
     });
     expect(cronLivenessInputOf(entry, hb({ runningTrigger: 'cron' }))).toEqual({});
     expect(cronLivenessInputOf(entry, hb({ runningSince: 5 }))).toEqual({ runningSince: 5 });

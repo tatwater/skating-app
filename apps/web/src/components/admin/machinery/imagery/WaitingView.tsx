@@ -210,8 +210,9 @@ function WatchWords({
   const lineF = watch === null ? null : fahrenheit(watch.lineC);
   const rows: { label: string; value: ReactNode }[] = [];
   if (crossed) {
-    const on = facts?.crossed?.on ?? watch?.closestNight?.date ?? null;
-    const sites = facts?.crossed?.sites ?? [];
+    // The watch's own crossing night when the lows aren't read: never the coldest night.
+    const on = facts?.crossed?.on ?? watch?.crossed?.on ?? null;
+    const sites = facts?.crossed?.sites ?? watch?.crossed?.sites ?? [];
     rows.push({
       label: W.THE_LINE,
       value:
@@ -275,7 +276,7 @@ function StartPanel({
     setBusy(true);
     void onStart().then(() => setBusy(false));
   };
-  const on = facts?.crossed?.on ?? view.watch?.closestNight?.date ?? null;
+  const on = facts?.crossed?.on ?? view.watch?.crossed?.on ?? null;
   const said =
     view.state === 'noWatch'
       ? W.START_NO_WATCH

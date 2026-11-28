@@ -329,8 +329,11 @@ async function watchFactsOf(
 
 /**
  * When machine-minutes began to be counted, if this season cut before then: the first attempt ever
- * recorded (the deploy that began recording), when the season's first granule was queued before it;
- * with no attempt yet, now, if the season already settled cuts. `null`: every cut counted.
+ * recorded (the deploy that began recording), when the season's oldest granule was **tried** before
+ * it — tried (it was cut, refused or settled) yet with no attempt numbered 1, since an attempt's number
+ * continues from the granule's old count. A granule merely queued before its first spawn, as every
+ * granule is, counts nothing early. With no attempt yet: now, if the season already settled cuts.
+ * `null`: every cut counted.
  */
 async function countedFromOf(
   ctx: QueryCtx,
@@ -339,16 +342,23 @@ async function countedFromOf(
   now: number,
 ): Promise<number | null> {
   const first = await ctx.db.query('imageryAttempts').order('asc').first();
+  if (first === null) {
+    const settled = (counts?.landed ?? 0) + (counts?.empty ?? 0) + (counts?.failed ?? 0);
+    return settled > 0 ? now : null;
+  }
   const oldest = await ctx.db
     .query('imageryGranules')
     .withIndex('by_season_queued', (q) => q.eq('season', season))
     .order('asc')
     .first();
-  if (first === null) {
-    const settled = (counts?.landed ?? 0) + (counts?.empty ?? 0) + (counts?.failed ?? 0);
-    return settled > 0 ? now : null;
-  }
-  return oldest !== null && oldest.queuedAt < first.spawnedAt ? first.spawnedAt : null;
+  if (oldest === null || oldest.queuedAt >= first.spawnedAt) return null;
+  const tried = oldest.attempts > 0 || (oldest.refusals ?? 0) > 0 || oldest.status !== 'queued';
+  if (!tried) return null;
+  const firstOfItsOwn = await ctx.db
+    .query('imageryAttempts')
+    .withIndex('by_granule_attempt', (q) => q.eq('granuleRowId', oldest._id).eq('attempt', 1))
+    .first();
+  return firstOfItsOwn === null ? first.spawnedAt : null;
 }
 
 /** The live index for the season: the index cron's newest run that counted this season's frames. */
@@ -484,12 +494,18 @@ export const failedFirst = query({
   },
 });
 
-/** One granule, its newest attempts (at most 10, oldest first) and whether it predates them. */
+/**
+ * One granule, its newest attempts (at most 10, oldest first) and whether it predates them. The id
+ * comes from the page's URL, so it is taken as a string and normalized: one that names no granule (a
+ * mistyped link, another table's id) is `null`, the page's *missing*, never a validator throw that
+ * retrying can't fix.
+ */
 export const granule = query({
-  args: { id: v.id('imageryGranules') },
+  args: { id: v.string() },
   handler: async (ctx, args): Promise<GranuleView | null> => {
     await requireCapability(ctx, 'machinery.read');
-    const row = await ctx.db.get(args.id);
+    const id = ctx.db.normalizeId('imageryGranules', args.id);
+    const row = id === null ? null : await ctx.db.get(id);
     if (row === null) return null;
     const newest = await ctx.db
       .query('imageryAttempts')

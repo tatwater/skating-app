@@ -11,7 +11,7 @@ import {
   shortWhen,
   tookWords,
 } from './cronFormat';
-import { countsLine, countWords } from './cronWords';
+import { countsLine, countWords, runPressedWords } from './cronWords';
 
 describe('times, in the viewer’s zone', () => {
   it('writes a run’s day as the boards do', () => {
@@ -81,5 +81,14 @@ describe('counts', () => {
     expect(countsLine({ a: 1, b: 0, c: 2, d: 3, e: 4 })).toBe('1 a · 2 c · 3 d');
     expect(countsLine({ found: 0 })).toBeNull();
     expect(countsLine(null)).toBeNull();
+  });
+});
+
+describe('who started a run', () => {
+  it('names a press, and claims none for a scheduled run or one another job started', () => {
+    expect(runPressedWords({ trigger: 'manual', by: { name: 'Teagan' } })).toBe('Run now · Teagan');
+    expect(runPressedWords({ trigger: 'manual', by: { name: '' } })).toBe('Run now');
+    expect(runPressedWords({ trigger: 'manual', by: null })).toBeNull();
+    expect(runPressedWords({ trigger: 'cron', by: null })).toBeNull();
   });
 });

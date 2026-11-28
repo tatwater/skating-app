@@ -828,6 +828,47 @@ describe('the keep rule: Machines kept until the pump reads them', () => {
     expect(await pump(t)).toEqual({ skipped: 'nothing to do' });
   });
 
+  test('a failed destroy is still owed a sweep when that run’s listing failed too', async () => {
+    const t = convexTest(schema, modules);
+    const season = await openSeason(t, { imageryPausedAt: undefined });
+    const w = world();
+    stub(w);
+    const { gid, machineId } = await spawnOne(t, w);
+    const t0 = Date.now();
+    w.objects.set(`frames/${SEASON}/${G}.json`, { granuleId: G });
+    exitMachine(w, machineId, { code: 0, oom: false, startedAt: t0, exitedAt: t0 + 9_000 });
+    // The settle reads the exit, the destroy fails, and so does the run's one listing.
+    w.destroyFails = true;
+    const fetchFn = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const url = new URL(req.url);
+        if (
+          url.host === 'api.machines.dev' &&
+          req.method === 'GET' &&
+          url.pathname.endsWith('/machines')
+        ) {
+          return new Response('', { status: 502, statusText: 'Bad gateway' });
+        }
+        return fetchFn(req);
+      }),
+    );
+    // Paused before the run's listing: no new cut is asked for, so the listing's failure is quiet.
+    await t.run((ctx) => ctx.db.patch(season, { imageryPausedAt: Date.now() }));
+    vi.advanceTimersByTime(4 * MIN);
+    await pump(t);
+    expect((await granuleRow(t, gid))?.status).toBe('landed');
+    expect((await pumpRow(t))?.stoppedMachines).toBe(1);
+    // Paused, nothing in flight: the next tick still lists and clears it.
+    vi.stubGlobal('fetch', fetchFn);
+    w.destroyFails = false;
+    vi.advanceTimersByTime(3 * MIN);
+    expect(await pump(t)).toMatchObject({ destroyed: 1, stopped: 0 });
+    expect(w.destroyed).toEqual([machineId]);
+  });
+
   test(`past ${MAX_STOPPED_MACHINES} stopped cut Machines it can't clear, no new cut starts`, async () => {
     const t = convexTest(schema, modules);
     await openSeason(t, { imageryPausedAt: undefined });

@@ -509,26 +509,36 @@ describe('the page', () => {
     });
   });
 
-  test('countedFrom: the first attempt, when the season’s first granule came before it', async () => {
+  test('countedFrom: the first attempt, when the season’s oldest granule was tried before it', async () => {
     const t = harness();
     const admin = await seedPerson(t, 'admin', 'admin');
     await openSeason(t, { imageryStartedAt: NOW });
-    const early = await granule(t, { queuedAt: NOW - 86_400_000 });
-    await t.run((ctx) =>
-      ctx.db.insert('imageryAttempts', {
-        granuleRowId: early,
-        granuleId: 'x',
-        season: SEASON,
-        attempt: 1,
-        machineName: 'granule-x',
-        spawnedAt: NOW - 3_600_000,
-        verdict: 'cutting',
-        log: 'pending',
-      }),
-    );
-    expect((await admin.as.query(api.machineryImagery.page, { now: NOW }))?.fly.countedFrom).toBe(
-      NOW - 3_600_000,
-    );
+    const countedFrom = async () =>
+      (await admin.as.query(api.machineryImagery.page, { now: NOW })).fly.countedFrom;
+    const attempt = (granuleRowId: Id<'imageryGranules'>, n: number, spawnedAt: number) =>
+      t.run((ctx) =>
+        ctx.db.insert('imageryAttempts', {
+          granuleRowId,
+          granuleId: 'x',
+          season: SEASON,
+          attempt: n,
+          machineName: 'granule-x',
+          spawnedAt,
+          verdict: 'cutting',
+          log: 'pending',
+        }),
+      );
+    // Queued a day before its first spawn, and that spawn is its attempt 1: every cut counted.
+    const early = await granule(t, { queuedAt: NOW - 86_400_000, status: 'spawned', attempts: 1 });
+    await attempt(early, 1, NOW - 3_600_000);
+    expect(await countedFrom()).toBeNull();
+    // Tried before recording began: its first recorded attempt is its second.
+    await t.run(async (ctx) => {
+      for (const a of await ctx.db.query('imageryAttempts').collect()) await ctx.db.delete(a._id);
+      await ctx.db.patch(early, { attempts: 2 });
+    });
+    await attempt(early, 2, NOW - 3_600_000);
+    expect(await countedFrom()).toBe(NOW - 3_600_000);
   });
 });
 
@@ -627,6 +637,9 @@ describe('the granules', () => {
     const v = await view(many);
     expect(v?.attempts.map((a) => a.attempt)).toEqual([3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(v?.before8b).toBe(false);
+    // A link whose id names no granule (mistyped, or another table's) is missing, never a throw.
+    expect(await admin.as.query(api.machineryImagery.granule, { id: 'k'.repeat(32) })).toBeNull();
+    expect(await admin.as.query(api.machineryImagery.granule, { id: admin.id })).toBeNull();
   });
 
   test('an attempt’s log, newest first, with who wrote each line', async () => {

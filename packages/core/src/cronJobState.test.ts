@@ -10,7 +10,9 @@ import {
 import type { CronLiveness } from './cronLiveness';
 
 const T = 1_764_201_600_000;
-const tick = (state: 'ok' | 'failed' | 'late' | 'stalled'): CronLiveness => ({
+/** A ticked verdict: the union's member with a last tick (so a test can move `lastTickAt`). */
+type Ticked = Extract<CronLiveness, { lastTickAt: number }>;
+const tick = (state: 'ok' | 'failed' | 'late' | 'stalled'): Ticked => ({
   state,
   lastTickAt: T,
   quietMs: 0,

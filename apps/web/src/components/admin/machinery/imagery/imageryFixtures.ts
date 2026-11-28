@@ -481,9 +481,42 @@ export const EMPTY_VIEW: GranuleView = {
   ],
 };
 
+/** Fly turned every spawn down: three refused attempts, none with a Machine, none with a log. */
+export const REFUSED_A = granule({
+  granuleId: 'S2B_18TYP_20261014_0_L2A',
+  status: 'failed',
+  refusals: 3,
+  queuedAt: NOW - 20 * MIN,
+  settledAt: NOW - 8 * MIN,
+  lastError: 'create machine: 422 image not found',
+});
+export const REFUSED_VIEW: GranuleView = {
+  row: REFUSED_A,
+  before8b: false,
+  attempts: [1, 2, 3].map((n) =>
+    attempt({
+      id: `ja${String(10 + n).padStart(30, '0')}` as AttemptView['id'],
+      attempt: n,
+      verdict: 'refused',
+      spawnedAt: NOW - (20 - 4 * n) * MIN,
+      error: 'create machine: 422 image not found',
+      log: 'none',
+      settledAt: NOW - (20 - 4 * n) * MIN,
+    }),
+  ),
+};
+
 /** The detail the fixtures hold for a row, by its id. */
 export function viewFor(id: string): GranuleView | null {
-  for (const v of [OOM_VIEW, LANDED_VIEW, BEFORE_VIEW, OLD_IMAGE_VIEW, QUEUED_VIEW, EMPTY_VIEW]) {
+  for (const v of [
+    OOM_VIEW,
+    LANDED_VIEW,
+    BEFORE_VIEW,
+    OLD_IMAGE_VIEW,
+    QUEUED_VIEW,
+    EMPTY_VIEW,
+    REFUSED_VIEW,
+  ]) {
     if (v.row.id === id) return v;
   }
   const row = [...BOARD_FAILED, ...BOARD_ROWS].find((r) => r.id === id);

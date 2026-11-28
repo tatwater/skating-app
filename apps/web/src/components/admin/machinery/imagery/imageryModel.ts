@@ -335,8 +335,11 @@ export function relativeDay(at: number, now: number, timeZone?: string): string 
       day: '2-digit',
       timeZone,
     }).format(x);
-  if (key(at) === key(now)) return TODAY;
-  if (key(at) === key(now - 86_400_000)) return YESTERDAY;
+  const today = key(now);
+  if (key(at) === today) return TODAY;
+  // Yesterday by the calendar, never `now` less 24 hours: the day after a 23-hour day (DST), that
+  // lands two days back for the first hour.
+  if (key(at) === addDaysIso(today, -1)) return YESTERDAY;
   return dayWords(at, timeZone);
 }
 

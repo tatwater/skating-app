@@ -135,8 +135,12 @@ function trimLine(text: string): string {
 /** The `EXIT` trap's last line, `exit <code>`. */
 const EXIT_LINE = /^exit (-?\d+)\b/;
 
-/** A Fly runner line that names a kill: the one place a whole-VM out-of-memory kill is said. */
-const KILL_WORDS = /out of memory|oom|killed/i;
+/**
+ * A Fly runner line that names a kill: the one place a whole-VM out-of-memory kill is said. Whole
+ * words only (*OOM*, Fly's `oom_killed`), so a line that merely contains them (*room*, *zoom*)
+ * stays a warning.
+ */
+const KILL_WORDS = /out of memory|\boom|\bkilled\b/i;
 
 /** The exit event as one line: `exit 137 · out of memory`; `null` when Fly sent nothing at all. */
 export function exitLineText(exit: CutExit): string | null {

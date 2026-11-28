@@ -38,7 +38,7 @@ import {
   runTone,
 } from './cronModel';
 import type { CronJobView, CronRunView, CronTickView } from './cronViews';
-import { CRON_WORDS, countsLine, RUN_OUTCOME_WORDS } from './cronWords';
+import { CRON_WORDS, countsLine, RUN_OUTCOME_WORDS, runPressedWords } from './cronWords';
 
 /**
  * **A pipeline's runs drawer** (boards 6.4 *Runs* and *Runs · Pump*; 6.6 and 6.7 draw the same for
@@ -510,12 +510,7 @@ function RunRow({
   const tone = runTone(run);
   const when = dayClock(run.startedAt, now, timeZone);
   const outcome = runOutcomeWords(run, headlineOf);
-  const pressed =
-    run.trigger === 'manual'
-      ? run.by !== null && run.by.name !== ''
-        ? CRON_WORDS.pressedBy(run.by.name)
-        : CRON_WORDS.pressed
-      : null;
+  const pressed = runPressedWords(run);
   return (
     <TableRow
       data-slot="cron-run"

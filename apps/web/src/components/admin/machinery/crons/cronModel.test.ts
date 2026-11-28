@@ -212,6 +212,23 @@ describe('ticks', () => {
     expect(tickAt(marks, 30)).toBeNull();
   });
 
+  it('on one pixel a newer quiet tick never hides an older failure; between equals the newer wins', () => {
+    const marks = placeTicks(
+      [
+        { at: 10_000, code: CRON_TICK_CODES.failed, ms: 1 },
+        { at: 10_400, code: CRON_TICK_CODES.ok, ms: 1 },
+        { at: 10_600, code: CRON_TICK_CODES.ok, ms: 1 },
+      ],
+      0,
+      100_000,
+      100,
+    );
+    expect(new Set(marks.map((m) => m.x)).size).toBe(1);
+    expect(tickAt(marks, 10)?.kind).toBe('failed');
+    const quiet = marks.filter((m) => m.kind === 'quiet');
+    expect(tickAt(quiet, 10)?.at).toBe(10_600);
+  });
+
   it('sorts a recorded-order row', () => {
     const ats = sortTicks(pumpTicks()).map((t) => t.at);
     expect(ats).toEqual([...ats].sort((a, b) => a - b));

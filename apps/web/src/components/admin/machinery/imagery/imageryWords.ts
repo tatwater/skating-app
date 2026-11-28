@@ -400,8 +400,11 @@ export const SHOW_LOG = 'Show the log';
 export const LOG_PENDING = 'The pump hasn’t collected this log yet. It shows up here once it has.';
 export const LOG_CUTTING = 'The log shows up once this cut settles.';
 export const LOG_NONE =
-  'This cutter didn’t keep a log of its own: it ran on an image from before logs were kept.';
+  'The cutter didn’t upload a log of its own, so this is Fly’s and the pump’s word alone. Its image may be from before logs were kept, or it stopped before its first upload.';
 export const LOG_MISSING = 'The pump couldn’t collect the cutter’s log for this attempt.';
+export const LOG_REFUSED = 'Fly turned this one down, so no Machine ran and there’s no log.';
+export const LOG_UNCONFIRMED =
+  'Fly never confirmed a Machine for this attempt, so there’s no log to show.';
 export const LOG_EMPTY = 'No lines were kept.';
 export const LOG_LOADING = 'Loading the log';
 export const LOG_FAILED = 'The log didn’t load.';
@@ -456,10 +459,12 @@ export function whatToCheck(
       body: 'Fly never said the Machine started, so it may not have been made. A retry sends a new one.',
     });
   }
-  if (last !== null && last.log === 'none') {
+  // `none` from a Machine that ran: its image kept no log. A refused or never-confirmed attempt is
+  // `none` too, with no Machine at all, and its own row above says why — never the image.
+  if (last !== null && last.log === 'none' && last.machineId !== null) {
     rows.push({
       label: 'No cutter log',
-      body: 'This cut ran on a cutter image from before logs were kept. Logs start with the next image.',
+      body: 'The cutter uploaded no log. Most likely it ran on an image from before logs were kept, and logs start with the next one; a cut that died in its first seconds leaves none either.',
     });
   }
   return rows;

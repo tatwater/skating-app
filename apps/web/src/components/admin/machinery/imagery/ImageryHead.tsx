@@ -315,8 +315,10 @@ function waitingStats(
       />,
     );
   } else {
-    const on = lows?.crossed?.on ?? watch?.closestNight?.date ?? null;
-    const sites = lows?.crossed?.sites.length ?? null;
+    // The watch's own crossing night when the lows aren't read (no capability, loading, failed):
+    // never the coldest night, which can come after the line was crossed.
+    const on = lows?.crossed?.on ?? watch?.crossed?.on ?? null;
+    const sites = lows?.crossed?.sites.length ?? watch?.crossed?.sites.length ?? null;
     stats.push(
       <StatTile
         key="line"

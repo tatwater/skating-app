@@ -259,6 +259,8 @@ describe('mergeCutLog', () => {
           source: 'runner',
         },
         { loggedAt: T0 + 3, text: 'machine stopped', source: 'runner' },
+        { loggedAt: T0 + 3, text: 'Reserving room on host for volume', source: 'runner' },
+        { loggedAt: T0 + 3, text: 'oom_killed=true', source: 'runner' },
       ],
       exit: { exitCode: 0, oomKilled: false, exitedAt: T0 + 4 },
       pump: [{ loggedAt: T0 - 1, text: 'spawned on shared-cpu-4x · 2 GB' }],
@@ -271,6 +273,9 @@ describe('mergeCutLog', () => {
       ['cutter', 'fail', 'exit 1'],
       ['fly', 'fail', 'Out of memory: Killed process 412 (gdalwarp)'],
       ['fly', 'warn', 'machine stopped'],
+      // A word that only contains *oom* is no kill; Fly's own `oom_killed` is.
+      ['fly', 'warn', 'Reserving room on host for volume'],
+      ['fly', 'fail', 'oom_killed=true'],
       ['fly', 'line', 'exit 0'],
     ]);
   });
