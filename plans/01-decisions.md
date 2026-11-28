@@ -9576,7 +9576,16 @@ press. What the founder wants beyond visibility is kept as a follow-up register.
 **Why:** a page that draws machinery the code doesn't have would mislead the person reading it at
 the moment it matters.
 
-**Related:** D3, D218, [`phase-B01`](./phases/B01-admin-console.md) *Machinery follow-ups*.
+**Amended 2026-11-28 (founder call, B01-8c's fork 2, option b) — the gap repair now catches a
+partially filled past day.** *The gap repair picks the failures up* was not true when it was written:
+the repair counted a day as present if any row existed, so a cell that failed an append kept a
+partial day the repair never touched, and only the next day's append (its three-day overlap) filled
+it. From B01-8c-1 the repair treats a past day (on or before yesterday) with fewer than 23 hours as a
+gap and re-fetches it — at most one request of up to ~32 days per affected cell per run, the same
+request it already makes for a missing day — and counts what it repaired. This is the one pipeline
+behavior B01-8c changes; the page then draws it as it runs.
+
+**Related:** D3, D218, D349, [`phase-B01`](./phases/B01-admin-console.md) *Machinery follow-ups*.
 
 ## D346 — Machine-minutes before dollars, and next-run times only where a cron has a fixed time (B01-8b, B01-8c)
 
@@ -9633,3 +9642,28 @@ on `logs/` is the net; the bucket's public base is `r2.dev`, not a custom domain
 it, and the page reads only Convex, never a signed URL in a browser.
 
 **Related:** D344, D346, D347, [`phase-B01`](./phases/B01-admin-console.md) *B01-8b — The design*.
+
+## D349 — A run that continues past its tick is one run (B01-8c)
+
+**Decided (2026-11-28, B01-8c's design, ruled by the governor).** A job that schedules its own
+continuations opens its run before its first batch; every continuation carries the run's id and
+adds its counts, failures by cause and lines as it ends; the run closes when its last branch ends,
+and a run with no word past the action limit is closed as killed by the next one. The dispatcher's
+tick and the run are merged, not doubled.
+
+**Why:** a weather append is ~77 batches and the backbone saw one; a page can only answer *did the
+last run do its job* for a run it can see whole.
+
+**Related:** D343, D345, D347, [`phase-B01`](./phases/B01-admin-console.md) *B01-8c — The design*.
+
+## D350 — The weather crons run at fixed UTC times ordered by what they depend on, and Machinery › Weather holds the Open-Meteo meter (B01-8c)
+
+**Decided (2026-11-28, B01-8c's design, ruled by the governor).** The registry walk weekly on Sunday
+at 05:00, the appends daily at 07:00 and 07:15 (two hours past the lake's midnight), the gap repair
+at 10:00 (after both); the meter reads against Open-Meteo's published 10,000 a day with D158's
+7,000 marked, and leaves `/admin/ice-calibration`.
+
+**Why:** D346's fixed times, chosen so a day is complete before it is stored and repaired after it
+is written.
+
+**Related:** D158, D346, [`phase-B01`](./phases/B01-admin-console.md) *B01-8c — The design*.
