@@ -161,7 +161,7 @@ await_gone() {
     (( live == 0 )) && return 0
     sleep "$POLL_SECONDS"
   done
-  echo "[spawn] ⚠ $live Machines named ${prefix}* still alive — gave up waiting" >&2
+  echo "[spawn] ⚠ $live Machines named ${prefix}* still alive (a listing that fails counts as $MAX_PARALLEL) — gave up waiting" >&2
   return 1
 }
 
@@ -174,6 +174,12 @@ fi
 # then the selection was put back) leaves the old record in place for minutes — and then replaces
 # the pack, the index and the record. The tiles stage waits here before each reconcile.
 if [[ "$MODE" == drain ]]; then
+  # Said before the wait, so a stage that sits here for an hour says why (it is silent otherwise).
+  if ! up="$(live_names "aerial-${STAMP}-")"; then
+    echo "[spawn] can't list the app's Machines: waiting until it can, and until none of $CAMPAIGN's work tiles is up" >&2
+  elif [[ -n "$up" ]]; then
+    echo "[spawn] $(grep -c . <<<"$up") of $CAMPAIGN's work-tile Machines are still up: waiting for them to finish before any done record is read (up to $(( DRAIN_TRIES * POLL_SECONDS / 60 )) min; fly machine list --app $APP)" >&2
+  fi
   await_gone "aerial-${STAMP}-" || exit 3
   exit 0
 fi

@@ -859,7 +859,9 @@ describe('spawn.sh assemble', () => {
     });
     expect(slow.runs).toHaveLength(1);
     expect(slow.status).toBe(3);
-    expect(slow.stderr).toMatch(/still alive — gave up waiting/);
+    expect(slow.stderr).toMatch(
+      /still alive \(a listing that fails counts as 25\) — gave up waiting/,
+    );
   });
 
   test('a failed spawn fails; a stray argument is refused', () => {
@@ -1085,13 +1087,25 @@ describe('spawn.sh drain', () => {
       env: { AERIAL_IMAGE: '' },
       lists: [
         JSON.stringify([{ name: 'aerial-20261212-606-736', state: 'started' }, ...others]),
+        JSON.stringify([{ name: 'aerial-20261212-606-736', state: 'started' }, ...others]),
         JSON.stringify([{ name: 'aerial-20261212-606-736', state: 'stopping' }, ...others]),
       ],
       last: JSON.stringify(others),
     });
     expect(run.status).toBe(0);
-    expect(run.calls.filter((c) => c.startsWith('fly machine list'))).toHaveLength(2);
+    expect(run.calls.filter((c) => c.startsWith('fly machine list'))).toHaveLength(3);
     expect(run.runs).toEqual([]);
+    // A wait that can last an hour says so first, naming how many and for how long at most.
+    expect(run.stderr).toMatch(
+      /1 of naip-20261212's work-tile Machines are still up: waiting for them to finish before any done record is read/,
+    );
+  });
+
+  test('the first run of a campaign — an app with no Machines at all (`[]`) — passes straight through, silently', () => {
+    const run = spawnSh(['drain', 'naip-20261212'], { last: '[]' });
+    expect(run.status).toBe(0);
+    expect(run.stderr).toBe('');
+    expect(run.calls.filter((c) => c.startsWith('fly machine list'))).toHaveLength(2);
   });
 
   test('gives up as 3 on one still up, and reads a listing that keeps failing as still up', () => {
@@ -1100,11 +1114,15 @@ describe('spawn.sh drain', () => {
       env: { DRAIN_TRIES: '3' },
     });
     expect(up.status).toBe(3);
-    expect(up.stderr).toMatch(/still alive — gave up waiting/);
+    expect(up.stderr).toMatch(
+      /still alive \(a listing that fails counts as 25\) — gave up waiting/,
+    );
     const blind = spawnSh(['drain', 'naip-20261212'], {
       env: { FLY_LIST_FAIL: '1', DRAIN_TRIES: '2' },
     });
     expect(blind.status).toBe(3);
+    expect(blind.stderr).toMatch(/can't list the app's Machines: waiting until it can/);
+    expect(blind.stderr).toMatch(/a listing that fails counts as 25/);
     expect(spawnSh(['drain', 'naip-20261212', 'x']).status).toBe(64);
   });
 });
