@@ -5,6 +5,7 @@ import {
   type NaipFoliageStrike,
   type NaipManifest,
   type NaipState,
+  naipBuildInputsHash,
   workTileKey,
   workTilesOf,
 } from '@skating/core';
@@ -328,6 +329,89 @@ describe('a campaign already published (PR #188’s review)', () => {
     const readPublished = vi.fn(async () => published);
     await runSelect(args('--dry-run'), deps({ readPublished }).deps);
     expect(readPublished).not.toHaveBeenCalled();
+  });
+});
+
+describe('a thumbnail a read failed for this time (PR #188’s review)', () => {
+  // A failed read is an unscored frame, which is never cached — so the next run reads it again.
+  const FLAKY = '_4107102_se_';
+  /** `score`, with the flaky cell's frames read (`healed`) or failing transiently. */
+  const scoring = (healed: boolean, unreadable: Set<string>): Partial<SelectDeps> => {
+    const base = deps().deps;
+    return {
+      unreadable,
+      score: async (targets) => {
+        const scores = await base.score(targets);
+        for (const t of targets) {
+          if (!t.itemId.includes(FLAKY)) continue;
+          if (healed) scores.set(t.itemId, { white: 0.002, valid: 1 });
+          else unreadable.add(t.itemId);
+        }
+        return scores;
+      },
+    };
+  };
+
+  test('decides nothing: the re-run that reads it would decide another build', async () => {
+    // The bug: the unscored pick was cut as partial; the re-run (the README's way to resume) scored
+    // it, so `partial`, its work tiles' input hashes and the build's identity all moved — a resume
+    // re-cut those work tiles under a live assembler, or was refused as "other inputs" once published.
+    const flaky = deps(scoring(false, new Set()));
+    await expect(runSelect(args(), flaky.deps)).rejects.toThrow(
+      /^the thumbnails of 1 picks couldn't be read this time \([a-z]{2}_m_4107102_se_\S+\): an unscored pick is cut as partial, and a re-run that reads it would decide another build — run the select stage again/,
+    );
+    expect(flaky.written.manifest).toBeUndefined();
+    expect(flaky.run.failed).toHaveBeenCalledOnce();
+    // Read the next time: one decision, the same on every later run.
+    const healed = await runSelect(args(), deps(scoring(true, new Set())).deps);
+    const again = await runSelect(args(), deps(scoring(true, new Set())).deps);
+    const cell = healed.manifest.cells.find((c) => c.key === '4107102se');
+    expect(cell).toMatchObject({ partial: false, cloudScore: 0.002 });
+    expect(naipBuildInputsHash(again.manifest)).toBe(naipBuildInputsHash(healed.manifest));
+  });
+
+  test('a fallback’s failed read is reported, never refused: it decides nothing in the manifest', async () => {
+    const unreadable = new Set<string>();
+    const base = deps().deps;
+    const d = deps({
+      unreadable,
+      score: async (targets) => {
+        const scores = await base.score(targets);
+        // The partial October cell's fallbacks: scored for the sheet, read once its pick is partial.
+        for (const t of targets) {
+          if (
+            t.itemId.includes(`_${PARTIAL_CELL.slice(0, 7)}_${PARTIAL_CELL.slice(7)}_`) &&
+            !t.itemId.includes('20231002')
+          ) {
+            unreadable.add(t.itemId);
+            scores.set(t.itemId, null);
+          }
+        }
+        return scores;
+      },
+    });
+    const out = await runSelect(args(), d.deps);
+    expect(unreadable.size).toBeGreaterThan(0);
+    expect(out.manifest.cells.find((c) => c.key === PARTIAL_CELL)?.partial).toBe(true);
+    expect(
+      d.lines.some((l) =>
+        /^\[select\] \d+ thumbnails couldn't be read this time, unscored: /.test(l),
+      ),
+    ).toBe(true);
+  });
+
+  test('a dry run reports it and goes on, unscored', async () => {
+    const dry = deps(scoring(false, new Set()));
+    const out = await runSelect(args('--dry-run'), dry.deps);
+    expect(out.manifest.cells.find((c) => c.key === '4107102se')).toMatchObject({
+      partial: true,
+      cloudScore: null,
+    });
+    expect(
+      dry.lines.some((l) =>
+        /^\[select\] \d+ thumbnails couldn't be read this time, unscored: /.test(l),
+      ),
+    ).toBe(true);
   });
 });
 

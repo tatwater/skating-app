@@ -219,27 +219,42 @@ describe('scoreFrames', () => {
     const cache = new ScoreCache(join(dir, 'scores.json'));
     const fetchBlob = vi.fn(async (url: string) => {
       if (url.endsWith('gone')) return answer(new Uint8Array(), 404);
+      if (url.endsWith('busy')) return answer(new Uint8Array(), 503);
       if (url.endsWith('net')) throw new Error('ECONNRESET');
       if (url.endsWith('junk')) return answer(new Uint8Array([1, 2, 3]));
       return answer(cloudy);
     });
+    const unreadable = new Set<string>();
     const out = await scoreFrames(
       [
         { itemId: 'none', thumbnail: null },
         { itemId: 'gone', thumbnail: 'https://blob/gone' },
+        { itemId: 'busy', thumbnail: 'https://blob/busy' },
         { itemId: 'net', thumbnail: 'https://blob/net' },
         { itemId: 'junk', thumbnail: 'https://blob/junk' },
         { itemId: 'fine', thumbnail: 'https://blob/fine' },
       ],
-      { fetchBlob, decode: copyDecode, thumbsDir: join(dir, 'thumbs'), cache, concurrency: 0 },
+      {
+        fetchBlob,
+        decode: copyDecode,
+        thumbsDir: join(dir, 'thumbs'),
+        cache,
+        concurrency: 0,
+        unreadable,
+      },
     );
     expect(Object.fromEntries(out)).toEqual({
       none: null,
       gone: null,
+      busy: null,
       net: null,
       junk: null,
       fine: { white: 0.5, valid: 1 },
     });
+    // Only the reads a re-run may answer: a 503 and a network error. No thumbnail, a blob that is
+    // gone and a kept image GDAL can't decode fail the same way every time.
+    expect([...unreadable].sort()).toEqual(['busy', 'net']);
+    expect(cache.get('busy')).toBeUndefined();
   });
 });
 

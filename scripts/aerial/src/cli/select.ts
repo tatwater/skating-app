@@ -55,6 +55,8 @@ async function main(): Promise<void> {
   const cache = new ScoreCache(join(AERIAL_SCRATCH, 'scores.json'));
   const thumbsDir = join(AERIAL_SCRATCH, 'thumbs');
   const sheetDir = join(paths.report, 'cloud');
+  // The frames a read failed for this time: a re-run reads them again (`selectStage.ts` refuses).
+  const unreadable = new Set<string>();
 
   const result = await runSelect(args, {
     walk: (onState) =>
@@ -69,10 +71,12 @@ async function main(): Promise<void> {
         decode: gdalDecode,
         thumbsDir,
         cache,
+        unreadable,
         onProgress: (done, total) => {
           if (done % 500 === 0 || done === total) log(`[select] scored ${done}/${total}`);
         },
       }),
+    unreadable,
     // The live manifest's URL (or a local copy's path). Read by name; never printed.
     readCurrent: async () => {
       const from = process.env.NAIP_MANIFEST_URL;

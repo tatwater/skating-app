@@ -178,6 +178,14 @@ export interface ScoreDeps<T = ThumbnailScore> {
   onProgress?: (done: number, total: number) => void;
   /** Save the cache after this many frames (default 500), so an interrupted run keeps its work. */
   saveEvery?: number;
+  /**
+   * Filled with the frames whose read failed in a way the next run may not repeat — a network
+   * error, or any refusal but a 404 or 410 (a 5xx, a 429, an expired token's 403). Such a frame is
+   * unscored now and is never cached, so a re-run reads it again and may score it: the select stage
+   * refuses to decide a build on one (`selectStage.ts`). No thumbnail listed, a blob that is gone and
+   * an image GDAL can't decode (it is kept, so it fails the same way every time) are unscored for good.
+   */
+  unreadable?: Set<string>;
 }
 
 /** A frame to score: its id and its thumbnail's URL (`null` when the catalog lists none). */
@@ -225,7 +233,10 @@ export async function scoreFrames<T>(
     if (!existsSync(jpeg)) {
       if (t.thumbnail === null) return null;
       const res = await deps.fetchBlob(t.thumbnail);
-      if (!res.ok) return null;
+      if (!res.ok) {
+        if (res.status !== 404 && res.status !== 410) deps.unreadable?.add(t.itemId);
+        return null;
+      }
       writeFileSync(jpeg, new Uint8Array(await res.arrayBuffer()));
     }
     const ppm = `${jpeg}.ppm`;
@@ -247,7 +258,8 @@ export async function scoreFrames<T>(
       try {
         score = await one(t);
       } catch {
-        score = null; // a network error is an unscored frame, not a failed stage
+        score = null; // a network error is an unscored frame, not a failed stage…
+        deps.unreadable?.add(t.itemId); // …but one a re-run may score
       }
       out.set(t.itemId, score);
       done++;

@@ -12,6 +12,9 @@
  * - a frame verify couldn't date (`checkManifestFrames`): caught here, before a Machine is paid for,
  *   never at assembly after the tiles are cut;
  * - a `--cells` key no frame covers (a typo would otherwise build nothing there, quietly);
+ * - in anything but a dry run, **a pick whose thumbnail read failed this time**
+ *   (`ScoreDeps.unreadable`): an unscored pick is cut as partial, and a re-run that scores it would
+ *   decide another build;
  * - in anything but a dry run, **a campaign already published from other inputs**
  *   (`publishedBuild.ts`): its keys are never overwritten, so the change is a new campaign, and the
  *   scratch manifest the published archive was built from is kept as it is.
@@ -54,6 +57,11 @@ export interface SelectDeps {
   walk: (onState: (state: NaipState, items: number) => void) => Promise<CatalogSnapshot>;
   /** Scores frames (thumbnails); `null` for one that couldn't be scored. */
   score: (targets: readonly ScoreTarget[]) => Promise<Map<string, ThumbnailScore | null>>;
+  /**
+   * The frames `score` couldn't read this time but a re-run may (`ScoreDeps.unreadable`): a network
+   * error, a 5xx, a 429, a 403. Anything but a dry run refuses while a pick is among them.
+   */
+  unreadable?: ReadonlySet<string>;
   /** The current build's manifest, for `--from-current`. */
   readCurrent: () => Promise<NaipManifest>;
   /**
@@ -185,6 +193,28 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
 
     deps.log(`[select] scoring the frames that show (${selection.picks.length} picks first)`);
     const scores = await scoreRounds(selection.picks, deps);
+    // **A pick's read that failed this time decides nothing** (PR #188's review). A pick's score is
+    // pixel-relevant — an unscored pick is cut as partial, its fallbacks warped too — but a failed
+    // read isn't cached: a re-run reads it again, may score it, and so decides another build.
+    // Resuming a campaign by running it again (the README's way) then re-cut its work tiles under a
+    // live assembler, or refused a published campaign's honest re-run as "other inputs". A
+    // fallback's score only steers what else is scored for the cloud sheet, so it is reported, never
+    // refused; and a dry run reports every one and goes on.
+    const sample = (ids: readonly string[]) =>
+      `${ids.slice(0, 5).join(', ')}${ids.length > 5 ? ', …' : ''}`;
+    const unreadable = [...(deps.unreadable ?? [])].sort();
+    const picked = new Set(selection.picks.map((p) => p.pick.itemId));
+    const undecided = unreadable.filter((id) => picked.has(id));
+    if (undecided.length > 0 && !args.dryRun) {
+      throw new SelectRefusal(
+        `the thumbnails of ${undecided.length} picks couldn't be read this time (${sample(undecided)}): an unscored pick is cut as partial, and a re-run that reads it would decide another build — run the select stage again (the scores are cached, so it reads only these)`,
+      );
+    }
+    if (unreadable.length > 0) {
+      deps.log(
+        `[select] ${unreadable.length} thumbnails couldn't be read this time, unscored: ${sample(unreadable)}`,
+      );
+    }
     const candidatesForSheet = cloudCandidates(selection.picks, scores);
 
     const perState: Partial<Record<NaipState, number>> = {};
