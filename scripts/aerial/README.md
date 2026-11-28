@@ -83,6 +83,9 @@ a done record whose input hash is the manifest's is landed, anything else is re-
 exception is an assembly that stops after its archive (or index) went up but before its manifest,
 the last write: the published keys are never overwritten, so it refuses again, naming what it left —
 nothing names those objects, nothing has served them; `rclone deletefile` them and assemble again.
+One that fails, refuses or is stopped mid-stream leaves no archive: its upload is killed before its
+input ends, never completed with the bytes so far (at most an unfinished multipart upload, phase doc
+§7.6's H5).
 
 **A laptop that sleeps or loses its network never fails what runs on Fly.** A work tile's Machine
 lands its own shard; a re-run waits for any work tile whose Machine is still up rather than
@@ -90,7 +93,8 @@ spawning a second (`spawn.sh`), and a listing it can't read starts nothing. **No
 landed while a worker runs**: a worker keeps its work tile's old done record until the end of its
 cut and then replaces the shard, so the tiles stage waits before every reconcile until none of the
 campaign's work-tile Machines is up — an earlier selection's, left running when the laptop lost a
-stage, included (`spawn.sh drain`) — and fails, rather than succeeding, if that wait gives up.
+stage, included (`spawn.sh drain`, which says how many are up and how long it will wait) — and
+fails, rather than succeeding, if that wait gives up.
 `assemble` refuses while any of them is up (`assemble.workTilesRunning`), and the assembler itself
 reads every cut work tile's done record again after its last pack read: one that changed abandons
 the upload and refuses (`assemble.shardReplaced`), publishing nothing. The assembly's follower
@@ -144,8 +148,11 @@ change a new campaign: `run-aerial.sh naip-<YYYYMMDD> --from-current` with `NAIP
 published campaign's manifest copies its unchanged work tiles. **A pilot is never a base**: it built
 only its own area, so a build from it would cut every other work tile of the region
 (`select.fromCurrentPilot`); a changed pilot is a new pilot, from nothing (`run-aerial.sh
-naip-pilot-<YYYYMMDD> --pilot <name> --cells <file>`). And a pilot always names its area: one with
-no `--cells` or `--states`, or whose `--states` reach every cell, is refused (`select.pilotUnbounded`). A work tile's worker is killed past
+naip-pilot-<YYYYMMDD> --pilot <name> --cells <file>`). And **a pilot takes `--cells` only** (the
+governor's ruling): `--states` on any stage of a pilot (`args.pilotStates`: a state is no pilot), or
+a pilot's select — alone or in `all` — without `--cells` (`args.pilotNoCells`), is refused before
+anything is read; its later stages (`--stage tiles`, `assemble`, `verify`) need no `--cells`, and a
+`--cells` file reaching every work tile of the region is still refused (`select.pilotUnbounded`). A work tile's worker is killed past
 `AERIAL_TILE_DEADLINE` (an hour; the pilot's slowest took six minutes) and re-cut by the next round.
 
 ### Before a full build: the foliage review (D319)

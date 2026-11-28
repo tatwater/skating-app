@@ -707,7 +707,7 @@ is up (`spawn.sh status`, the one file that knows how Machines are named), which
 landed — through a `ReadView`, a
 world with no way to write, each fact read at most once (`CampaignFacts`); it returns a plan or
 throws a `StageRefusal`. The body carries the plan out. Every refusal has an id (`src/refusals.ts`,
-100 of them since the ninth review); `refusals.test.ts` scans the source so that every refusal constructed names an id from
+102 of them since the ninth review and its independent pass); `refusals.test.ts` scans the source so that every refusal constructed names an id from
 the catalog and every id is thrown somewhere, holds `CASES` (typed `Record<RefusalId, …>`, so an id
 without a case fails `check-types`) and runs each case against a world that records every write
 (`stageHarness.ts`), asserting the named refusal, no write beyond the row's open and failed close,
@@ -775,7 +775,7 @@ the holder's log):
 | | | | the build manifest and the rounds | the bucket naming the new selection, its shards not yet cut | an assemble refuses `assemble.notLanded` before any Machine; tiles cuts what is outstanding |
 | | | | inside a round (the laptop asleep, a lost stage) | Machines still running — perhaps an earlier selection's, their old done records still standing | waits until none of the campaign's work-tile Machines is up, then reconciles by done record against the manifest it has; never doubles one, and never succeeds over a live one (assemble refuses meanwhile) |
 | | | | a Machine's drop and its done record | the work tile outstanding | re-cut by the next round |
-| assemble | args, lock, `R2_BUCKET`, row target, build manifest, record, Fly (assembler up? work tiles up?), the error object's time, published manifest, the publish prefix's listing, the base manifest, the done records | lock → row open → Machine → [Machine, once decided: progress → archive (one multipart upload) → index → manifest → record] → row close | the Machine's start and its archive (or a shard replaced under it: the upload abandoned) | at most an unfinished multipart upload (no object) | starts it again (or attaches to it) |
+| assemble | args, lock, `R2_BUCKET`, row target, build manifest, record, Fly (assembler up? work tiles up?), the error object's time, published manifest, the publish prefix's listing, the base manifest, the done records | lock → row open → Machine → [Machine, once decided: progress → archive (one multipart upload) → index → manifest → record] → row close | the Machine's start and its archive (or a shard replaced under it, a failed read, a stop, a crash: the upload abandoned, `rcat` killed before its input ends) | at most an unfinished multipart upload (no object) | starts it again (or attaches to it) |
 | | | | archive and index; index and manifest | an archive (and index) no manifest names | refuses `assemble.orphans` before any Machine: delete them by hand (ruling, §2.5), assemble again |
 | | | | manifest and record | a published campaign with no record | refuses `assemble.publishedNoRecord` before any Machine (new: it started a Machine that refused "already assembled"): only while nothing has served them, delete exactly the three published keys it names by hand, assemble again (README; the build prefix stays) |
 | | | | the record and the row close | a row left failed or running | takes the record, closes a new row succeeded |
@@ -2804,4 +2804,88 @@ Open, for the governor:
   its cells touch — but `--states NY` (about a third of the region, ~550 work tiles, ~$12) passes.
   Options: (a) as built; (b) cap a pilot's cut (say 100 work tiles; the pilot was 28); (c) a pilot
   takes `--cells` only. Recommendation: (c) — the only pilot the plan runs is by `--cells`, and a
-  state is no pilot — a three-line refusal at the argument check.
+  state is no pilot — a three-line refusal at the argument check. **Ruled (c) by the governor**;
+  applied in the independent pass below.
+
+**The independent pass over the ninth review's fixes (2026-11-28)**, before Greptile's tenth: each
+of the four fixes read against `a51faa299`, its siblings looked for, every finding reproduced by a
+test that failed first. Nothing drawn changed; tiling stays 2.
+
+- **A failed or stopped assembly completed its upload with the bytes so far** (`writer.ts`,
+  `upload.ts`, `cli/assemble.ts`). The ninth review's `ByteSink.abort` was used only when the
+  re-read refused; every other failure mid-stream — a read that failed past its retries, the byte
+  count, the watchdog's `process.exit` after twenty quiet minutes, an operator's `fly machine stop`,
+  a crash — left `rclone rcat`'s stdin open, and the process's exit closed it: **rcat completes its
+  upload on the end of its input**. Measured here with rclone 1.74.4 against `rclone serve s3`
+  (300 MB, three 128 MiB parts): a parent that exited without ending left a completed 300 MB object
+  at the key; `abort` (SIGKILL before the end) left no object and one unfinished multipart upload.
+  On a Machine the completion races the VM's teardown, but locally and in any case where rclone wins
+  it published a truncated archive at a key the pipeline never overwrites (`assemble.orphans` next
+  run, a hand delete). Fixed: `writeArchive` abandons the sink on any failure before the end (the
+  byte count is now checked before it, not after); `rcatSink` SIGKILLs its rclone on the process's
+  `exit` (an ended upload is complete already); and the Machine turns SIGINT/SIGTERM into an exit so
+  a stop runs that too. Tests: `writer.test.ts` (a failed read, a wrong count and a refusal at the
+  end each abandon and never end; a write that got through ends) and `upload.test.ts` (a stand-in
+  `rclone` that lands its object only on the end of its input: an ended upload lands; a parent that
+  exits, throws or is stopped mid-stream lands nothing — both fail on the commit before). The scratch
+  proof after the fix: exit, uncaught throw and SIGTERM each left no object; `end` landed it whole.
+  What it doesn't show: R2's own handling of an unfinished multipart upload (H5's lifecycle rule).
+- **A kept thumbnail torn by an earlier writer was unscored for good** (`score.ts`). The ninth
+  review's classification calls a decode GDAL refuses the image's own, and GDAL refuses a JPEG cut
+  short (`ERROR 1: libjpeg: Premature end of JPEG file`, exit 1) or an empty one (`not recognized as
+  being in a supported file format`) exactly as a bad image — read here from GDAL 3.13.2, which
+  doesn't localize its messages (the same words under `LANG=de_DE`). A thumbnail an earlier writer
+  left torn — before thumbnails were written whole, or a crash mid-write — was kept, so it failed the
+  same way every run: a silent permanent null (a pick cut as partial, a turned frame missing from the
+  foliage review). Fixed: a kept thumbnail the decoder refuses (or whose output doesn't parse) is
+  dropped and the frame is unreadable, so a re-run reads it afresh; only a fresh read refused is the
+  image's own. Text GDAL might word otherwise (another version) reads as unreadable, never as a
+  permanent null — the safe side. Test: `score.test.ts` (a torn and a garbled kept thumbnail are
+  dropped and unreadable; the re-run fetches and scores both; a fresh read refused is unscored, not
+  unreadable).
+- **The tiles stage's wait was silent** (`spawn.sh drain`). Before the first reconcile it can wait
+  up to ~90 minutes (`DRAIN_TRIES` × `POLL_SECONDS`) on an earlier selection's workers with nothing
+  on the terminal, and its give-up line counted a failing listing as 25 Machines "still alive".
+  Fixed: it says how many of the campaign's work-tile Machines are up and how long it will wait at
+  most (or that the listing can't be read yet), and the give-up line says a failing listing counts
+  as the cap. Tests: `tilesScripts.test.ts` (the line, and a first run — `fly machine list --json`
+  answering `[]`, as it does today on `skating-imagery` — passing through silently).
+- **A pilot takes `--cells` only** (the governor's ruling, above): `--states` on any stage of a
+  pilot is `args.pilotStates`, and a pilot's select — alone or in `all` — without `--cells` is
+  `args.pilotNoCells`, both refused by `parseStageArgs` before anything is read (zero-write cases in
+  `refusals.test.ts`); a pilot's later stages take no `--cells`. The select stage's pre-walk check,
+  now unreachable, is gone; `select.pilotUnbounded` stays for a `--cells` file reaching every work
+  tile. The operator sequences and the refusal cases now give pilots a `--cells` file over the
+  fixture (`stageHarness.ts`' `fixtureCellsFile`: one state's picked cells, what `--states` reached).
+  The README's pilot command, `--cells scripts/aerial/pilots/champlain-nhma-me-ny.txt` (65 cells),
+  parses and reads.
+
+Found sound, against the code: `spawn.sh drain` is read-only (it lists, never starts or stops),
+bounded (~90 min, then exit 3, and the stage fails rather than succeeding), counts only
+`aerial-<stamp>-*` (not the assembler `aerial-asm-<stamp>`, another campaign's stamp — a pilot's is
+`p<date>` — or the winter pump's `granule-*`), and reads a listing that keeps failing as "still up";
+the bash-4 guard precedes it. The Machine's re-read: every cut work tile's record, after the last
+pack byte and before the archive's upload ends; copied tiles are read from the base's published
+archive, whose keys never change, so they need none; each read rides `httpStore`'s retries (a
+failure past them fails the assembly, its upload abandoned — not a refusal, and not a publish); it
+feeds the watchdog and should take seconds at the region's 1,764 work tiles (an estimate: 16 GETs in
+flight), inside the five-minute beat; the index, manifest and record are written only after it. Read
+through `rclone serve http`'s directory cache (five minutes by default), a record replaced in the
+last minutes can make the re-read fail rather than refuse — the safe side; it can never read the old
+bytes, since every read is a GET of the key. `atomicFile.ts` writes beside its target (one
+filesystem); a `.part` left by a crash is never read (every reader opens a named file: the
+thumbnails by item id, the caches and the walk by name, the snapshot upload by state). The score
+caches merge another campaign's new entries and no code deletes one, so nothing is resurrected; two
+saves at once are last-writer-wins on the merged map, which can drop a memo but never a score's
+truth (a dropped one is scored again). `readme.test.ts` reads only its own package's files (the
+README, `spawn.sh`, `cut-aerial.sh`, the pilot list), which Turbo hashes. Mutations: a scratch write
+moved above `tiles.pilotBased`'s preflight and a Machine started above `assemble.workTilesRunning`'s
+each failed its case; so did removing either `args.pilot*` check, the writer's abandon, the exit
+kill, and the kept-thumbnail drop.
+
+Residual, not fixed (small, recorded): two pilots of one campaign date share Machine names
+(`aerial-p<date>-*`, `aerial-asm-p<date>`), so one's live assembler reads as the other's — a tiles
+stage refuses or a laptop follows the wrong Machine and then finds no record; nothing is
+overwritten, and the plan runs one pilot. And a `--from-current` campaign based on an *older*
+archive than the newest could have that archive deleted by cleanup under its assembler — the read
+fails and nothing is published.
