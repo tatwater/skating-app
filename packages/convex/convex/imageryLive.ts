@@ -57,6 +57,7 @@ import {
   type CutExit,
   type CutterLogLine,
   cutLogKey,
+  DEFAULT_STAC_URL,
   durationInWords,
   type FrameManifest,
   mergeCutLog,
@@ -985,6 +986,14 @@ export function slotOf(granuleId: string): { slot: string; mission: StacMission 
   return null;
 }
 
+/**
+ * The catalog the poll asks: Earth Search, unless `IMAGERY_STAC_URL` names a local stand-in for a
+ * proof on a throwaway backend (as `FLY_API_URL` does for Fly); never set on a real deployment.
+ */
+export function stacUrlFromEnv(env: Record<string, string | undefined> = process.env): string {
+  return env.IMAGERY_STAC_URL ? env.IMAGERY_STAC_URL.replace(/\/+$/, '') : DEFAULT_STAC_URL;
+}
+
 // ─── 1. Poll ────────────────────────────────────────────────────────────────────────────────────
 
 const pollArgs = {};
@@ -1073,11 +1082,11 @@ async function pollOnce(ctx: ActionCtx, season: string, startedAt: number): Prom
     log(`Window ${from} → ${today}`, 'stage');
     const search = async (mission: StacMission) =>
       (
-        await searchStac(fetch, {
-          collection: STAC_COLLECTIONS[mission],
-          bbox: plan.bbox,
-          datetime,
-        })
+        await searchStac(
+          fetch,
+          { collection: STAC_COLLECTIONS[mission], bbox: plan.bbox, datetime },
+          stacUrlFromEnv(),
+        )
       ).items;
     const [s2, s1] = await Promise.all([search('s2'), search('s1')]);
     log(`Sentinel-2: ${s2.length} passes found`);
@@ -1542,7 +1551,7 @@ async function captureLog(
     notes.push({
       loggedAt: attempt.spawnedAt,
       kind: 'warn',
-      text: "The cutter didn't upload a log: its image may be from before logs were kept",
+      text: "The cutter didn't upload a log: its image may be from before logs were kept, or it stopped before its first upload",
     });
   }
   const cutter: CutterLogLine[] = cutterText ? parseCutterLog(cutterText) : [];

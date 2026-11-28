@@ -23,6 +23,7 @@ import {
   ALREADY_RUNNING,
   GRANULES_PAGE_SIZE,
   NO_WATCH,
+  NO_WATCH_TO_PAUSE,
   NOT_STARTED,
   POLL_NOT_RUNNING,
   POLL_RUNNING,
@@ -216,6 +217,9 @@ describe('Start and Pause', () => {
     const t = harness();
     const admin = await seedPerson(t, 'admin', 'admin');
     const other = await seedPerson(t, 'other', 'admin');
+    await expect(
+      admin.as.mutation(api.machineryImagery.pauseImagery, { season: SEASON }),
+    ).rejects.toThrow(NO_WATCH_TO_PAUSE(SEASON));
     await openSeason(t);
     await expect(
       admin.as.mutation(api.machineryImagery.pauseImagery, { season: SEASON }),

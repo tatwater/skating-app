@@ -195,6 +195,8 @@ export type ImageryReceipt = { actionId: Id<'moderationActions'> };
 
 export const NO_WATCH = (season: string) =>
   `No watch is open for ${season}, so there's nothing to start.`;
+export const NO_WATCH_TO_PAUSE = (season: string) =>
+  `No watch is open for ${season}, so there's nothing to pause.`;
 export const WATCH_ENDED = (season: string) =>
   `The ${season} watch has ended, so its imagery has stopped for the season.`;
 export const ALREADY_RUNNING = 'Imagery is already running.';
@@ -557,9 +559,13 @@ export const attemptLog = query({
 
 // ── The writes ─────────────────────────────────────────────────────────────────────────────────
 
-async function watchRow(ctx: MutationCtx, season: string): Promise<Doc<'imageryIngestSeasons'>> {
+async function watchRow(
+  ctx: MutationCtx,
+  season: string,
+  refusal: (season: string) => string,
+): Promise<Doc<'imageryIngestSeasons'>> {
   const row = await seasonRowFor(ctx, season);
-  if (row === null) throw new ConvexError(NO_WATCH(season));
+  if (row === null) throw new ConvexError(refusal(season));
   return row;
 }
 
@@ -574,7 +580,7 @@ export async function startImageryImpl(
   actor: Doc<'profiles'>,
   args: { season: string },
 ): Promise<ImageryReceipt> {
-  const row = await watchRow(ctx, args.season);
+  const row = await watchRow(ctx, args.season, NO_WATCH);
   const state = imageryStateOf(row);
   if (state === 'ended') throw new ConvexError(WATCH_ENDED(args.season));
   if (state === 'running') throw new ConvexError(ALREADY_RUNNING);
@@ -616,7 +622,7 @@ export async function pauseImageryImpl(
   actor: Doc<'profiles'>,
   args: { season: string },
 ): Promise<ImageryReceipt> {
-  const row = await watchRow(ctx, args.season);
+  const row = await watchRow(ctx, args.season, NO_WATCH_TO_PAUSE);
   const state = imageryStateOf(row);
   if (state === 'ended') throw new ConvexError(WATCH_ENDED(args.season));
   if (state === 'notStarted') throw new ConvexError(NOT_STARTED);

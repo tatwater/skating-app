@@ -22,6 +22,7 @@ import {
   MAX_STOPPED_MACHINES,
   ORPHAN_STOPPED_MS,
   slotOf,
+  stacUrlFromEnv,
 } from './imageryLive';
 import schema from './schema';
 
@@ -467,7 +468,10 @@ describe('the settle and the capture', () => {
     const log = await lines(t, a?._id as Id<'imageryAttempts'>);
     expect(log.map((l) => [l.origin, l.text])).toEqual([
       ['pump', expect.stringMatching(/^Asked Fly for granule-/)],
-      ['pump', "The cutter didn't upload a log: its image may be from before logs were kept"],
+      [
+        'pump',
+        "The cutter didn't upload a log: its image may be from before logs were kept, or it stopped before its first upload",
+      ],
       ['fly', 'gdalwarp: 0...10'],
       ['fly', 'Process appears to have been OOM killed!'],
       ['pump', 'Settled: no frame, so it goes back in line for another attempt'],
@@ -905,6 +909,13 @@ describe('the keep rule: Machines kept until the pump reads them', () => {
 });
 
 describe('the poll', () => {
+  test('asks Earth Search, or the stand-in a proof names', () => {
+    expect(stacUrlFromEnv({})).toBe('https://earth-search.aws.element84.com/v1');
+    expect(stacUrlFromEnv({ IMAGERY_STAC_URL: 'http://127.0.0.1:9/stac/' })).toBe(
+      'http://127.0.0.1:9/stac',
+    );
+  });
+
   test('stores when the catalog published each pass', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
