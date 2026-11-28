@@ -19440,14 +19440,21 @@ learned that the design didn't say, and what 8c-2's builders inherit.
   it always made, reaching back for an older partial day only while the budget pays the difference;
   a cell with only partial days is queued and, once the walk ends, refetched oldest first while the
   budget lasts. The budget per run is `PARTIAL_REPAIR_BUDGET` (2,000 weighted calls), split 80/20
-  filter/browse, and never more than `7,000 − today's meter` (D158), read as each tier's walk
-  starts; the governor kept the fixed split. Hole repairs are never budgeted, so nothing starves
+  filter/browse, and never more than the tier's share of `7,000 − today's meter` (D158), read as
+  each tier's walk starts and re-read before every later walk batch and every refetch batch, so what
+  the hole repairs and every other caller spend meanwhile narrows it (PR #192's review); the
+  governor kept the fixed split. Hole repairs are never budgeted, so nothing starves
   them. A partial day is never written `missing` and never borrowed. Two changes from the review:
   the queue a walk carries in each batch's arguments is cut, as each batch ends, to the oldest-first
   prefix the remaining budget buys at each refetch's own weight (it was cut at budget ÷ 1.2, so on a
   catch-up day up to 1,333 candidates rode every one of ~77 batches' stored arguments); and each
-  batch of refetches waits 20 s before the next (`PARTIAL_REFETCH_PAUSE_MS`), so 40 requests of up
-  to 3.6 weighted calls can't pass Open-Meteo's 600 a minute.
+  batch of refetches waits 40 s before the next (`PARTIAL_REFETCH_PAUSE_MS`; 20 s until PR #192's
+  review, which counted both tiers at once): a tier's requests in any minute come from at most two of
+  its batches of 40 at up to 3.6 weighted calls, ≤ 288 a tier and ≤ 576 for both, under Open-Meteo's
+  600 a minute even against an instant provider.
+- **A registry write that fails is filed by cause** (PR #192's review): the walk's failed cell and
+  membership writes, already counted as `writesFailed`, are each filed under `writeFailed` with
+  their key and error class, so the run names one to look at.
 - **The first in-season repair after the deploy costs at most 2,000 weighted calls**, not the
   design's ~11,000: the catch-up drains over about six mornings, oldest days first, and stops
   spending on any day the meter already reads 7,000. Ma46 is the one way a day can be re-asked.
@@ -19654,7 +19661,7 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma44 | Open-Meteo's free tier is for non-commercial use; D158 decides the paid plan by volume alone. A store launch (B02) may change the premise before the volume does | B01-8c's design | the founder, with B02 | open |
 | Ma45 | The chain's resend of a step that lost its write conflict (`retryOnWriteConflict`, four attempts) covers only the chained runs' writes (`chainStep`, a chained head's `finish`); every other job's `finish` is sent once, as before 8c | B01-8c-1's integration (the governor's ruling) | Health (8e): generalize it with the dispatcher's other writes | open |
 | Ma46 | A partial past day the refetch's answer leaves out altogether (not short, absent: a date with no usable hour) keeps its old `fetchedAt`, so it stays refetchable and is asked for again each run until it leaves the 30-day window, inside the run's budget | B01-8c-1's review | read `partialStill` on dev; if it repeats for the same days, stamp a row the refetch asked for | open |
-| Ma47 | Open-Meteo's hourly and per-minute limits are not checked against the appends as they run: a cold start's ~7,300 weighted calls land inside one hour (over 5,000 an hour), and a fast provider answering the append's back-to-back requests could pass 600 a minute; both predate 8c (the partial-day refetches are paced, 20 s between batches) | B01-8c-1's review | read the first in-season `rateLimit` causes on dev; pace the append if they appear (with Ma40) | open |
+| Ma47 | Open-Meteo's hourly and per-minute limits are not checked against the appends as they run: a cold start's ~7,300 weighted calls land inside one hour (over 5,000 an hour), and a fast provider answering the append's back-to-back requests could pass 600 a minute; both predate 8c (the partial-day refetches are paced, 40 s between batches, both tiers counted together) | B01-8c-1's review | read the first in-season `rateLimit` causes on dev; pace the append if they appear (with Ma40) | open |
 | Ma48 | A local proof backend runs every registered cron the moment it starts, before `convex env set` can name a stand-in: B01-8c-1's proof sent the NWS cron's five requests to the real `api.weather.gov` once at start (no key, read-only) before `NWS_BASE_URL` was set | B01-8c-1's proof | ruled (governor): every later local proof sets its stand-ins on a backend whose crons can't fire first, or blocks outbound network; written into 8c's *Proof plan* | done |
 | Ma49 | A cron tick that finds its job's chain still live does its work unrecorded as a chain (the governor's ruling): its run row is the tick's own, with the head's detail and no counts or causes | B01-8c-1's integration | 8c-2's page draws such a row as worked with nothing counted; a later recorder change could count it | open |
 

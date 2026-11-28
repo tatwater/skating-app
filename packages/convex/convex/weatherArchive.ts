@@ -686,7 +686,7 @@ export const backfillWeatherCells = internalAction({
       tier: targetTier,
     });
     const cells = await upsertIsolated(ctx, targetTier, run, page);
-    tally.add('writesFailed', cells.failed);
+    tallyWriteFailures(tally, cells.failures);
     // ⚠ **A superseded run stops here — it does not write, reschedule or prune.** Two walks running at
     // once would each see the other's rows as foreign and take turns deleting them, so the registry
     // could end up emptier the more often it was reconciled. Ownership is a single `runId` and the
@@ -724,7 +724,7 @@ export const backfillWeatherCells = internalAction({
         tier: targetTier,
       });
       const res = await upsertIsolated(ctx, targetTier, run, bays);
-      tally.add('writesFailed', res.failed);
+      tallyWriteFailures(tally, res.failures);
       if (res.superseded) {
         tally.add('superseded');
         tally.line('warn', `${tierWord}: a newer walk took over; this one stopped`);
@@ -806,6 +806,16 @@ export const backfillWeatherCells = internalAction({
 type Failed = { key: string; errorClass: string };
 
 /**
+ * A page's failed writes, for its run: counted (`writesFailed`, a zero still named) and filed under
+ * `writeFailed` — every one is a registry write that threw — keyed by the cell or membership and
+ * sampled by its error's class, so the run names a key to look at, not only a count.
+ */
+function tallyWriteFailures(tally: StepTally, failures: readonly Failed[]): void {
+  tally.add('writesFailed', failures.length);
+  for (const f of failures) tally.fail({ cause: 'writeFailed', text: f.errorClass }, f.key);
+}
+
+/**
  * Write one page of the registry walk — its cells, then its memberships — so that **one row that
  * can't be written never stops the walk** (D258). Each write goes whole first, the common path; if it
  * throws, each cell or membership is written alone, and the ones that still fail are recorded
@@ -816,7 +826,7 @@ async function upsertIsolated(
   tier: WeatherTier,
   runId: string,
   page: CellPage,
-): Promise<{ superseded: boolean; failed: number }> {
+): Promise<{ superseded: boolean; failed: number; failures: Failed[] }> {
   const failed: Failed[] = [];
   const cells = await writeIsolated(
     page.cells,
@@ -830,7 +840,7 @@ async function upsertIsolated(
     (cell) => `cell:${tier}:${cell.cellKey}`,
     failed,
   );
-  if (cells.superseded) return { superseded: true, failed: failed.length };
+  if (cells.superseded) return { superseded: true, failed: failed.length, failures: failed };
   // The discovery join rides the same walk (Workstream 5): the page already resolved every body's
   // filter cell, so writing `bodyWeatherCells` here costs nothing it was not already paying.
   if (page.members.length > 0) {
@@ -845,7 +855,7 @@ async function upsertIsolated(
       (m) => `member:${m.subAreaId ?? m.waterBodyId}`,
       failed,
     );
-    if (joined.superseded) return { superseded: true, failed: failed.length };
+    if (joined.superseded) return { superseded: true, failed: failed.length, failures: failed };
   }
   if (failed.length > 0) {
     await ctx.runMutation(internal.recurringJobs.settle, {
@@ -856,7 +866,7 @@ async function upsertIsolated(
       park: false,
     });
   }
-  return { superseded: false, failed: failed.length };
+  return { superseded: false, failed: failed.length, failures: failed };
 }
 
 /** A write whole, then — if it threw — each row alone, collecting what still fails. */
@@ -1974,6 +1984,26 @@ export const openMeteoWeightedToday = internalQuery({
   },
 });
 
+/**
+ * What is left of a tier's partial-day budget, re-read against the day's meter now: never more than
+ * it was, and never more than the tier's share of the headroom under the ceiling the meter leaves
+ * ({@link partialBudgetFor}). Hole repairs are never budgeted, but what they (and every other caller)
+ * spent today is on the meter, so the optional partial work is what gives way. A spent budget reads
+ * nothing.
+ */
+async function recheckPartialBudget(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  budget: number,
+  nowMs: number,
+): Promise<number> {
+  if (budget <= 0) return 0;
+  const weightedToday = await ctx.runQuery(internal.weatherArchive.openMeteoWeightedToday, {
+    nowMs,
+  });
+  return Math.min(budget, partialBudgetFor(tier, weightedToday));
+}
+
 /** A tier's partial-day budget for a run starting now, ×10 (see {@link PARTIAL_REPAIR_BUDGET}). */
 export function partialBudgetFor(tier: WeatherTier, weightedToday: number): number {
   const run = Math.min(
@@ -2028,12 +2058,21 @@ function trimQueue(state: PartialRepair, tally: StepTally, toMs: number): void {
 }
 
 /**
- * The pause between two batches of partial-day refetches. A batch is 40 requests of up to 3.6
- * weighted calls each, asked back to back: without a pause a fast provider could see ~144 weighted
- * calls every few seconds, past Open-Meteo's 600 a minute; with it a batch and its pause take at
- * least 20 seconds, so at most ~430 a minute.
+ * The pause between two batches of partial-day refetches, **sized for both tiers at once**: the
+ * filter and browse repairs run side by side against one Open-Meteo quota (600 weighted calls a
+ * minute). A batch is {@link CELL_BATCH_SIZE} requests of up to 3.6 weighted calls each (a refetch
+ * reaching back the whole {@link GAP_SWEEP_DAYS}), asked back to back, so ~144 at most. A tier's next
+ * batch starts at least this long after its last one ended, so any minute sees requests from at most
+ * `⌊60 s ÷ pause⌋ + 1` of its batches: at 40 s, two — ≤ 288 a tier, ≤ 576 for both, under 600 even
+ * when the provider answers instantly. (The walks' hole repairs are unpaced, as they always were;
+ * Ma47 is the minute limit against the appends.)
  */
-export const PARTIAL_REFETCH_PAUSE_MS = 20_000;
+export const PARTIAL_REFETCH_PAUSE_MS = 40_000;
+
+/** The most weighted calls (×10) one partial-day refetch can cost: the whole sweep window back. */
+export function maxPartialRefetchWeight(): number {
+  return archiveWeight(repairSpanDays(0, (GAP_SWEEP_DAYS - 1) * DAY_MS));
+}
 
 /** The gap repair's counts a tier's end line reads, carried as the branch's totals so far. */
 const GAP_TOTALS = [
@@ -2114,10 +2153,14 @@ export const sweepWeatherDayGaps = internalAction({
     const toMs = today - DAY_MS;
     const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
     const tally = new StepTally();
-    // The budget is set once, as the walk starts; a walk from before B01-8c carries none and spends
-    // nothing on partial days.
+    // The budget is set as the walk starts, and only ever shrinks: each later batch re-reads the
+    // day's meter (`recheckPartialBudget`), so the hole repairs and everything else spending today
+    // narrow it. A walk from before B01-8c carries none and spends nothing on partial days.
     const state: PartialRepair = partial
-      ? { budget: partial.budget, queue: [...partial.queue] }
+      ? {
+          budget: await recheckPartialBudget(ctx, tier, partial.budget, now),
+          queue: [...partial.queue],
+        }
       : {
           budget:
             afterKey === undefined
@@ -2221,9 +2264,18 @@ export const refetchPartialDays = internalAction({
     const now = Date.now();
     const toMs = todayKey(now) - DAY_MS;
     const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
-    const batch = cells.slice(0, CELL_BATCH_SIZE);
-    const rest = cells.slice(CELL_BATCH_SIZE);
     const tally = new StepTally();
+    // The queue was admitted against the budget as the walk ended; each batch re-claims its headroom
+    // against the meter now, so a day that spent past the ceiling meanwhile (holes, the appends, the
+    // app's reads) refetches no more of it. What the headroom no longer buys waits for the next run.
+    const headroom = partialBudgetFor(
+      tier,
+      await ctx.runQuery(internal.weatherArchive.openMeteoWeightedToday, { nowMs: now }),
+    );
+    const { admitted, deferred } = admitQueue(cells, headroom, toMs);
+    for (const d of deferred) tally.add('partialDeferred', d.days.length);
+    const batch = admitted.slice(0, CELL_BATCH_SIZE);
+    const rest = admitted.slice(CELL_BATCH_SIZE);
     const failed: { key: string; errorClass: string }[] = [];
     for (const cell of batch) {
       const key = `${tier}:${cell.cellKey}`;

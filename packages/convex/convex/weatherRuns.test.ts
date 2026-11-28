@@ -22,6 +22,8 @@ import { CAUSE_WORDS, StepTally, sampleTextOf, thrownText } from './lib/weatherR
 import schema from './schema';
 import { standInBaseUrl } from './weather';
 import {
+  CELL_BATCH_SIZE,
+  maxPartialRefetchWeight,
   maybeRefreshBayTierHandler,
   maybeRefreshFilterTierHandler,
   maybeSweepGapsHandler,
@@ -909,6 +911,30 @@ describe('the registry walk stamps the registry’s size', () => {
     expect(opens()).toHaveLength(0);
   });
 
+  test('a failed registry write is filed under writeFailed with its key, as well as counted', async () => {
+    const t = convexTest(schema, modules);
+    await seedBodyAt(t);
+    // Every registry write throws: the page's cell and its body's membership, each alone too.
+    vi.spyOn(recurringWork, 'runItem').mockResolvedValue({
+      ok: false,
+      errorClass: 'ConvexError',
+    } as never);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    await t.action(internal.weatherArchive.backfillWeatherCells, {
+      tier: 'filter',
+      cronRun: { runId: await anyRun(t), step: 1 },
+    });
+    const failed = summed().writesFailed ?? 0;
+    expect(failed).toBe(2);
+    const causes = mergedCauses();
+    expect([...causes.keys()]).toEqual(['writeFailed']);
+    expect(causes.get('writeFailed')).toMatchObject({
+      count: failed,
+      sampleText: 'ConvexError',
+    });
+    expect(causes.get('writeFailed')?.sampleKey).toMatch(/^cell:filter:/);
+  });
+
   test('a superseded walk says so and stops', async () => {
     const t = convexTest(schema, modules);
     await seedBodyAt(t);
@@ -1142,6 +1168,15 @@ async function meterAt(t: T, weighted: number) {
   );
 }
 
+/** Move today's meter to `weighted`, whether or not a call has written its row yet. */
+async function meterTo(t: T, weighted: number) {
+  const rows = await t.run((ctx) => ctx.db.query('externalApiCalls').collect());
+  if (rows.length === 0) return await meterAt(t, weighted);
+  await t.run(async (ctx) => {
+    for (const r of rows) await ctx.db.patch(r._id, { weightedCalls: weighted });
+  });
+}
+
 async function sweep(t: T, tier: 'filter' | 'browse' = 'filter') {
   const res = await t.action(internal.weatherArchive.sweepWeatherDayGaps, {
     tier,
@@ -1252,7 +1287,18 @@ describe('the gap repair completes partial past days (fork 2 (b))', () => {
     expect(summed()).toMatchObject({ partialDays: 90, partialFilled: 6, partialDeferred: 84 });
   });
 
-  test('the refetch batches are paced: a batch of 40 and its pause take at least 20 seconds', async () => {
+  test('the pause holds both tiers’ refetches together under Open-Meteo’s 600 a minute', () => {
+    // A refetch reaching back the whole window weighs 3.6 (×10: 36).
+    expect(maxPartialRefetchWeight()).toBe(36);
+    // A tier's batches start at least a pause after the last one ended, so a minute holds requests
+    // from at most ⌊60 s ÷ pause⌋ + 1 of them; both tiers run at once.
+    const batchesPerMinute = Math.floor(60_000 / PARTIAL_REFETCH_PAUSE_MS) + 1;
+    const worstMinute = (2 * batchesPerMinute * CELL_BATCH_SIZE * maxPartialRefetchWeight()) / 10;
+    expect(worstMinute).toBe(576);
+    expect(worstMinute).toBeLessThanOrEqual(600);
+  });
+
+  test('the refetch batches are paced: a batch of 40 and its pause take at least 40 seconds', async () => {
     const t = convexTest(schema, modules);
     await seedCells(t, 50);
     for (let i = 0; i < 50; i++) await seedDays(t, i, 6, 1, [written(ago(2))]);
@@ -1266,10 +1312,53 @@ describe('the gap repair completes partial past days (fork 2 (b))', () => {
     );
     await sweep(t);
     expect(at).toHaveLength(50);
-    expect(PARTIAL_REFETCH_PAUSE_MS).toBe(20_000);
+    expect(PARTIAL_REFETCH_PAUSE_MS).toBe(40_000);
     // The 41st request (the second batch's first) waits out the pause after the first batch.
     expect((at[40] ?? 0) - (at[39] ?? 0)).toBeGreaterThanOrEqual(PARTIAL_REFETCH_PAUSE_MS);
     expect(summed()).toMatchObject({ partialFilled: 50 });
+  });
+
+  test('a refetch batch re-reads the meter: a day spent past the ceiling meanwhile refetches no more', async () => {
+    const t = convexTest(schema, modules);
+    await seedCells(t, 50);
+    for (let i = 0; i < 50; i++) await seedDays(t, i, 6, 1, [written(ago(2))]);
+    const urls: string[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (url: string) => {
+        urls.push(url);
+        // Something else spends the day to its ceiling while the first batch runs.
+        if (urls.length === 40) await meterTo(t, PARTIAL_REPAIR_DAY_CEILING);
+        return answer(url);
+      }),
+    );
+    await sweep(t);
+    // The first batch of 40 went; the second found no headroom and asked for nothing.
+    expect(urls).toHaveLength(40);
+    expect(summed()).toMatchObject({ partialFilled: 40, partialDeferred: 10 });
+    expect(openAfter()).toBe(0);
+  });
+
+  test('a walk’s later batch re-reads the meter: holes and other callers narrow the partial budget', async () => {
+    const t = convexTest(schema, modules);
+    await seedCells(t, 45);
+    // Cell 44, in the walk's second batch, holds a hole and an older partial day: with budget, its
+    // one request would reach back to the partial day.
+    await seedDays(t, 44, 20, 1, [hole(ago(3)), written(ago(18))]);
+    const urls = standIn();
+    // The walk's first batch starts with a full budget …
+    await t.action(internal.weatherArchive.sweepWeatherDayGaps, {
+      tier: 'filter',
+      cronRun: { runId: await anyRun(t), step: 1 },
+    });
+    // … and before its second, the day's meter reaches the ceiling.
+    await meterTo(t, PARTIAL_REPAIR_DAY_CEILING);
+    await drain(t);
+    // The hole is still repaired, from the hole, not reaching back to the 18th.
+    expect(urls.map(indexOf)).toEqual([44]);
+    expect(pastDaysOf(urls[0] ?? '')).toBe(4);
+    expect((await dayRow(t, 44, ago(18)))?.hours).toBe(10);
+    expect(summed()).toMatchObject({ filled: 1, partialDays: 1, partialDeferred: 1 });
   });
 
   test('one call over the budget waits for the next run', async () => {
