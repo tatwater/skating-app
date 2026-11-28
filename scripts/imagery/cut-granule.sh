@@ -28,6 +28,8 @@
 # transform, no claim about the picture. For proving credentials and connectivity when something is
 # broken and you want the boring half eliminated first.
 set -euo pipefail
+# The cut's own log, stamped and uploaded as it runs when the pump asks for it (see cut-log.sh).
+source "$(dirname "${BASH_SOURCE[0]}")/cut-log.sh"
 
 GRANULE_ID="${1:-}"
 SMOKE=false
