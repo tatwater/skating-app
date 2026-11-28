@@ -110,19 +110,64 @@ export function fileStore(root: string): ObjectStore {
 /** `fetch`, injectable. */
 export type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
+/** A failed request worth repeating: a 5xx or a 429 (a network error is fetch's `TypeError`). */
+class TransientHttpError extends Error {
+  override name = 'TransientHttpError';
+}
+
+/** Attempts per request, a transient failure apart: waits of 1, 4 and 16 s. */
+export const HTTP_ATTEMPTS = 4;
+
+export interface HttpStoreOptions {
+  attempts?: number;
+  /** Injectable, so the tests never wait. */
+  sleep?: (ms: number) => Promise<void>;
+}
+
 /**
  * Objects under `base` over HTTP. Keys are appended to the base path-escaped per segment, so a key
  * never becomes a query or another host. Range reads insist on `206` (a `200` would be the whole
  * object: a server that ignores `Range` is refused, not downloaded).
+ *
+ * **A transient failure is retried** (a network error, a 5xx, a 429: {@link HTTP_ATTEMPTS} tries),
+ * never a 404, another 4xx or a short read. The pilot's assembly made ~270 requests; the region's
+ * makes ~17,600 (1,764 work tiles' done records and indexes, their top tiles, ~12,300 runs), and
+ * verify thousands more, so one blip that would have failed a 1.5-hour assembly is now waited out. A
+ * stream that fails after its first bytes still fails (its bytes are already written).
  */
-export function httpStore(base: string, fetchImpl: Fetch = fetch): ObjectStore {
+export function httpStore(
+  base: string,
+  fetchImpl: Fetch = fetch,
+  options: HttpStoreOptions = {},
+): ObjectStore {
   const root = base.endsWith('/') ? base : `${base}/`;
+  const attempts = options.attempts ?? HTTP_ATTEMPTS;
+  const sleep = options.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
   const url = (key: string): string => root + key.split('/').map(encodeURIComponent).join('/');
+  const retrying = async <T>(op: () => Promise<T>): Promise<T> => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        return await op();
+      } catch (e) {
+        const transient = e instanceof TransientHttpError || e instanceof TypeError;
+        if (!transient || attempt >= attempts) throw e;
+        await sleep(1000 * 4 ** (attempt - 1));
+      }
+    }
+  };
+  const failed = async (res: Response, what: string): Promise<never> => {
+    await res.body?.cancel();
+    const message = `${what} answered ${res.status}`;
+    throw res.status >= 500 || res.status === 429
+      ? new TransientHttpError(message)
+      : new Error(message);
+  };
   const ranged = async (key: string, offset: number, length: number): Promise<Response> => {
     const res = await fetchImpl(url(key), {
       headers: { range: `bytes=${offset}-${offset + length - 1}` },
     });
     if (res.status !== 206) {
+      if (res.status >= 500 || res.status === 429) await failed(res, `${key}: range`);
       await res.body?.cancel();
       throw new Error(`${key}: range ${offset}+${length} answered ${res.status}, not 206`);
     }
@@ -130,25 +175,27 @@ export function httpStore(base: string, fetchImpl: Fetch = fetch): ObjectStore {
   };
   return {
     name: root,
-    async get(key) {
-      const res = await fetchImpl(url(key));
-      if (res.status === 404) {
-        await res.body?.cancel();
-        return null;
-      }
-      if (!res.ok) throw new Error(`${key}: GET answered ${res.status}`);
-      return new Uint8Array(await res.arrayBuffer());
-    },
-    async range(key, offset, length) {
-      const bytes = new Uint8Array(await (await ranged(key, offset, length)).arrayBuffer());
-      if (bytes.length !== length) {
-        throw new Error(`${key}: ${length} bytes at ${offset}, got ${bytes.length}`);
-      }
-      return bytes;
-    },
+    get: (key) =>
+      retrying(async () => {
+        const res = await fetchImpl(url(key));
+        if (res.status === 404) {
+          await res.body?.cancel();
+          return null;
+        }
+        if (!res.ok) await failed(res, `${key}: GET`);
+        return new Uint8Array(await res.arrayBuffer());
+      }),
+    range: (key, offset, length) =>
+      retrying(async () => {
+        const bytes = new Uint8Array(await (await ranged(key, offset, length)).arrayBuffer());
+        if (bytes.length !== length) {
+          throw new Error(`${key}: ${length} bytes at ${offset}, got ${bytes.length}`);
+        }
+        return bytes;
+      }),
     async *rangeStream(key, offset, length) {
       if (length === 0) return;
-      const res = await ranged(key, offset, length);
+      const res = await retrying(() => ranged(key, offset, length));
       if (res.body === null) throw new Error(`${key}: range answered with no body`);
       let got = 0;
       for await (const chunk of res.body) {
@@ -157,22 +204,22 @@ export function httpStore(base: string, fetchImpl: Fetch = fetch): ObjectStore {
       }
       if (got !== length) throw new Error(`${key}: ${length} bytes at ${offset}, got ${got}`);
     },
-    async rangeUpTo(key, offset, length) {
-      return new Uint8Array(await (await ranged(key, offset, length)).arrayBuffer());
-    },
+    rangeUpTo: (key, offset, length) =>
+      retrying(async () => new Uint8Array(await (await ranged(key, offset, length)).arrayBuffer())),
     async exists(key) {
       return (await this.size(key)) !== null;
     },
-    async size(key) {
-      const res = await fetchImpl(url(key), { method: 'HEAD' });
-      await res.body?.cancel();
-      if (res.status === 404) return null;
-      if (!res.ok) throw new Error(`${key}: HEAD answered ${res.status}`);
-      const header = res.headers.get('content-length');
-      const length = header === null ? Number.NaN : Number(header);
-      if (!Number.isSafeInteger(length)) throw new Error(`${key}: HEAD gave no content-length`);
-      return length;
-    },
+    size: (key) =>
+      retrying(async () => {
+        const res = await fetchImpl(url(key), { method: 'HEAD' });
+        await res.body?.cancel();
+        if (res.status === 404) return null;
+        if (!res.ok) await failed(res, `${key}: HEAD`);
+        const header = res.headers.get('content-length');
+        const length = header === null ? Number.NaN : Number(header);
+        if (!Number.isSafeInteger(length)) throw new Error(`${key}: HEAD gave no content-length`);
+        return length;
+      }),
   };
 }
 

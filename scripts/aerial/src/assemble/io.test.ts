@@ -14,7 +14,15 @@ import {
   webpHasAlpha,
 } from './overviews';
 import { mustRun, runProcess } from './process';
-import { fileSink, fileStore, hashingSink, httpStore, memorySink, sha256Hex } from './stores';
+import {
+  fileSink,
+  fileStore,
+  HTTP_ATTEMPTS,
+  hashingSink,
+  httpStore,
+  memorySink,
+  sha256Hex,
+} from './stores';
 
 let dir: string;
 let server: Server;
@@ -74,7 +82,13 @@ const collect = async (it: AsyncIterable<Uint8Array>) => {
 };
 
 describe('the HTTP store (R2’s public URL, or rclone serve http)', () => {
-  const store = () => httpStore(base);
+  const waits: number[] = [];
+  const store = () =>
+    httpStore(base, fetch, {
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+    });
 
   it('gets, ranges, streams, sizes, and escapes keys per segment', async () => {
     const s = store();
@@ -98,6 +112,70 @@ describe('the HTTP store (R2’s public URL, or rclone serve http)', () => {
     await expect(s.get('broken')).rejects.toThrow('answered 500');
     await expect(s.size('broken')).rejects.toThrow('answered 500');
     await expect(s.size('no-length')).rejects.toThrow('no content-length');
+    // A 500 was retried, with backoff, before it failed; a 404, a 200 for a range and a short read
+    // never were.
+    expect(waits).toEqual([1000, 4000, 16000, 1000, 4000, 16000]);
+  });
+
+  it('waits out a transient failure — a network error, a 5xx, a 429 — and never retries a 4xx', async () => {
+    const answers: (() => Response)[] = [
+      () => {
+        throw new TypeError('fetch failed');
+      },
+      () => new Response(null, { status: 503 }),
+      () => new Response(null, { status: 429 }),
+      () => new Response(Uint8Array.of(1, 2, 3), { status: 206 }),
+    ];
+    let calls = 0;
+    const slept: number[] = [];
+    const flaky = httpStore(
+      'http://r2.invalid',
+      async () => (answers[calls++] as () => Response)(),
+      {
+        sleep: async (ms) => {
+          slept.push(ms);
+        },
+      },
+    );
+    expect(await flaky.range('k', 0, 3)).toEqual(Uint8Array.of(1, 2, 3));
+    expect(calls).toBe(HTTP_ATTEMPTS);
+    expect(slept).toEqual([1000, 4000, 16000]);
+
+    let denied = 0;
+    const forbidden = httpStore(
+      'http://r2.invalid',
+      async () => {
+        denied++;
+        return new Response(null, { status: 403 });
+      },
+      { sleep: async () => {} },
+    );
+    await expect(forbidden.get('k')).rejects.toThrow('answered 403');
+    await expect(forbidden.size('k')).rejects.toThrow('answered 403');
+    await expect(forbidden.range('k', 0, 1)).rejects.toThrow('answered 403, not 206');
+    expect(denied).toBe(3);
+
+    // A stream retries until its first byte, and a down server fails after its attempts.
+    let tries = 0;
+    const down = httpStore(
+      'http://r2.invalid',
+      async () => {
+        tries++;
+        return tries < 3
+          ? new Response(null, { status: 502 })
+          : new Response(Uint8Array.of(9, 9), { status: 206 });
+      },
+      { sleep: async () => {} },
+    );
+    expect(await collect(down.rangeStream('k', 0, 2))).toEqual(Uint8Array.of(9, 9));
+    const dead = httpStore(
+      'http://r2.invalid',
+      async () => {
+        throw new TypeError('fetch failed');
+      },
+      { sleep: async () => {}, attempts: 2 },
+    );
+    await expect(dead.rangeUpTo('k', 0, 2)).rejects.toThrow('fetch failed');
   });
 });
 
