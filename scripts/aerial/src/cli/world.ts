@@ -1,19 +1,20 @@
 /**
  * **The real world** (B05 §2.8): the `StageWorld` every stage CLI hands its body — the laptop's
  * rclone remote for R2, `spawn.sh` for Fly (the one file that knows about Fly: `status` to read,
- * `tiles` and `assemble` to start), `convex run` for the rows, this process for the lock. A process
+ * `tiles` and `assemble` to start), `convex run` for the rows, this process and the machine's one locks directory for the lock. A process
  * boundary, excluded from coverage by name as the CLIs are; the stages it serves are tested against
  * stand-ins (`stageHarness.ts`). Every value is read by name; nothing here prints one.
  */
 
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
-import { hostname, tmpdir } from 'node:os';
+import { homedir, hostname, tmpdir } from 'node:os';
 import { dirname, join, relative } from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { rcloneList, rcloneRun } from '../assemble/upload';
+import { lockDir, releaseOnExit } from '../campaignLock';
 import { AERIAL_SCRATCH } from '../keys';
 import type { Bucket, BucketTarget, StageWorld } from '../world';
 
@@ -94,15 +95,13 @@ function alive(pid: number): boolean {
   }
 }
 
-const SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
-const SIGNAL_EXIT = { SIGINT: 130, SIGTERM: 143, SIGHUP: 129 } as const;
-
 /** The real world. `stdout`/`stderr` are the process's. */
 export function realWorld(): StageWorld {
   return {
     env: (name) => process.env[name],
     deployment: () => resolveDeployment(),
     scratch: AERIAL_SCRATCH,
+    locks: lockDir((name) => process.env[name], homedir()),
     bucket: rcloneBucket,
     fly: {
       async live(campaign) {
@@ -150,19 +149,7 @@ export function realWorld(): StageWorld {
       pid: process.pid,
       host: hostname(),
       alive,
-      onInterrupt(release) {
-        const handlers = SIGNALS.map((signal) => {
-          const h = () => {
-            release();
-            process.exit(SIGNAL_EXIT[signal]);
-          };
-          process.once(signal, h);
-          return [signal, h] as const;
-        });
-        return () => {
-          for (const [signal, h] of handlers) process.off(signal, h);
-        };
-      },
+      onInterrupt: releaseOnExit(process),
     },
   };
 }

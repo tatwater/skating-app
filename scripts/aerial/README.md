@@ -107,10 +107,13 @@ While the campaign's assembler is up, `tiles` writes nothing at all (a changed s
 before its upload, `tiles.assembling`); a published campaign whose build manifest drifted is put
 back by the next `tiles` run once no assembler is up.
 
-**One stage of a campaign at a time.** Each stage takes `.scratch/<campaign>.lock` first and drops it
-when it ends (Ctrl-C included); a second terminal's stage refuses, naming the holder. A lock left by
-a crash is refused as stale — read the run's log, then `rm scripts/aerial/.scratch/<campaign>.lock`.
-It covers this checkout only: never run one campaign's stages from two checkouts or two machines.
+**One stage of a campaign at a time, on this machine.** Each stage takes
+`${XDG_CACHE_HOME:-$HOME/.cache}/skating-aerial/locks/<campaign>.lock` first — one directory for every
+checkout and worktree of the repo, created on demand — and drops it however it ends (Ctrl-C, a
+`kill`, `process.exit`, a crash it survives long enough to see; not `kill -9` or a power loss). A
+second terminal's stage, from any checkout, refuses, naming the holder and its checkout. A lock left
+behind is refused as stale, naming the file and the holder's log — read the log, then `rm` that
+file. Across machines nothing is exclusive: never run one campaign's stages from two machines.
 
 **What a re-run can't finish, by hand** (each refused with these words, before any Machine starts):
 

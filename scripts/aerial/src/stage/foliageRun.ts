@@ -86,50 +86,43 @@ export async function runFoliageStage(
   sources: FoliageSources,
 ): Promise<FoliageRunResult> {
   const args = parseFoliageArgs(argv);
-  return withCampaignLock(
-    world.scratch,
-    args.campaign,
-    'foliage',
-    world.process,
-    world.now(),
-    async () => {
-      const paths = scratchPaths(args.campaign, world.scratch);
-      const reviewDir = join(paths.report, 'foliage');
-      const review = await runFoliageReview(args, {
-        ...sources.review,
-        walk: sources.walk,
-        score: sources.scoreFoliage,
-        log: sources.log,
-        now: () => world.now(),
-      });
-      // The build the proposal would make: the select stage, as a dry run, with it applied — every
-      // refusal of it decided before the review's own files are written.
-      const manifestPath = join(reviewDir, 'manifest-proposed.json');
-      const applied = await runSelect(parseStageArgs([args.campaign, '--dry-run'], 'select'), {
-        walk: () => sources.walk(),
-        score: sources.scoreCloud,
-        readCurrent: () => Promise.reject(new Error('the foliage review builds from nothing')),
-        readPublished: () => Promise.reject(new Error('the foliage review is a dry run')),
-        readCellList: () => '',
-        writeManifest: (manifest) => {
-          mkdirSync(reviewDir, { recursive: true });
-          writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
-          return manifestPath;
-        },
-        writeSheet: (candidates) =>
-          writeContactSheet(join(reviewDir, 'cloud'), sources.thumbsDir, candidates, {
-            campaign: `${args.campaign} (foliage proposal applied)`,
-          }),
-        log: sources.log,
-        run: null,
-        now: () => world.now(),
-        foliageStrikes: [...NAIP_FOLIAGE_STRIKES, ...review.proposal],
-      });
-      mkdirSync(reviewDir, { recursive: true });
-      const proposalPath = join(reviewDir, 'proposed.json');
-      writeFileSync(proposalPath, `${JSON.stringify(proposalFile(review), null, 2)}\n`);
-      const sheetPath = writeFoliageSheet(reviewDir, sources.thumbsDir, review);
-      return { review, applied, proposalPath, sheetPath };
-    },
-  );
+  return withCampaignLock(world, args.campaign, 'foliage', async () => {
+    const paths = scratchPaths(args.campaign, world.scratch);
+    const reviewDir = join(paths.report, 'foliage');
+    const review = await runFoliageReview(args, {
+      ...sources.review,
+      walk: sources.walk,
+      score: sources.scoreFoliage,
+      log: sources.log,
+      now: () => world.now(),
+    });
+    // The build the proposal would make: the select stage, as a dry run, with it applied — every
+    // refusal of it decided before the review's own files are written.
+    const manifestPath = join(reviewDir, 'manifest-proposed.json');
+    const applied = await runSelect(parseStageArgs([args.campaign, '--dry-run'], 'select'), {
+      walk: () => sources.walk(),
+      score: sources.scoreCloud,
+      readCurrent: () => Promise.reject(new Error('the foliage review builds from nothing')),
+      readPublished: () => Promise.reject(new Error('the foliage review is a dry run')),
+      readCellList: () => '',
+      writeManifest: (manifest) => {
+        mkdirSync(reviewDir, { recursive: true });
+        writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
+        return manifestPath;
+      },
+      writeSheet: (candidates) =>
+        writeContactSheet(join(reviewDir, 'cloud'), sources.thumbsDir, candidates, {
+          campaign: `${args.campaign} (foliage proposal applied)`,
+        }),
+      log: sources.log,
+      run: null,
+      now: () => world.now(),
+      foliageStrikes: [...NAIP_FOLIAGE_STRIKES, ...review.proposal],
+    });
+    mkdirSync(reviewDir, { recursive: true });
+    const proposalPath = join(reviewDir, 'proposed.json');
+    writeFileSync(proposalPath, `${JSON.stringify(proposalFile(review), null, 2)}\n`);
+    const sheetPath = writeFoliageSheet(reviewDir, sources.thumbsDir, review);
+    return { review, applied, proposalPath, sheetPath };
+  });
 }

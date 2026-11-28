@@ -28,33 +28,26 @@ export async function runVerifyStage(
   checks: VerifyChecks,
 ): Promise<number> {
   const args = parseStageArgs(argv, 'verify');
-  return withCampaignLock(
-    world.scratch,
-    args.campaign,
-    'verify',
-    world.process,
-    world.now(),
-    async () => {
-      const plan = preflightVerify(args, world);
-      const row =
-        plan.deployment === null
-          ? null
-          : world.row({
-              kind: 'aerial_assemble',
-              label: `verify ${args.campaign}${args.pilot ? ` (pilot ${args.pilot})` : ''}`,
-              campaignId: args.campaign,
-              target: plan.deployment,
-              scope: assembleScope(args.pilot),
-            });
-      row?.start();
-      // A verify that throws (an unreadable record, a malformed shard index, rclone's server failing
-      // to start) fails its row rather than leaving it running: the other stages' rows do the same.
-      try {
-        return await checks(args, plan, row);
-      } catch (e) {
-        row?.failed(e);
-        throw e;
-      }
-    },
-  );
+  return withCampaignLock(world, args.campaign, 'verify', async () => {
+    const plan = preflightVerify(args, world);
+    const row =
+      plan.deployment === null
+        ? null
+        : world.row({
+            kind: 'aerial_assemble',
+            label: `verify ${args.campaign}${args.pilot ? ` (pilot ${args.pilot})` : ''}`,
+            campaignId: args.campaign,
+            target: plan.deployment,
+            scope: assembleScope(args.pilot),
+          });
+    row?.start();
+    // A verify that throws (an unreadable record, a malformed shard index, rclone's server failing
+    // to start) fails its row rather than leaving it running: the other stages' rows do the same.
+    try {
+      return await checks(args, plan, row);
+    } catch (e) {
+      row?.failed(e);
+      throw e;
+    }
+  });
 }

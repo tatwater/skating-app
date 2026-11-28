@@ -1,9 +1,9 @@
 /**
  * **A world that records every write** (B05 §2.8), for the stage tests: a bucket in memory, Fly's
  * listing as a value, the Machines as callbacks, a real scratch directory under the system's temp
- * directory, a run row that logs its calls, and the lock's process. Every write of every kind lands
- * in `writes`; `snapshot()` is the bucket and the scratch, byte for byte, so a test can say "nothing
- * changed" exactly.
+ * directory, a run row that logs its calls, and the lock's process and directory (its own temporary
+ * one, never the machine's). Every write of every kind lands in `writes`; `snapshot()` is the
+ * bucket, the scratch and the locks, byte for byte, so a test can say "nothing changed" exactly.
  *
  * It behaves like the real ports where the stages depend on it (`cli/world.ts`): a read of a missing
  * key is `null` (rclone's `cat` of one exits 0 with nothing, measured), a listing or read that fails
@@ -86,6 +86,8 @@ function tree(root: string, dir = root): string[] {
 
 export class FakeWorld {
   readonly scratch = mkdtempSync(join(tmpdir(), 'aerial-world-'));
+  /** The campaign locks' directory: this world's own, as `AERIAL_LOCK_DIR` points a real run's. */
+  readonly locks = mkdtempSync(join(tmpdir(), 'aerial-locks-'));
   readonly objects = new Map<string, { text: string; modified: Date }>();
   env: Record<string, string | undefined> = {
     R2_BUCKET: 'skating-imagery',
@@ -129,7 +131,7 @@ export class FakeWorld {
     return o === undefined ? null : (JSON.parse(o.text) as T);
   }
 
-  /** The bucket and the scratch, byte for byte. */
+  /** The bucket, the scratch and the locks, byte for byte. */
   snapshot(): string {
     const bucket = [...this.objects.entries()]
       .sort(([a], [b]) => (a < b ? -1 : 1))
@@ -137,7 +139,7 @@ export class FakeWorld {
         ([k, o]) =>
           `${k} ${createHash('sha256').update(o.text).digest('hex')} ${o.modified.toISOString()}`,
       );
-    return [...bucket, '--', ...tree(this.scratch)].join('\n');
+    return [...bucket, '--', ...tree(this.scratch), '-- locks', ...tree(this.locks)].join('\n');
   }
 
   /** The writes beyond what a refusal may make. */
@@ -152,6 +154,7 @@ export class FakeWorld {
 
   dispose(): void {
     rmSync(this.scratch, { recursive: true, force: true });
+    rmSync(this.locks, { recursive: true, force: true });
   }
 
   private bucket(): Bucket {
@@ -216,6 +219,7 @@ export class FakeWorld {
       env: (name) => this.env[name],
       deployment: () => this.deployment,
       scratch: this.scratch,
+      locks: this.locks,
       bucket: () => this.bucket(),
       fly: {
         live: async () => {

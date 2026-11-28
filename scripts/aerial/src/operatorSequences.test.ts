@@ -249,7 +249,7 @@ describe('the other sequences', () => {
     expect(second.message).toMatch(/held by tiles \(pid 4242 on laptop/);
     release();
     expect(await slow).toBe(0);
-    expect(() => readFileSync(lockPath(w.scratch, CAMPAIGN))).toThrow();
+    expect(() => readFileSync(lockPath(w.locks, CAMPAIGN))).toThrow();
   });
 
   test('an interrupted cleanup finishes on its re-run: the archive, which its refusals read, goes last', async () => {

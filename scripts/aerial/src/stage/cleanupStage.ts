@@ -21,24 +21,17 @@ export async function runCleanupStage(
   readWebFile: (file: string) => string | null,
 ): Promise<void> {
   const args = parseStageArgs(argv, 'cleanup');
-  await withCampaignLock(
-    world.scratch,
-    args.campaign,
-    'cleanup',
-    world.process,
-    world.now(),
-    async () => {
-      const { target, plan } = await preflightCleanup(args, world, readWebFile);
-      world.out(
-        `[cleanup] ${args.dryRun ? 'would delete' : 'deleting'}: ${plan.deletePrefix}* and ${plan.deleteKeys.join(', ')} (replaced by ${plan.replacedBy}, uploaded ${plan.replacedAt.toISOString()}, live since ${plan.liveFrom.toISOString()})\n`,
-      );
-      if (args.dryRun) return;
-      const bucket = world.bucket(target);
-      await bucket.deletePrefix(plan.deletePrefix);
-      // `deleteKeys` is the archive, the index, the manifest: the archive goes last.
-      const [archive, ...rest] = plan.deleteKeys;
-      for (const key of [...rest, archive as string]) await bucket.deleteFile(key);
-      world.out('[cleanup] done\n');
-    },
-  );
+  await withCampaignLock(world, args.campaign, 'cleanup', async () => {
+    const { target, plan } = await preflightCleanup(args, world, readWebFile);
+    world.out(
+      `[cleanup] ${args.dryRun ? 'would delete' : 'deleting'}: ${plan.deletePrefix}* and ${plan.deleteKeys.join(', ')} (replaced by ${plan.replacedBy}, uploaded ${plan.replacedAt.toISOString()}, live since ${plan.liveFrom.toISOString()})\n`,
+    );
+    if (args.dryRun) return;
+    const bucket = world.bucket(target);
+    await bucket.deletePrefix(plan.deletePrefix);
+    // `deleteKeys` is the archive, the index, the manifest: the archive goes last.
+    const [archive, ...rest] = plan.deleteKeys;
+    for (const key of [...rest, archive as string]) await bucket.deleteFile(key);
+    world.out('[cleanup] done\n');
+  });
 }

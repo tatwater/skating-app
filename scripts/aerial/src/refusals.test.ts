@@ -452,7 +452,7 @@ const CASES: Record<RefusalId, Case[]> = {
       (w) => {
         w.alive.add(777);
         writeFileSync(
-          lockPath(w.scratch, CAMPAIGN),
+          lockPath(w.locks, CAMPAIGN),
           JSON.stringify({ pid: 777, host: 'laptop', stage: 'select', startedAt: 'x' }),
         );
       },
@@ -461,7 +461,7 @@ const CASES: Record<RefusalId, Case[]> = {
     stage(
       'a lock naming no holder',
       (w) => {
-        writeFileSync(lockPath(w.scratch, CAMPAIGN), 'garbage');
+        writeFileSync(lockPath(w.locks, CAMPAIGN), 'garbage');
       },
       (w) => assembleLaptop(w),
     ),
@@ -471,7 +471,7 @@ const CASES: Record<RefusalId, Case[]> = {
       'a lock whose process has gone',
       (w) => {
         writeFileSync(
-          lockPath(w.scratch, CAMPAIGN),
+          lockPath(w.locks, CAMPAIGN),
           JSON.stringify({ pid: 778, host: 'laptop', stage: 'tiles', startedAt: 'x' }),
         );
       },
@@ -1505,7 +1505,7 @@ describe('any world the tiles and assemble stages refuse in, they leave as they 
           if (f.lock !== 'free') {
             if (f.lock === 'held') w.alive.add(777);
             writeFileSync(
-              lockPath(w.scratch, CAMPAIGN),
+              lockPath(w.locks, CAMPAIGN),
               JSON.stringify({ pid: 777, host: 'laptop', stage: 'x', startedAt: 'x' }),
             );
           }
@@ -1539,8 +1539,7 @@ describe('any world the tiles and assemble stages refuse in, they leave as they 
             expect(w.writes.filter((x) => x.kind === 'fly.tiles')).toEqual([]);
           }
           // Never a lock left behind.
-          if (f.lock === 'free')
-            expect(fsSync.existsSync(lockPath(w.scratch, CAMPAIGN))).toBe(false);
+          if (f.lock === 'free') expect(fsSync.existsSync(lockPath(w.locks, CAMPAIGN))).toBe(false);
         } finally {
           w.dispose();
         }

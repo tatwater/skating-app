@@ -97,6 +97,11 @@ export interface ReadView {
   deployment(): DeploymentTarget;
   /** The scratch root (`keys.ts`' `AERIAL_SCRATCH`; a temp directory in the tests). */
   scratch: string;
+  /**
+   * The campaign locks' directory, one for every checkout on this machine (`campaignLock.ts`'
+   * `lockDir`; a temp directory in the tests).
+   */
+  locks: string;
   bucket(target: BucketTarget): BucketReader;
   fly: FlyReader;
   now(): Date;

@@ -31,17 +31,10 @@ import type { StageWorld } from '../world';
 /** Runs the stage; resolves with the exit status (a refusal throws, having written nothing). */
 export async function runTilesStage(argv: readonly string[], world: StageWorld): Promise<number> {
   const args = parseStageArgs(argv, 'tiles');
-  return withCampaignLock(
-    world.scratch,
-    args.campaign,
-    'tiles',
-    world.process,
-    world.now(),
-    async () => {
-      const plan = await preflightTiles(args, world);
-      return tilesBody(args, plan, world);
-    },
-  );
+  return withCampaignLock(world, args.campaign, 'tiles', async () => {
+    const plan = await preflightTiles(args, world);
+    return tilesBody(args, plan, world);
+  });
 }
 
 async function tilesBody(args: StageArgs, plan: TilesPlan, world: StageWorld): Promise<number> {

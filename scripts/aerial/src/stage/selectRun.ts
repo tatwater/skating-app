@@ -46,60 +46,53 @@ export async function runSelectStage(
   sources: (args: StageArgs, paths: ScratchPaths) => SelectSources,
 ): Promise<SelectResult> {
   const args = parseStageArgs(argv, 'select');
-  return withCampaignLock(
-    world.scratch,
-    args.campaign,
-    'select',
-    world.process,
-    world.now(),
-    async () => {
-      const paths = scratchPaths(args.campaign, world.scratch);
-      // The preflight that needs no catalog: every refusal here is before the row opens.
-      const deployment = args.dryRun ? null : checkedTarget(world, args.pilot);
-      const target = args.dryRun ? null : needBucket(world);
-      const from = args.fromCurrent ? needEnvFromCurrent(world) : null;
-      const src = sources(args, paths);
-      const sheetDir = join(paths.report, 'cloud');
-      const run =
-        deployment === null
-          ? null
-          : world.row({
-              kind: 'aerial_select',
-              label: 'Summer aerial: the frame rule over the NAIP catalog',
-              campaignId: args.campaign,
-              target: deployment,
-              scope: {
-                pass: 'archive',
-                states: [...(args.states ?? NAIP_STATES)],
-                complete: args.states === null && args.cells === null,
-              },
-            });
-      const { fetchCurrent: _, thumbsDir: __, ...deps } = src;
-      return runSelect(args, {
-        ...deps,
-        readCurrent: () => src.fetchCurrent(from as string),
-        // What this campaign has published: `null` when nothing is; a bucket that can't be read
-        // fails the stage (can't tell is never "nothing published").
-        readPublished: () => {
-          const t = target as NonNullable<typeof target>;
-          const key = manifestKey(args.campaign, args.pilot ?? undefined);
-          return readObject<NaipManifest>(async () => (await world.bucket(t).read(key)) ?? '');
-        },
-        writeManifest: (manifest) => {
-          mkdirSync(dirname(paths.manifest), { recursive: true });
-          writeFileSync(paths.manifest, `${JSON.stringify(manifest)}\n`);
-          return paths.manifest;
-        },
-        writeSheet: (candidates) =>
-          writeContactSheet(sheetDir, src.thumbsDir, candidates, {
-            campaign: args.campaign,
-            prescreen: readPrescreen(sheetDir),
-          }),
-        run,
-        now: () => world.now(),
-      });
-    },
-  );
+  return withCampaignLock(world, args.campaign, 'select', async () => {
+    const paths = scratchPaths(args.campaign, world.scratch);
+    // The preflight that needs no catalog: every refusal here is before the row opens.
+    const deployment = args.dryRun ? null : checkedTarget(world, args.pilot);
+    const target = args.dryRun ? null : needBucket(world);
+    const from = args.fromCurrent ? needEnvFromCurrent(world) : null;
+    const src = sources(args, paths);
+    const sheetDir = join(paths.report, 'cloud');
+    const run =
+      deployment === null
+        ? null
+        : world.row({
+            kind: 'aerial_select',
+            label: 'Summer aerial: the frame rule over the NAIP catalog',
+            campaignId: args.campaign,
+            target: deployment,
+            scope: {
+              pass: 'archive',
+              states: [...(args.states ?? NAIP_STATES)],
+              complete: args.states === null && args.cells === null,
+            },
+          });
+    const { fetchCurrent: _, thumbsDir: __, ...deps } = src;
+    return runSelect(args, {
+      ...deps,
+      readCurrent: () => src.fetchCurrent(from as string),
+      // What this campaign has published: `null` when nothing is; a bucket that can't be read
+      // fails the stage (can't tell is never "nothing published").
+      readPublished: () => {
+        const t = target as NonNullable<typeof target>;
+        const key = manifestKey(args.campaign, args.pilot ?? undefined);
+        return readObject<NaipManifest>(async () => (await world.bucket(t).read(key)) ?? '');
+      },
+      writeManifest: (manifest) => {
+        mkdirSync(dirname(paths.manifest), { recursive: true });
+        writeFileSync(paths.manifest, `${JSON.stringify(manifest)}\n`);
+        return paths.manifest;
+      },
+      writeSheet: (candidates) =>
+        writeContactSheet(sheetDir, src.thumbsDir, candidates, {
+          campaign: args.campaign,
+          prescreen: readPrescreen(sheetDir),
+        }),
+      run,
+      now: () => world.now(),
+    });
+  });
 }
 
 function needEnvFromCurrent(world: StageWorld): string {

@@ -10,7 +10,13 @@ import { join } from 'node:path';
 import type { NaipManifest } from '@skating/core';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { assemblyKeys } from '../assemble/assemble';
-import { acquireCampaignLock, lockPath, withCampaignLock } from '../campaignLock';
+import {
+  acquireCampaignLock,
+  type LockPlace,
+  lockDir,
+  lockPath,
+  withCampaignLock,
+} from '../campaignLock';
 import { buildManifestKey, scratchPaths } from '../keys';
 import { webDir } from '../preflight';
 import { outcomeWord, StageRefusal } from '../refusals';
@@ -47,6 +53,17 @@ describe('the tiles stage', () => {
     expect(w.writes).toEqual([]);
     expect(existsSync(join(w.scratch, CAMPAIGN, 'units'))).toBe(true);
     expect(w.out.join('')).toMatch(/work tiles to cut \(0 copied\)/);
+  });
+
+  test('Fly unlisted is refused as something to retry, never as a verdict on the campaign', async () => {
+    // Before the eighth review it surfaced as `failed: spawn.sh exited 1`; as a refusal it must
+    // still say that running the stage again is the answer, and nothing else is.
+    const w = fresh();
+    scratchManifest(w, await fixtureManifest());
+    w.machines = new Error('spawn.sh status exited 1: [spawn] can’t list the app’s Machines');
+    const e = (await runTilesStage([CAMPAIGN], w.world()).catch((x) => x)) as StageRefusal;
+    expect(e.id).toBe('tiles.flyUnlisted');
+    expect(e.message).toMatch(/nothing was started or uploaded; run the stage again once/);
   });
 
   test('work tiles that never land fail the row, naming them; an unreadable done record is said', async () => {
@@ -314,30 +331,85 @@ describe('verify, cleanup and the foliage review', () => {
 
 describe('the campaign lock', () => {
   const proc = { pid: 1, host: 'h', alive: () => true };
+  const at = (w: FakeWorld, over: Partial<LockPlace> = {}): LockPlace => ({
+    locks: w.locks,
+    scratch: w.scratch,
+    process: proc,
+    now: () => new Date('2026-01-01T00:00:00Z'),
+    ...over,
+  });
 
   test('is released however the stage ends, and only while it is still this holder’s', async () => {
     const w = fresh();
     await expect(
-      withCampaignLock(w.scratch, CAMPAIGN, 'tiles', proc, new Date(), async () => {
+      withCampaignLock(at(w), CAMPAIGN, 'tiles', async () => {
         throw new Error('boom');
       }),
     ).rejects.toThrow('boom');
-    expect(existsSync(lockPath(w.scratch, CAMPAIGN))).toBe(false);
-    const release = acquireCampaignLock(
-      w.scratch,
-      CAMPAIGN,
-      'tiles',
-      proc,
-      new Date('2026-01-01T00:00:00Z'),
-    );
+    expect(existsSync(lockPath(w.locks, CAMPAIGN))).toBe(false);
+    const release = acquireCampaignLock(at(w), CAMPAIGN, 'tiles');
     // Cleared by hand, then taken by another run: this release leaves the other's lock alone.
     writeFileSync(
-      lockPath(w.scratch, CAMPAIGN),
+      lockPath(w.locks, CAMPAIGN),
       JSON.stringify({ pid: 2, host: 'h', stage: 'x', startedAt: 'y' }),
     );
     release();
     release();
-    expect(existsSync(lockPath(w.scratch, CAMPAIGN))).toBe(true);
+    expect(existsSync(lockPath(w.locks, CAMPAIGN))).toBe(true);
+  });
+
+  test('is one for every checkout on the machine: a second worktree’s stage of the campaign refuses, naming the first’s log', async () => {
+    // The governor's ruling (the eighth review's independent pass): the lock sat in each checkout's
+    // own scratch, so two worktrees ran one campaign's stages at once — both took "the" lock.
+    const first = fresh();
+    const second = fresh();
+    const release = acquireCampaignLock(at(first), CAMPAIGN, 'tiles');
+    expect(existsSync(join(first.scratch, `${CAMPAIGN}.lock`))).toBe(false);
+    const held = (() => {
+      try {
+        acquireCampaignLock(at(second, { locks: first.locks }), CAMPAIGN, 'assemble');
+      } catch (e) {
+        return e as StageRefusal;
+      }
+      throw new Error('the second checkout took the lock');
+    })();
+    expect(held.id).toBe('lock.held');
+    expect(held.message).toContain(`from ${first.scratch}`);
+    expect(held.message).toContain(lockPath(first.locks, CAMPAIGN));
+    release();
+    // Gone (a crash): stale, naming the full lock path and the holder's own log.
+    acquireCampaignLock(at(first, { process: { ...proc, pid: 9 } }), CAMPAIGN, 'tiles');
+    const stale = (() => {
+      try {
+        acquireCampaignLock(
+          at(second, { locks: first.locks, process: { ...proc, alive: (p) => p !== 9 } }),
+          CAMPAIGN,
+          'verify',
+        );
+      } catch (e) {
+        return e as StageRefusal;
+      }
+      throw new Error('a stale lock was taken');
+    })();
+    expect(stale.id).toBe('lock.stale');
+    expect(stale.message).toContain(`remove ${lockPath(first.locks, CAMPAIGN)} and run again`);
+    expect(stale.message).toContain(join(first.scratch, `run-${CAMPAIGN}.log`));
+  });
+
+  test('lives in one per-user directory: AERIAL_LOCK_DIR, else XDG_CACHE_HOME, else ~/.cache', () => {
+    const env =
+      (vars: Record<string, string>) =>
+      (name: string): string | undefined =>
+        vars[name];
+    expect(lockDir(env({ AERIAL_LOCK_DIR: '/tmp/x', HOME: '/home/a' }), '/os')).toBe('/tmp/x');
+    expect(lockDir(env({ XDG_CACHE_HOME: '/c', HOME: '/home/a' }), '/os')).toBe(
+      '/c/skating-aerial/locks',
+    );
+    // A relative XDG_CACHE_HOME is ignored (the XDG spec), as is an empty override.
+    expect(lockDir(env({ XDG_CACHE_HOME: 'c', HOME: '/home/a', AERIAL_LOCK_DIR: '' }), '/os')).toBe(
+      '/home/a/.cache/skating-aerial/locks',
+    );
+    expect(lockDir(env({}), '/os')).toBe('/os/.cache/skating-aerial/locks');
   });
 
   test('an interrupt releases it, and a lock it can’t create for another reason is not a refusal', async () => {
@@ -345,26 +417,26 @@ describe('the campaign lock', () => {
     let interrupt: () => void = () => {};
     const unregister = vi.fn();
     await withCampaignLock(
-      w.scratch,
+      at(w, {
+        process: {
+          ...proc,
+          onInterrupt: (release) => {
+            interrupt = release;
+            return unregister;
+          },
+        },
+      }),
       CAMPAIGN,
       'tiles',
-      {
-        ...proc,
-        onInterrupt: (release) => {
-          interrupt = release;
-          return unregister;
-        },
-      },
-      new Date(),
       async () => {
         interrupt();
-        expect(existsSync(lockPath(w.scratch, CAMPAIGN))).toBe(false);
+        expect(existsSync(lockPath(w.locks, CAMPAIGN))).toBe(false);
       },
     );
     expect(unregister).toHaveBeenCalledOnce();
     writeFileSync(join(w.scratch, 'file'), '');
     expect(() =>
-      acquireCampaignLock(join(w.scratch, 'file'), CAMPAIGN, 'x', proc, new Date()),
+      acquireCampaignLock(at(w, { locks: join(w.scratch, 'file') }), CAMPAIGN, 'x'),
     ).toThrow();
     expect(outcomeWord(new StageRefusal('lock.held', 'x'))).toBe('refused');
     expect(outcomeWord(new Error('x'))).toBe('failed');

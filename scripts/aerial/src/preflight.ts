@@ -187,7 +187,9 @@ export class CampaignFacts {
       } catch (e) {
         throw new StageRefusal(
           id,
-          `can't list the app's Machines (${(e as Error).message}), so whether ${this.campaign}'s assembler is running can't be told — nothing was started or uploaded`,
+          // A refusal, but not a verdict: before the eighth review this was a failed `spawn.sh`
+          // listing, which read as "try again" — and it still is one (Fly's API, the network).
+          `can't list the app's Machines (${(e as Error).message}), so whether ${this.campaign}'s assembler is running can't be told — nothing was started or uploaded; run the stage again once \`fly machine list --app skating-imagery\` answers`,
         );
       }
     });
