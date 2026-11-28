@@ -838,10 +838,12 @@ describe('admin resets', () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     await seedAdmin(t);
+    // A failed cut to retry (a press with none is refused: `machineryImagery.test.ts`).
+    await queue(t, [s2('19TEA', '20261005')], { status: 'failed', attempts: 2 });
     const admin = t.withIdentity({ subject: 'admin' });
     for (const press of [
-      () => admin.mutation(api.imageryLive.retryFailed, {}),
-      () => admin.mutation(api.imageryLive.tryAgainNow, {}),
+      () => admin.mutation(api.machineryImagery.retryFailed, {}),
+      () => admin.mutation(api.machineryImagery.tryAgainNow, {}),
     ]) {
       await t.run(async (ctx) => {
         for (const r of await ctx.db.query('imageryPump').collect()) await ctx.db.delete(r._id);
@@ -898,7 +900,7 @@ describe('the run state', () => {
     await t.mutation(internal.imageryLive.begin, { key: 'pump', token: 'a' });
     vi.advanceTimersByTime(1_000);
     await seedAdmin(t);
-    await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.tryAgainNow, {});
+    await t.withIdentity({ subject: 'admin' }).mutation(api.machineryImagery.tryAgainNow, {});
     // The run ends having tripped the breaker on its stale streak — the reset wins.
     await t.mutation(internal.imageryLive.end, {
       key: 'pump',
@@ -1331,10 +1333,10 @@ describe('buildIndex', () => {
     // The page shows the wait, and Try again now makes it due at once.
     await seedAdmin(t);
     const admin = t.withIdentity({ subject: 'admin' });
-    expect((await admin.query(api.imageryLive.activity, {})).indexRetryAt).toBeGreaterThan(
+    expect((await admin.query(api.machineryImagery.page, {})).index.retryAt).toBeGreaterThan(
       Date.now(),
     );
-    await admin.mutation(api.imageryLive.tryAgainNow, {});
+    await admin.mutation(api.machineryImagery.tryAgainNow, {});
     // Move the wall clock to the mutation's timestamp without firing its scheduled build.
     const retryNow = (await runState(t, 'index'))?.retryAt as number;
     expect(retryNow).toBeGreaterThanOrEqual(Date.now());
@@ -1361,7 +1363,7 @@ describe('buildIndex', () => {
     await t.mutation(internal.imageryLive.begin, { key: 'index', token: 'run' });
     vi.advanceTimersByTime(1_000);
     await seedAdmin(t);
-    await t.withIdentity({ subject: 'admin' }).mutation(api.imageryLive.tryAgainNow, {});
+    await t.withIdentity({ subject: 'admin' }).mutation(api.machineryImagery.tryAgainNow, {});
     // …and that build still cannot read it: the admin's retry stands — due now, not pushed back.
     expect(
       await t.mutation(internal.imageryLive.markIndexBuilt, { seq: 2, unreadable: 1 }),
@@ -1740,15 +1742,22 @@ describe('the page', () => {
     });
     await seedAdmin(t);
     const admin = t.withIdentity({ subject: 'admin' });
-    const activity = await admin.query(api.imageryLive.activity, {});
-    expect(activity.counts).toEqual({ queued: 1, spawned: 0, landed: 0, empty: 0, failed: 1 });
-    expect(activity.failed).toEqual([{ granuleId: s2('19TEB', '20261005'), lastError: 'exit 1' }]);
-    expect(activity.runs).toHaveLength(1);
-    expect(activity.configured).toBe(true);
-    expect(activity.backoffUntil).toBeNull();
+    const page = await admin.query(api.machineryImagery.page, {});
+    expect(page.counts).toEqual({ queued: 1, spawned: 0, landed: 0, empty: 0, failed: 1 });
+    expect(
+      (await admin.query(api.machineryImagery.failedFirst, {})).map((g) => [
+        g.granuleId,
+        g.lastError,
+      ]),
+    ).toEqual([[s2('19TEB', '20261005'), 'exit 1']]);
+    expect(page.crons[0]?.lastRun?.outcome).toBe('ok');
+    expect(page.configured).toBe(true);
+    expect(page.backoffUntil).toBeNull();
 
-    expect(await admin.mutation(api.imageryLive.retryFailed, {})).toEqual({ requeued: 1 });
-    expect((await admin.query(api.imageryLive.activity, {})).counts).toMatchObject({
+    expect(await admin.mutation(api.machineryImagery.retryFailed, {})).toMatchObject({
+      requeued: 1,
+    });
+    expect((await admin.query(api.machineryImagery.page, {})).counts).toMatchObject({
       queued: 2,
       failed: 0,
     });

@@ -31,6 +31,7 @@ const TARGET: Record<AuditTarget, string> = {
   corpusPlaceName: 'a place name',
   supportTicket: 'a support ticket',
   importRun: 'an import run',
+  imagerySeason: 'a season’s imagery',
 };
 
 /** `{t}` is the target's words; a verb with no `{t}` names its subject itself. */
@@ -125,6 +126,13 @@ const VERB: Record<AuditAction, string> = {
   stop_waiting_on_run: 'Stopped waiting on {t}',
   request_run_stop: 'Asked {t} to stop',
   withdraw_run_stop: 'Withdrew the request to stop {t}',
+  // Machinery › Imagery (B01-8b): a season's imagery started and paused, and the three triggers.
+  // Invented, for the copy pass.
+  start_imagery: 'Started the satellite imagery',
+  pause_imagery: 'Paused the satellite imagery',
+  poll_imagery: 'Checked the catalogs for new imagery',
+  retry_failed_cuts: 'Sent the failed cuts back in line',
+  retry_imagery_now: 'Told imagery to try again now',
 };
 
 /** The row's sentence: "Hid a report", "Approved a request". */

@@ -29,6 +29,7 @@ const TARGET_TYPES = [
   'corpusPlaceName',
   'supportTicket',
   'importRun',
+  'imagerySeason',
 ] as const satisfies readonly ActionRow['targetType'][];
 const allListed: Exclude<ActionRow['targetType'], (typeof TARGET_TYPES)[number]> extends never
   ? true
@@ -185,8 +186,9 @@ describe('the audit feed’s rows', () => {
       expect(path).not.toBeNull();
       if (type === 'waterbody') expect(modeAt(path)?.id).toBe('corpus');
       else if (type === 'user') expect(modeAt(path)?.id).toBe('people');
-      else if (type === 'importRun') expect(modeAt(routerTarget(path).to)?.id).toBe('machinery');
-      else if (INBOX_TARGETS.has(type)) expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
+      else if (type === 'importRun' || type === 'imagerySeason') {
+        expect(modeAt(routerTarget(path).to)?.id).toBe('machinery');
+      } else if (INBOX_TARGETS.has(type)) expect(modeAt(routerTarget(path).to)?.id).toBe('inbox');
       else expect(usesOldShell(path)).toBe(true);
     },
   );
@@ -212,9 +214,18 @@ describe('the audit feed’s rows', () => {
     );
   });
 
+  it('opens a season’s imagery on Machinery › Imagery', () => {
+    expect(feedTargetPath({ type: 'imagerySeason', id: '2026-27', label: 'x' })).toBe(
+      '/admin/machinery/imagery',
+    );
+  });
+
   it('never opens Machinery for a viewer who can’t read it; every other target still opens', () => {
     const moderator = (capability: Capability) => capability !== 'machinery.read';
     expect(feedTargetPath({ type: 'importRun', id: 'r1', label: 'x' }, moderator)).toBeNull();
+    expect(
+      feedTargetPath({ type: 'imagerySeason', id: '2026-27', label: 'x' }, moderator),
+    ).toBeNull();
     expect(feedTargetPath({ type: 'user', id: 'k1', label: 'Rob' }, moderator)).toBe(
       '/admin/people/k1',
     );

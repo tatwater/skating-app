@@ -73,7 +73,11 @@ const WORDS_LINE = 12;
 const END_GUTTER = 120;
 /** The widths the chart needs to keep its end labels (the console's tokens). */
 const WIDE_TOKENS = ['--size-list', '--size-inspector'] as const;
-/** A marked night's words, per character: the mono kicker's advance and its tracking (10 px type). */
+/**
+ * A marked night's words, per character, until they are measured as drawn: the mono kicker's advance
+ * and its tracking (10 px type). The face lands late and its advance isn't this everywhere, so the
+ * chart measures the words it drew and places them again on that (`onCharPx`).
+ */
 const WORDS_CHAR_PX = 8.3;
 /** The plot's right room, narrow (no end labels). */
 const NARROW_GUTTER = 8;
@@ -164,6 +168,7 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
   const count = view.nights.length;
   const minorTicks = count <= 31;
   const [plot, setPlot] = useState<PlotSpan | null>(null);
+  const [charPx, setCharPx] = useState(WORDS_CHAR_PX);
   const matrix = useRef<HTMLDivElement>(null);
   const kickers = useKickerRoom(matrix);
   // The plot makes room for the matrix's names on their side: right of it beside the end labels,
@@ -172,7 +177,7 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
   const right = wide ? Math.max(END_GUTTER, kickers) : NARROW_GUTTER;
   // Whether the marked nights' words take two lines at this width (narrow, they always may): the
   // room over the plot is kept for the second, decided from the plot as soon as it is laid out.
-  const twoLines = !wide || wordsTakeTwoLines(view, plot, right);
+  const twoLines = !wide || wordsTakeTwoLines(view, plot, right, charPx);
   const track: MatrixTrack | undefined =
     plot === null ? undefined : { start: PLOT_EDGE + plot.x, width: plot.width };
   return (
@@ -223,6 +228,8 @@ function LowsBody({ view, wide }: { view: LowsView; wide: boolean }) {
             endLabels={wide}
             right={right}
             room={twoLines ? EVENT_ROOM + WORDS_LINE : EVENT_ROOM}
+            charPx={charPx}
+            onCharPx={setCharPx}
           />
           <ChartTooltip labelFormatter={(n) => nightLabel(view, n)} />
           <PlotProbe onPlot={setPlot} />
@@ -262,13 +269,18 @@ const bandCenter = (plot: PlotSpan, index: number, count: number) =>
  * after it: the rules at their nights' band centers, the words placed as the chart places them.
  * `false` until the plot is laid out.
  */
-function wordsTakeTwoLines(view: LowsView, plot: PlotSpan | null, right: number): boolean {
+function wordsTakeTwoLines(
+  view: LowsView,
+  plot: PlotSpan | null,
+  right: number,
+  charPx: number,
+): boolean {
   const events = [view.opened, view.imagery].filter((e): e is LowsEvent => e !== null);
   if (plot === null || events.length < 2) return false;
   return placeEventWords(
     events.map((e) => ({
       x: bandCenter(plot, e.index, view.nights.length),
-      width: e.words.length * WORDS_CHAR_PX,
+      width: e.words.length * charPx,
     })),
     plot.x + plot.width + right,
   ).some((p) => p.line === 1);
@@ -384,6 +396,8 @@ function LowsMarks({
   endLabels,
   right,
   room,
+  charPx,
+  onCharPx,
 }: {
   view: LowsView;
   endLabels: boolean;
@@ -391,7 +405,30 @@ function LowsMarks({
   right: number;
   /** The room over the plot the words have. */
   room: number;
+  /** The words' width per character, as last measured. */
+  charPx: number;
+  /** The words as drawn measured a different width per character: place them again on it. */
+  onCharPx: (px: number) => void;
 }) {
+  const marks = useRef<SVGGElement>(null);
+  // The words' real advance, read after each draw (the face may have landed since): the widest per
+  // character of those drawn. A change of under a tenth of a pixel is noise, never a re-place.
+  useLayoutEffect(() => {
+    const texts = [
+      ...(marks.current?.querySelectorAll<SVGTextElement>('[data-slot="lows-event-words"]') ?? []),
+    ];
+    const per = Math.max(
+      0,
+      ...texts.map((t) => {
+        const n = t.textContent?.length ?? 0;
+        // A page with no layout (jsdom) measures nothing: the estimate stands.
+        /* v8 ignore next */
+        if (n === 0 || typeof t.getComputedTextLength !== 'function') return 0;
+        return t.getComputedTextLength() / n;
+      }),
+    );
+    if (per > 0 && Math.abs(per - charPx) > 0.1) onCharPx(per);
+  });
   const plot = usePlotArea();
   const x = useXAxisScale();
   const y = useYAxisScale();
@@ -414,11 +451,11 @@ function LowsMarks({
   });
   // Each label's width from its characters: the mono kicker's advance and tracking, as drawn.
   const places = placeEventWords(
-    events.map((e) => ({ x: e.at, width: e.event.words.length * WORDS_CHAR_PX })),
+    events.map((e) => ({ x: e.at, width: e.event.words.length * charPx })),
     plot.x + plot.width + right,
   );
   return (
-    <g data-slot="lows-marks" className="font-(family-name:--family-mono) text-kick">
+    <g ref={marks} data-slot="lows-marks" className="font-(family-name:--family-mono) text-kick">
       {events.map(({ key, event, at, ink, mark }, k) => (
         <EventRule
           key={key}

@@ -61,7 +61,7 @@ describe('the season emails (D212)', () => {
         'What changes now',
         [
           '- The region-wide weather sweep runs daily',
-          "- Satellite imagery doesn't start until you start it. Press Start imagery on the Seasons page in /admin to start it now, or wait until the first 20°F night (you'll get a reminder email when that happens)",
+          "- Satellite imagery doesn't start until you start it. Press Start imagery on the Imagery page in Machinery to start it now, or wait until the first 20°F night (you'll get a reminder email when that happens)",
         ].join('\n'),
         'What to expect next',
         [
@@ -122,7 +122,7 @@ describe('the season emails (D212)', () => {
           'Upper Lake of the Clouds, NH  19.2°F (−7.1°C)',
         ].join('\n'),
         "It's time to start this season's satellite imagery. Running it late loses nothing, since the archive keeps every image, but the app won't show this season's imagery until it's run.",
-        'Press Start imagery on the Seasons page in /admin. From then on, Skating checks the satellite catalog every 6 hours and cuts each new image of our lakes, until the watch ends.',
+        'Press Start imagery on the Imagery page in Machinery. From then on, Skating checks the satellite catalog every 6 hours and cuts each new image of our lakes, until the watch ends.',
       ].join('\n\n'),
     );
   });

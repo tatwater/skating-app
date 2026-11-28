@@ -84,6 +84,11 @@ ENV GDAL_DISABLE_READDIR_ON_OPEN=EMPTY_DIR \
 WORKDIR /data
 
 COPY cut-granule.sh /usr/local/bin/cut-granule
+# The cut's own log (B01-8b): sourced first by cut-granule from beside it, so it lives in the same
+# directory. Inert unless the pump passes `CUT_LOG_KEY`; with it, every line the cut writes is
+# stamped into `/data/cut.log` and uploaded to `r2:$R2_BUCKET/$CUT_LOG_KEY` every 20 s and at exit,
+# with the rclone and awk already in the image. Not made executable: it is only ever sourced.
+COPY cut-log.sh /usr/local/bin/cut-log.sh
 COPY zonal-clear.py /usr/local/bin/zonal-clear.py
 # Not a script: the SCL class -> color mapping, read by `gdaldem color-relief` at cut time.
 COPY scl-palette.txt /usr/local/share/scl-palette.txt

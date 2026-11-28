@@ -27,7 +27,13 @@ import { api } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
 import { CRON_JOBS, cronPeriodMs, FREQUENT_CRON_RECORD } from './cronJobs';
 import { TICK_ROW_MAX } from './cronRuns';
-import { CRON_JOB_NAMES, RUNS_PAGE_SIZE, STRIP_MAX_TICKS, STRIP_ROWS } from './machineryCrons';
+import {
+  CRON_JOB_NAMES,
+  cronLivenessInputOf,
+  RUNS_PAGE_SIZE,
+  STRIP_MAX_TICKS,
+  STRIP_ROWS,
+} from './machineryCrons';
 import { EVENTS_PAGE_SIZE } from './machineryRuns';
 import schema from './schema';
 
@@ -198,7 +204,11 @@ describe('jobs', () => {
   test('each state, and every verdict is core’s rule over the inputs it sends', async () => {
     const t = harness();
     const { as } = await seedUser(t, 'admin');
-    const failedRun = await seedRun(t, POLL, { outcome: 'failed', error: 'catalog 503' });
+    const failedRun = await seedRun(t, POLL, {
+      outcome: 'failed',
+      error: 'catalog 503',
+      detail: 'window 2026-11-20 → 2026-11-27',
+    });
     // ok: the pump ticked a minute ago.
     await seedHeartbeat(t, PUMP, { lastTickAt: NOW - MINUTE, lastOutcome: 'ok', lastMs: 30 });
     // failed: the poll's last tick failed an hour ago, inside its six hours.
@@ -261,6 +271,8 @@ describe('jobs', () => {
       startedAt: NOW - HOUR,
       outcome: 'failed',
       counts: null,
+      // The run's headline, for the card (*6 new*).
+      detail: 'window 2026-11-20 → 2026-11-27',
     });
     expect(views[6]?.liveness).toMatchObject({ nextAt: Date.UTC(2026, 10, 27, 11, 30) });
     expect(views[6]?.schedule).toEqual({ daily: { hourUTC: 11, minuteUTC: 30 } });
@@ -674,5 +686,33 @@ describe('runLog', () => {
     expect(rest.page.map((e) => e.seq)).toEqual(Array.from({ length: 30 }, (_, i) => 29 - i));
     expect(rest.isDone).toBe(true);
     expect([...first.page, ...rest.page].some((e) => e.text === 'the other run')).toBe(false);
+  });
+});
+
+describe('the rule’s inputs carry who started a run under way (Ma27 (b))', () => {
+  const hb = (fields: Partial<Doc<'cronHeartbeats'>>) =>
+    ({ job: 'x', ...fields }) as Doc<'cronHeartbeats'>;
+  test('the trigger with its stamp, never without one; the rule doesn’t read it', () => {
+    const entry = { record: 'every' as const };
+    const pressed = hb({
+      runningSince: 5,
+      runningTrigger: 'manual',
+      runningByUserId: 'p' as Doc<'cronHeartbeats'>['runningByUserId'],
+    });
+    expect(cronLivenessInputOf(entry, pressed)).toEqual({
+      runningSince: 5,
+      runningTrigger: 'manual',
+    });
+    // A run chained by another job is manual with no presser: nobody pressed Run now.
+    expect(cronLivenessInputOf(entry, hb({ runningSince: 5, runningTrigger: 'manual' }))).toEqual({
+      runningSince: 5,
+    });
+    expect(cronLivenessInputOf(entry, hb({ runningTrigger: 'cron' }))).toEqual({});
+    expect(cronLivenessInputOf(entry, hb({ runningSince: 5 }))).toEqual({ runningSince: 5 });
+    const schedule = { every: 3 * MINUTE };
+    const at = 5 + 40 * MINUTE;
+    expect(cronLiveness({ runningSince: 5, runningTrigger: 'cron' }, schedule, at)).toEqual(
+      cronLiveness({ runningSince: 5 }, schedule, at),
+    );
   });
 });

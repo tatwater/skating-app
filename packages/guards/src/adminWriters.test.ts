@@ -65,6 +65,8 @@ const INVENTORY: Record<string, string> = {
   'components/admin/inbox/handlers/Ticket/useTicketWrites.ts':
     'useDecisionRunner (admin/actions): said, naming whose ticket',
   'components/admin/machinery/actions/useRunWrites.ts': 'said, naming the run',
+  'components/admin/machinery/imagery/useImageryWrites.ts':
+    'said, naming what wasn’t done to the season’s imagery',
   'components/admin/people/person/usePersonWrites.ts': 'said, naming the person',
   'components/admin/people/record/RecordSheet.tsx': 'useRecordWrites: said, naming the person',
   'components/admin/shell/ConsoleLayout.tsx':

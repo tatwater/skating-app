@@ -42,7 +42,7 @@ async function ensureRow(ctx: MutationCtx, key: JobKey): Promise<Doc<'imageryPum
 }
 
 export type Begun =
-  | { ok: true; refusalStreak: number; blindTicks: number }
+  | { ok: true; refusalStreak: number; blindTicks: number; stoppedMachines: number }
   | { ok: false; reason: 'running' | 'backing off' };
 
 /**
@@ -68,7 +68,12 @@ export async function beginRun(ctx: MutationCtx, key: JobKey, token: string): Pr
     backoffUntil: undefined,
     refusalStreak: streak,
   });
-  return { ok: true, refusalStreak: streak, blindTicks: row.blindTicks ?? 0 };
+  return {
+    ok: true,
+    refusalStreak: streak,
+    blindTicks: row.blindTicks ?? 0,
+    stoppedMachines: row.stoppedMachines ?? 0,
+  };
 }
 
 /**
@@ -80,7 +85,12 @@ export async function endRun(
   ctx: MutationCtx,
   key: JobKey,
   token: string,
-  outcome: { backoff?: boolean; refusalStreak?: number; blindTicks?: number },
+  outcome: {
+    backoff?: boolean;
+    refusalStreak?: number;
+    blindTicks?: number;
+    stoppedMachines?: number;
+  },
 ): Promise<void> {
   const row = await jobRow(ctx, key);
   if (!row || row.token !== token) return;
@@ -88,6 +98,8 @@ export async function endRun(
   await ctx.db.patch(row._id, {
     runningUntil: 0,
     token: undefined,
+    // A fact about Fly, not a decision an admin's reset overrides.
+    ...(outcome.stoppedMachines !== undefined ? { stoppedMachines: outcome.stoppedMachines } : {}),
     ...(resetDuringRun
       ? {}
       : {

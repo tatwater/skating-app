@@ -6,14 +6,13 @@ import {
   searchQueryArg,
   seasonFloorDate,
 } from '@skating/core';
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery } from 'convex/react';
 import { useEffect, useMemo, useState } from 'react';
 import { AdminEmpty, AdminPageHeader } from '../components/admin/adminUi';
 import {
   FieldDates,
   historyFillHint,
-  ImageryPanel,
   PreviewTable,
   SeasonDetail,
   Section,
@@ -43,7 +42,7 @@ import {
 
 /**
  * Seasons (A06i §6, D213, D214) — **admin-only**. The season watch made legible: why this season's ice
- * watch opened and what it measured, the satellite imagery it started, the settings that decide it
+ * watch opened and what it measured (its satellite imagery is on Machinery › Imagery), the settings that decide it
  * with a preview against every past winter, and the days people actually skated.
  *
  * Unlike `/admin/tuning`, these values are edited here: each save is a new version, and a season
@@ -86,16 +85,11 @@ function AdminSeasons() {
   const series = useQuery(api.seasonWatch.series, { current: archiveSeasonAt(Date.now()) }) as
     | SeriesDoc[]
     | undefined;
-  const activity = useQuery(api.imageryLive.activity, {});
   const saveSettings = useSaidMutation(api.seasonWatch.saveSettings);
   const resetSeason = useSaidMutation(api.seasonWatch.resetSeason);
-  const startImagery = useSaidMutation(api.seasonWatch.startImagery);
-  const pauseImagery = useSaidMutation(api.seasonWatch.pauseImagery);
   const addFieldDate = useSaidMutation(api.seasonWatch.addFieldDate);
   const removeFieldDate = useSaidMutation(api.seasonWatch.removeFieldDate);
   const requestHistoryFill = useSaidMutation(api.seasonWatch.requestHistoryFill);
-  const retryFailed = useSaidMutation(api.imageryLive.retryFailed);
-  const tryAgainNow = useSaidMutation(api.imageryLive.tryAgainNow);
   const fill = useAction();
 
   const season = archiveSeasonAt(Date.now());
@@ -221,19 +215,12 @@ function AdminSeasons() {
         ) : null}
       </Section>
 
-      <Section
-        title="Satellite imagery"
-        blurb="Once started, the catalog is checked every 6 hours and each new pass of our lakes is cut, until the watch ends. A whole season costs about $1.50 of compute."
-      >
-        <ImageryPanel
-          row={row}
-          activity={activity}
-          onStart={() => startImagery({ season })}
-          onPause={() => pauseImagery({ season })}
-          onRetryFailed={() => retryFailed({})}
-          onTryAgain={() => tryAgainNow({})}
-        />
-      </Section>
+      <p data-slot="imagery-moved" className="text-foreground-muted text-sm">
+        Satellite imagery is on{' '}
+        <Link to="/admin/machinery/imagery" className="underline underline-offset-2">
+          Machinery →
+        </Link>
+      </p>
 
       <Section
         title="Settings"

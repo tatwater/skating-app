@@ -38,8 +38,17 @@ interface StacItem {
     'eo:cloud_cover'?: number;
     /** Sentinel-1 only. Recorded, never filtered on — see `sarSelection`. */
     'sat:orbit_state'?: 'ascending' | 'descending';
+    /** When the catalog published the item (STAC's common metadata). */
+    created?: string;
   };
 }
+
+/**
+ * A search hit: a selection candidate, plus when the catalog published it (`created`, an RFC 3339
+ * instant, when the item says) — the imagery page's *In the catalog 09:14 · 10 h after the pass*
+ * (B01-8b). Selection never reads it.
+ */
+export type StacCandidate = GranuleCandidate & { created?: string };
 
 export interface StacSearch {
   collection: string;
@@ -73,8 +82,8 @@ export async function searchStac(
   fetchFn: FetchLike,
   search: StacSearch,
   stacUrl: string = DEFAULT_STAC_URL,
-): Promise<{ items: GranuleCandidate[]; pages: number }> {
-  const items: GranuleCandidate[] = [];
+): Promise<{ items: StacCandidate[]; pages: number }> {
+  const items: StacCandidate[] = [];
   let request: { url: string; body: Record<string, unknown> | null } | null = {
     url: `${stacUrl}/search`,
     body: {
@@ -117,6 +126,9 @@ export async function searchStac(
         // correction, and dropping half the passes here would be irreversible.
         ...(feature.properties['sat:orbit_state']
           ? { orbitDirection: feature.properties['sat:orbit_state'] }
+          : {}),
+        ...(typeof feature.properties.created === 'string'
+          ? { created: feature.properties.created }
           : {}),
       });
     }

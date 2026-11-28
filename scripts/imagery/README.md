@@ -626,6 +626,26 @@ fly deploy --build-only --push --app skating-imagery
 always-on footprint the cost model is avoiding. `--build-only --push` builds, pushes to
 `registry.fly.io/skating-imagery`, and creates nothing. Pin the ref it prints into `FLY_IMAGE`.
 
+#### Pinning a new image on the live pump, and rolling it back (B01-8b)
+
+The live pump (below) spawns whatever `FLY_IMAGE` names on the Convex deployment, so a new image
+reaches it only when that variable changes. Whoever does this tells the founder first, and touches
+**dev only**: prod has never been initialized.
+
+1. **Note the current ref.** List the deployment's variables by name only (never print a value); the
+   ref in use is on the last spawn's attempt record on the Imagery page, or ask the founder. Write it
+   down: it is the rollback.
+2. **Build and push** from the PR's head, as above: `fly deploy --build-only --push --app
+   skating-imagery`. It prints the new ref (`registry.fly.io/skating-imagery:deployment-…`).
+3. **Pin it:** `convex env set FLY_IMAGE <new ref>` on dev. The pump records the image on its next
+   spawn; the next cut's attempt shows its log.
+4. **Roll back** by setting `FLY_IMAGE` to the noted ref. The old image stays in the registry, and the
+   pump runs it unchanged: an image without `cut-log.sh` uploads no log, and its attempts say the
+   cutter uploaded none while still getting Fly's exit and lines.
+
+The image and the pump can land in either order: a new image under an old pump is passed no
+`CUT_LOG_KEY` and behaves exactly as before; an old image under a new pump just uploads nothing.
+
 ---
 
 ## Running it
@@ -697,8 +717,53 @@ pnpm --filter @skating/imagery publish-search-plan                       # → m
 #   FLY_API_TOKEN (step 4's scoped deploy token), FLY_IMAGE (step 5's pinned ref)
 ```
 
+Each spawn passes the cut `MASK_SEASON`, and from B01-8b `CUT_LOG_KEY` and `CUT_ATTEMPT` (see
+[The cut's own log](#the-cuts-own-log-b01-8b-d344)); the R2 credentials are the Fly app's secrets.
 Without them the job refuses each check and emails the admins once a day. `ingest-window` now reads
 the recorded watch from the deployment rather than re-deciding it with its own sample.
+
+## The cut's own log (B01-8b, D344)
+
+`cut-granule.sh` sources `cut-log.sh` before anything else. When the pump passes `CUT_LOG_KEY` (and
+`CUT_ATTEMPT`), the cut is re-run as a child under a logger that:
+
+- passes every line of the cut's stdout and stderr on unchanged (so `fly logs` reads as it always
+  did) and appends it to `/data/cut.log` as `<epoch ms> <text>`, the format `parseCutterLog` in
+  `packages/core/src/cutLog.ts` reads. A carriage-return progress line keeps its last segment,
+  control bytes are dropped, text is cut at 500 bytes, and the R2 and Fly credentials' values read
+  `[redacted]` should the cut ever print one;
+- uploads that file every 20 seconds when it has grown, and once more after its last line,
+  `exit <code>`, with the rclone config the cut writes and nothing else (no new dependency in the
+  image). Past 2,000 lines the upload keeps the first 300 and the last 1,699, with one line between
+  saying how many were left out, so a long cut's end is never lost;
+- passes a stop (TERM, INT, HUP) on to the cut, then writes `[cut-log] stopped by SIG…` and
+  `exit <code>` and uploads, all within 4 seconds at worst, inside Fly's 5-second grace. A kill of
+  this shell itself can't be trapped; the last periodic upload (at most 20 seconds old) is what
+  survives it. An OOM kill of a child (`gdalwarp`) is just a non-zero exit here, and the whole log is kept;
+- exits with the cut's own status. No upload failure or hang changes it: each upload is bounded
+  (15 s, `CUT_LOG_UPLOAD_TIMEOUT_S`), a failure is noted once in the log, and one at exit is one line
+  on stderr. rclone's own output is discarded, so nothing it prints reaches the log.
+
+**The R2 key layout.** The pump owns it (`cutLogKey`): `logs/cuts/<season>/<granuleId>/a<attempt>.log`
+in the imagery bucket (`R2_BUCKET`, default `skating-imagery`), outside `frames/` (the index never
+lists it) and outside `cuts/` (the empty markers). An object lives from the cut's first upload to the
+pump's copy into Convex at settle, normally minutes; the pump then deletes it. A 30-day lifecycle rule
+on `logs/` (the founder's, in the Cloudflare dashboard) is the net for a copy that never happened.
+
+**Without `CUT_LOG_KEY`** (`fan-out.sh`, `backfill.sh`, a person's `docker run`, an older pump)
+`cut-log.sh` returns at once: no child, no file, nothing uploaded, the cut exactly as before.
+`CUT_LOG_INTERVAL_S` and `CUT_LOG_UPLOAD_TIMEOUT_S` exist for the tests (`src/cutLog.test.ts`, which
+run the real script under a stand-in `rclone` on `PATH`); the pump sets neither.
+
+To see it locally against a stub, with no R2 write:
+
+```bash
+docker build -t skating-imagery .
+mkdir -p /tmp/stub && printf '#!/bin/sh\necho "rclone $*" >&2\n' > /tmp/stub/rclone && chmod +x /tmp/stub/rclone
+docker run --rm -v /tmp/stub/rclone:/usr/local/sbin/rclone:ro -e CUT_LOG_KEY=logs/cuts/test/x/a1.log \
+  -e R2_ACCESS_KEY_ID=fake -e R2_SECRET_ACCESS_KEY=fake -e R2_ENDPOINT=https://example.invalid \
+  skating-imagery S2A_18TXP_20261008_1_L2A --smoke
+```
 
 ## Verifying the bill is what you think
 

@@ -58,6 +58,9 @@ export type CronRecord = 'every' | 'sparse';
 /** How a cron's last tick ended (`cronHeartbeats.lastOutcome`; the Convex package's `CRON_OUTCOMES`). */
 export type CronOutcome = 'ok' | 'worked' | 'failed' | 'killed';
 
+/** What started a cron run (the Convex package's `CRON_TRIGGERS`). */
+export type CronTrigger = 'cron' | 'manual';
+
 /** A cron's schedule as the rule reads it: an interval in ms, or a fixed UTC time. */
 export type CronSchedule =
   | { every: number }
@@ -88,6 +91,15 @@ export interface CronLivenessInput {
   lastTickAt?: number;
   lastOutcome?: CronOutcome;
   runningSince?: number;
+  /**
+   * What started the run that stamped `runningSince` (`cronHeartbeats.runningTrigger`, B01-8b-2,
+   * Ma27 (b)); absent on a stamp from before it. The rule's verdict doesn't read it: a heartbeat
+   * alone can't tell a long cron run from a dead one before the next tick, so `running` and `killed`
+   * keep the age rule for both; a cron's earlier kill reaches the verdict through the next tick's
+   * `begin`, which records it (`lastOutcome: 'killed'`). Carried so the card can say who started
+   * the run on screen.
+   */
+  runningTrigger?: CronTrigger;
   /**
    * The longest quiet the recorder leaves on a healthy job ({@link cronQuietFloorMs}): *E* is never
    * less. Absent (or 0) for a job recorded every tick.

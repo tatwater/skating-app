@@ -107,6 +107,8 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `R2_ACCESS_KEY_ID` · `R2_SECRET_ACCESS_KEY` · `R2_ENDPOINT` · `R2_BUCKET` | ⬜ owed — A06i lists `frames/` and writes `index/` in `skating-imagery` (`R2_BUCKET` defaults to it) | ⬜ | key id no · secret **yes** |
 | `FLY_API_TOKEN` · `FLY_IMAGE` · `FLY_APP` · `FLY_REGION` | ⬜ owed — A06i spawns cut Machines; `FLY_IMAGE` is the pinned cutter image, `FLY_APP`/`FLY_REGION` default to `skating-imagery`/`sjc` | ⬜ | token **yes** |
 | `NAIP_MANIFEST_URL` | ⬜ planned — Phase B05 (building): the public URL of the published summer aerial's manifest, which the July check diffs against; set at publish beside the web's `VITE_NAIP_PMTILES_URL` | ⬜ | no |
+| `FLY_API_URL` | a knob, **never set on dev or prod** — B01-8b-2: replaces both of Fly's hosts (the Machines API and the log API) with a local stand-in, for a proof on a throwaway backend only | never | no |
+| `IMAGERY_STAC_URL` | a knob, **never set on dev or prod** — B01-8b-2: replaces Earth Search (the poll's STAC catalog) with a local stand-in, for a proof on a throwaway backend only | never | no |
 | `CONVEX_CLOUD_URL` · `CONVEX_SITE_URL` | provided by Convex | provided | no |
 
 ### 2b. Mobile — EAS environments (`development`, `preview`, `production`) and local `apps/mobile/.env.local`

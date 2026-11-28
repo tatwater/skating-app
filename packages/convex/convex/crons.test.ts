@@ -33,6 +33,7 @@ import {
   RECORDER_RESERVE,
   readReport,
   recorder,
+  stampKilled,
   TICK_ROW_MAX,
   trimText,
 } from './cronRuns';
@@ -669,6 +670,148 @@ describe('an action job', () => {
     await tickA(t, 'a worked');
     expect(String(err.mock.calls[0]?.[0])).toMatch(/begin failed, running the job anyway/);
     expect((await all(t)).runs).toEqual([expect.objectContaining({ counts: { did: 3 } })]);
+  });
+});
+
+describe('a killed action, by who started it (Ma27 (b), Ma30)', () => {
+  const seedPresser = (t: T) =>
+    t.run((ctx) =>
+      ctx.db.insert('profiles', {
+        clerkUserId: 'presser',
+        displayName: 'P',
+        username: 'p',
+        driveTimePrefMinutes: 60,
+        profileVisibility: 'public' as const,
+        notificationPrefs: {
+          activityDetected: true,
+          bountyRequest: true,
+          hazardConfirmation: true,
+          bountyAnswered: true,
+          reportRated: true,
+          reportCommented: true,
+          contentFlagResolved: true,
+          favoriteReport: true,
+          nearbyReportDigest: true,
+          greatReportNearby: true,
+          moderatorDecision: false,
+        },
+        dateOfBirth: Date.UTC(1990, 0, 1),
+        reputationPoints: 0,
+        role: 'admin' as const,
+        status: 'active' as const,
+        createdAt: T0,
+      }),
+    );
+
+  test('begin stamps the trigger and presser with runningSince; finish clears all three', async () => {
+    const t = convexTest(schema, probeModules);
+    const presser = await seedPresser(t);
+    const seen: unknown[] = [];
+    vi.spyOn(recorder, 'recordTick').mockImplementation(async (ctx, entry, tick) => {
+      const hb = await ctx.db
+        .query('cronHeartbeats')
+        .withIndex('by_job', (q) => q.eq('job', entry.name))
+        .first();
+      seen.push([hb?.runningSince, hb?.runningTrigger, hb?.runningByUserId]);
+      return await realRecord(ctx, entry, tick);
+    });
+    await tickA(t, 'a quiet', { trigger: 'manual', byUserId: presser });
+    expect(seen).toEqual([[T0, 'manual', presser]]);
+    const hb = await heartbeat(t, 'a quiet');
+    expect(hb?.runningSince).toBeUndefined();
+    expect(hb?.runningTrigger).toBeUndefined();
+    expect(hb?.runningByUserId).toBeUndefined();
+  });
+
+  test('a cron tick calls a cron stamp killed at any age: Convex never overlaps a cron', async () => {
+    const t = convexTest(schema, probeModules);
+    quiet();
+    const since = T0 - 3 * 60_000;
+    await t.run((ctx) =>
+      ctx.db.insert('cronHeartbeats', {
+        job: 'a quiet',
+        runningSince: since,
+        runningTrigger: 'cron',
+      }),
+    );
+    await tickA(t, 'a quiet');
+    const [run] = (await all(t)).runs;
+    // Ended no later than the tick that found it, not 30 minutes on.
+    expect(run).toMatchObject({
+      outcome: 'killed',
+      trigger: 'cron',
+      startedAt: since,
+      finishedAt: T0,
+    });
+    expect(run?.byUserId).toBeUndefined();
+  });
+
+  test('a manual press never calls a young cron stamp killed: a press can overlap a live run', async () => {
+    const t = convexTest(schema, probeModules);
+    const presser = await seedPresser(t);
+    const since = T0 - 3 * 60_000;
+    await t.run((ctx) =>
+      ctx.db.insert('cronHeartbeats', {
+        job: 'a quiet',
+        runningSince: since,
+        runningTrigger: 'cron',
+      }),
+    );
+    await tickA(t, 'a quiet', { trigger: 'manual', byUserId: presser });
+    expect((await all(t)).runs.map((r) => r.outcome)).toEqual(['ok']);
+  });
+
+  test('a cron tick keeps the age rule for a manual stamp, and for one from before the widen', async () => {
+    for (const runningTrigger of ['manual', undefined] as const) {
+      const t = convexTest(schema, probeModules);
+      const since = T0 - 20 * 60_000;
+      await t.run((ctx) =>
+        ctx.db.insert('cronHeartbeats', {
+          job: 'a quiet',
+          runningSince: since,
+          ...(runningTrigger ? { runningTrigger } : {}),
+        }),
+      );
+      await tickA(t, 'a quiet');
+      expect((await all(t)).runs.filter((r) => r.outcome === 'killed')).toEqual([]);
+    }
+  });
+
+  test('a stale manual stamp is recorded killed with the trigger and presser it had', async () => {
+    const t = convexTest(schema, probeModules);
+    quiet();
+    const presser = await seedPresser(t);
+    const since = T0 - CRON_KILLED_AFTER_MS - 1;
+    await t.run((ctx) =>
+      ctx.db.insert('cronHeartbeats', {
+        job: 'a quiet',
+        runningSince: since,
+        runningTrigger: 'manual',
+        runningByUserId: presser,
+      }),
+    );
+    await tickA(t, 'a quiet', { trigger: 'manual', byUserId: presser });
+    const killed = (await all(t)).runs.find((r) => r.outcome === 'killed');
+    expect(killed).toMatchObject({
+      trigger: 'manual',
+      byUserId: presser,
+      startedAt: since,
+      finishedAt: since + CONVEX_ACTION_LIMIT_MS,
+    });
+  });
+
+  test('the rule, alone', () => {
+    const at = { startedAt: T0, trigger: 'cron' as const };
+    expect(stampKilled({ since: T0 - 1, trigger: 'cron' }, at)).toBe(true);
+    expect(stampKilled({ since: T0 - 1, trigger: 'manual' }, at)).toBe(false);
+    expect(stampKilled({ since: T0 - 1, trigger: undefined }, at)).toBe(false);
+    expect(stampKilled({ since: T0 - CRON_KILLED_AFTER_MS - 1, trigger: 'manual' }, at)).toBe(true);
+    expect(stampKilled({ since: T0 - CRON_KILLED_AFTER_MS, trigger: 'manual' }, at)).toBe(false);
+    const press = { startedAt: T0, trigger: 'manual' as const };
+    expect(stampKilled({ since: T0 - 1, trigger: 'cron' }, press)).toBe(false);
+    expect(stampKilled({ since: T0 - CRON_KILLED_AFTER_MS - 1, trigger: 'cron' }, press)).toBe(
+      true,
+    );
   });
 });
 

@@ -466,6 +466,15 @@ export const MODERATION_ACTIONS = [
   'stop_waiting_on_run',
   'request_run_stop',
   'withdraw_run_stop',
+  // ── Machinery › Imagery (B01-8b, D344, D348) ─────────────────────────────────────────────────────
+  // The season's imagery started and paused (each the other's undo), and three audited triggers with
+  // no inverse: a catalog check now, the failed cuts sent back, the backoff lifted. Each on the
+  // `imagerySeason` target (its id the season, `2026-27`).
+  'start_imagery',
+  'pause_imagery',
+  'poll_imagery',
+  'retry_failed_cuts',
+  'retry_imagery_now',
 ] as const;
 export const MODERATION_TARGET_TYPES = [
   'report',
@@ -492,6 +501,7 @@ export const MODERATION_TARGET_TYPES = [
   'corpusPlaceName', // D202: a name the corpus uses that no landmark took — placed or dismissed
   'supportTicket', // B01-5f (D284): a ticket's notes, replies, resolve and reopen
   'importRun', // B01-8a (D342): a run marked failed, waited on, or asked to stop, in Machinery
+  'imagerySeason', // B01-8b (D344): a season's live imagery started, paused, polled or retried
 ] as const;
 
 /** In-app support inbox (D37). */
@@ -823,6 +833,46 @@ export const CRON_RUN_OUTCOMES = ['ok', 'capped', 'refused', 'failed', 'killed']
 
 /** What started a cron run: its schedule, or a person's press (`cronRuns.byUserId`). */
 export const CRON_TRIGGERS = ['cron', 'manual'] as const;
+
+/**
+ * **How one cut attempt ended** (`imageryAttempts.verdict`, D344, D348, B01-8b). `cutting`: its
+ * Machine was asked for and hasn't settled. `landed`: its frame's manifest is in the bucket. `empty`:
+ * the cutter's marker says there was nothing to cut (its reason copied to the granule). `requeued`:
+ * the first miss, sent back for another attempt. `failed`: the granule's attempts are spent.
+ * `refused`: Fly turned the spawn down (no attempt spent). `unconfirmed`: the spawn's answer never
+ * came, so the Machine was never known.
+ */
+export const IMAGERY_ATTEMPT_VERDICTS = [
+  'cutting',
+  'landed',
+  'empty',
+  'requeued',
+  'failed',
+  'refused',
+  'unconfirmed',
+] as const;
+
+/**
+ * **Where an attempt's log stands** (`imageryAttempts.log`, D348). `pending`: not yet copied into
+ * Convex (the pump retries for an hour). `kept`: its lines are in `runEvents` under the attempt.
+ * `none`: its cutter image keeps no log (an image from before B01-8b). `missing`: the copy never
+ * succeeded.
+ */
+export const IMAGERY_ATTEMPT_LOG_STATES = ['pending', 'kept', 'none', 'missing'] as const;
+
+/**
+ * **Where an attempt's machine-minutes came from** (`imageryAttempts.machineMsFrom`, D346): Fly's
+ * start and exit events, the cutter log's first and last stamps, or the settle less the spawn (coarse,
+ * drawn as *about*).
+ */
+export const IMAGERY_MACHINE_MS_SOURCES = ['fly', 'cutter', 'settle'] as const;
+
+/**
+ * **Who wrote a cut attempt's log line** (`runEvents.origin`, D348): the cutter's own upload, Fly
+ * (its runner, an OOM, the exit event, or the app's lines past the upload's last), or the pump's own
+ * framing lines. Absent on every other line.
+ */
+export const RUN_EVENT_ORIGINS = ['cutter', 'fly', 'pump'] as const;
 
 /** The kinds a run's logger may send through `runEvents.append`; the rest are the server's. */
 export const RUN_EVENT_LOGGER_KINDS = [

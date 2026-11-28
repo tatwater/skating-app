@@ -12,6 +12,7 @@ import {
   type InboxCardData,
   inboxFootAges,
   inboxTotal,
+  type JobRow,
   type JobState,
   jobWhen,
   type MachineryCardData,
@@ -177,6 +178,22 @@ const JOB: Record<JobState, { dot: StatusDotTone; tone: ValueTone; word: string 
   never: { dot: 'hollow', tone: 'dim', word: 'not run' },
 };
 
+/**
+ * The rows read from the cron backbone (`machinery.ts`' `IMAGERY_CARD_JOBS`): with no tick recorded
+ * yet they say so (*not recorded yet*), never *not run* — the cron may well have run before the
+ * recording began. The other rows keep their own *not run*.
+ */
+const CRON_ROW_IDS: ReadonlySet<string> = new Set([
+  'imagery-poll',
+  'imagery-pump',
+  'imagery-index',
+]);
+const NOT_RECORDED_YET = 'not recorded yet';
+
+/** A row's word: its state's, but a backbone cron's `never` is *not recorded yet*. */
+export const jobWord = (job: Pick<JobRow, 'id' | 'state'>): string =>
+  job.state === 'never' && CRON_ROW_IDS.has(job.id) ? NOT_RECORDED_YET : JOB[job.state].word;
+
 export function MachineryCard({
   data,
   now,
@@ -209,7 +226,7 @@ export function MachineryCard({
             data-state={job.state}
             mark={<StatusDot tone={look.dot} />}
             label={job.name}
-            detail={look.word}
+            detail={jobWord(job)}
             detailTone={look.tone}
             value={jobWhen(job.at, now)}
             tone="dim"

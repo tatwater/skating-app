@@ -274,3 +274,37 @@ export const Phone: Story = {
     });
   },
 };
+
+/**
+ * The marked nights' words never collide, at every width the chart is drawn: the Overview's row, the
+ * Imagery page's waiting column (narrower, the start panel beside it) and between. Measured as drawn,
+ * in the face they are drawn in.
+ */
+export const WordsNeverCollide: Story = {
+  render: (args) => (
+    <div className="flex flex-col gap-(--space-6)">
+      {[1112, 900, 760, 700, 640, 560].map((w) => (
+        <div key={w} data-slot="story-width" style={{ width: w }}>
+          <SentinelLows {...args} />
+        </div>
+      ))}
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    await document.fonts.ready;
+    await steady(() => {
+      const frames = all(canvasElement, '[data-slot="story-width"]');
+      expect(frames).toHaveLength(6);
+      for (const frame of frames) {
+        const words = all(frame, '[data-slot="lows-event-words"]').map((w) =>
+          w.getBoundingClientRect(),
+        );
+        expect(words).toHaveLength(2);
+        const [a, b] = words as [DOMRect, DOMRect];
+        const apart =
+          a.right + 2 <= b.left || b.right + 2 <= a.left || a.bottom <= b.top || b.bottom <= a.top;
+        expect(apart, `the words collide at ${frame.style.width}`).toBe(true);
+      }
+    });
+  },
+};

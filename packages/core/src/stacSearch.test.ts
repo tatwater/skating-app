@@ -17,7 +17,11 @@ describe('searchStac', () => {
           features: [
             {
               id: 'S2C_19TEM_20261005_0_L2A',
-              properties: { datetime: '2026-10-05T15:30:00Z', 'eo:cloud_cover': 12 },
+              properties: {
+                datetime: '2026-10-05T15:30:00Z',
+                'eo:cloud_cover': 12,
+                created: '2026-10-06T01:14:00.123Z',
+              },
               geometry: { type: 'Polygon', coordinates: [] },
             },
           ],
@@ -46,6 +50,8 @@ describe('searchStac', () => {
         datetime: '2026-10-05T15:30:00Z',
         cloudCoverPct: 12,
         footprint: { type: 'Polygon', coordinates: [] },
+        // When the catalog published it; an item that doesn't say carries none.
+        created: '2026-10-06T01:14:00.123Z',
       },
       {
         id: 'S1A_IW_GRDH_1SDV_20261006T224512_20261006T224537_05A1B2_06C3D4',

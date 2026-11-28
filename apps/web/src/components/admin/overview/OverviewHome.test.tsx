@@ -261,6 +261,23 @@ describe('OverviewHome', () => {
     expect(screen.getByText('Every job is listed')).toBeInTheDocument();
     expect(screen.getByText('not run')).toBeInTheDocument();
   });
+
+  it('an imagery cron with no tick recorded says so, never “not run”', () => {
+    render(
+      <OverviewHome
+        data={{
+          machinery: {
+            jobs: [{ id: 'imagery-pump', name: 'Imagery pump', state: 'never', at: null }],
+            more: 0,
+            moreAllOk: true,
+          },
+        }}
+        now={NOW}
+      />,
+    );
+    expect(screen.getByText('not recorded yet')).toBeInTheDocument();
+    expect(screen.queryByText('not run')).toBeNull();
+  });
 });
 
 describe('overviewHref', () => {
