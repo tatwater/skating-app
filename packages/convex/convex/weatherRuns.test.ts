@@ -117,7 +117,7 @@ vi.mock('./cronRuns', async (importOriginal) => {
   };
 });
 
-// Core's one rule, recorded; a stand-in sorts by the design's words until the chain builder's lands.
+// Core's one rule, recorded (and called through: the causes asserted are the real rule's).
 vi.mock('@skating/core', async (importOriginal) => {
   const core = await importOriginal<typeof import('@skating/core')>();
   return {
@@ -131,19 +131,10 @@ vi.mock('@skating/core', async (importOriginal) => {
       if (rec.digestThrows !== null) throw new RangeError('digest refused');
       return core.buildWeatherCellDigest(...args);
     },
+    // The real rule, its inputs recorded: every injected fault must land in its own cause.
     fetchFailureCause: (f: FetchFailure): CronFailureCause => {
       rec.failures.push(f);
-      if (f.empty) return 'emptyAnswer';
-      if (f.status !== undefined) {
-        if (f.status === 429) return 'rateLimit';
-        if (f.status >= 500) return 'serverError';
-        return 'refused';
-      }
-      const e = f.error as { name?: string } | undefined;
-      if (e?.name === 'TimeoutError' || e?.name === 'AbortError') return 'timeout';
-      if (e?.name === 'SyntaxError') return 'badAnswer';
-      if (e?.name === 'TypeError') return 'unreachable';
-      return 'other';
+      return core.fetchFailureCause(f);
     },
   };
 });
@@ -485,7 +476,12 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     // In arrival order: the head opens a branch for its inline batch; that batch closes it and
     // opens the next; the head closes its own (no tick: `closeChainHead`, before the scheduled
     // batches run); the middle batch; the last.
-    expect(s[0]).toEqual({ runId: s[0]?.runId, opened: 1 });
+    // The open carries the tier's start line (and nothing else); the start counts rode the open.
+    expect(s[0]).toEqual({
+      runId: s[0]?.runId,
+      opened: 1,
+      lines: [expect.objectContaining({ kind: 'stage' })],
+    });
     expect(s[1]).toMatchObject({ opened: 1, closed: 1 });
     expect(s[2]).toEqual({ runId: s[0]?.runId, closed: 1, head: true });
     expect(s[3]).toMatchObject({ opened: 1, closed: 1 });
@@ -497,8 +493,10 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     // The counts: every cell either stored or failed; each request counted and weighed (×10).
     const c = summed();
     const failed = Object.keys(FAULTS).length;
+    // What is known at the start rides the open, once; no step repeats it.
+    expect(rec.opens[0]).toMatchObject({ counts: { pastDays: 3 } });
+    expect(c.pastDays).toBeUndefined();
     expect(c).toMatchObject({
-      pastDays: 3,
       cells: 100,
       cellsStored: 100 - failed,
       cellsFailed: failed,
@@ -565,8 +563,9 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     standIn();
     await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
     await drain(t);
-    expect(steps()[1]?.lines?.[0]?.text).toBe('14-day append · 3,043 cells registered');
-    expect(steps()[1]?.counts).toMatchObject({ registry: 3043, pastDays: 14 });
+    expect(steps()[0]?.lines?.[0]?.text).toBe('14-day append · 3,043 cells registered');
+    expect(rec.opens[0]).toMatchObject({ counts: { registry: 3043, pastDays: 14 } });
+    expect(summed().registry).toBeUndefined();
   });
 
   test('under the dispatcher (a tick) the head returns its run for the merge and closes nothing itself', async () => {
@@ -588,7 +587,10 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     expect(res.cronReport).toMatchObject({ worked: true, runId, season: expect.any(String) });
     // The head opened its batch's branch, the batch closed it; the head's own is left for the
     // dispatcher's merge of the returned report.
-    expect(steps()).toEqual([{ runId, opened: 1 }, expect.objectContaining({ runId, closed: 1 })]);
+    expect(steps()).toEqual([
+      expect.objectContaining({ runId, opened: 1 }),
+      expect.objectContaining({ runId, closed: 1 }),
+    ]);
     expect(steps()[1]?.opened).toBeUndefined();
     expect(openAfter()).toBe(1);
   });
@@ -685,7 +687,7 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     };
     await expect(maybeRefreshFilterTierHandler(ctx, {})).rejects.toThrow('batch died');
     expect(steps()).toEqual([
-      { runId: expect.any(String), opened: 1 },
+      expect.objectContaining({ runId: expect.any(String), opened: 1 }),
       { runId: expect.any(String), closed: 1, head: true, error: 'batch died: https://x/' },
     ]);
   });
@@ -712,7 +714,7 @@ describe('the filter append records one run of its whole chain (D349)', () => {
       runId: expect.any(String),
     });
     // Only the branch it opened for the batch that never reported: the recorder closes the run.
-    expect(steps()).toEqual([{ runId: expect.any(String), opened: 1 }]);
+    expect(steps()).toEqual([expect.objectContaining({ runId: expect.any(String), opened: 1 })]);
   });
 
   test('out of season: a quiet tick, no run opened', async () => {
@@ -752,8 +754,8 @@ describe('the bay append reports the same, over bays', () => {
     expect(steps()[1]?.opened).toBeUndefined();
     expect(steps()[1]).toMatchObject({ closed: 1 });
     expect(steps()[2]).toMatchObject({ closed: 1, head: true });
+    expect(steps()[0]?.lines?.map((l) => l.text)).toEqual(['14-day append · every live bay']);
     expect(steps()[1]?.lines?.map((l) => l.text)).toEqual([
-      '14-day append · every live bay',
       'Done in 1 step · 0 of 0 bays stored, 0 failed',
     ]);
     expect(openAfter()).toBe(0);
@@ -1499,13 +1501,13 @@ describe('the edges of a run', () => {
     };
     await expect(maybeSweepGapsHandler(ctx, {})).rejects.toThrow('tier died');
     expect(steps()).toEqual([
-      { runId: expect.any(String), opened: 1 },
+      expect.objectContaining({ runId: expect.any(String), opened: 1 }),
       { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
     ]);
     rec.steps.length = 0;
     await expect(maybeSyncWeatherCellsHandler(ctx, {})).rejects.toThrow('tier died');
     expect(steps()).toEqual([
-      { runId: expect.any(String), opened: 1 },
+      expect.objectContaining({ runId: expect.any(String), opened: 1 }),
       { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
     ]);
     // With the open failing too, the throw is the job's own.

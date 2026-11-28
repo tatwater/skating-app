@@ -20,12 +20,14 @@ import {
   type CronTickContext,
   type FetchFailure,
   fetchFailureCause,
+  mergeCauseTallies,
+  redactSample,
   withCronReport,
 } from '@skating/core';
 import { v } from 'convex/values';
-import { internal } from '../_generated/api';
 import type { Id } from '../_generated/dataModel';
 import type { ActionCtx } from '../_generated/server';
+import { chainStepSafely, closeChainHead, type OpenedChain } from './chainRun';
 
 /** A failure as a job keeps it: its cause (core's one rule) and a sample's text. */
 export interface CausedFailure {
@@ -34,15 +36,13 @@ export interface CausedFailure {
 }
 
 /**
- * A sample's text, safe to keep on a run row: a URL loses its query string and fragment (a request's
- * coordinates, or any key a provider might take there), a `key=…`/`token=…`/`secret=…` pair loses its
- * value, and the rest is trimmed to core's `CRON_CAUSE_SAMPLE_MAX`, never through a surrogate pair.
+ * A sample's text, safe to keep on a run row: core's `redactSample` (a URL loses its credentials,
+ * query string and fragment; a secret-named `key=value` pair its value — the recorder's own rule, so
+ * the two can't disagree), then trimmed to core's `CRON_CAUSE_SAMPLE_MAX`, never through a surrogate
+ * pair.
  */
 export function sampleTextOf(raw: string): string {
-  const scrubbed = raw
-    .replace(/(https?:\/\/[^\s?#'"]*)[?#][^\s'"]*/gi, '$1')
-    .replace(/\b((?:api[_-]?)?key|token|secret|password)=[^\s&,;'"]*/gi, '$1=…')
-    .trim();
+  const scrubbed = redactSample(raw).trim();
   const text = scrubbed.length > 0 ? scrubbed : 'no detail';
   if (text.length <= CRON_CAUSE_SAMPLE_MAX) return text;
   const cut = text.slice(0, CRON_CAUSE_SAMPLE_MAX);
@@ -67,12 +67,13 @@ export function statusText(provider: string, status: number): string {
 }
 
 /**
- * One step's tallies: counts added key by key, failures grouped by cause (the count, the first
- * sample), lines in order. Built per batch and handed to its run whole.
+ * One step's tallies: counts added key by key, failures grouped by cause (core's
+ * `mergeCauseTallies`, the rule the run row folds by: the count, the first sample, one entry per
+ * cause in the vocabulary's order), lines in order. Built per batch and handed to its run whole.
  */
 export class StepTally {
   readonly counts: Record<string, number> = {};
-  private readonly byCause = new Map<CronFailureCause, CronCauseTally>();
+  private byCause: CronCauseTally[] = [];
   readonly lines: CronReportLine[] = [];
 
   /** Add `n` (an integer) to `key`; a zero still names the key, so a report says *0 failed*. */
@@ -97,39 +98,36 @@ export class StepTally {
 
   /** One failed item: `key` names it (a cell key, a state code, a hazard id — never content). */
   fail(failure: CausedFailure, key: string, at: number = Date.now()): void {
-    const had = this.byCause.get(failure.cause);
-    if (had) {
-      had.count += 1;
-      return;
-    }
-    this.byCause.set(failure.cause, {
-      cause: failure.cause,
-      count: 1,
-      sampleKey: key,
-      sampleText: sampleTextOf(failure.text),
-      sampleAt: at,
-    });
+    this.byCause = mergeCauseTallies(this.byCause, [
+      {
+        cause: failure.cause,
+        count: 1,
+        sampleKey: key,
+        sampleText: sampleTextOf(failure.text),
+        sampleAt: at,
+      },
+    ]);
   }
 
   line(kind: CronReportLine['kind'], text: string, at: number = Date.now()): void {
     this.lines.push({ kind, text, loggedAt: at });
   }
 
-  /** The failures by cause, in the order each cause was first seen. */
+  /** The failures by cause, one entry per cause, in the vocabulary's order. */
   causes(): CronCauseTally[] {
-    return [...this.byCause.values()];
+    return this.byCause.map((c) => ({ ...c }));
   }
 
   /** How many items failed, over every cause. */
   failures(): number {
     let n = 0;
-    for (const c of this.byCause.values()) n += c.count;
+    for (const c of this.byCause) n += c.count;
     return n;
   }
 
   /** One `warn` line per cause, with its count and its sample — the log's word for this step. */
   causeLines(noun: string, at: number = Date.now()): void {
-    for (const c of this.byCause.values()) {
+    for (const c of this.byCause) {
       const what = c.count === 1 ? noun : `${noun}s`;
       const sample = c.sampleKey === undefined ? c.sampleText : `${c.sampleKey}: ${c.sampleText}`;
       this.line('warn', `${c.count} ${what} failed (${CAUSE_WORDS[c.cause]}) · e.g. ${sample}`, at);
@@ -167,20 +165,12 @@ export const cronRunArg = v.object({
   step: v.number(),
   /** The branch's running totals before this batch (`cells`, `stored`, `failed`, …). */
   so: v.optional(v.record(v.string(), v.number())),
-  /**
-   * The head's first line and counts, carried into its first batch so they reach the run with that
-   * batch's step — ahead of every later line (the head's own report merges only at its end).
-   */
-  startLine: v.optional(v.string()),
-  startCounts: v.optional(v.record(v.string(), v.number())),
 });
 
 export interface CronRunArg {
   runId: Id<'cronRuns'>;
   step: number;
   so?: Record<string, number>;
-  startLine?: string;
-  startCounts?: Record<string, number>;
 }
 
 /** The next batch's `cronRun`: one step on, the totals so far. */
@@ -188,12 +178,13 @@ export function nextCronRun(run: CronRunArg, so: Record<string, number>): CronRu
   return { runId: run.runId, step: run.step + 1, so };
 }
 
-/** A batch's tally, opened with the head's first line and counts when it carries them. */
-export function stepTallyFor(run: CronRunArg | undefined): StepTally {
-  const tally = new StepTally();
-  if (run?.startLine !== undefined) tally.line('stage', run.startLine);
-  for (const [k, n] of Object.entries(run?.startCounts ?? {})) tally.add(k, n);
-  return tally;
+/**
+ * A start line, as the head sends it on the branch it opens for a tier's first batch
+ * (`openChainBranch`): ahead of every batch's lines. The counts known at the start (the registry's
+ * size, the days asked for) ride `openChainRun` itself, once.
+ */
+export function stageLine(text: string, at: number = Date.now()): CronReportLine {
+  return { kind: 'stage', text, loggedAt: at };
 }
 
 /** `a` and `b` added key by key (the branch's own running totals; never `Max`/`Min`/`oldest` keys). */
@@ -287,79 +278,3 @@ export const BUSY_REPORT: CronReport = {
   worked: false,
   detail: 'A run of this job is already going',
 };
-
-// ─── The chain's calls (S4's `lib/chainRun.ts`, B01-8c-1) ────────────────────────────────────────
-//
-// INTEGRATION: these four mirror `lib/chainRun.ts` on the chain builder's branch — the same names,
-// arguments and answers — so the merge deletes this section and imports them from './chainRun'.
-// They call this branch's stub mutations; the real ones add a write-conflict retry to the step and
-// accept `counts` at open (not sent here: the stub's validator would refuse it — the start counts
-// ride the first batch's step instead, which folds the same).
-
-/** What `openChainRun` answers: the run, a live run of the job (`busy`), or no run (it failed). */
-export type OpenedChain = { runId: Id<'cronRuns'> } | { busy: Id<'cronRuns'> } | { runId: null };
-
-/** One step's tallies (`cronRuns.chainStep`'s arguments, less the run). */
-export interface ChainStepTallies {
-  opened?: number;
-  closed?: number;
-  counts?: Record<string, number>;
-  causes?: CronCauseTally[];
-  lines?: CronReportLine[];
-  error?: string;
-}
-
-/** Open the run before the first batch, from the tick (or as a chained `manual` run with none). */
-export async function openChainRun(
-  ctx: Pick<ActionCtx, 'runMutation'>,
-  tick: CronTickContext | undefined,
-  run: { job: string; detail?: string; season?: string },
-): Promise<OpenedChain> {
-  try {
-    return await ctx.runMutation(internal.cronRuns.openRun, {
-      job: tick?.job ?? run.job,
-      startedAt: tick?.startedAt ?? Date.now(),
-      trigger: tick?.trigger ?? 'manual',
-      ...(tick?.byUserId !== undefined ? { byUserId: tick.byUserId as Id<'profiles'> } : {}),
-      ...(run.detail !== undefined ? { detail: run.detail } : {}),
-      ...(run.season !== undefined ? { season: run.season } : {}),
-    });
-  } catch (err) {
-    console.error(`cron "${run.job}": openRun failed, running unrecorded: ${thrownText(err)}`);
-    return { runId: null };
-  }
-}
-
-/** One step into the run; nothing without a run; a recorder that throws is logged, never rethrown. */
-export async function chainStepSafely(
-  ctx: Pick<ActionCtx, 'runMutation'>,
-  runId: Id<'cronRuns'> | null | undefined,
-  step: ChainStepTallies & { head?: boolean },
-): Promise<void> {
-  if (runId === null || runId === undefined) return;
-  try {
-    await ctx.runMutation(internal.cronRuns.chainStep, { runId, ...step } as never);
-  } catch (err) {
-    console.error(
-      `cronRuns.chainStep failed on run ${runId}, the work goes on: ${thrownText(err)}`,
-    );
-  }
-}
-
-/** A branch opened for a batch the head is about to run inline or schedule (no batch counted). */
-export function openChainBranch(
-  ctx: Pick<ActionCtx, 'runMutation'>,
-  runId: Id<'cronRuns'> | null | undefined,
-  branches = 1,
-): Promise<void> {
-  return chainStepSafely(ctx, runId, { opened: branches });
-}
-
-/** A head with no tick closes its own branch at its end, with its own tallies if it has any. */
-export function closeChainHead(
-  ctx: Pick<ActionCtx, 'runMutation'>,
-  runId: Id<'cronRuns'> | null | undefined,
-  step: Omit<ChainStepTallies, 'opened' | 'closed'> = {},
-): Promise<void> {
-  return chainStepSafely(ctx, runId, { ...step, closed: 1, head: true });
-}

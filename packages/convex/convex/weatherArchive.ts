@@ -92,6 +92,7 @@ import {
 } from './_generated/server';
 import { apiCallDayMs, meterOpenMeteo, openMeteoCallWeight } from './lib/apiMeter';
 import { liveSubAreaOf } from './lib/bodies';
+import { openChainBranch, openChainRun } from './lib/chainRun';
 import { WEATHER_DAY_SOURCES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { errorClassOf } from './lib/readBudget';
@@ -110,13 +111,11 @@ import {
   failHead,
   fmt,
   nextCronRun,
-  openChainBranch,
-  openChainRun,
   runOf,
-  type StepTally,
+  StepTally,
   sampleTextOf,
+  stageLine,
   statusText,
-  stepTallyFor,
   thrownText,
 } from './lib/weatherReport';
 import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_PROVIDER, openMeteoForecastUrl } from './weather';
@@ -671,7 +670,7 @@ export const backfillWeatherCells = internalAction({
     }
 
     // The run's report (D349, B01-8c): observation only — nothing below reads it.
-    const tally = stepTallyFor(cronRun);
+    const tally = new StepTally();
     const tierWord = targetTier === 'filter' ? 'Filter' : 'Browse';
     const report = async (next: boolean, scannedHere: number): Promise<Record<string, number>> => {
       tally.add('scanned', scannedHere);
@@ -1135,18 +1134,12 @@ export async function maybeSyncWeatherCellsHandler(
   const tiers: { tier: string; pruned: number }[] = [];
   try {
     for (const tier of WEATHER_TIERS) {
-      await openChainBranch(ctx, run);
+      await openChainBranch(ctx, run, 1, [
+        stageLine(`${tier === 'filter' ? 'Filter' : 'Browse'}: walking the corpus`),
+      ]);
       const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, {
         tier,
-        ...(run !== null
-          ? {
-              cronRun: {
-                runId: run,
-                step: 1,
-                startLine: `${tier === 'filter' ? 'Filter' : 'Browse'}: walking the corpus`,
-              },
-            }
-          : {}),
+        ...(run !== null ? { cronRun: { runId: run, step: 1 } } : {}),
       });
       tiers.push({ tier, pruned: res.pruned });
     }
@@ -1800,7 +1793,7 @@ export const refreshTierDays = internalAction({
       ...(afterKey === undefined ? {} : { afterKey }),
       limit: CELL_BATCH_SIZE,
     });
-    const tally = stepTallyFor(cronRun);
+    const tally = new StepTally();
     if (cells.length === 0) {
       if (cronRun) await endAppendStep(ctx, cronRun, tally, 'cell', false);
       return { done: true, cells: 0 };
@@ -2090,7 +2083,7 @@ export const sweepWeatherDayGaps = internalAction({
     // Yesterday is the newest day worth judging: today's row is legitimately partial until tomorrow.
     const toMs = today - DAY_MS;
     const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
-    const tally = stepTallyFor(cronRun);
+    const tally = new StepTally();
     // The budget is set once, as the walk starts; a walk from before B01-8c carries none and spends
     // nothing on partial days.
     const state: PartialRepair = partial
@@ -2210,7 +2203,7 @@ export const refetchPartialDays = internalAction({
     const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
     const batch = cells.slice(0, CELL_BATCH_SIZE);
     const rest = cells.slice(CELL_BATCH_SIZE);
-    const tally = stepTallyFor(cronRun);
+    const tally = new StepTally();
     const failed: { key: string; errorClass: string }[] = [];
     for (const cell of batch) {
       const key = `${tier}:${cell.cellKey}`;
@@ -2780,21 +2773,16 @@ export async function maybeSweepGapsHandler(
     for (const tier of WEATHER_TIERS) {
       const size = states.find((s) => s.tier === tier)?.cellCount ?? null;
       const word = tier === 'filter' ? 'Filter' : 'Browse';
-      await openChainBranch(ctx, runId);
+      await openChainBranch(ctx, runId, 1, [
+        stageLine(
+          size === null
+            ? `${word}: checking the registered cells`
+            : `${word}: checking ${fmt(size)} registered cells`,
+        ),
+      ]);
       const res = await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, {
         tier,
-        ...(runId !== null
-          ? {
-              cronRun: {
-                runId,
-                step: 1,
-                startLine:
-                  size === null
-                    ? `${word}: checking the registered cells`
-                    : `${word}: checking ${fmt(size)} registered cells`,
-              },
-            }
-          : {}),
+        ...(runId !== null ? { cronRun: { runId, step: 1 } } : {}),
       });
       repaired[tier] = res.repaired;
     }
@@ -3542,7 +3530,7 @@ export const refreshBayDays = internalAction({
       seenKeys: seen,
     });
     const days = pastDays ?? APPEND_PAST_DAYS;
-    const tally = stepTallyFor(cronRun);
+    const tally = new StepTally();
     for (const cell of page.cells) {
       // Per-cell isolation, as in `refreshTierDays`: one transport failure must not abandon the
       // batch, and the gap sweep comes back for whatever this missed.
@@ -3649,8 +3637,11 @@ async function runAppendHead(
 ): Promise<AppendTickResult> {
   const base = { started: true, season: head.season, pastDays: head.pastDays };
   const detail = `${head.pastDays}-day append`;
+  // What is known at the start rides the open itself, once (never a batch's step too).
+  const counts: Record<string, number> = { pastDays: head.pastDays };
+  if (head.registry !== null) counts.registry = head.registry;
   const runId = runOf(
-    await openChainRun(ctx, tick, { job: head.job, season: head.season, detail }),
+    await openChainRun(ctx, tick, { job: head.job, season: head.season, detail, counts }),
     tick,
   );
   if (runId === 'skip') {
@@ -3665,15 +3656,13 @@ async function runAppendHead(
     await head.first(undefined);
     return { ...base, cronReport: { worked: true, season: head.season, detail } };
   }
-  const startCounts: Record<string, number> = { pastDays: head.pastDays };
-  if (head.registry !== null) startCounts.registry = head.registry;
   const startLine =
     head.registry === null
       ? `${detail} · ${head.noun === 'bay' ? 'every live bay' : 'every registered cell'}`
       : `${detail} · ${fmt(head.registry)} ${head.noun}s registered`;
   try {
-    await openChainBranch(ctx, runId);
-    await head.first({ runId, step: 1, startLine, startCounts });
+    await openChainBranch(ctx, runId, 1, [stageLine(startLine)]);
+    await head.first({ runId, step: 1 });
   } catch (err) {
     throw await failHead(ctx, tick, runId, err, { season: head.season });
   }

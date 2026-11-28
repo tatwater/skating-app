@@ -122,13 +122,20 @@ export async function retryOnWriteConflict<R>(send: () => Promise<R>): Promise<R
   }
 }
 
-/** A branch opened for a batch the head is about to run inline or schedule (no batch counted). */
+/**
+ * A branch opened for a batch the head is about to run inline or schedule (no batch counted), with
+ * the branch's start line if it has one — so it lands ahead of every line the batch sends.
+ */
 export function openChainBranch(
   ctx: Pick<ActionCtx, 'runMutation'>,
   runId: Id<'cronRuns'> | null | undefined,
   branches = 1,
+  lines?: CronReportLine[],
 ): Promise<void> {
-  return chainStepSafely(ctx, runId, { opened: branches });
+  return chainStepSafely(ctx, runId, {
+    opened: branches,
+    ...(lines !== undefined && lines.length > 0 ? { lines } : {}),
+  });
 }
 
 /** A head with no tick closes its own branch at its end, with its own tallies if it has any. */
