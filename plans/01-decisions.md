@@ -9608,3 +9608,28 @@ cron records every tick.
 **Why:** a record every pipeline page and Health can read, which no job can forget to write.
 
 **Related:** D343, D346, [`phase-B01`](./phases/B01-admin-console.md) *B01-8b — The design*.
+
+## D348 — A cut's log is the cutter's own upload merged with Fly's word at settle, kept in Convex; finished Machines wait for the pump (B01-8b)
+
+**Decided (2026-11-27, B01-8b's design, ruled by the governor; the founder ruled fork 2 the same
+day).** The cutter stamps every line it writes and uploads its log to R2 while it runs, to a key the
+pump hands it (`logs/cuts/<season>/<granule>/a<attempt>.log`). Machines are created with
+`auto_destroy: false` and kept stopped until the pump reads them (fork 3, the governor): at settle
+the pump reads the Machine's exit event (code, out of memory, times) and, for a cut that didn't
+land, Fly's own log lines; merges them with the upload (one pure function in core, ordered by each
+line's own clock, Fly's app lines kept only past the upload's last, capped with the end kept);
+stores the lines in Convex under the attempt; deletes the R2 object; and destroys the Machine. A
+stopped cut Machine the pump finds while listing is destroyed then: one whose attempt is settled
+(its exit read first if the settle couldn't), or one no attempt claims once stopped an hour; never
+one whose attempt is open, and never another app's Machine. Past 50 stopped cut Machines it can't
+clear, no new cut starts and the admins are emailed once a day; while any are left stopped the pump
+lists and sweeps even with nothing queued. One attempt is one row (`imageryAttempts`), numbered past
+the granule's highest (never reused), kept with its granule; its lines are kept 200 days when it
+failed, 30 otherwise. The bucket is public, so the object lives minutes and a 30-day lifecycle rule
+on `logs/` is the net; the bucket's public base is `r2.dev`, not a custom domain, so no rule blocks
+`/logs/*` (fork 2, the founder: (b) on a custom domain, else (a) — (a), as built).
+
+**Why:** D344's two sources, made capturable: the exit is otherwise destroyed before anything reads
+it, and the page reads only Convex, never a signed URL in a browser.
+
+**Related:** D344, D346, D347, [`phase-B01`](./phases/B01-admin-console.md) *B01-8b — The design*.

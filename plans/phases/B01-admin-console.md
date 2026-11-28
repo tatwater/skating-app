@@ -18162,7 +18162,7 @@ path every cron runs on), so it earns a review of its own.
 | Builder | Owns | Asks for, never edits |
 |---|---|---|
 | **X2 — the seams (first)** | `schema.ts` (`imageryAttempts`; the granule, counts and pump fields; `by_season_queued`); `lib/enums.ts` (the five verbs, `imagerySeason`, the verdicts); `lib/undoPolicy.ts` (two rows); stubs: `machineryImagery.ts`, `core/src/cutLog.ts`; the route shell and `routeTree.gen.ts`; `actionLabels.ts`, `overviewData.ts`' `ACTION_WORDS`; `_generated`; `plans/06-data-model.md` | — |
-| **S3 — the imagery server** | `imageryLive.ts`, `lib/fly.ts`, `lib/r2.ts`, `lib/imageryPump.ts`; `machineryImagery.ts`; `core/src/cutLog.ts`, `core/src/stacSearch.ts` (`created`); `seasonWatch.ts` (the two writes moved out); `imageryIngest.ts:418` and `lib/seasonWatchEmails.ts` (the links and three sentences); `machineryRuns.ts`' `lanes` (the `imagery` key); `lib/undoHandlersMachinery.ts` (the start/pause pair); the guards' inventories; tests | X2's files |
+| **S3 — the imagery server** | `imageryLive.ts`, `lib/fly.ts`, `lib/r2.ts`, `lib/imageryPump.ts`; `machineryImagery.ts`; `core/src/cutLog.ts`, `core/src/stacSearch.ts` (`created`); `seasonWatch.ts` (the two writes moved out); `imageryIngest.ts:418` and `lib/seasonWatchEmails.ts` (the links and three sentences); `machineryRuns.ts`' `lanes` (the `imagery` key); `lib/undoHandlersMachinery.ts` (the start/pause pair); `cronRuns.ts` (`begin`, `finish`) and `machineryCrons.ts` (`cronLivenessInputOf`), for Ma27 (b); the guards' inventories; tests | X2's files |
 | **P — the cutter** | `scripts/imagery/cut-log.sh` (new), `cut-granule.sh` (the `source` line), `Dockerfile`, `README.md`, the vitest harness | — |
 | **W1 — the page** | `machinery/imagery/*`; `MachineryLanes.tsx`; the route's body; `SeasonWatch.tsx`, `SeasonWatch.test.tsx`, `admin.seasons.tsx` (the retirement); stories and tests | `crons/*` (W2's); `kit/` |
 | **W2 — the drawer** | `machinery/crons/*` and their stories and tests | W1's files |
@@ -18174,6 +18174,29 @@ presser for a manual run); S3's `begin` then calls a stamp set by an older *cron
 age (Convex never runs a cron over itself), keeps the age rule for a manual press, and records the
 killed run with the trigger and presser it really had. The liveness rule's `killed` follows the same
 split. The action limit measured on dev (Ma27 (a)) settles the manual age and the leases.
+
+*The rule, exactly (the governor's ruling for 8b-2, 2026-11-27; X2 landed the fields, S3 builds it):*
+
+- `cronHeartbeats` gains `runningTrigger?` (`cron` | `manual`) and `runningByUserId?`, written by
+  `begin` in the same patch as `runningSince` (the tick's own `trigger` and `byUserId`) and cleared
+  by `finish` with it, only when `runningSince` is still this tick's.
+- **A cron tick's `begin`** (`trigger: 'cron'`) that finds a stamp with `runningTrigger: 'cron'`
+  records that run `killed` **at any age**: Convex never starts a cron while its last run is still
+  executing, so a cron stamp the next cron tick finds belongs to a run that died. A stamp with
+  `runningTrigger: 'manual'`, or none (stamped before the widen), keeps the age rule (killed past
+  core's `CRON_KILLED_AFTER_MS`); a younger one is left as it is and overwritten, as today.
+- **A manual press's `begin`** (`trigger: 'manual'`) keeps the age rule for any stamp it finds: a
+  press can overlap a live cron run.
+- **The killed run is recorded with the stamp's own `runningTrigger` and `runningByUserId`** (Ma30),
+  `cron` and no presser when the stamp has none.
+- **The verdict** (core's `cronLiveness`): its `running` and `killed` keep the age rule for both
+  triggers. A heartbeat alone can't tell a long cron run from a dead one before the next tick
+  begins, so the split lives in the recording: a cron's kill reaches the card through the next
+  tick's `begin` (`lastOutcome: 'killed'`, then *failed* as 8b-1's card reads it, and a `killed`
+  run row). `CronLivenessInput` carries `runningTrigger` (optional, not read by the rule) so the
+  card can say who started the run on screen. `machineryCrons.cronLivenessInputOf` passes it (S3).
+- *For S3:* this means editing `cronRuns.ts` (`begin`, `finish`) and `machineryCrons.ts`
+  (`cronLivenessInputOf`), which the territory table doesn't list; they are added to S3's row here.
 
 **The seams that land first**, in each PR: the schema, the registry and its loop (8b-1), and the
 contracts below, as 8a's X did; the web derives its types from `api`, so the stubs return these
@@ -18247,6 +18270,34 @@ gains `copiedFrom?` (the copy's idempotence key). `runEvents` gains `runId?`, `c
 `by_attempt_seq` wait for 8b-2, beside `imageryAttempts`. The dispatcher stubs only run their job
 (nothing recorded), so the move changes no cron's behavior on its own; `cronJobs.test.ts` pins the
 52 names, schedules, functions and arguments against a literal table.
+
+**What X2 landed, where it differs** (2026-11-27, on `phase-b01-machinery-8b2` from `05864accc`,
+#190's squash). The schema as *Imagery* above, plus the Ma27 widen (`runningTrigger?`,
+`runningByUserId?` on `cronHeartbeats`). The vocabulary in `lib/enums.ts`:
+`IMAGERY_ATTEMPT_VERDICTS`, `IMAGERY_ATTEMPT_LOG_STATES`, `IMAGERY_MACHINE_MS_SOURCES`,
+`RUN_EVENT_ORIGINS`; the five verbs and `imagerySeason`. Five undo rows, not two: the policy is
+exhaustive over the verbs, so the three triggers carry `none` with their reason, and Start and Pause
+are each other's `inverse` (the handlers are S3's). The stubs in `machineryImagery.ts` export the
+views by name: `ImageryState`, `ImageryPageView`, `WatchFacts` (`season`, `openedAt`, `lineC`,
+`closestNight: { date, lowC, site } | null`, `staffEmailAt`; S3 may reshape it from the watch's
+reads), `GranuleRowView` (adds `mission`, `season`, `refusals` to the design's facts),
+`AttemptView`, `GranuleView`, `AttemptLogLineView` (`origin` is `'cutter' | 'fly' | 'pump' | null`),
+`ImageryReceipt`; constants `GRANULE_FILTERS`, `GRANULES_PAGE_SIZE` (25), `FAILED_FIRST_LIMIT` (50),
+`GRANULE_ATTEMPTS_LIMIT` (10), `ATTEMPT_LOG_PAGE_SIZE` (200). The reads answer as an empty season
+(`null`, an empty page); the writes pass their gate and refuse. `retryFailed`'s receipt is
+`{ actionId, requeued }`. Core's `cutLog.ts` holds the contract between the cutter and the pump as
+real code (`cutLogKey`, `formatCutLogLine` — the stamp is epoch ms, one space, the text —
+`parseCutterLog`, the cap constants) and `mergeCutLog` as the placeholder (`{ lines: [], dropped: 0 }`,
+its types `CutLogLine`, `CutterLogLine`, `FlyLogLine` with `source: 'app' | 'runner'`, `CutExit`,
+`PumpLogLine`). The route shell `/admin/machinery/imagery` validates its search
+(`components/admin/machinery/imagerySearch.ts`: `granule`, `attempt` only with a granule, `runs`)
+and draws nothing; no lane leads to it (*Imagery* joins `MachineryLanes` with W1's page, as 8a's
+Corpus lane did with its page). The audit feed opens an `imagerySeason` row there, for a viewer with
+`machinery.read` (`overviewRoutes.ts`), since a target type without its path fails the feed's
+exhaustive test. `machineryCrons`' views already send `durationMs: number | null` (`runsPage`) and
+`ms: number | null` (`strip`): W2 draws no duration where it is `null`. **The `never` state's word**
+(Ma28) is *Not recorded yet* wherever W1 and W2 draw a cron with no recorded tick (the card, the
+lane's tail); X2 owns no file that draws it.
 
 ##### Briefs (B01-8b)
 
@@ -18337,7 +18388,7 @@ the table is the quick look), and the Overview's imagery rows read the backbone.
 Convex's usage page against *What B01-8b-1's build found*'s measured costs, and whether a mutation
 tick's nested call is billed as a call of its own (Ma26).
 
-*8b-2*: (1) the deploy, asked of the founder. (2) The image built, pushed and pinned on dev by the
+*8b-2* (as designed; as finally true in *What B01-8b-2's build found*): (1) the deploy, asked of the founder. (2) The image built, pushed and pinned on dev by the
 executor, after telling the founder (*The cutter image*), and the old ref noted for rollback. (3) The
 `logs/` lifecycle rule (30 days) set on the bucket by the founder in Cloudflare. (4) The page, read
 only: the state, the granules, an old granule's *Attempts weren't recorded* note, the drawer's history
@@ -18447,7 +18498,7 @@ reserved D340–D359, unless main has moved).
   failed. A job says it did work through its return value. A test fails when a cron is registered
   outside the registry. *Why:* a record every pipeline page and Health can read, which no job can
   forget to write.
-- **D348 — A cut's log is the cutter's own upload merged with Fly's word at settle, kept in Convex;
+- **D348** (minted 2026-11-27 by 8b-2's X2, adjusted for forks 2 and 3) **— A cut's log is the cutter's own upload merged with Fly's word at settle, kept in Convex;
   finished Machines wait for the pump (B01-8b).** The cutter stamps and uploads its log to R2 while it
   runs; Machines are kept stopped until the pump reads their exit event (and, for a cut that didn't
   land, Fly's own lines), merges them with the upload, stores the lines under the attempt, deletes the
@@ -18529,6 +18580,117 @@ the build learned that the design didn't say, and what the 8b-2 builders inherit
 - **The `never` state's word** on the web is left as it is; 8b-2 changes it to *not recorded yet*
   (Ma28).
 
+#### What B01-8b-2's build found
+
+*Integrated 2026-11-28 on `phase-b01-machinery-8b2` (X2, then S3, P, W2, W1, then the executor's
+reconciliation, review and proofs); origin/main had not moved past #190's squash.* What the build
+learned that the design didn't say.
+
+- **The bucket's public base is `r2.dev`, so fork 2 resolves to (a).** No Cloudflare custom domain
+  fronts `skating-imagery`, so there is no WAF rule to write: a log object lives the minutes between
+  the cutter's upload and the pump's copy, and the founder sets the 30-day lifecycle rule on `logs/`
+  in the dashboard (after-merge step 3).
+- **Fly's log endpoint is untested against Fly.** No deployment token was loaded locally, so the
+  read-only probe the brief asked for wasn't run. Fly's own lines are therefore optional by
+  construction: a refusal or a changed endpoint keeps the exit event and writes one *Fly's own log
+  lines couldn't be read* line into the attempt's log (Ma22 stays open; tested).
+- **Attempt numbers are never reused.** An attempt is numbered past the granule's highest recorded
+  one, so *Retry failed* after attempts 1 and 2 opens attempt 3 (proven on the local backend: 1–4
+  for each retried granule). The list's chip says *2 attempts* (the granule's count since its last
+  retry), never *2 of 2*.
+- **The keep rule, as built.** Machines are kept (`auto_destroy: false`) until the pump has read
+  their exit onto the attempt; then the settle copies the log and destroys the Machine. The sweep,
+  over each listing of this app's Machines, destroys only cut Machines (`granule-*`): one whose
+  attempt is settled (reading its exit first if the settle couldn't), or one no attempt claims once
+  Fly says it has been stopped an hour; never one whose attempt is still open. **The bound**: past
+  50 stopped cut Machines it can't clear (twice the live cap), no new cut starts and the admins get
+  one email a day (*Finished satellite cuts are not being cleared*) until the sweep clears them. The
+  pump row now keeps how many it left stopped (`stoppedMachines`, a widen found in review): while
+  above zero a tick lists and sweeps even when imagery is paused or ended with nothing queued, so a
+  Machine whose destroy failed never waits a season on the bill.
+- **One cron-state rule, in core.** `cronJobState` (the Overview's) moved to core with S3; the
+  executor added `cronCardState` (Machinery's card: a run cut off mid-way is its own state, worded
+  *Cut off*, the governor's ruling) and `worstCronJob` (the Imagery lane's tail, server and web). A
+  test holds the card, the lane and the Overview to one answer at the same `now`; the card alone
+  draws *Cut off*, which folds back to the Overview's *failed*.
+- **The poll's *Run now*** is one control beside its card and in the runs drawer's foot: pressable
+  while imagery runs, drawn disabled while it waits for a start, not drawn when paused or ended (the
+  server refuses a poll in both). A run another job chained (the poll's follow-on pump, `manual`
+  with no presser, Ma27 (b)) never reads *Run now* on a card or a run row.
+- **A stop from outside is worded as one.** Fly stops a Machine with SIGINT and a five-second grace;
+  a non-interactive bash child ignores SIGINT, so the cutter's logger waits one second, exits 130
+  and uploads its last lines inside the grace (P's harness proves the timings). An exit past 128
+  without Fly's `oom_killed` reads *Stopped from outside (SIGINT)*, never the cutter's error.
+- **A no-log attempt says both things it could be.** `log: 'none'` from a Machine that ran means the
+  cutter uploaded nothing: an image from before logs were kept, or a cut that died before its first
+  upload; the page and the pump's note say so, and a refused or never-confirmed attempt (no Machine
+  at all) says that instead.
+- **The old panel's entry points are gone**, not kept as re-exports: `seasonWatch.startImagery` /
+  `pauseImagery` and `imageryLive.retryFailed` / `tryAgainNow` / `activity` had no caller left once
+  W1 retired the Seasons panel. Their tests moved to `machineryImagery`'s writes and page.
+- **A proof needs the local backend kept up.** `convex run` against the anonymous local deployment
+  starts the backend for the call and stops it after, so a scheduled action still running is lost
+  (*Transient error while executing action*); the proof ran `convex dev` in the background instead.
+  A STAC stand-in (`IMAGERY_STAC_URL`, never set on a real deployment, as `FLY_API_URL`) let the
+  poll run against a local catalog.
+
+##### The integrated tip's proof
+
+On a throwaway anonymous local backend with no credentials, against local stand-ins for STAC, Fly
+(Machines and logs), R2 and the public archive: *Start imagery* as an admin identity; the poll found
+the stand-in's four passes and queued them (`catalogedAt` stored); the follow-on pump spawned four
+attempts, each passed its `CUT_LOG_KEY`. Settled: one **landed** with its log kept (exit 0, 38 s
+machine time from Fly's events); one **empty** with the marker's reason on the granule and the log;
+one **OOM-killed** (exit 137, `oom_killed`), requeued, then failed on attempt 2 with Fly's runner lines
+merged after the cutter's; one **vanished** (no exit, a 404), requeued, then failed *gone with no frame
+and no nothing-to-cut record*, its log Fly's and the pump's word alone. Each settle copied the log,
+deleted the R2 object and destroyed the Machine: the stand-in ended with no Machine and no `logs/`
+object. *Pause*, then *Pause* again refused, *Run now* while paused refused, the pause undone
+(*Resume*), the undo again refused; *Try again now* refused with nothing waiting, then lifting a
+backoff; *Retry failed* requeued two (receipt `requeued: 2`), again refused; the retried attempts
+numbered 3 and 4. Five audit rows, each `imagerySeason`. The reads told that story:
+`machineryImagery.page` (running, started by the admin, 1 landed, 1 empty, 2 failed, the index built
+with one frame, machine-minutes summed, the image and when first seen), `granules` *All* (the failed
+left out, short pages with more to load) and *Failed*, `failedFirst`, `granule` (attempts oldest
+first, `before8b` false), `attemptLog` (each line's origin); `machineryCrons.jobs`, `strip`,
+`runsPage` (*Failed*) and `runLog` for the pump. Then a 2,600-line cutter log: the attempt kept 2,000
+lines with its end (ten pages of 200), and 3,000 more granules of the season paged at 25 under the
+read limits (*All* 3,003 rows in 121 pages, *Empty* 3,001). The cutter image wasn't built: Docker
+wasn't running on the laptop (P's vitest harness runs `cut-log.sh` itself under a stand-in
+`rclone`).
+
+##### After merge: dev, in order
+
+1. **The deploy**, asked of the founder: `convex dev --once` from main at the squash, codegen first.
+   Widen-only (`imageryAttempts`, the granule, counts and pump fields, `runEvents`' attempt lines, the
+   heartbeat's trigger); no backfill. A pump already running on the old code at that moment finishes
+   on it; its Machines were made auto-destroying and need nothing.
+2. **The image, built, pushed and pinned on dev by an executor, after telling the founder**
+   (*The cutter image*): note the current `FLY_IMAGE` ref first (the last attempt's `image`, or the
+   founder; never printed from the environment), `fly deploy --build-only --push --app
+   skating-imagery` from main, `convex env set FLY_IMAGE <new ref>` on dev. Rollback: set the old
+   ref back. The deploy and the pin work in either order.
+3. **The `logs/` lifecycle rule** (30 days) on `skating-imagery`, set by the founder in Cloudflare.
+4. **Read-only checks** on the page: the state and the head, the granules, an old granule's
+   *Attempts before … weren't recorded*, the cron cards and the runs drawer with the history copied
+   from the panel, the lane's tail and the Overview's imagery rows agreeing.
+5. **The buttons awaiting the founder's first press**: *Start imagery* (if not yet started) and its
+   *Undo*; *Pause*, *Resume*; *Run now* on the poll; *Retry failed*; *Try again now*. The first real
+   attempt's log read on the page.
+6. **The cloud action limit measured** (Ma27 (a)), with the founder, before the leases are re-read.
+
+##### Known and left
+
+- The board's lanes for Health, the Cost Ledger and the pipelines not yet built, and dollars in the
+  head, are absent by ruling; *Start imagery* is the kit's outlined bar button; the drawer has no
+  live *starting* row; the kit's table row height.
+- The sentinel chart is Seasons' `SentinelLows` as it is (its matrix draws no values, its marked
+  nights' words above the plot), with one fix: its words are measured as drawn, so they never
+  collide at the Imagery page's narrower width.
+- A landed cut whose Machine is still running past the 15-minute wait lands, and its Machine is left
+  to finish; one that hangs is never stopped (as before 8b-2) — Ma32.
+- A chained pump tick that found nothing still records a run row (a manual tick always does) — Ma33.
+
 #### Machinery follow-ups (the register)
 
 Ruling 20's list, with what this design's reading added. Each row says where it would land.
@@ -18540,8 +18702,8 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma3 | One quick in-run retry for a transient timeout on a weather cell (a pipeline change, so not in 8c's visibility-only scope) | ruling 20 | after 8c | open |
 | Ma4 | Provider response times (Open-Meteo, NWS, Fly's API, ORS) per run | ruling 20 | 8b/8c's run records, or Health | open |
 | Ma5 | A forecast of when the Open-Meteo quota runs out at the current rate (no quota constant exists in code; the board's *of 10,000 free · paid past 7,000* is invented) | ruling 20 | Weather (8c) | open |
-| Ma6 | The imagery cutter's run pinned in the record: `cutterImage` and when it was pinned (`seasonWatch.ts:1126` says it isn't recorded) | the imagery inventory | Imagery (8b-2): the attempt's `image` and the pump row's `imageSeenAt` (designed) | open |
-| Ma7 | An empty cut's reason (*Nothing to cut · 98% cloud*) lives only in R2's marker (`imageryLive.ts:811`); copy it onto the granule at settle | the imagery inventory | Imagery (8b-2): `emptyReason` (designed; the marker's reason is a footprint reason, never cloud) | open |
+| Ma6 | The imagery cutter's run pinned in the record: `cutterImage` and when it was pinned (`seasonWatch.ts:1126` says it isn't recorded) | the imagery inventory | Imagery (8b-2): the attempt's `image` and the pump row's `imageSeenAt` (designed) | done (B01-8b-2) |
+| Ma7 | An empty cut's reason (*Nothing to cut · 98% cloud*) lives only in R2's marker (`imageryLive.ts:811`); copy it onto the granule at settle | the imagery inventory | Imagery (8b-2): `emptyReason` (designed; the marker's reason is a footprint reason, never cloud) | done (B01-8b-2) |
 | Ma8 | The weather archive's chain (`refreshTierDays`, `weatherArchive.ts:1526`) carries no run id, and the `maybe*` wrappers' results are dropped | the imagery inventory | Weather (8c) | open |
 | Ma9 | `load.ts`' `main()` runs on import, so its lines stay untested (register Co9); L's `batchesTotal` change is in the same file | 7a's *Known and left* | 8a if L can move `main` behind `import.meta.main`, else open | open |
 | Ma10 | The logger's per-call subprocess (`pnpm exec convex run`, one to three seconds) bounds how often any pass can beat; a hosted runner would hold a client | this design | the hosted runner (the roadmap's deferred register) | open |
@@ -18561,11 +18723,13 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma24 | The backbone's cost measured on dev against the design's count (~6,800 calls and ~9 MB of I/O a day) | B01-8b's design | a day after 8b-1 deploys | open |
 | Ma25 | Stopped cut Machines left by a pump that was down are cleared on its next tick, but nothing shows how many wait meanwhile | B01-8b's design | Health (8e) | open |
 | Ma26 | Measure whether the dispatcher's nested `ctx.runMutation` is billed as a function call; if so, decide whether the frequent crons keep the wrapper (it doubles their calls, though `sparse` cuts their writes) | the founder's fork 1 ruling | 8b-1 measured locally: the nested call leaves no execution record of its own; confirmed from dev's usage page a day after the deploy | open |
-| Ma27 | Which action limit dev really enforces: core takes 30 minutes (measured locally) where Convex's docs say 10. At 30, a frequent announcing cron's kill (the pump, the geometry, the index) is never recorded if the real limit is 10, since its next tick overwrites the stamp inside 31 minutes; at 10, the pump's 15-minute lease and the support sender's 11-minute claim are too short if the real limit is 30. **Governor ruling, 2026-11-27:** (a) now — 8b-1 ships kill detection at 31 minutes, and the real cloud limit is measured on dev; (b) is scheduled for 8b-2, before its cards draw *killed*: record which trigger set `runningSince` (a widen), so a cron tick calls an older *cron* tick's stamp killed at any age (Convex never overlaps a cron with itself), and the manual-press age rule follows the measured limit | B01-8b-1's integration | (a) the measurement on dev (a sleeping action in a throwaway module, with the founder), then the leases re-checked against it; (b) 8b-2's X2 (the widen) and S3, before W2's cards draw *killed* | open |
-| Ma28 | The web draws the `never` state with today's word; it should read *not recorded yet* | B01-8b-1's integration | 8b-2 (W2) | open |
+| Ma27 | Which action limit dev really enforces: core takes 30 minutes (measured locally) where Convex's docs say 10. At 30, a frequent announcing cron's kill (the pump, the geometry, the index) is never recorded if the real limit is 10, since its next tick overwrites the stamp inside 31 minutes; at 10, the pump's 15-minute lease and the support sender's 11-minute claim are too short if the real limit is 30. **Governor ruling, 2026-11-27:** (a) now — 8b-1 ships kill detection at 31 minutes, and the real cloud limit is measured on dev; (b) is scheduled for 8b-2, before its cards draw *killed*: record which trigger set `runningSince` (a widen), so a cron tick calls an older *cron* tick's stamp killed at any age (Convex never overlaps a cron with itself), and the manual-press age rule follows the measured limit | B01-8b-1's integration | (a) the measurement on dev (a sleeping action in a throwaway module, with the founder), then the leases re-checked against it; (b) 8b-2's X2 (the widen, landed: `runningTrigger?`, `runningByUserId?`) and S3 (the rule, *Before 8b-2's cards draw killed*), before W2's cards draw *killed* | (b) done in B01-8b-2; (a) open |
+| Ma28 | The web draws the `never` state with today's word; it should read *not recorded yet* | B01-8b-1's integration | 8b-2 (W2) | done (B01-8b-2) |
 | Ma29 | The runs list's *Failed* tab reads `outcome = failed` only, so a killed run shows under *All* but not *Failed*, though the card and the rule count it failed; one `.paginate()` can't read two outcomes | B01-8b-1's review | 8b-2: a *Failed* filter over `failed` and `killed` (two reads merged, or a `bad` flag on the run row, a widen) | open |
-| Ma30 | A killed tick recorded by `begin` always says `trigger: cron` with no presser, even when the dead run was a manual press (`runningSince` doesn't say who set it) | B01-8b-1's review | 8b-2, with Ma27's (b) widen (the trigger and presser recorded beside `runningSince`) | open |
+| Ma30 | A killed tick recorded by `begin` always says `trigger: cron` with no presser, even when the dead run was a manual press (`runningSince` doesn't say who set it) | B01-8b-1's review | 8b-2, with Ma27's (b) widen (the trigger and presser recorded beside `runningSince`) | done (B01-8b-2) |
 | Ma31 | The season watch's same-day retries (`imageryIngest.maybeCheckSeasonOpen` scheduling itself) bypass the dispatcher: a retry that succeeds never reaches the heartbeat, which reads the morning's failure until the next 11:30 tick | B01-8b-1's review | with Ma20 (the chains as runs), or the dispatcher carrying a retry's arguments | open |
+| Ma32 | A landed cut whose Machine keeps running past `LANDED_WAIT_MS` (a cutter hung after its upload) lands and leaves its Machine live; nothing ever stops it, and once it stops while imagery is paused it waits for the next listing | B01-8b-2's review | a later pump change: stop a landed cut's Machine past a bound, and count it toward `stoppedMachines` | open |
+| Ma33 | A manual tick always records a run row, so the poll's chained pump tick that found the lease held, or nothing to do, still lists in the pump's runs as *ok* | B01-8b-2's review | a recorder change: a presser-less manual tick recorded only when it worked | open |
 
 ## Ruled out
 

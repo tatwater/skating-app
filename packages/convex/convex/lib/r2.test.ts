@@ -1,9 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  deleteObject,
   exists,
   getJson,
   getPublicJson,
+  getText,
   listObjects,
   parseListObjects,
   publicExists,
@@ -105,6 +107,35 @@ describe('listing', () => {
     await expect(getJson(config(), 'broken.json')).rejects.toThrow(/R2 get broken.json: 500/);
     // Sent once: no retry of its own.
     expect(seen).toHaveLength(3);
+  });
+
+  it('reads a cut log as text, signed, keeping its ends past the cap; deletes signed', async () => {
+    const seen: Request[] = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string) => {
+        const req = input instanceof Request ? input : new Request(input);
+        seen.push(req);
+        if (req.url.endsWith('/gone.log')) return new Response('', { status: 404 });
+        if (req.url.endsWith('/broken.log')) return new Response('', { status: 503 });
+        if (req.url.endsWith('/big.log')) return new Response(`HEAD${'x'.repeat(100)}TAIL`);
+        return new Response(req.method === 'DELETE' ? null : '1 a\n2 b\n', {
+          status: req.method === 'DELETE' ? 204 : 200,
+        });
+      }),
+    );
+    expect(await getText(config(), 'logs/cuts/s/g/a1.log')).toBe('1 a\n2 b\n');
+    expect(seen[0]?.headers.get('authorization')).toContain('AWS4-HMAC-SHA256');
+    expect(await getText(config(), 'gone.log')).toBeNull();
+    await expect(getText(config(), 'broken.log')).rejects.toThrow(/R2 get broken.log: 503/);
+    const cut = (await getText(config(), 'big.log', 40)) as string;
+    expect(cut.startsWith('HEAD')).toBe(true);
+    expect(cut.endsWith('TAIL')).toBe(true);
+    expect(cut).toContain('68 characters of this log were cut');
+    await deleteObject(config(), 'logs/cuts/s/g/a1.log');
+    await deleteObject(config(), 'gone.log');
+    expect(seen.at(-2)?.method).toBe('DELETE');
+    await expect(deleteObject(config(), 'broken.log')).rejects.toThrow(/R2 delete broken.log: 503/);
   });
 
   it('asks the bucket itself whether an object exists — a signed HEAD, sent once', async () => {

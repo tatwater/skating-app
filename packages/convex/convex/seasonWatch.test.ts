@@ -482,7 +482,7 @@ describe('reset, imagery and field dates', () => {
     const t = convexTest(schema, modules);
     await seedSeason(t);
     const admin = await seedUser(t, 'admin', 'admin');
-    await admin.as.mutation(api.seasonWatch.startImagery, { season: 'winter-2026-27' });
+    await admin.as.mutation(api.machineryImagery.startImagery, { season: 'winter-2026-27' });
     const started = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
     expect(started).toMatchObject({ imageryStartedBy: admin.id });
     // A poll to queue what is new; the pump's own 3-minute tick starts the cuts.
@@ -494,12 +494,12 @@ describe('reset, imagery and field dates', () => {
       ],
     ]);
 
-    await admin.as.mutation(api.seasonWatch.pauseImagery, { season: 'winter-2026-27' });
+    await admin.as.mutation(api.machineryImagery.pauseImagery, { season: 'winter-2026-27' });
     expect(
       (await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first()))?.imageryPausedAt,
     ).toBeTypeOf('number');
     vi.advanceTimersByTime(60_000);
-    await admin.as.mutation(api.seasonWatch.startImagery, { season: 'winter-2026-27' });
+    await admin.as.mutation(api.machineryImagery.startImagery, { season: 'winter-2026-27' });
     const resumed = await t.run((ctx) => ctx.db.query('imageryIngestSeasons').first());
     expect(resumed?.imageryPausedAt).toBeUndefined();
     // The original start is kept — it is the record of when imagery began.
@@ -510,11 +510,11 @@ describe('reset, imagery and field dates', () => {
     const t = convexTest(schema, modules);
     const admin = await seedUser(t, 'admin', 'admin');
     await expect(
-      admin.as.mutation(api.seasonWatch.startImagery, { season: 'winter-2026-27' }),
+      admin.as.mutation(api.machineryImagery.startImagery, { season: 'winter-2026-27' }),
     ).rejects.toThrow(/No watch is open/);
     await seedSeason(t, { closesOn: '2027-04-30' });
     await expect(
-      admin.as.mutation(api.seasonWatch.startImagery, { season: 'winter-2026-27' }),
+      admin.as.mutation(api.machineryImagery.startImagery, { season: 'winter-2026-27' }),
     ).rejects.toThrow(/has ended/);
   });
 

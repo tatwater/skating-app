@@ -15,7 +15,7 @@
  *
  * ## What it deliberately does not do
  *
- * **It does not start the imagery.** An admin presses *Start imagery* on `/admin/seasons` (D214);
+ * **It does not start the imagery.** An admin presses *Start imagery* on `/admin/machinery/imagery` (D214);
  * from then `imageryLive.poll` cuts each new pass every 6 hours until the watch ends. The cron's job
  * is to notice and to say so.
  *
@@ -415,7 +415,9 @@ export const sendNextEmail = internalMutation({
           subject: composed.subject,
           heading: composed.heading,
           blocks: composed.blocks,
-          deepLinkPath: '/admin/seasons',
+          // The two that ask for *Start imagery* open the Imagery page, where the button is (B01-8b-2);
+          // winter and the close are the watch's news, on the Seasons page with the watch.
+          deepLinkPath: seasonEmailLink(next.email.kind),
         });
         return { sent: next.email.kind };
       }
@@ -867,4 +869,13 @@ async function followOpenSeason(
     );
   }
   return { closed: true as const, season, closesOn };
+}
+
+/**
+ * Where a season email's button goes: the *opened* and *imagery* emails ask for *Start imagery*, which
+ * lives on Machinery › Imagery since B01-8b-2; *winter* and *closed* are the watch's own news, kept on
+ * the Seasons page beside it.
+ */
+export function seasonEmailLink(kind: string): string {
+  return kind === 'opened' || kind === 'imagery' ? '/admin/machinery/imagery' : '/admin/seasons';
 }

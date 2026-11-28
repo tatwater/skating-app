@@ -14,35 +14,21 @@
  * as *Not recorded yet*.
  */
 
-import type { CronLiveness, RunLiveness } from '@skating/core';
+import type { RunLiveness } from '@skating/core';
 import { callerNow } from '@skating/core';
 import { v } from 'convex/values';
 import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import crons from './crons';
 import { hasCapability, requireCapability } from './lib/auth';
+import { cronJobAt, cronJobState, JOB_STATES, type JobState } from './lib/cronJobState';
 import { latestMetric } from './lib/metricReads';
-import { type CronJobView, cronJobViews } from './machineryCrons';
+import { cronJobViews } from './machineryCrons';
 import { corpusTail } from './machineryRuns';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
-
-/**
- * A job's last word, worst first — the card's order. `running` is a corpus run reporting on time
- * (shown, so the card says the campaign is going); `never` hasn't run this season.
- */
-export const JOB_STATES = [
-  'stalled',
-  'failed',
-  'late',
-  'retried',
-  'running',
-  'ok',
-  'never',
-] as const;
-export type JobState = (typeof JOB_STATES)[number];
 
 export type JobRow = {
   id: string;
@@ -102,55 +88,9 @@ export const IMAGERY_CARD_JOBS = [
   { job: 'rebuild the live imagery index', id: 'imagery-index', name: 'Imagery index' },
 ] as const;
 
-/** A last run that failed or was killed: the card stays failed until a later run supersedes it. */
-const lastRunFailed = (lastRun: CronJobView['lastRun']) =>
-  lastRun?.outcome === 'failed' || lastRun?.outcome === 'killed';
-
-/**
- * A cron's card state, from core's verdict — the one Machinery's cron cards draw, so the two can't
- * disagree on lateness. A tick killed mid-run is failed (it needs a look). On time, the card also
- * reads the cron's **last run** (the newest tick that did work or failed, `lastRunId`), as it read
- * the newest `imageryRuns` row before the backbone: a run that failed or was killed stays failed
- * until a later run supersedes it — so the pump's failure doesn't flip to ok on the quiet tick three
- * minutes on, while it backs off for half an hour — and one a machine host turned down (the pump
- * backing off) reads retried. `never` is a cron with no tick recorded yet — right after the deploy that began
- * recording, before its first tick (the pump's within three minutes, the poll's within six hours,
- * whether or not the history copy has run) — which the card draws quiet, with no time, never red,
- * and never counts as ok.
- */
-export function cronJobState(liveness: CronLiveness, lastRun: CronJobView['lastRun']): JobState {
-  switch (liveness.state) {
-    case 'killed':
-      return 'failed';
-    case 'running':
-      // A tick under way hasn't superseded a failed run yet: the pump backing off from one starts
-      // (and skips) a tick every three minutes, and the card must not flicker off failed for each.
-      return lastRunFailed(lastRun) ? 'failed' : 'running';
-    case 'ok':
-      if (lastRunFailed(lastRun)) return 'failed';
-      return lastRun?.outcome === 'refused' ? 'retried' : 'ok';
-    default:
-      return liveness.state;
-  }
-}
-
-/**
- * When the row says it last ran: the last run, when the row's state is that run's (a failed or
- * refused one the ticks since haven't superseded); else the last tick, the start of the tick still
- * running, or none.
- */
-function cronJobAt(
-  liveness: CronLiveness,
-  lastRun: CronJobView['lastRun'],
-  state: JobState,
-): number | null {
-  if (lastRun !== null && (state === 'failed' || state === 'retried')) {
-    if (liveness.state === 'running' || liveness.state === 'ok') return lastRun.startedAt;
-  }
-  if (liveness.state === 'running' || liveness.state === 'killed') return liveness.since;
-  if (liveness.state === 'never') return null;
-  return liveness.lastTickAt;
-}
+// The job states and a cron's card state live in `lib/cronJobState.ts`, so Machinery › Imagery's
+// lane reads the same rule without an import cycle through `machineryRuns.ts`.
+export { cronJobAt, cronJobState, JOB_STATES, type JobState } from './lib/cronJobState';
 
 /** Every job a record can tell, worst first. */
 async function trackedJobs(ctx: QueryCtx, now: number): Promise<JobRow[]> {

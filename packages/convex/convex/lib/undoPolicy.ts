@@ -531,6 +531,37 @@ export const UNDO_POLICY: Record<ModerationAction, UndoRule> = {
     takesAway: never,
     capability: 'machinery.corpus',
   },
+
+  // ── Machinery › Imagery (B01-8b, D344) ─────────────────────────────────────────────────────────
+  // Start and Pause are each other's undo (`undoHandlersMachinery.ts`, S3's), each running the
+  // other's own write. Neither changes anything a skater sees on its own (frames reach them through
+  // the index, which keeps what it built), so neither asks a reason. The three triggers change
+  // nothing a person would put back: each is audited, and its receipt says what it did.
+  start_imagery: {
+    undo: inverse('pause_imagery'),
+    takesAway: never,
+    capability: 'machinery.imagery',
+  },
+  pause_imagery: {
+    undo: inverse('start_imagery'),
+    takesAway: never,
+    capability: 'machinery.imagery',
+  },
+  poll_imagery: {
+    undo: { kind: 'none', why: 'A catalog check only looks; there is nothing to put back.' },
+    takesAway: never,
+    capability: 'machinery.imagery',
+  },
+  retry_failed_cuts: {
+    undo: { kind: 'none', why: 'The cuts went back in line; they settle as they run.' },
+    takesAway: never,
+    capability: 'machinery.imagery',
+  },
+  retry_imagery_now: {
+    undo: { kind: 'none', why: 'The wait was lifted; the next run goes as usual.' },
+    takesAway: never,
+    capability: 'machinery.imagery',
+  },
 };
 
 /** The verbs whose undo is still owed by a later workstream — the register the build closes. */

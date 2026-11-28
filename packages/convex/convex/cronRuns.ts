@@ -30,7 +30,10 @@
  *   means a kill of this tick won't be seen), and the job's work is untouched (it committed as it
  *   went).
  * - *An action is killed* (Convex's action limit, or a deploy): `finish` never runs. The next
- *   announcing tick's `begin` finds the stale `runningSince` and records that tick `killed` first.
+ *   announcing tick's `begin` finds its `runningSince` and records that tick `killed` first: a cron
+ *   tick finding a cron stamp at any age (Convex never overlaps a cron with itself), anything else
+ *   past the action limit (`stampKilled`, Ma27 (b)). A `finish` that itself failed leaves its stamp
+ *   too, so the next cron tick records that tick killed — an unrecorded tick reads as one that died.
  *   A non-announcing action killed mid-run goes unrecorded (they are the short ones).
  *
  * **Recording mode** (`cronJobs.ts`, `CronRecordMode`): a `sparse` job's quiet tick is skipped — no
@@ -457,35 +460,75 @@ const reportValidator = v.object({
 });
 
 /**
+ * Whether a `runningSince` stamp `begin` finds belongs to a tick that died (Ma27 (b), B01-8b-2):
+ *
+ * - **a cron tick finding a cron stamp: at any age** — Convex never starts a cron while its last run
+ *   is still executing, so a cron stamp the next cron tick finds is a run that never finished;
+ * - otherwise (a manual press, which can overlap a live cron run; or a manual stamp, or one stamped
+ *   before the trigger was kept): **the age rule**, past core's `CRON_KILLED_AFTER_MS` (the measured
+ *   action limit and a minute).
+ */
+export function stampKilled(
+  stamp: { since: number; trigger: Trigger | undefined },
+  tick: { startedAt: number; trigger: Trigger },
+): boolean {
+  if (tick.trigger === 'cron' && stamp.trigger === 'cron') return true;
+  return tick.startedAt - stamp.since > CRON_KILLED_AFTER_MS;
+}
+
+/**
  * An announcing action's start: stamps `runningSince` with this tick's start (so it is never older
- * than the heartbeat's last tick). One already there and stale (past core's `CRON_KILLED_AFTER_MS`,
- * the measured action limit and a minute) is a
- * tick that never finished: recorded `killed` first. A young one is overwritten: a run still inside
- * the limit (a manual run beside the cron's) finishes and records as usual (its `finish` leaves the
- * newer stamp alone), and one killed young by a deploy goes unrecorded as killed — its absence is a
- * gap between ticks, never a false kill.
+ * than the heartbeat's last tick), with the trigger and presser that started it
+ * (`runningTrigger`, `runningByUserId`). A stamp already there that {@link stampKilled} calls dead is
+ * a tick that never finished: recorded `killed` first, **with the trigger and presser it really had**
+ * (Ma30; `cron` and no presser for a stamp from before they were kept), its end the action limit or
+ * this tick's start, whichever is sooner. A live one is overwritten: a run still inside the limit (a
+ * manual run beside the cron's) finishes and records as usual (its `finish` leaves the newer stamp
+ * alone), and one killed young by a deploy goes unrecorded as killed until the next cron tick — never
+ * a false kill.
  */
 export const begin = internalMutation({
-  args: { job: v.string(), startedAt: v.number() },
+  args: {
+    job: v.string(),
+    startedAt: v.number(),
+    /** This tick's trigger: `cron` when absent (a caller from before Ma27 (b)). */
+    trigger: v.optional(literals(CRON_TRIGGERS)),
+    byUserId: v.optional(v.id('profiles')),
+  },
   returns: v.null(),
-  handler: async (ctx, { job, startedAt }) => {
+  handler: async (ctx, { job, startedAt, trigger = 'cron', byUserId }) => {
     const entry = requireCronJob(job, 'action');
     const hb = await heartbeatOf(ctx, job);
     const since = hb?.runningSince;
-    if (since !== undefined && startedAt - since > CRON_KILLED_AFTER_MS) {
+    if (
+      since !== undefined &&
+      stampKilled({ since, trigger: hb?.runningTrigger }, { startedAt, trigger })
+    ) {
       const tick: Tick = {
         startedAt: since,
-        finishedAt: since + CONVEX_ACTION_LIMIT_MS,
-        trigger: 'cron',
+        finishedAt: Math.max(since, Math.min(since + CONVEX_ACTION_LIMIT_MS, startedAt)),
+        trigger: hb?.runningTrigger ?? 'cron',
+        ...(hb?.runningByUserId !== undefined ? { byUserId: hb.runningByUserId } : {}),
         killed: true,
         report: null,
       };
       await recorder.recordTick(ctx, entry, tick);
       logTick(entry, tick, 'recorded');
     }
+    const stamp = {
+      runningSince: startedAt,
+      runningTrigger: trigger,
+      runningByUserId: byUserId,
+    };
     const now = await heartbeatOf(ctx, job);
-    if (now === null) await ctx.db.insert('cronHeartbeats', { job, runningSince: startedAt });
-    else await ctx.db.patch(now._id, { runningSince: startedAt });
+    if (now === null) {
+      await ctx.db.insert('cronHeartbeats', {
+        job,
+        runningSince: startedAt,
+        runningTrigger: trigger,
+        ...(byUserId !== undefined ? { runningByUserId: byUserId } : {}),
+      });
+    } else await ctx.db.patch(now._id, stamp);
     return null;
   },
 });
@@ -515,7 +558,11 @@ export const finish = internalMutation({
     const wrote = await recorder.recordTick(ctx, entry, tick);
     const hb = await heartbeatOf(ctx, args.job);
     if (hb !== null && hb.runningSince === args.startedAt) {
-      await ctx.db.patch(hb._id, { runningSince: undefined });
+      await ctx.db.patch(hb._id, {
+        runningSince: undefined,
+        runningTrigger: undefined,
+        runningByUserId: undefined,
+      });
     }
     logTick(entry, tick, wrote);
     return null;
@@ -530,7 +577,12 @@ export const tickAction = internalAction({
     const startedAt = Date.now();
     if (entry.announces) {
       try {
-        await ctx.runMutation(internal.cronRuns.begin, { job: entry.name, startedAt });
+        await ctx.runMutation(internal.cronRuns.begin, {
+          job: entry.name,
+          startedAt,
+          trigger: args.trigger ?? 'cron',
+          ...(args.byUserId !== undefined ? { byUserId: args.byUserId } : {}),
+        });
       } catch (err) {
         console.error(
           `cron "${entry.name}": begin failed, running the job anyway: ${errorText(err)}`,

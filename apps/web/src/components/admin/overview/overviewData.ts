@@ -440,6 +440,12 @@ const ACTION_WORDS: Record<AuditAction, string> = {
   stop_waiting_on_run: 'Stopped waiting on run',
   request_run_stop: 'Asked run to stop',
   withdraw_run_stop: 'Withdrew stop request',
+  // Machinery › Imagery (B01-8b): start, pause and the three triggers. Words for the copy pass.
+  start_imagery: 'Started imagery',
+  pause_imagery: 'Paused imagery',
+  poll_imagery: 'Checked catalogs',
+  retry_failed_cuts: 'Retried failed cuts',
+  retry_imagery_now: 'Retried imagery now',
 };
 
 /**
@@ -476,6 +482,7 @@ const TARGET_WORDS: Record<AuditTarget, string> = {
   corpusPlaceName: 'Place name',
   supportTicket: 'Support ticket',
   importRun: 'Import run',
+  imagerySeason: 'Season imagery',
 };
 
 /**
