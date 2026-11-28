@@ -1834,8 +1834,8 @@ async function pumpOnce(
       ...group.map(({ id, status, error }) => ({ id, status, ...(error ? { error } : {}) })),
     );
 
-    // ── Each closed attempt: its Machine destroyed (its exit is on the attempt now), then its log
-    //    copied. Past the check deadline both wait: the sweep destroys, a later run copies. ──
+    // ── Each closed attempt: its log copied, then its Machine destroyed (its exit is on the attempt
+    //    now). Past the check deadline both wait: a later run copies, the sweep destroys. ──
     if (Date.now() - startedAt >= CHECK_DEADLINE_MS) continue;
     const closedSet = new Set<string>(closed);
     const fresh: Doc<'imageryAttempts'>[] = await ctx.runQuery(internal.imageryLive.attemptsById, {
@@ -1848,6 +1848,18 @@ async function pumpOnce(
         if (capture === null || !closedSet.has(capture.attempt._id)) return;
         const attempt = freshById.get(capture.attempt._id);
         if (!attempt) return;
+        // The log first, while Fly still has the Machine (its own lines are read by instance), then
+        // the Machine — whatever became of the copy: its exit is on the attempt already.
+        const result =
+          attempt.log === 'pending'
+            ? await captureLog(
+                ctx,
+                config,
+                attempt,
+                verdict.emptyReason ?? null,
+                capture.cutterText,
+              )
+            : null;
         if (capture.destroyable && attempt.machineId) {
           try {
             await destroyMachine(config.fly, attempt.machineId);
@@ -1856,15 +1868,7 @@ async function pumpOnce(
             // Left stopped: the sweep destroys it (its attempt is settled).
           }
         }
-        if (attempt.log !== 'pending') return;
-        const result = await captureLog(
-          ctx,
-          config,
-          attempt,
-          verdict.emptyReason ?? null,
-          capture.cutterText,
-        );
-        if (result !== 'owed') counts.captured++;
+        if (result !== null && result !== 'owed') counts.captured++;
       }),
     );
   }

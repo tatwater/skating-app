@@ -409,7 +409,17 @@ describe('the settle and the capture', () => {
     expect(log.every((l) => l.keepUntil === (a?.settledAt ?? 0) + FAILED_LOG_DAYS * DAY)).toBe(
       true,
     );
-    // The exit was on the attempt, then the Machine went, then the copied object.
+    // The exit was on the attempt; Fly's lines were read while it still had the Machine; then the
+    // Machine went, and the copied object.
+    const order = (
+      globalThis.fetch as unknown as { mock: { calls: [Request | string, RequestInit?][] } }
+    ).mock.calls.map(
+      ([r, i]) =>
+        `${r instanceof Request ? r.method : (i?.method ?? 'GET')} ${String(r instanceof Request ? r.url : r)}`,
+    );
+    const at = (re: RegExp) => order.findIndex((c) => re.test(c));
+    expect(at(/api\.fly\.io/)).toBeGreaterThanOrEqual(0);
+    expect(at(/api\.fly\.io/)).toBeLessThan(at(/^DELETE https:\/\/api\.machines\.dev/));
     expect(w.destroyed).toEqual([machineId]);
     expect(w.deleted).toEqual([cutLogKey(SEASON, G, attempt.attempt)]);
     expect((await counts(t))?.machineMs).toBe(60_000);
