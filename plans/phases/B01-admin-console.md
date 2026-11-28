@@ -19242,7 +19242,11 @@ The governor wraps each with §12.4's invariants and 7a's harness notes.
 ##### Proof plan
 
 **On a throwaway local backend, before each PR opens** (as 8b-2's: `convex dev` kept up in the
-background, anonymous, no credentials; stand-ins served locally):
+background, anonymous, no credentials; stand-ins served locally). **No cron may reach a real
+provider** (governor ruling, Ma48): a local backend runs every registered cron the moment it starts,
+so a proof sets its stand-ins on a backend whose crons can't fire first, or runs the backend with
+outbound network blocked — never a backend that can reach `api.weather.gov` or Open-Meteo before the
+stand-ins are named:
 
 - *8c-1*: a stand-in Open-Meteo answering by cell with a scripted mix — 200s, a 429, a 503, a
   truncated body, a 200 with no hours, and one request that never answers — and a stand-in NWS with
@@ -19651,7 +19655,7 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma45 | The chain's resend of a step that lost its write conflict (`retryOnWriteConflict`, four attempts) covers only the chained runs' writes (`chainStep`, a chained head's `finish`); every other job's `finish` is sent once, as before 8c | B01-8c-1's integration (the governor's ruling) | Health (8e): generalize it with the dispatcher's other writes | open |
 | Ma46 | A partial past day the refetch's answer leaves out altogether (not short, absent: a date with no usable hour) keeps its old `fetchedAt`, so it stays refetchable and is asked for again each run until it leaves the 30-day window, inside the run's budget | B01-8c-1's review | read `partialStill` on dev; if it repeats for the same days, stamp a row the refetch asked for | open |
 | Ma47 | Open-Meteo's hourly and per-minute limits are not checked against the appends as they run: a cold start's ~7,300 weighted calls land inside one hour (over 5,000 an hour), and a fast provider answering the append's back-to-back requests could pass 600 a minute; both predate 8c (the partial-day refetches are paced, 20 s between batches) | B01-8c-1's review | read the first in-season `rateLimit` causes on dev; pace the append if they appear (with Ma40) | open |
-| Ma48 | A local proof backend runs every registered cron the moment it starts, before `convex env set` can name a stand-in: B01-8c-1's proof sent the NWS cron's five requests to the real `api.weather.gov` once at start (no key, read-only) before `NWS_BASE_URL` was set | B01-8c-1's proof | the next proof starts with network egress blocked, or sets the stand-ins on a backend whose crons are off | open |
+| Ma48 | A local proof backend runs every registered cron the moment it starts, before `convex env set` can name a stand-in: B01-8c-1's proof sent the NWS cron's five requests to the real `api.weather.gov` once at start (no key, read-only) before `NWS_BASE_URL` was set | B01-8c-1's proof | ruled (governor): every later local proof sets its stand-ins on a backend whose crons can't fire first, or blocks outbound network; written into 8c's *Proof plan* | done |
 | Ma49 | A cron tick that finds its job's chain still live does its work unrecorded as a chain (the governor's ruling): its run row is the tick's own, with the head's detail and no counts or causes | B01-8c-1's integration | 8c-2's page draws such a row as worked with nothing counted; a later recorder change could count it | open |
 
 ## Ruled out
