@@ -108,7 +108,8 @@ export const RUNNING_CRONS: CronJobView[] = [
     every: 10 * MIN,
     lastTickAt: at(14, 14, 10),
     lastOutcome: 'ok',
-    lastRun: null,
+    // The board's *nothing new*: its last build added no frame.
+    lastRun: { at: at(14, 14, 10), outcome: 'ok', counts: { added: 0, frames: 0 } },
   }),
 ];
 
