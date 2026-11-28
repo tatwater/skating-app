@@ -55,6 +55,17 @@ export function rcatSink(target: RcloneTarget, key: string, headers: UploadHeade
     `${target.remote}:${target.bucket}/${key}`,
   ];
   const child = spawn('rclone', args, { stdio: ['pipe', 'inherit', 'pipe'] });
+  // **Never completed by this process's death** (PR #188's tenth review). `rcat` completes its upload
+  // when its stdin ends, and a parent that exits — the watchdog's `process.exit`, a crash, an
+  // operator's stop (`cli/assemble.ts` turns SIGTERM and SIGINT into an exit) — ends it: measured
+  // with rclone 1.74 against `rclone serve s3`, a parent that exited mid-stream left a completed
+  // object of the bytes so far, at a key the pipeline never overwrites. Killed on the way out it
+  // never sees that end; an upload whose `end` resolved is complete already, so the kill is moot.
+  const killOnExit = (): void => {
+    child.kill('SIGKILL');
+  };
+  process.on('exit', killOnExit);
+  child.on('close', () => process.off('exit', killOnExit));
   let stderr = '';
   child.stderr.on('data', (d) => {
     stderr = (stderr + String(d)).slice(-4000);

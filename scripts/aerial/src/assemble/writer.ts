@@ -107,7 +107,8 @@ export interface WriteOptions {
   onRun?: WriteProgress;
   /**
    * Asked once every byte has been read and written, before the sink is ended: a throw abandons the
-   * sink (`ByteSink.abort`) and is rethrown — the last chance to refuse what the reads produced.
+   * sink (`ByteSink.abort`) and is rethrown — the last chance to refuse what the reads produced. (Any
+   * other failure before the end abandons it too.)
    */
   beforeEnd?: () => Promise<void>;
 }
@@ -230,25 +231,30 @@ export async function writeArchive(
     bytes += chunk.length;
     await sink.write(chunk);
   };
-  await put(plan.headerBytes);
-  await put(plan.directories.root);
-  await put(plan.metadataBytes);
-  await put(plan.directories.leaves);
-  let data = 0;
-  for await (const { chunk, run, last } of tileData(layout, reader, options)) {
-    await put(chunk);
-    data += chunk.length;
-    if (last) await options.onRun?.(data, run);
-  }
-  if (options.beforeEnd !== undefined) {
-    try {
-      await options.beforeEnd();
-    } catch (e) {
-      await sink.abort?.();
-      throw e;
+  // **Nothing that failed is ever ended** (PR #188's tenth review): ending is what completes the
+  // upload — `rclone rcat` completes it on the end of its input, whatever it holds — so a read that
+  // failed mid-stream, a count that came out wrong or a refusal at the last check abandons the sink
+  // instead (`ByteSink.abort`), and the byte count is checked before the end, not after it. Before,
+  // only `beforeEnd`'s refusal abandoned it: any other failure left the upload open for the
+  // process's exit to end, which published the bytes so far at a key never overwritten.
+  try {
+    await put(plan.headerBytes);
+    await put(plan.directories.root);
+    await put(plan.metadataBytes);
+    await put(plan.directories.leaves);
+    let data = 0;
+    for await (const { chunk, run, last } of tileData(layout, reader, options)) {
+      await put(chunk);
+      data += chunk.length;
+      if (last) await options.onRun?.(data, run);
     }
+    if (bytes !== plan.bytes) throw new Error(`wrote ${bytes} bytes, the plan says ${plan.bytes}`);
+    await options.beforeEnd?.();
+  } catch (e) {
+    // The failure is what is reported; an abandon that fails too (a temp file gone) adds nothing.
+    await sink.abort?.()?.catch(() => {});
+    throw e;
   }
   await sink.end();
-  if (bytes !== plan.bytes) throw new Error(`wrote ${bytes} bytes, the plan says ${plan.bytes}`);
   return bytes;
 }

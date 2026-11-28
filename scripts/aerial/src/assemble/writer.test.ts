@@ -5,7 +5,7 @@ import { readArchiveEntries } from './archiveRead';
 import { layoutArchive, readRuns } from './layout';
 import { HEADER_BYTES, ROOT_FETCH_BYTES } from './pmtiles';
 import { bytesSource, packSegments, writeToMemory, zoomOf } from './testArchive';
-import { planArchive, tileData } from './writer';
+import { planArchive, tileData, writeArchive } from './writer';
 
 const tileBytes = (seed: number, length: number): Uint8Array => {
   const b = new Uint8Array(length);
@@ -369,5 +369,88 @@ describe('the tile data stream', () => {
       })(),
     ).rejects.toThrow('gone');
     expect(got).toHaveLength(1);
+  });
+});
+
+describe('a failed write is abandoned, never ended (PR #188’s tenth review)', () => {
+  // Ending is what completes an upload (`rclone rcat` completes on the end of its input), so every
+  // failure before the end must abandon the sink; only a write that got all the way ends it.
+  const arrange = (opts: { readFails?: boolean; planBytes?: (n: number) => number } = {}) => {
+    const groups = [
+      { source: 'a', tiles: [{ tileId: 1, bytes: tileBytes(1, 30) }] },
+      { source: 'b', tiles: [{ tileId: 2, bytes: tileBytes(2, 30) }] },
+    ];
+    const { segments, sources } = packSegments(groups);
+    const layout = layoutArchive(segments, zoomOf);
+    const plan = planArchive({
+      layout,
+      minZoom: 0,
+      maxZoom: 1,
+      bounds: { west: -80, south: 40, east: -66, north: 48 },
+      centerZoom: 0,
+      metadata: { name: 'test' },
+    });
+    const calls: string[] = [];
+    const sink = {
+      write: async () => {
+        calls.push('write');
+      },
+      end: async () => {
+        calls.push('end');
+      },
+      abort: async () => {
+        calls.push('abort');
+      },
+    };
+    const reader = {
+      read: async (s: string, o: number, l: number) => {
+        if (opts.readFails && s === 'b') throw new Error('a read failed');
+        return (sources.get(s) as Uint8Array).slice(o, o + l);
+      },
+      async *stream() {},
+    };
+    const wrongPlan = opts.planBytes ? { ...plan, bytes: opts.planBytes(plan.bytes) } : plan;
+    return { plan: wrongPlan, layout, reader, sink, calls };
+  };
+
+  it('ends a write that got all the way, and abandons none', async () => {
+    const { plan, layout, reader, sink, calls } = arrange();
+    await writeArchive(plan, layout, reader, sink, { beforeEnd: async () => {} });
+    expect(calls.at(-1)).toBe('end');
+    expect(calls).not.toContain('abort');
+  });
+
+  it('abandons it when a read fails mid-stream, a count is wrong, or the last check refuses', async () => {
+    const read = arrange({ readFails: true });
+    await expect(writeArchive(read.plan, read.layout, read.reader, read.sink)).rejects.toThrow(
+      'a read failed',
+    );
+    const count = arrange({ planBytes: (n) => n + 1 });
+    await expect(writeArchive(count.plan, count.layout, count.reader, count.sink)).rejects.toThrow(
+      /the plan says/,
+    );
+    const refused = arrange();
+    await expect(
+      writeArchive(refused.plan, refused.layout, refused.reader, refused.sink, {
+        beforeEnd: async () => {
+          throw new Error('refused at the end');
+        },
+      }),
+    ).rejects.toThrow('refused at the end');
+    for (const { calls } of [read, count, refused]) {
+      expect(calls.at(-1)).toBe('abort');
+      expect(calls).not.toContain('end');
+    }
+  });
+
+  it('reports the failure, not an abandon that failed too', async () => {
+    const { plan, layout, reader, sink } = arrange({ readFails: true });
+    const failing = {
+      ...sink,
+      abort: async () => {
+        throw new Error('the abandon failed');
+      },
+    };
+    await expect(writeArchive(plan, layout, reader, failing)).rejects.toThrow('a read failed');
   });
 });

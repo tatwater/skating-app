@@ -61,6 +61,11 @@ function peakMemory(): () => { rss: number; heap: number } {
 }
 
 async function onMachine(campaign: string, pilot?: string): Promise<void> {
+  // A stop (`fly machine stop`: SIGINT, then SIGTERM) would end Node without its exit handlers, so
+  // the archive's `rclone rcat` would see its input end and complete the upload with the bytes so
+  // far; as an exit, `rcatSink` kills it first (PR #188's tenth review).
+  process.once('SIGINT', () => process.exit(130));
+  process.once('SIGTERM', () => process.exit(143));
   const target: RcloneTarget = {
     remote: 'r2',
     bucket: need('R2_BUCKET'),
