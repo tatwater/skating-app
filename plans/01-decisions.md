@@ -9583,7 +9583,11 @@ partial day the repair never touched, and only the next day's append (its three-
 it. From B01-8c-1 the repair treats a past day (on or before yesterday) with fewer than 23 hours as a
 gap and re-fetches it — at most one request of up to ~32 days per affected cell per run, the same
 request it already makes for a missing day — and counts what it repaired. This is the one pipeline
-behavior B01-8c changes; the page then draws it as it runs.
+behavior B01-8c changes; the page then draws it as it runs. As built (B01-8c-1), the reach back for
+a partial day is bounded per run: 2,000 weighted Open-Meteo calls (80 % the filter tier's, 20 %
+browse's), and never more than leaves the day's meter at 7,000 (D158); the oldest partial days go
+first and the rest wait for the next run. A day a refetch of the finished day still leaves short is
+left as it is, never asked for again.
 
 **Related:** D3, D218, D349, [`phase-B01`](./phases/B01-admin-console.md) *Machinery follow-ups*.
 
