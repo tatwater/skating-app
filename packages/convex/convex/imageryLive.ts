@@ -50,15 +50,22 @@
 import {
   addDaysIso,
   archiveSeasonAt,
+  attemptMachineMs,
   buildSeasonIndex,
   type CronReport,
   type CronReportLine,
+  type CutExit,
+  type CutterLogLine,
+  cutLogKey,
   durationInWords,
   type FrameManifest,
-  type GranuleCandidate,
+  mergeCutLog,
+  type PumpLogLine,
+  parseCutterLog,
   parseGranuleId,
   parseSarGranuleId,
   STAC_COLLECTIONS,
+  type StacCandidate,
   type StacMission,
   searchStac,
   selectGranules,
@@ -67,7 +74,7 @@ import {
   tileSurveyKey,
   withCronReport,
 } from '@skating/core';
-import { v } from 'convex/values';
+import { ConvexError, v } from 'convex/values';
 
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -81,16 +88,26 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
+import { typed, writeAudit } from './lib/audit';
 import { requireCapability } from './lib/auth';
 import { firstToday } from './lib/dailyThrottle';
 import {
   createCutMachine,
+  destroyMachine,
+  FLY_VM_SIZE_LABEL,
   type FlyConfig,
+  type FlyMachine,
+  type FlyMachineLogLine,
   flyConfigFromEnv,
   getMachine,
+  isCutMachine,
   LIVE_STATES,
   listMachines,
   liveCutMachines,
+  type MachineRun,
+  machineLogs,
+  machineName,
+  STOPPED_STATES,
 } from './lib/fly';
 import {
   beginRun,
@@ -104,9 +121,11 @@ import {
   SPAWN_BREAKER,
 } from './lib/imageryPump';
 import {
+  deleteObject,
   exists,
   getJson,
   getPublicJson,
+  getText,
   listObjects,
   putJson,
   type R2Config,
@@ -191,8 +210,11 @@ type Settled = 'queued' | 'landed' | 'empty' | 'failed';
 
 // ─── State ──────────────────────────────────────────────────────────────────────────────────────
 
-/** The one rule for whether new cuts may start — `liveState` and `hasWork` both ask it. */
-function whyNotRunnable(row: Doc<'imageryIngestSeasons'> | null): string | null {
+/**
+ * The one rule for whether new cuts may start — `liveState`, `hasWork` and Machinery's *Run now*
+ * (`machineryImagery.pollNow`) all ask it.
+ */
+export function whyNotRunnable(row: Doc<'imageryIngestSeasons'> | null): string | null {
   if (!row) return 'no watch is open';
   if (row.closesOn !== undefined) return 'the watch has ended';
   if (row.imageryStartedAt === undefined) return 'imagery has not been started';
@@ -200,7 +222,7 @@ function whyNotRunnable(row: Doc<'imageryIngestSeasons'> | null): string | null 
   return null;
 }
 
-async function seasonRowFor(ctx: QueryCtx, season: string) {
+export async function seasonRowFor(ctx: QueryCtx, season: string) {
   return await ctx.db
     .query('imageryIngestSeasons')
     .withIndex('by_season', (q) => q.eq('season', season))
@@ -232,6 +254,9 @@ export const IMAGERY_CRON_JOBS = {
   index: 'rebuild the live imagery index',
 } as const;
 
+/** Where every imagery alert sends its reader: Machinery › Imagery (B01-8b-2). */
+export const IMAGERY_PAGE_PATH = '/admin/machinery/imagery';
+
 /**
  * Email the admins, at most once per `key` per New York day. A misconfigured job polls four times a
  * day, and four identical emails is how an inbox learns to ignore the fifth.
@@ -245,7 +270,7 @@ export const alertAdmins = internalMutation({
       subject: email.subject,
       heading: email.heading,
       blocks: email.blocks,
-      deepLinkPath: '/admin/seasons',
+      deepLinkPath: IMAGERY_PAGE_PATH,
       roles: ['admin'],
     });
     return { sent: true };
@@ -323,7 +348,10 @@ export const recordUnreadable = internalMutation({
   },
 });
 
-/** Whether a tick has anything to do: a cut in flight, or one queued and allowed to start. */
+/**
+ * Whether a tick has anything to do: a cut in flight, a cut's log still owed (B01-8b-2), or one queued
+ * and allowed to start. Reads only, so a quiet tick writes nothing.
+ */
 export const hasWork = internalQuery({
   args: { season: v.string() },
   handler: async (ctx, { season }) => {
@@ -333,6 +361,11 @@ export const hasWork = internalQuery({
         .withIndex('by_season_status', (q) => q.eq('season', season).eq('status', status))
         .first();
     if (await first('spawned')) return true;
+    const owed = await ctx.db
+      .query('imageryAttempts')
+      .withIndex('by_log_settled', (q) => q.eq('log', 'pending').gt('settledAt', 0))
+      .first();
+    if (owed) return true;
     if (!(await first('queued'))) return false;
     return whyNotRunnable(await seasonRowFor(ctx, season)) === null;
   },
@@ -346,15 +379,33 @@ export const indexOutstanding = internalQuery({
   handler: async (ctx, { now }) => outstanding(await jobRow(ctx, 'index'), now),
 });
 
-/** Hand untried claims back to the queue unchanged, in one transaction. */
+/**
+ * Hand untried claims back to the queue unchanged, in one transaction — and delete the attempt each
+ * claim opened (`attemptIds`), since nothing was tried: an untried claim is no attempt.
+ */
 export const handBack = internalMutation({
-  args: { ids: v.array(v.id('imageryGranules')) },
-  handler: async (ctx, { ids }) => {
+  args: {
+    ids: v.array(v.id('imageryGranules')),
+    attemptIds: v.optional(v.array(v.id('imageryAttempts'))),
+  },
+  handler: async (ctx, { ids, attemptIds }) => {
     const ledger = new Ledger(ctx);
+    const handed = new Set<string>();
     for (const id of ids) {
       const row = await ctx.db.get(id);
       if (row?.status !== 'spawned' || row.machineId) continue;
       await ledger.set(row, 'queued', { attempts: Math.max(0, row.attempts - 1) });
+      handed.add(id);
+    }
+    for (const attemptId of attemptIds ?? []) {
+      const attempt = await ctx.db.get(attemptId);
+      if (
+        attempt?.verdict === 'cutting' &&
+        !attempt.machineId &&
+        handed.has(attempt.granuleRowId)
+      ) {
+        await ctx.db.delete(attemptId);
+      }
     }
     await ledger.flush();
     return null;
@@ -385,8 +436,15 @@ type Counts = Record<Status, number>;
  */
 class Ledger {
   private readonly deltas = new Map<string, Counts>();
+  /** Machine time settled per season (D346): added to `imageryCounts.machineMs`, never scanned. */
+  private readonly machineMs = new Map<string, number>();
 
   constructor(private readonly ctx: MutationCtx) {}
+
+  addMachineMs(season: string, ms: number) {
+    if (!(ms > 0)) return;
+    this.machineMs.set(season, (this.machineMs.get(season) ?? 0) + ms);
+  }
 
   count(season: string, from: Status | null, to: Status | null) {
     const d = this.deltas.get(season) ?? { queued: 0, spawned: 0, landed: 0, empty: 0, failed: 0 };
@@ -405,22 +463,33 @@ class Ledger {
   }
 
   async flush(): Promise<void> {
-    for (const [season, d] of this.deltas) {
+    const seasons = new Set([...this.deltas.keys(), ...this.machineMs.keys()]);
+    for (const season of seasons) {
+      const d = this.deltas.get(season) ?? {
+        queued: 0,
+        spawned: 0,
+        landed: 0,
+        empty: 0,
+        failed: 0,
+      };
       const row = await this.ctx.db
         .query('imageryCounts')
         .withIndex('by_season', (q) => q.eq('season', season))
         .unique();
+      const ms = this.machineMs.get(season);
       const next = {
         queued: (row?.queued ?? 0) + d.queued,
         spawned: (row?.spawned ?? 0) + d.spawned,
         landed: (row?.landed ?? 0) + d.landed,
         empty: (row?.empty ?? 0) + d.empty,
         failed: (row?.failed ?? 0) + d.failed,
+        ...(ms !== undefined ? { machineMs: (row?.machineMs ?? 0) + ms } : {}),
       };
       if (row) await this.ctx.db.patch(row._id, next);
       else await this.ctx.db.insert('imageryCounts', { season, ...next });
     }
     this.deltas.clear();
+    this.machineMs.clear();
   }
 }
 
@@ -430,6 +499,8 @@ const queueItem = v.object({
   mission: literals(['s2', 's1'] as const),
   season: v.string(),
   capturedAt: v.string(),
+  /** When the catalog published the pass (the STAC item's `created`), when it said (B01-8b-2). */
+  catalogedAt: v.optional(v.number()),
 });
 
 /**
@@ -479,26 +550,87 @@ export const queueGranules = internalMutation({
   },
 });
 
-/** Claim up to `limit` of this season's queued granules. Only the pump calls this, under its lease. */
+/**
+ * The number a granule's next attempt takes: one past its newest attempt row, or past its `attempts`
+ * count when it was tried before attempts were recorded — never reused (see the schema's note).
+ */
+async function nextAttemptNumber(ctx: QueryCtx, row: Doc<'imageryGranules'>): Promise<number> {
+  const newest = await ctx.db
+    .query('imageryAttempts')
+    .withIndex('by_granule_attempt', (q) => q.eq('granuleRowId', row._id))
+    .order('desc')
+    .first();
+  return Math.max(newest?.attempt ?? 0, row.attempts) + 1;
+}
+
+/**
+ * Claim up to `limit` of this season's queued granules, opening an attempt for each (`cutting`, D348).
+ * Only the pump calls this, under its lease. Also stamps the pump's row with what it just learned:
+ * the Machines it saw live (`live`, the page's *2/25 live*) and the image it spawns with (`image`,
+ * with when it was first seen — the page's *cutter pinned 11 Oct*, Ma6).
+ */
 export const claimForSpawn = internalMutation({
-  args: { season: v.string(), limit: v.number() },
-  handler: async (ctx, { season, limit }) => {
-    if (limit <= 0) return [];
-    const ledger = new Ledger(ctx);
-    const rows = await ctx.db
-      .query('imageryGranules')
-      .withIndex('by_season_status', (q) => q.eq('season', season).eq('status', 'queued'))
-      .take(limit);
+  args: {
+    season: v.string(),
+    limit: v.number(),
+    image: v.optional(v.string()),
+    live: v.optional(v.number()),
+  },
+  handler: async (ctx, { season, limit, image, live }) => {
     const now = Date.now();
+    const pump = live !== undefined || image !== undefined ? await jobRow(ctx, 'pump') : null;
+    const ledger = new Ledger(ctx);
+    const rows =
+      limit <= 0
+        ? []
+        : await ctx.db
+            .query('imageryGranules')
+            .withIndex('by_season_status', (q) => q.eq('season', season).eq('status', 'queued'))
+            .take(limit);
+    const claims: {
+      id: Id<'imageryGranules'>;
+      granuleId: string;
+      season: string;
+      attempt: number;
+      attemptId: Id<'imageryAttempts'>;
+    }[] = [];
     for (const row of rows) {
+      const attempt = await nextAttemptNumber(ctx, row);
       await ledger.set(row, 'spawned', {
         attempts: row.attempts + 1,
         spawnedAt: now,
         machineId: undefined,
       });
+      const attemptId = await ctx.db.insert('imageryAttempts', {
+        granuleRowId: row._id,
+        granuleId: row.granuleId,
+        season: row.season,
+        attempt,
+        machineName: machineName(row.granuleId, attempt),
+        ...(image !== undefined ? { image } : {}),
+        spawnedAt: now,
+        verdict: 'cutting',
+        log: 'pending',
+      });
+      claims.push({
+        id: row._id,
+        granuleId: row.granuleId,
+        season: row.season,
+        attempt,
+        attemptId,
+      });
     }
     await ledger.flush();
-    return rows.map((r) => ({ id: r._id, granuleId: r.granuleId, attempt: r.attempts + 1 }));
+    if (pump !== null) {
+      await ctx.db.patch(pump._id, {
+        ...(live !== undefined ? { liveMachines: live, liveMachinesAt: now } : {}),
+        // The image is recorded the first time it spawns a cut, and its first sighting kept after.
+        ...(image !== undefined && rows.length > 0 && pump.image !== image
+          ? { image, imageSeenAt: now }
+          : {}),
+      });
+    }
+    return claims;
   },
 });
 
@@ -510,15 +642,20 @@ export const claimForSpawn = internalMutation({
 export const settleSpawn = internalMutation({
   args: {
     id: v.id('imageryGranules'),
+    /** The claim's attempt (absent from a caller before B01-8b-2): stamped, closed or deleted with it. */
+    attemptId: v.optional(v.id('imageryAttempts')),
     machineId: v.optional(v.string()),
     error: v.optional(v.string()),
     untried: v.optional(v.boolean()),
   },
-  handler: async (ctx, { id, machineId, error, untried }) => {
+  handler: async (ctx, { id, attemptId, machineId, error, untried }) => {
     const row = await ctx.db.get(id);
     if (row?.status !== 'spawned') return { failed: false };
+    const attempt = attemptId === undefined ? null : await ctx.db.get(attemptId);
+    const open = attempt?.granuleRowId === id && attempt.verdict === 'cutting' ? attempt : null;
     if (machineId) {
       await ctx.db.patch(id, { machineId });
+      if (open) await ctx.db.patch(open._id, { machineId });
       return { failed: false };
     }
     const ledger = new Ledger(ctx);
@@ -526,22 +663,61 @@ export const settleSpawn = internalMutation({
     if (untried) {
       await ledger.set(row, 'queued', { attempts });
       await ledger.flush();
+      if (open && !open.machineId) await ctx.db.delete(open._id);
       return { failed: false };
     }
+    const now = Date.now();
     const refusals = (row.refusals ?? 0) + 1;
     const failed = refusals >= MAX_REFUSALS;
     await ledger.set(row, failed ? 'failed' : 'queued', {
       attempts,
       refusals,
       lastError: error ?? 'spawn refused',
-      ...(failed ? { settledAt: Date.now() } : { queuedAt: Date.now() }),
+      ...(failed ? { settledAt: now } : { queuedAt: now }),
     });
     await ledger.flush();
+    // A refusal is an attempt that never ran: no Machine, no log, no machine time.
+    if (open) {
+      await ctx.db.patch(open._id, {
+        verdict: 'refused',
+        error: trimError(error ?? 'spawn refused'),
+        settledAt: now,
+        log: 'none',
+      });
+    }
     return { failed };
   },
 });
 
-/** Apply one pump's verdicts on the cuts it checked, in one transaction. */
+/** An attempt's error, trimmed as a run's is. */
+function trimError(text: string): string {
+  return text.length > 500 ? text.slice(0, 500) : text;
+}
+
+/** What a settle records on the attempt it closes (D348): Fly's word on its exit, and its time. */
+const attemptClose = v.object({
+  id: v.id('imageryAttempts'),
+  verdict: literals(['landed', 'empty', 'requeued', 'failed', 'unconfirmed'] as const),
+  exitCode: v.optional(v.number()),
+  oomKilled: v.optional(v.boolean()),
+  exitedAt: v.optional(v.number()),
+  startedAt: v.optional(v.number()),
+  machineMs: v.optional(v.number()),
+  machineMsFrom: v.optional(literals(['fly', 'cutter', 'settle'] as const)),
+  /**
+   * `pending` while its lines are still to be copied; `none` when there is nothing to copy (a spawn
+   * never confirmed ran no Machine).
+   */
+  log: literals(['pending', 'none'] as const),
+});
+
+/**
+ * Apply one pump's verdicts on the cuts it checked, in one transaction — and close each one's
+ * attempt with what Fly said about its exit and its machine time, adding that time to the season's
+ * total (D346). **The exit is on the attempt once this commits**: only then may its Machine be
+ * destroyed. Returns the attempts it closed (a row another run settled first is skipped, with its
+ * attempt).
+ */
 export const settleMany = internalMutation({
   args: {
     settled: v.array(
@@ -549,22 +725,221 @@ export const settleMany = internalMutation({
         id: v.id('imageryGranules'),
         status: literals(['queued', 'landed', 'empty', 'failed'] as const),
         error: v.optional(v.string()),
+        /** The cutter's empty marker's reason (Ma7), copied onto an empty granule. */
+        emptyReason: v.optional(v.string()),
+        attempt: v.optional(attemptClose),
       }),
     ),
   },
   handler: async (ctx, { settled }) => {
     const ledger = new Ledger(ctx);
     const now = Date.now();
+    const closed: Id<'imageryAttempts'>[] = [];
     for (const s of settled) {
       const row = await ctx.db.get(s.id);
       if (row?.status !== 'spawned') continue;
       await ledger.set(row, s.status, {
         ...(s.status === 'queued' ? { machineId: undefined } : { settledAt: now }),
         ...(s.error ? { lastError: s.error } : {}),
+        ...(s.status === 'empty' && s.emptyReason ? { emptyReason: trimError(s.emptyReason) } : {}),
       });
+      const a = s.attempt;
+      if (a === undefined) continue;
+      const attempt = await ctx.db.get(a.id);
+      if (attempt?.granuleRowId !== s.id || attempt.verdict !== 'cutting') continue;
+      const { id: _id, ...fields } = a;
+      await ctx.db.patch(a.id, {
+        ...fields,
+        ...(s.error ? { error: trimError(s.error) } : {}),
+        settledAt: now,
+      });
+      if (a.machineMs !== undefined) ledger.addMachineMs(row.season, a.machineMs);
+      closed.push(a.id);
     }
     await ledger.flush();
+    return { closed };
+  },
+});
+
+/** The attempts' rows the pump needs to settle or capture, by id. */
+export const attemptsById = internalQuery({
+  args: { ids: v.array(v.id('imageryAttempts')) },
+  handler: async (ctx, { ids }) => {
+    const out: Doc<'imageryAttempts'>[] = [];
+    for (const id of ids) {
+      const a = await ctx.db.get(id);
+      if (a) out.push(a);
+    }
+    return out;
+  },
+});
+
+/**
+ * The cuts in flight, each with its open attempt: the granule's newest attempt row, when it is still
+ * `cutting` (a granule spawned before B01-8b-2 has none, and settles without one).
+ */
+export const inFlight = internalQuery({
+  args: { season: v.string(), limit: v.number() },
+  handler: async (ctx, { season, limit }) => {
+    const rows = await ctx.db
+      .query('imageryGranules')
+      .withIndex('by_season_status', (q) => q.eq('season', season).eq('status', 'spawned'))
+      .take(limit);
+    const out: { granule: Doc<'imageryGranules'>; attempt: Doc<'imageryAttempts'> | null }[] = [];
+    for (const granule of rows) {
+      const newest = await ctx.db
+        .query('imageryAttempts')
+        .withIndex('by_granule_attempt', (q) => q.eq('granuleRowId', granule._id))
+        .order('desc')
+        .first();
+      out.push({ granule, attempt: newest?.verdict === 'cutting' ? newest : null });
+    }
+    return out;
+  },
+});
+
+/** Captures still owed, oldest settle first (`by_log_settled`, floored at `settledAt > 0`). */
+export const pendingCaptures = internalQuery({
+  args: { limit: v.number() },
+  handler: async (ctx, { limit }) =>
+    await ctx.db
+      .query('imageryAttempts')
+      .withIndex('by_log_settled', (q) => q.eq('log', 'pending').gt('settledAt', 0))
+      .take(limit),
+});
+
+/**
+ * For the sweep: each stopped Machine's attempt by its Machine id (`by_machine`, `eq` on a defined
+ * id), as `settled` (its exit is on it, or it never needed one) or `open`; absent: no attempt claims
+ * that Machine.
+ */
+export const attemptsByMachine = internalQuery({
+  args: { machineIds: v.array(v.string()) },
+  handler: async (ctx, { machineIds }) => {
+    const out: {
+      machineId: string;
+      attemptId: Id<'imageryAttempts'>;
+      settled: boolean;
+      exitRecorded: boolean;
+    }[] = [];
+    for (const machineId of machineIds) {
+      const a = await ctx.db
+        .query('imageryAttempts')
+        .withIndex('by_machine', (q) => q.eq('machineId', machineId))
+        .order('desc')
+        .first();
+      if (!a) continue;
+      out.push({
+        machineId,
+        attemptId: a._id,
+        settled: a.settledAt !== undefined,
+        exitRecorded:
+          a.exitedAt !== undefined || a.exitCode !== undefined || a.oomKilled !== undefined,
+      });
+    }
+    return out;
+  },
+});
+
+/**
+ * Record what Fly says about a settled attempt's exit, read late by the sweep (a settle that couldn't
+ * reach Fly): only fields not yet on it, so an earlier, better reading is never overwritten.
+ */
+export const recordAttemptExit = internalMutation({
+  args: {
+    id: v.id('imageryAttempts'),
+    exitCode: v.optional(v.number()),
+    oomKilled: v.optional(v.boolean()),
+    exitedAt: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, { id, ...fields }) => {
+    const a = await ctx.db.get(id);
+    if (!a) return null;
+    const patch: Partial<Doc<'imageryAttempts'>> = {};
+    for (const k of ['exitCode', 'oomKilled', 'exitedAt', 'startedAt'] as const) {
+      if (fields[k] !== undefined && a[k] === undefined) Object.assign(patch, { [k]: fields[k] });
+    }
+    if (Object.keys(patch).length > 0) await ctx.db.patch(id, patch);
     return null;
+  },
+});
+
+/** Lines one `appendAttemptLines` writes: well inside a mutation's limits at 500 characters each. */
+export const ATTEMPT_LINES_APPEND = 500;
+
+const attemptLine = v.object({
+  origin: literals(['cutter', 'fly', 'pump'] as const),
+  kind: literals(['line', 'warn', 'fail', 'stage'] as const),
+  loggedAt: v.number(),
+  text: v.string(),
+});
+
+/**
+ * Write one chunk of an attempt's merged log at `from` (0-based `seq`). **Idempotent**: a line already
+ * at one of those seqs (a capture retried after a partial write) is replaced, never doubled.
+ */
+export const appendAttemptLines = internalMutation({
+  args: {
+    attemptId: v.id('imageryAttempts'),
+    from: v.number(),
+    lines: v.array(attemptLine),
+    keepUntil: v.number(),
+  },
+  handler: async (ctx, { attemptId, from, lines, keepUntil }) => {
+    if (lines.length > ATTEMPT_LINES_APPEND) {
+      throw new Error(`appendAttemptLines: ${lines.length} lines is over ${ATTEMPT_LINES_APPEND}`);
+    }
+    const attempt = await ctx.db.get(attemptId);
+    if (attempt?.log !== 'pending') return null;
+    const existing = await ctx.db
+      .query('runEvents')
+      .withIndex('by_attempt_seq', (q) =>
+        q
+          .eq('attemptId', attemptId)
+          .gte('seq', from)
+          .lt('seq', from + lines.length),
+      )
+      .take(lines.length);
+    for (const row of existing) await ctx.db.delete(row._id);
+    const at = Date.now();
+    for (const [i, line] of lines.entries()) {
+      await ctx.db.insert('runEvents', {
+        attemptId,
+        seq: from + i,
+        at,
+        loggedAt: line.loggedAt,
+        kind: line.kind,
+        text: line.text.slice(0, 500),
+        origin: line.origin,
+        keepUntil,
+      });
+    }
+    return null;
+  },
+});
+
+/**
+ * Close an attempt's log: `kept` (the cutter's upload copied with the rest) or `none` (no upload
+ * existed; Fly's and the pump's lines are still kept), dropping any line at or past `total` that an
+ * earlier, longer try wrote; or `missing`, the copy given up on. Only from `pending`.
+ */
+export const closeAttemptLog = internalMutation({
+  args: {
+    attemptId: v.id('imageryAttempts'),
+    log: literals(['kept', 'none', 'missing'] as const),
+    total: v.number(),
+  },
+  handler: async (ctx, { attemptId, log, total }) => {
+    const attempt = await ctx.db.get(attemptId);
+    if (attempt?.log !== 'pending') return { closed: false };
+    const stale = await ctx.db
+      .query('runEvents')
+      .withIndex('by_attempt_seq', (q) => q.eq('attemptId', attemptId).gte('seq', total))
+      .take(ATTEMPT_LINES_APPEND * 4);
+    for (const row of stale) await ctx.db.delete(row._id);
+    await ctx.db.patch(attemptId, { log });
+    return { closed: true };
   },
 });
 
@@ -712,12 +1087,14 @@ async function pollOnce(ctx: ActionCtx, season: string, startedAt: number): Prom
     // prefilter for optical, the DV/IW/GRDH filter for radar.
     const s2Selected = selectGranules(s2, { emptyTiles: new Set(plan.emptyTiles) });
     const s1Selected = selectSarGranules(s1);
-    const byId = new Map<string, GranuleCandidate>([...s2, ...s1].map((c) => [c.id, c]));
+    const byId = new Map<string, StacCandidate>([...s2, ...s1].map((c) => [c.id, c]));
     const items = [...s2Selected.selected, ...s1Selected.selected]
       .flatMap((granuleId) => {
         const key = slotOf(granuleId);
         const candidate = byId.get(granuleId);
         if (!key || !candidate) return [];
+        const catalogedAt =
+          candidate.created === undefined ? Number.NaN : Date.parse(candidate.created);
         return [
           {
             granuleId,
@@ -726,6 +1103,7 @@ async function pollOnce(ctx: ActionCtx, season: string, startedAt: number): Prom
             // The frame season comes from the capture date — where `cut-granule` files it.
             season: archiveSeasonAt(Date.parse(candidate.datetime)),
             capturedAt: candidate.datetime,
+            ...(Number.isFinite(catalogedAt) ? { catalogedAt } : {}),
           },
         ];
       })
@@ -761,9 +1139,15 @@ async function pollOnce(ctx: ActionCtx, season: string, startedAt: number): Prom
     await ctx.runMutation(internal.imageryLive.setWindowTo, { season, windowTo });
     // Start on what was just queued now rather than at the next 3-minute tick; the lease makes it
     // safe whether or not a tick is already running.
+    //
+    // ⚠ **`manual`, never `cron`** (Ma27 (b)): a `cron` tick's `begin` calls a `cron` stamp it finds
+    // killed at any age, on the rule that Convex never runs a cron over itself — and this run is not
+    // Convex's cron, so it may overlap the pump's own tick. Marked manual (with no presser), the
+    // stamps keep the age rule between them.
     if (queued > 0) {
       await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
         job: IMAGERY_CRON_JOBS.pump,
+        trigger: 'manual',
       });
     }
 
@@ -811,6 +1195,14 @@ interface PumpCounts {
   spawned: number;
   refused: number;
   unconfirmed: number;
+  /** Attempts whose log was copied into Convex this run (D348), the first try or a retry. */
+  captured: number;
+  /** Captures still owed at the run's end (each retried for an hour, then marked missing). */
+  capturesOwed: number;
+  /** Stopped cut Machines destroyed this run, by the settle or the sweep. */
+  destroyed: number;
+  /** Stopped cut Machines still waiting after the run's sweep. */
+  stopped: number;
 }
 
 /** An aborted fetch — `AbortSignal.timeout` throws a `TimeoutError`, an abort an `AbortError`. */
@@ -819,6 +1211,39 @@ function isTimeout(error: unknown): boolean {
   return name === 'TimeoutError' || name === 'AbortError';
 }
 
+const errorMessage = (error: unknown) => (error instanceof Error ? error.message : String(error));
+
+/**
+ * **How long a capture is retried** (D348): a log the pump couldn't copy (R2 or Convex blinked) is
+ * tried again on each run for an hour from its settle, then marked `missing`.
+ */
+export const CAPTURE_RETRY_MS = 60 * 60_000;
+/** Owed captures one run retries, oldest first. */
+const CAPTURES_PER_RUN = 10;
+/** Stopped cut Machines one run's sweep looks at. */
+const SWEEP_PER_RUN = 25;
+/**
+ * A stopped cut Machine no attempt claims — a spawn whose answer never came, or a Machine from before
+ * B01-8b-2 — is destroyed once Fly says it has been stopped this long: nothing can ever settle it.
+ */
+export const ORPHAN_STOPPED_MS = 60 * 60_000;
+/**
+ * **The bound on stopped Machines** (D348's keep rule): past this many stopped cut Machines at once —
+ * destroys failing while spawns still succeed — the pump starts no new cut and tells the admins, so a
+ * failing capture can never pile up Machines without end. Twice the live cap.
+ */
+export const MAX_STOPPED_MACHINES = 2 * MAX_LIVE_MACHINES;
+/**
+ * A cut whose frame landed but whose Machine is still live: the pump waits for its exit (so the
+ * attempt gets Fly's exit event and the whole log), but no longer than this from its spawn — a cutter
+ * hung after its upload must not keep a landed frame out of the index.
+ */
+const LANDED_WAIT_MS = 15 * 60_000;
+/** How long an attempt's lines are kept (D348): a failed one's the season, the rest a month. */
+export const FAILED_LOG_DAYS = 200;
+export const KEPT_LOG_DAYS = 30;
+const DAY_MS = 86_400_000;
+
 type Verdict =
   | {
       kind: 'settle';
@@ -826,8 +1251,23 @@ type Verdict =
       status: Settled;
       error?: string;
       granuleId: string;
+      /** The empty marker's reason (Ma7). */
+      emptyReason?: string;
+      /** The settle's reading for the attempt it closes; `null` for a granule with no open attempt. */
+      capture: Capture | null;
     }
   | { kind: 'running' | 'young' | 'unknown' };
+
+/** What a settle read for the attempt it closes (D348). */
+interface Capture {
+  attempt: Doc<'imageryAttempts'>;
+  /** Fly's word on the run (its exit event and start), or `null` when Fly wasn't read or knew nothing. */
+  run: MachineRun | null;
+  /** Fly said the Machine is done and still exists (stopped or failed): the settle destroys it. */
+  destroyable: boolean;
+  /** The cutter's upload: its text, `null` when there was none, `undefined` when it couldn't be read. */
+  cutterText: string | null | undefined;
+}
 
 /**
  * Where the cutter records a granule it looked at and found nothing to cut under (`cut-granule.sh`,
@@ -837,67 +1277,410 @@ export function emptyMarkerKey(season: string, granuleId: string): string {
   return `cuts/${season}/${granuleId}.empty.json`;
 }
 
+/** The granule's error for an exit: `exit 137 · out of memory`, `exit 1`. */
+function exitError(run: MachineRun | null): string | undefined {
+  if (!run || run.exitCode === null || run.exitCode === 0) {
+    return run?.oomKilled === true ? 'out of memory' : undefined;
+  }
+  return run.oomKilled === true ? `exit ${run.exitCode} · out of memory` : `exit ${run.exitCode}`;
+}
+
 /**
- * What the bucket and Fly say about one cut in flight. Never throws: a failed read is `unknown`.
+ * What the bucket and Fly say about one cut in flight, and — for one that settles — what its attempt
+ * needs: Fly's exit event and the cutter's upload. Never throws: a failed verdict read is `unknown`;
+ * a failed capture read leaves the capture owed, never the verdict.
  *
- * ⚠ **Empty needs proof.** Machines auto-destroy on exit, and a destroyed Machine is gone from the
- * API (2026-10-11: none of the A06e backfill's thousands were listed, even with `include_deleted`),
- * so its exit code usually is too. A cut gone without a frame is *empty* only on the cutter's
- * nothing-to-cut record or a seen zero exit; anything else, on its last attempt, is *failed* — an
- * email and *Retry failed*, rather than a real failure filed as an empty pass.
+ * ⚠ **Empty needs proof.** A cut gone without a frame is *empty* only on the cutter's nothing-to-cut
+ * record or a seen zero exit; anything else, on its last attempt, is *failed* — an email and *Retry
+ * failed*, rather than a real failure filed as an empty pass. Since B01-8b-2 a finished Machine is kept
+ * stopped (`auto_destroy: false`), so its exit code is read here rather than lost; a Machine from an
+ * older spawn, auto-destroyed, still reads as before.
+ *
+ * ⚠ **A landed cut waits for its Machine to exit** (up to `LANDED_WAIT_MS`), so the attempt keeps its
+ * exit and its whole log. If Fly can't be read, the frame lands anyway: a frame is never held back by
+ * Fly, and the sweep reads the exit before it destroys the Machine.
  */
 async function check(
   config: { fly: FlyConfig; r2: R2Config },
   granule: Doc<'imageryGranules'>,
+  attempt: Doc<'imageryAttempts'> | null,
   now: number,
 ): Promise<Verdict> {
   const age = now - (granule.spawnedAt ?? 0);
   if (granule.machineId && age < MIN_CUT_MS) return { kind: 'young' };
-  const settle = (status: Settled, error?: string): Verdict => ({
-    kind: 'settle',
-    id: granule._id,
-    status,
-    granuleId: granule.granuleId,
-    ...(error ? { error } : {}),
-  });
+  let run = null as MachineRun | null;
+  let destroyable = false;
+  /** Fly's word on the Machine: `live`, or done (its run read when Fly still knows it). */
+  const readFly = async (): Promise<'live' | 'done'> => {
+    const machine = await getMachine(config.fly, granule.machineId as string);
+    if (machine && LIVE_STATES.has(machine.state)) return 'live';
+    if (machine) {
+      run = {
+        exitCode: machine.exitCode,
+        oomKilled: machine.oomKilled,
+        exitedAt: machine.exitedAt,
+        startedAt: machine.startedAt,
+      };
+      destroyable = machine.state !== 'destroyed' && machine.state !== 'destroying';
+    }
+    return 'done';
+  };
+  const settle = async (
+    status: Settled,
+    error?: string,
+    emptyReason?: string,
+  ): Promise<Verdict> => {
+    let cutterText: string | null | undefined;
+    if (attempt?.machineId) {
+      try {
+        cutterText = await getText(
+          config.r2,
+          cutLogKey(attempt.season, attempt.granuleId, attempt.attempt),
+        );
+      } catch {
+        cutterText = undefined; // owed: the next run reads it again
+      }
+    } else cutterText = null;
+    return {
+      kind: 'settle',
+      id: granule._id,
+      status,
+      granuleId: granule.granuleId,
+      ...(error ? { error } : {}),
+      ...(emptyReason ? { emptyReason } : {}),
+      capture: attempt ? { attempt, run, destroyable, cutterText } : null,
+    };
+  };
   try {
     // Asked of the bucket itself, signed: a CDN may have cached the 404 from before the upload,
     // and a landed cut read as missing would be recut — and its frame never indexed.
     if (await exists(config.r2, `frames/${granule.season}/${granule.granuleId}.json`)) {
-      return settle('landed');
+      if (granule.machineId) {
+        try {
+          if ((await readFly()) === 'live' && age < LANDED_WAIT_MS) return { kind: 'running' };
+        } catch {
+          // Fly blinked: the frame lands without its exit; the sweep reads it before destroying.
+        }
+      }
+      return await settle('landed');
     }
-    let exitCode: number | null = null;
     if (granule.machineId) {
-      const machine = await getMachine(config.fly, granule.machineId);
-      if (machine && LIVE_STATES.has(machine.state)) return { kind: 'running' };
-      exitCode = machine?.exitCode ?? null;
+      if ((await readFly()) === 'live') return { kind: 'running' };
     } else if (age < LOST_CLAIM_MS) {
       return { kind: 'young' }; // a claim whose spawn call may still be returning
     }
+    const exitCode = run?.exitCode ?? null;
     // Gone: did it record nothing to cut? Asked of the bucket, signed — a CDN may have cached the
-    // 404 from while the cut was still running.
-    if (await exists(config.r2, emptyMarkerKey(granule.season, granule.granuleId))) {
-      return settle('empty');
+    // 404 from while the cut was still running. Its `reason` is copied onto the granule (Ma7); a
+    // marker that isn't JSON is still the cutter's record, with no reason.
+    const marker = await getText(config.r2, emptyMarkerKey(granule.season, granule.granuleId));
+    if (marker !== null) {
+      let reason: string | undefined;
+      try {
+        const parsed = JSON.parse(marker) as { reason?: unknown };
+        if (typeof parsed?.reason === 'string' && parsed.reason.trim())
+          reason = parsed.reason.trim();
+      } catch {
+        reason = undefined;
+      }
+      return await settle('empty', undefined, reason);
     }
+    const fault = exitError(run);
     // Gone without a frame or a nothing-to-cut record. The first miss is always retried: a spawn
     // that never started, a crash and an image too old to write the record all look the same here.
     if (granule.attempts < MAX_ATTEMPTS) {
-      return settle(
+      return await settle(
         'queued',
-        exitCode ? `exit ${exitCode}` : granule.machineId ? undefined : 'spawn never confirmed',
+        fault ?? (granule.machineId ? undefined : 'spawn never confirmed'),
       );
     }
-    if (exitCode !== null && exitCode !== 0) return settle('failed', `exit ${exitCode}`);
+    if (exitCode !== null && exitCode !== 0) return await settle('failed', fault);
     // ⚠ **Never confirmed is not empty.** A claim with no Machine id timed out or died mid-call: no
     // Machine was ever seen, so nothing says the granule had nothing to cut.
-    if (!granule.machineId) return settle('failed', 'spawn never confirmed');
+    if (!granule.machineId) return await settle('failed', 'spawn never confirmed');
+    // An out-of-memory kill is a failure whatever its code.
+    if (fault !== undefined) return await settle('failed', fault);
     // A seen zero exit with no record is a cutter image from before the record existed: it exits 0
     // on "nothing to cut" — a footprint that misses every body.
-    if (exitCode === 0) return settle('empty');
-    return settle('failed', 'gone with no frame and no nothing-to-cut record');
+    if (exitCode === 0) return await settle('empty');
+    return await settle('failed', 'gone with no frame and no nothing-to-cut record');
   } catch {
     return { kind: 'unknown' }; // the archive or the Fly API blinked; look again next beat
   }
+}
+
+/** The attempt verdict a granule's settle means. */
+function attemptVerdictOf(
+  status: Settled,
+  attempt: Doc<'imageryAttempts'>,
+): 'landed' | 'empty' | 'requeued' | 'failed' | 'unconfirmed' {
+  if (status === 'landed') return 'landed';
+  if (status === 'empty') return 'empty';
+  if (!attempt.machineId) return 'unconfirmed';
+  return status === 'queued' ? 'requeued' : 'failed';
+}
+
+/** The settle's close of an attempt: its verdict, Fly's exit, its machine time (D346). */
+function attemptCloseOf(verdict: Extract<Verdict, { kind: 'settle' }>, now: number) {
+  const capture = verdict.capture;
+  if (capture === null) return undefined;
+  const { attempt, run } = capture;
+  const ran = attempt.machineId !== undefined;
+  const ms = attemptMachineMs({
+    startedAt: run?.startedAt ?? null,
+    exitedAt: run?.exitedAt ?? null,
+    cutter: typeof capture.cutterText === 'string' ? parseCutterLog(capture.cutterText) : [],
+    spawnedAt: attempt.spawnedAt,
+    settledAt: now,
+    ran,
+  });
+  return {
+    id: attempt._id,
+    verdict: attemptVerdictOf(verdict.status, attempt),
+    ...(run?.exitCode != null ? { exitCode: run.exitCode } : {}),
+    ...(run?.oomKilled != null ? { oomKilled: run.oomKilled } : {}),
+    ...(run?.exitedAt != null ? { exitedAt: run.exitedAt } : {}),
+    ...(run?.startedAt != null ? { startedAt: run.startedAt } : {}),
+    ...(ms !== null ? { machineMs: Math.round(ms.ms), machineMsFrom: ms.from } : {}),
+    // Nothing ran, so there is nothing to copy.
+    log: ran ? ('pending' as const) : ('none' as const),
+  };
+}
+
+/** The pump's own lines around an attempt's log: what it asked for, and how it settled. */
+export function pumpLinesOf(
+  attempt: Doc<'imageryAttempts'>,
+  emptyReason: string | null,
+  notes: PumpLogLine[],
+): PumpLogLine[] {
+  const settledAt = attempt.settledAt ?? attempt.spawnedAt;
+  const why = attempt.error ? `: ${attempt.error}` : '';
+  const settled: PumpLogLine =
+    attempt.verdict === 'landed'
+      ? { loggedAt: settledAt, kind: 'stage', text: 'Settled: the frame landed' }
+      : attempt.verdict === 'empty'
+        ? {
+            loggedAt: settledAt,
+            kind: 'stage',
+            text: `Settled: nothing to cut${emptyReason ? ` · ${emptyReason}` : ''}`,
+          }
+        : attempt.verdict === 'requeued'
+          ? {
+              loggedAt: settledAt,
+              kind: 'warn',
+              text: `Settled: no frame, so it goes back in line for another attempt${why}`,
+            }
+          : attempt.verdict === 'unconfirmed'
+            ? {
+                loggedAt: settledAt,
+                kind: 'fail',
+                text: 'Settled: Fly never confirmed the Machine',
+              }
+            : { loggedAt: settledAt, kind: 'fail', text: `Settled failed${why || ': no frame'}` };
+  return [
+    {
+      loggedAt: attempt.spawnedAt,
+      kind: 'stage',
+      text: `Asked Fly for ${attempt.machineName} on ${FLY_VM_SIZE_LABEL}${attempt.image ? ` · ${attempt.image}` : ''}`,
+    },
+    ...notes,
+    settled,
+  ];
+}
+
+/**
+ * **Copy one settled attempt's log into Convex** (D348): the cutter's upload (read again unless the
+ * settle just read it), Fly's own lines for a cut that didn't land, the exit the settle recorded, and
+ * the pump's framing lines, merged by core's `mergeCutLog` and written under the attempt in chunks of
+ * `ATTEMPT_LINES_APPEND`; then the R2 object is deleted. Answers what became of it: `kept` / `none`
+ * (written; `none` when the cutter uploaded nothing), or `owed` (a read or write failed — the attempt
+ * stays `pending`, retried by a later run, and the R2 object is left for it).
+ */
+async function captureLog(
+  ctx: ActionCtx,
+  config: { fly: FlyConfig; r2: R2Config },
+  attempt: Doc<'imageryAttempts'>,
+  emptyReason: string | null,
+  cutterRead: string | null | undefined,
+): Promise<'kept' | 'none' | 'owed'> {
+  const key = cutLogKey(attempt.season, attempt.granuleId, attempt.attempt);
+  let cutterText = cutterRead;
+  if (cutterText === undefined) {
+    try {
+      cutterText = attempt.machineId ? await getText(config.r2, key) : null;
+    } catch {
+      return 'owed';
+    }
+  }
+  const notes: PumpLogLine[] = [];
+  let fly: FlyMachineLogLine[] = [];
+  // Fly's own lines only for a cut that didn't land: the only place a kill of the whole VM is named.
+  // Optional: a refusal (the token can't read the log API) keeps the exit and loses only these.
+  if (attempt.machineId && attempt.verdict !== 'landed') {
+    try {
+      fly = await machineLogs(config.fly, attempt.machineId);
+    } catch (error) {
+      notes.push({
+        loggedAt: attempt.settledAt ?? attempt.spawnedAt,
+        kind: 'warn',
+        text: `Fly's own log lines couldn't be read: ${errorMessage(error).slice(0, 200)}`,
+      });
+    }
+  }
+  if (attempt.machineId && cutterText === null) {
+    notes.push({
+      loggedAt: attempt.spawnedAt,
+      kind: 'warn',
+      text: "The cutter didn't upload a log: its image may be from before logs were kept",
+    });
+  }
+  const cutter: CutterLogLine[] = cutterText ? parseCutterLog(cutterText) : [];
+  const exit: CutExit | null =
+    attempt.exitCode === undefined &&
+    attempt.oomKilled === undefined &&
+    attempt.exitedAt === undefined
+      ? null
+      : {
+          exitCode: attempt.exitCode ?? null,
+          oomKilled: attempt.oomKilled ?? null,
+          exitedAt: attempt.exitedAt ?? null,
+        };
+  const merged = mergeCutLog({ cutter, fly, exit, pump: pumpLinesOf(attempt, emptyReason, notes) });
+  const keep =
+    attempt.verdict === 'landed' || attempt.verdict === 'empty' ? KEPT_LOG_DAYS : FAILED_LOG_DAYS;
+  const keepUntil = (attempt.settledAt ?? Date.now()) + keep * DAY_MS;
+  try {
+    for (let i = 0; i < merged.lines.length; i += ATTEMPT_LINES_APPEND) {
+      await ctx.runMutation(internal.imageryLive.appendAttemptLines, {
+        attemptId: attempt._id,
+        from: i,
+        lines: merged.lines.slice(i, i + ATTEMPT_LINES_APPEND),
+        keepUntil,
+      });
+    }
+    await ctx.runMutation(internal.imageryLive.closeAttemptLog, {
+      attemptId: attempt._id,
+      log: cutterText === null ? 'none' : 'kept',
+      total: merged.lines.length,
+    });
+  } catch {
+    return 'owed';
+  }
+  if (cutterText !== null) {
+    try {
+      await deleteObject(config.r2, key);
+    } catch (error) {
+      // Copied already; the bucket's 30-day rule on `logs/` is the net for the object.
+      console.warn(
+        `imagery pump: the copied log ${key} could not be deleted: ${errorMessage(error)}`,
+      );
+    }
+  }
+  return cutterText === null ? 'none' : 'kept';
+}
+
+/**
+ * Retry the captures still owed, oldest first: each for an hour from its settle, then `missing`.
+ * Bounded by count and by the run's check deadline.
+ */
+async function retryCaptures(
+  ctx: ActionCtx,
+  config: { fly: FlyConfig; r2: R2Config },
+  startedAt: number,
+  counts: PumpCounts,
+): Promise<void> {
+  const owed: Doc<'imageryAttempts'>[] = await ctx.runQuery(internal.imageryLive.pendingCaptures, {
+    limit: CAPTURES_PER_RUN,
+  });
+  for (const attempt of owed) {
+    if (Date.now() - startedAt >= CHECK_DEADLINE_MS) break;
+    if (startedAt - (attempt.settledAt ?? startedAt) > CAPTURE_RETRY_MS) {
+      await ctx.runMutation(internal.imageryLive.closeAttemptLog, {
+        attemptId: attempt._id,
+        log: 'missing',
+        total: 0,
+      });
+      continue;
+    }
+    const granule = await ctx.runQuery(internal.imageryLive.granuleOf, {
+      id: attempt.granuleRowId,
+    });
+    const result = await captureLog(ctx, config, attempt, granule?.emptyReason ?? null, undefined);
+    if (result !== 'owed') counts.captured++;
+  }
+}
+
+export const granuleOf = internalQuery({
+  args: { id: v.id('imageryGranules') },
+  handler: async (ctx, { id }) => await ctx.db.get(id),
+});
+
+/**
+ * **The stopped-Machine sweep** (D348's keep rule), over one listing:
+ *
+ * - a stopped cut Machine whose attempt is settled is destroyed — after its exit is read onto the
+ *   attempt, if the settle couldn't reach Fly (`recordAttemptExit`); a Fly that can't be read now
+ *   leaves it for the next run;
+ * - one whose attempt is still open is left: the settle reads its exit first;
+ * - one no attempt claims (a spawn whose answer never came, a Machine from before attempts) is
+ *   destroyed once Fly says it has been stopped `ORPHAN_STOPPED_MS`.
+ *
+ * At most `SWEEP_PER_RUN` a run, `CHECK_CONCURRENCY` at a time, none started past `deadline`.
+ * Answers how many stopped cut Machines are left.
+ */
+async function sweepStopped(
+  ctx: ActionCtx,
+  fly: FlyConfig,
+  machines: readonly FlyMachine[],
+  now: number,
+  deadline: number,
+  counts: PumpCounts,
+): Promise<number> {
+  const stopped = machines.filter((m) => isCutMachine(m) && STOPPED_STATES.has(m.state));
+  if (stopped.length === 0) return 0;
+  const batch = stopped.slice(0, SWEEP_PER_RUN);
+  const known = await ctx.runQuery(internal.imageryLive.attemptsByMachine, {
+    machineIds: batch.map((m) => m.id),
+  });
+  const byMachine = new Map(known.map((k) => [k.machineId, k]));
+  let destroyed = 0;
+  for (let i = 0; i < batch.length; i += CHECK_CONCURRENCY) {
+    if (Date.now() >= deadline) break;
+    const results = await Promise.all(
+      batch.slice(i, i + CHECK_CONCURRENCY).map(async (m) => {
+        try {
+          const a = byMachine.get(m.id);
+          if (a) {
+            if (!a.settled) return false;
+            if (!a.exitRecorded) {
+              const machine = await getMachine(fly, m.id);
+              if (machine === null) return false; // already gone
+              await ctx.runMutation(internal.imageryLive.recordAttemptExit, {
+                id: a.attemptId,
+                ...(machine.exitCode !== null ? { exitCode: machine.exitCode } : {}),
+                ...(machine.oomKilled !== null ? { oomKilled: machine.oomKilled } : {}),
+                ...(machine.exitedAt !== null ? { exitedAt: machine.exitedAt } : {}),
+                ...(machine.startedAt !== null ? { startedAt: machine.startedAt } : {}),
+              });
+            }
+          } else if (m.updatedAt === null || now - m.updatedAt <= ORPHAN_STOPPED_MS) {
+            return false;
+          } else {
+            console.log(
+              `imagery pump: destroying ${m.name} (${m.id}), stopped over an hour with no attempt claiming it`,
+            );
+          }
+          await destroyMachine(fly, m.id);
+          return true;
+        } catch {
+          return false; // Fly blinked: the next run's sweep tries again
+        }
+      }),
+    );
+    destroyed += results.filter(Boolean).length;
+  }
+  counts.destroyed += destroyed;
+  return stopped.length - destroyed;
 }
 
 interface RunOutcome {
@@ -991,44 +1774,99 @@ async function pumpOnce(
     spawned: 0,
     refused: 0,
     unconfirmed: 0,
+    captured: 0,
+    capturesOwed: 0,
+    destroyed: 0,
+    stopped: 0,
   };
   const failures: string[] = [];
   let backoff = false;
   let streak = refusalStreakIn;
 
+  // ── Captures an earlier run owes first (each for an hour from its settle): a few, bounded ──
+  await retryCaptures(ctx, config, startedAt, counts);
+
   // ── Settle what is cutting: CHECK_CONCURRENCY checks at a time, each group settled as it lands,
   //    and no group started past the check deadline (the rest are checked next tick) ──
-  const inFlight: Doc<'imageryGranules'>[] = await ctx.runQuery(
-    internal.imageryLive.granulesByStatus,
-    { season, status: 'spawned', limit: RECONCILE_BATCH },
-  );
+  const inFlight: { granule: Doc<'imageryGranules'>; attempt: Doc<'imageryAttempts'> | null }[] =
+    await ctx.runQuery(internal.imageryLive.inFlight, { season, limit: RECONCILE_BATCH });
   const settled: { id: Id<'imageryGranules'>; status: Settled; error?: string }[] = [];
   for (let i = 0; i < inFlight.length; i += CHECK_CONCURRENCY) {
     if (Date.now() - startedAt >= CHECK_DEADLINE_MS) break;
     const verdicts = await Promise.all(
-      inFlight.slice(i, i + CHECK_CONCURRENCY).map((g) => check(config, g, startedAt)),
+      inFlight
+        .slice(i, i + CHECK_CONCURRENCY)
+        .map((f) => check(config, f.granule, f.attempt, startedAt)),
     );
-    const group: typeof settled = [];
+    const now = Date.now();
+    const group: {
+      id: Id<'imageryGranules'>;
+      status: Settled;
+      error?: string;
+      emptyReason?: string;
+      attempt?: NonNullable<ReturnType<typeof attemptCloseOf>>;
+    }[] = [];
+    const settling: Extract<Verdict, { kind: 'settle' }>[] = [];
     for (const verdict of verdicts) {
       if (verdict.kind !== 'settle') {
         counts[verdict.kind]++;
         continue;
       }
+      const close = attemptCloseOf(verdict, now);
       group.push({
         id: verdict.id,
         status: verdict.status,
         ...(verdict.error ? { error: verdict.error } : {}),
+        ...(verdict.emptyReason ? { emptyReason: verdict.emptyReason } : {}),
+        ...(close ? { attempt: close } : {}),
       });
+      settling.push(verdict);
       counts[verdict.status === 'queued' ? 'requeued' : verdict.status]++;
       if (verdict.status === 'failed') failures.push(`${verdict.granuleId} (${verdict.error})`);
     }
-    if (group.length > 0)
-      await ctx.runMutation(internal.imageryLive.settleMany, { settled: group });
+    if (group.length === 0) continue;
+    const { closed } = await ctx.runMutation(internal.imageryLive.settleMany, { settled: group });
     // A frame that landed asks for its index build at once, not only if the run gets to its end.
     if (group.some((g) => g.status === 'landed')) {
       await ctx.runMutation(internal.imageryLive.markIndexDirty, {});
     }
-    settled.push(...group);
+    settled.push(
+      ...group.map(({ id, status, error }) => ({ id, status, ...(error ? { error } : {}) })),
+    );
+
+    // ── Each closed attempt: its Machine destroyed (its exit is on the attempt now), then its log
+    //    copied. Past the check deadline both wait: the sweep destroys, a later run copies. ──
+    if (Date.now() - startedAt >= CHECK_DEADLINE_MS) continue;
+    const closedSet = new Set<string>(closed);
+    const fresh: Doc<'imageryAttempts'>[] = await ctx.runQuery(internal.imageryLive.attemptsById, {
+      ids: closed,
+    });
+    const freshById = new Map(fresh.map((a) => [a._id as string, a]));
+    await Promise.all(
+      settling.map(async (verdict) => {
+        const capture = verdict.capture;
+        if (capture === null || !closedSet.has(capture.attempt._id)) return;
+        const attempt = freshById.get(capture.attempt._id);
+        if (!attempt) return;
+        if (capture.destroyable && attempt.machineId) {
+          try {
+            await destroyMachine(config.fly, attempt.machineId);
+            counts.destroyed++;
+          } catch {
+            // Left stopped: the sweep destroys it (its attempt is settled).
+          }
+        }
+        if (attempt.log !== 'pending') return;
+        const result = await captureLog(
+          ctx,
+          config,
+          attempt,
+          verdict.emptyReason ?? null,
+          capture.cutterText,
+        );
+        if (result !== 'owed') counts.captured++;
+      }),
+    );
   }
 
   // A run is *blind* when it had cuts to check and could check none. Back off on the third blind
@@ -1046,32 +1884,73 @@ async function pumpOnce(
     });
   }
 
-  // ── Start new cuts — only while imagery is running ──
+  // ── List the Machines once: the sweep of stopped cuts, then new cuts while imagery is running ──
   const state = await ctx.runQuery(internal.imageryLive.liveState, { season });
-  if (state.runnable && !backoff && Date.now() - startedAt < RUN_DEADLINE_MS) {
-    const spawn = await startCuts(
-      ctx,
-      config.fly,
-      season,
-      streak,
-      counts,
-      failures,
-      startedAt + RUN_DEADLINE_MS,
-    );
-    streak = spawn.streak;
-    backoff = spawn.backoff;
+  const mayStart = state.runnable && !backoff && Date.now() - startedAt < RUN_DEADLINE_MS;
+  if (mayStart || inFlight.length > 0) {
+    let machines: FlyMachine[] | null = null;
+    let listError: string | null = null;
+    try {
+      machines = await listMachines(config.fly);
+    } catch (error) {
+      listError = errorMessage(error);
+    }
+    if (machines !== null) {
+      counts.stopped = await sweepStopped(
+        ctx,
+        config.fly,
+        machines,
+        Date.now(),
+        startedAt + RUN_DEADLINE_MS,
+        counts,
+      );
+    }
+    if (mayStart && listError !== null) {
+      await ctx.runMutation(internal.imageryLive.alertAdmins, {
+        key: 'imagery-fly',
+        season,
+        problem: 'The Fly API is refusing the imagery job',
+        detail: `Listing Machines failed: ${listError}. Check FLY_API_TOKEN. Nothing new is cut until it works; the pump retries every half hour, or at once when you press Try again now on the Imagery page in Machinery.`,
+      });
+      backoff = true;
+    } else if (mayStart && machines !== null && counts.stopped >= MAX_STOPPED_MACHINES) {
+      // The keep rule's bound: stopped Machines aren't going away, so no more are made.
+      await ctx.runMutation(internal.imageryLive.alertAdmins, {
+        key: 'imagery-stopped',
+        season,
+        problem: 'Finished satellite cuts are not being cleared',
+        detail: `${counts.stopped} finished cut Machines are still stopped on Fly, and the pump couldn't destroy them. No new cuts start until fewer than ${MAX_STOPPED_MACHINES} are left; each check tries again. Check FLY_API_TOKEN, or destroy them with \`fly machine destroy\`.`,
+      });
+    } else if (mayStart && machines !== null) {
+      const spawn = await startCuts(
+        ctx,
+        config.fly,
+        season,
+        streak,
+        machines,
+        counts,
+        failures,
+        startedAt + RUN_DEADLINE_MS,
+      );
+      streak = spawn.streak;
+      backoff = spawn.backoff;
+    }
   }
+  counts.capturesOwed = (
+    await ctx.runQuery(internal.imageryLive.pendingCaptures, { limit: CAPTURES_PER_RUN })
+  ).length;
 
   if (failures.length > 0) {
     await ctx.runMutation(internal.imageryLive.alertAdmins, {
       key: 'imagery-cut-failed',
       season,
       problem: `${failures.length} satellite cut${failures.length === 1 ? '' : 's'} failed`,
-      detail: `${failures.slice(0, 10).join(', ')}${failures.length > 10 ? ', …' : ''}. Read the Machine logs with \`fly logs --app skating-imagery\` while they last; *Retry failed* on the Seasons page queues them again.`,
+      detail: `${failures.slice(0, 10).join(', ')}${failures.length > 10 ? ', …' : ''}. The failed attempts' logs are on the Imagery page in Machinery, where *Retry failed* queues them again.`,
     });
   }
   const runOutcome: RunOutcome = { backoff, refusalStreak: streak, blindTicks };
-  if (settled.length + counts.spawned + counts.refused === 0 && !backoff) {
+  const did = settled.length + counts.spawned + counts.refused + counts.captured + counts.destroyed;
+  if (did === 0 && !backoff) {
     return { counts, outcome: runOutcome };
   }
   const at = Date.now();
@@ -1095,6 +1974,11 @@ async function pumpOnce(
       ...failures.slice(0, 50).map((f) => ({ kind: 'fail' as const, text: f, loggedAt: at })),
       {
         kind: 'line',
+        text: `Logs copied ${counts.captured}, still owed ${counts.capturesOwed}; Machines cleared ${counts.destroyed}, ${counts.stopped} still stopped`,
+        loggedAt: at,
+      },
+      {
+        kind: 'line',
         text: `Started ${counts.spawned}, refused ${counts.refused}, unconfirmed ${counts.unconfirmed}; ${counts.live} live of ${MAX_LIVE_MACHINES}`,
         loggedAt: at,
       },
@@ -1105,38 +1989,31 @@ async function pumpOnce(
 }
 
 /**
- * Start cuts up to the live cap. ⚠ **Throttle on Machines alive, never on calls made.** A spawn
- * returns in under a second while its job runs for minutes — `fan-out.sh` saw 2,345 spawns under a
- * call cap pile up into thousands of live Machines and land 359 of ~1,523 frames.
+ * Start cuts up to the live cap, from the run's one listing. ⚠ **Throttle on Machines alive, never
+ * on calls made.** A spawn returns in under a second while its job runs for minutes — `fan-out.sh`
+ * saw 2,345 spawns under a call cap pile up into thousands of live Machines and land 359 of ~1,523
+ * frames.
  */
 async function startCuts(
   ctx: ActionCtx,
   fly: FlyConfig,
   season: string,
   streakIn: number,
+  machines: readonly FlyMachine[],
   counts: PumpCounts,
   failures: string[],
   /** The run's deadline (`RUN_DEADLINE_MS`): no spawn starts past it. */
   deadline: number,
 ): Promise<{ streak: number; backoff: boolean }> {
-  let live: number;
-  try {
-    live = liveCutMachines(await listMachines(fly));
-  } catch (error) {
-    await ctx.runMutation(internal.imageryLive.alertAdmins, {
-      key: 'imagery-fly',
-      season,
-      problem: 'The Fly API is refusing the imagery job',
-      detail: `Listing Machines failed: ${error instanceof Error ? error.message : String(error)}. Check FLY_API_TOKEN. Nothing new is cut until it works; the pump retries every half hour, or at once when you press Try again now on the Seasons page.`,
-    });
-    return { streak: streakIn, backoff: true };
-  }
+  const live = liveCutMachines(machines);
   counts.live = live;
   // Half-open (one refusal short of tripping): claim exactly one — the probe.
   const room = Math.max(0, MAX_LIVE_MACHINES - live);
   const claims = await ctx.runMutation(internal.imageryLive.claimForSpawn, {
     season,
     limit: streakIn >= SPAWN_BREAKER - 1 ? Math.min(1, room) : room,
+    image: fly.image,
+    live,
   });
   let streak = streakIn;
   let lastError = '';
@@ -1162,8 +2039,13 @@ async function startCuts(
           // "MASK_SEASON is not the frame's season"). Live cuts are all this season's.
           maskSeason: season,
           attempt: claim.attempt,
+          logKey: cutLogKey(claim.season, claim.granuleId, claim.attempt),
         });
-        await ctx.runMutation(internal.imageryLive.settleSpawn, { id: claim.id, machineId });
+        await ctx.runMutation(internal.imageryLive.settleSpawn, {
+          id: claim.id,
+          attemptId: claim.attemptId,
+          machineId,
+        });
         counts.spawned++;
         streak = 0;
       } catch (error) {
@@ -1175,9 +2057,10 @@ async function startCuts(
           timeouts++;
           continue;
         }
-        lastError = error instanceof Error ? error.message : String(error);
+        lastError = errorMessage(error);
         const result = await ctx.runMutation(internal.imageryLive.settleSpawn, {
           id: claim.id,
+          attemptId: claim.attemptId,
           error: lastError,
         });
         if (result.failed) failures.push(`${claim.granuleId} (refused ${MAX_REFUSALS} times)`);
@@ -1188,8 +2071,13 @@ async function startCuts(
   } finally {
     // Whatever stopped the loop — the breaker, timeouts, the budget, imagery stopping, or a throw — the claims never
     // tried go back to the queue unchanged, rather than waiting out `LOST_CLAIM_MS` in flight.
-    const untried = claims.slice(next).map((c) => c.id);
-    if (untried.length > 0) await ctx.runMutation(internal.imageryLive.handBack, { ids: untried });
+    const untried = claims.slice(next);
+    if (untried.length > 0) {
+      await ctx.runMutation(internal.imageryLive.handBack, {
+        ids: untried.map((c) => c.id),
+        attemptIds: untried.map((c) => c.attemptId),
+      });
+    }
   }
   if (timeouts >= TIMEOUTS_TO_STOP) {
     await ctx.runMutation(internal.imageryLive.alertAdmins, {
@@ -1205,64 +2093,150 @@ async function startCuts(
     key: 'imagery-spawn',
     season,
     problem: 'Fly is refusing new satellite cuts',
-    detail: `${streak} spawns in a row were refused${lastError ? `, most recently: ${lastError}` : ''}. Check FLY_IMAGE and FLY_API_TOKEN. The queue is kept; after half an hour the pump tries one spawn, or at once when you press Try again now on the Seasons page.`,
+    detail: `${streak} spawns in a row were refused${lastError ? `, most recently: ${lastError}` : ''}. Check FLY_IMAGE and FLY_API_TOKEN. The queue is kept; after half an hour the pump tries one spawn, or at once when you press Try again now on the Imagery page in Machinery.`,
   });
   return { streak, backoff: true };
 }
 
+// ─── The triggers (Machinery › Imagery's bar) ────────────────────────────────────────────────────
+
+/** The refusals the bar's triggers throw, in words a person can read (D268, toasts on the web). */
+export const NO_FAILED_CUTS = 'No cuts failed this season, so there’s nothing to retry.';
+export const NOTHING_WAITING =
+  'Nothing is waiting: the pump isn’t backing off and the index has nothing to read again.';
+
+/** The audit row every imagery trigger leaves, on the season (`imagerySeason`, its id the season). */
+export async function auditImagery(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+  entry: {
+    action:
+      | 'start_imagery'
+      | 'pause_imagery'
+      | 'poll_imagery'
+      | 'retry_failed_cuts'
+      | 'retry_imagery_now';
+    season: string;
+    reason: string;
+    metadata: Record<string, unknown>;
+    now: number;
+  },
+): Promise<Id<'moderationActions'>> {
+  return await writeAudit(ctx, {
+    actorId: actor._id,
+    action: entry.action,
+    targetType: 'imagerySeason',
+    targetId: entry.season,
+    reason: typed(entry.reason),
+    metadata: entry.metadata,
+    createdAt: entry.now,
+  });
+}
+
 /**
- * *Retry failed* on the page: this season's failed cuts back in the queue with fresh attempts. An
- * admin pressing it has usually just fixed what was failing, so it also clears any backoff and runs
- * the pump at once.
+ * *Retry failed*: this season's failed cuts back in the queue with fresh attempts (at most 500 a
+ * press). An admin pressing it has usually just fixed what was failing, so it also clears any backoff
+ * and runs the pump at once, through the dispatcher with who pressed it. Refused with no failed cut.
+ */
+export async function retryFailedImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+): Promise<{ actionId: Id<'moderationActions'>; requeued: number }> {
+  const now = Date.now();
+  const season = archiveSeasonAt(now);
+  const ledger = new Ledger(ctx);
+  const rows = await ctx.db
+    .query('imageryGranules')
+    .withIndex('by_season_status', (q) => q.eq('season', season).eq('status', 'failed'))
+    .take(500);
+  if (rows.length === 0) throw new ConvexError(NO_FAILED_CUTS);
+  for (const row of rows) {
+    await ledger.set(row, 'queued', {
+      attempts: 0,
+      refusals: 0,
+      settledAt: undefined,
+      queuedAt: now,
+    });
+  }
+  await ledger.flush();
+  await clearBackoff(ctx, 'pump');
+  const actionId = await auditImagery(ctx, actor, {
+    action: 'retry_failed_cuts',
+    season,
+    reason: 'Sent the failed cuts back in line',
+    metadata: { requeued: rows.length },
+    now,
+  });
+  // Safe at once: if a run holds the lease this one skips, and that run is already working.
+  await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
+    job: IMAGERY_CRON_JOBS.pump,
+    trigger: 'manual',
+    byUserId: actor._id,
+  });
+  return { actionId, requeued: rows.length };
+}
+
+/**
+ * *Try again now*: an admin who fixed what was failing ends the pump's backoff and closes the
+ * breaker — and makes a pending re-read of unreadable manifests due, with a build to do it. Refused
+ * when nothing waits: no backoff, no breaker streak, no blind run counted, no re-read pending.
+ */
+export async function tryAgainNowImpl(
+  ctx: MutationCtx,
+  actor: Doc<'profiles'>,
+): Promise<{ actionId: Id<'moderationActions'> }> {
+  const now = Date.now();
+  const pump = await jobRow(ctx, 'pump');
+  const index = await jobRow(ctx, 'index');
+  const backingOff = pump?.backoffUntil !== undefined && pump.backoffUntil > now;
+  const tripping = (pump?.refusalStreak ?? 0) > 0 || (pump?.blindTicks ?? 0) > 0;
+  const reread = index?.retryAt !== undefined;
+  if (!backingOff && !tripping && !reread) throw new ConvexError(NOTHING_WAITING);
+  await clearBackoff(ctx, 'pump');
+  await retryNow(ctx, 'index');
+  const actionId = await auditImagery(ctx, actor, {
+    action: 'retry_imagery_now',
+    season: archiveSeasonAt(now),
+    reason: 'Lifted the imagery pump’s wait',
+    metadata: {
+      prev: {
+        backoffUntil: pump?.backoffUntil ?? null,
+        refusalStreak: pump?.refusalStreak ?? 0,
+        blindTicks: pump?.blindTicks ?? 0,
+        indexRetryAt: index?.retryAt ?? null,
+      },
+    },
+    now,
+  });
+  for (const job of [IMAGERY_CRON_JOBS.pump, IMAGERY_CRON_JOBS.index]) {
+    await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
+      job,
+      trigger: 'manual',
+      byUserId: actor._id,
+    });
+  }
+  return { actionId };
+}
+
+/**
+ * *Retry failed* as the Seasons page calls it. ⚠ **Deprecated** (B01-8b-2): Machinery's
+ * `machineryImagery.retryFailed` is the write; this stays only until the Seasons page stops calling
+ * it in the same PR, then goes. The same body.
  */
 export const retryFailed = mutation({
   args: {},
   handler: async (ctx) => {
     const admin = await requireCapability(ctx, 'machinery.imagery');
-    const season = archiveSeasonAt(Date.now());
-    const ledger = new Ledger(ctx);
-    const rows = await ctx.db
-      .query('imageryGranules')
-      .withIndex('by_season_status', (q) => q.eq('season', season).eq('status', 'failed'))
-      .take(500);
-    for (const row of rows) {
-      await ledger.set(row, 'queued', {
-        attempts: 0,
-        refusals: 0,
-        settledAt: undefined,
-        queuedAt: Date.now(),
-      });
-    }
-    await ledger.flush();
-    await clearBackoff(ctx, 'pump');
-    // Safe at once: if a run holds the lease this one skips, and that run is already working.
-    await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
-      job: IMAGERY_CRON_JOBS.pump,
-      trigger: 'manual',
-      byUserId: admin._id,
-    });
-    return { requeued: rows.length };
+    return await retryFailedImpl(ctx, admin);
   },
 });
 
-/**
- * *Try again now*: an admin who fixed what was failing ends the pump's backoff and closes the
- * breaker — and makes a pending re-read of unreadable manifests due, with a build to do it.
- */
+/** *Try again now* as the Seasons page calls it. ⚠ **Deprecated**, as {@link retryFailed}. */
 export const tryAgainNow = mutation({
   args: {},
   handler: async (ctx) => {
     const admin = await requireCapability(ctx, 'machinery.imagery');
-    await clearBackoff(ctx, 'pump');
-    await retryNow(ctx, 'index');
-    for (const job of [IMAGERY_CRON_JOBS.pump, IMAGERY_CRON_JOBS.index]) {
-      await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
-        job,
-        trigger: 'manual',
-        byUserId: admin._id,
-      });
-    }
-    return null;
+    return await tryAgainNowImpl(ctx, admin);
   },
 });
 
@@ -1360,7 +2334,7 @@ export async function buildIndexHandler(
         key: 'imagery-index-unreadable',
         season: result.season,
         problem: 'Some cut frames cannot be read into the imagery index',
-        detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read: a new frame stays off the public timeline until it reads, and a recut one keeps its old details. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Seasons page retries at once.`,
+        detail: `${n} manifest${n === 1 ? '' : 's'} in frames/${result.season}/ could not be read: a new frame stays off the public timeline until it reads, and a recut one keeps its old details. The index reads ${n === 1 ? 'it' : 'them'} again in ${durationInWords(retryInMs)}, then less often while ${n === 1 ? 'it stays' : 'they stay'} unreadable; Try again now on the Imagery page in Machinery retries at once.`,
       });
     }
     return { frames: result.frames, cronReport: result.cronReport };

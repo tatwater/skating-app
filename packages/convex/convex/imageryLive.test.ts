@@ -838,6 +838,8 @@ describe('admin resets', () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     await seedAdmin(t);
+    // A failed cut to retry (a press with none is refused: `machineryImagery.test.ts`).
+    await queue(t, [s2('19TEA', '20261005')], { status: 'failed', attempts: 2 });
     const admin = t.withIdentity({ subject: 'admin' });
     for (const press of [
       () => admin.mutation(api.imageryLive.retryFailed, {}),
@@ -1747,7 +1749,7 @@ describe('the page', () => {
     expect(activity.configured).toBe(true);
     expect(activity.backoffUntil).toBeNull();
 
-    expect(await admin.mutation(api.imageryLive.retryFailed, {})).toEqual({ requeued: 1 });
+    expect(await admin.mutation(api.imageryLive.retryFailed, {})).toMatchObject({ requeued: 1 });
     expect((await admin.query(api.imageryLive.activity, {})).counts).toMatchObject({
       queued: 2,
       failed: 0,

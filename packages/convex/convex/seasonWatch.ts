@@ -52,11 +52,9 @@ import {
   type QueryCtx,
   query,
 } from './_generated/server';
-import { IMAGERY_CRON_JOBS } from './imageryLive';
 import { requireCapability } from './lib/auth';
 import { resolveSurvivor } from './lib/bodies';
 import { busyUntil, setBusyUntil } from './lib/dailyThrottle';
-import { clearBackoff } from './lib/imageryPump';
 import { isListed } from './lib/listing';
 import { fetchHourlyRows, openMeteoMeter } from './lib/openMeteoHourly';
 import { newYorkDate } from './lib/seasonWatchEmails';
@@ -627,51 +625,12 @@ export const resetSeason = mutation({
   },
 });
 
-async function seasonRow(ctx: MutationCtx, season: string) {
-  const row = await ctx.db
-    .query('imageryIngestSeasons')
-    .withIndex('by_season', (q) => q.eq('season', season))
-    .unique();
-  if (!row) throw new ConvexError(`No watch is open for ${season}.`);
-  return row;
-}
-
 /**
- * *Start imagery* (D214): from now until the watch ends, the 6-hourly poll cuts each new pass.
- * Refused once the watch has ended — there is nothing left in season to look for.
+ * *Start imagery* and *Pause*, as the Seasons page calls them. ⚠ **Deprecated** (B01-8b-2): the writes
+ * moved to Machinery › Imagery (`machineryImagery.ts`), audited and undoable; these names are the same
+ * functions, kept only until the Seasons page stops calling them in the same PR, then they go.
  */
-export const startImagery = mutation({
-  args: { season: v.string() },
-  handler: async (ctx, { season }) => {
-    const admin = await requireCapability(ctx, 'machinery.imagery');
-    const row = await seasonRow(ctx, season);
-    if (row.closesOn !== undefined) throw new ConvexError(`The ${season} watch has ended.`);
-    await ctx.db.patch(row._id, {
-      imageryStartedAt: row.imageryStartedAt ?? Date.now(),
-      imageryStartedBy: row.imageryStartedBy ?? admin._id,
-      imageryPausedAt: undefined,
-    });
-    // Through the cron dispatcher (D347): the press is a recorded poll run, with who pressed it.
-    await ctx.scheduler.runAfter(0, internal.cronRuns.tickAction, {
-      job: IMAGERY_CRON_JOBS.poll,
-      trigger: 'manual',
-      byUserId: admin._id,
-    });
-    // Pressing *Start* is also how an admin says "I fixed it" — clear any backoff.
-    await clearBackoff(ctx, 'pump');
-    return null;
-  },
-});
-
-export const pauseImagery = mutation({
-  args: { season: v.string() },
-  handler: async (ctx, { season }) => {
-    await requireCapability(ctx, 'machinery.imagery');
-    const row = await seasonRow(ctx, season);
-    await ctx.db.patch(row._id, { imageryPausedAt: Date.now() });
-    return null;
-  },
-});
+export { pauseImagery, startImagery } from './machineryImagery';
 
 export const addFieldDate = mutation({
   args: {

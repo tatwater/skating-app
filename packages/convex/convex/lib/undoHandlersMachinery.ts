@@ -4,7 +4,11 @@
  * - `mark_run_failed` → reopened (`reopen_run`): the mark cleared, and the loader's own late close
  *   in its place if one came, else the run `running` again;
  * - `wait_on_run` → the wait cleared (`stop_waiting_on_run`), while it still holds;
- * - `request_run_stop` → withdrawn (`withdraw_run_stop`), until the run has seen it.
+ * - `request_run_stop` → withdrawn (`withdraw_run_stop`), until the run has seen it;
+ * - `start_imagery` → paused (`pause_imagery`), while the season's imagery is still running; and
+ *   `pause_imagery` → resumed (`start_imagery`), while it is still paused (B01-8b-2). Each runs the
+ *   other's own impl (`machineryImagery.ts`), so the undo writes the audit row and schedules the poll
+ *   a press would; the season row as it stands is the refusal.
  *
  * Each runs the inverse's own impl (`machineryWrites.ts`), so an undo writes the row and the log line
  * a press would. The inverses themselves have no undo (the policy's `none`): the forward press is
@@ -19,6 +23,7 @@
 import { ConvexError } from 'convex/values';
 import type { Doc, Id } from '../_generated/dataModel';
 import type { MutationCtx, QueryCtx } from '../_generated/server';
+import { imageryStateOf, pauseImageryImpl, startImageryImpl } from '../machineryImagery';
 import {
   RUN_GONE,
   reopenRunImpl,
@@ -99,8 +104,65 @@ function machineryUndo(
   };
 }
 
+// ── Imagery's Start and Pause (B01-8b-2) ────────────────────────────────────────────────────────────
+
+export const IMAGERY_NOT_RUNNING = 'Imagery isn’t running any more, so there’s nothing to pause.';
+export const IMAGERY_NOT_PAUSED = 'Imagery isn’t paused any more, so there’s nothing to resume.';
+export const IMAGERY_WATCH_GONE = 'That season’s watch no longer exists.';
+
+/** The season row a Start or Pause row names (its target id), read through the undo's budget. */
+async function seasonAsItStands(
+  ctx: QueryCtx | MutationCtx,
+  row: Doc<'moderationActions'>,
+  read: UndoRead | null,
+): Promise<Doc<'imageryIngestSeasons'> | null> {
+  const get = () =>
+    ctx.db
+      .query('imageryIngestSeasons')
+      .withIndex('by_season', (q) => q.eq('season', row.targetId))
+      .unique();
+  if (read === null) return await get();
+  const [found] = await read.take('moderationAction', 1, async () => {
+    const r = await get();
+    return r === null ? [] : [r];
+  });
+  return found ?? null;
+}
+
+/** Why the undo of a Start or Pause would be refused by the season as it stands, or `null`. */
+export function imageryUndoRefusal(
+  row: Doc<'moderationActions'>,
+  season: Doc<'imageryIngestSeasons'> | null,
+): string | null {
+  if (season === null) return IMAGERY_WATCH_GONE;
+  const state = imageryStateOf(season);
+  if (row.action === 'start_imagery') return state === 'running' ? null : IMAGERY_NOT_RUNNING;
+  if (row.action === 'pause_imagery') return state === 'paused' ? null : IMAGERY_NOT_PAUSED;
+  return 'Undo for this is not built yet.';
+}
+
+function imageryUndo(
+  inverse: 'pause_imagery' | 'start_imagery',
+  run: (ctx: MutationCtx, actor: Doc<'profiles'>, args: { season: string }) => Promise<unknown>,
+): UndoHandler {
+  return {
+    undoTakesAway: () => UNDO_POLICY[inverse].takesAway(),
+    refusalCost: () => ({ bytes: ROW_MAX.moderationAction, reads: 1 }),
+    refusal: async (ctx, row, read) =>
+      imageryUndoRefusal(row, await seasonAsItStands(ctx, row, read)),
+    run: async ({ ctx, actor, row }) => {
+      // The refusal again, inside the write: the season may have moved since the offer was read.
+      const why = imageryUndoRefusal(row, await seasonAsItStands(ctx, row, null));
+      if (why !== null) throw new ConvexError(why);
+      await run(ctx, actor, { season: row.targetId });
+    },
+  };
+}
+
 export const MACHINERY_UNDO_HANDLERS: Partial<Record<ModerationAction, UndoHandler>> = {
   mark_run_failed: machineryUndo('reopen_run', reopenRunImpl),
   wait_on_run: machineryUndo('stop_waiting_on_run', stopWaitingOnRunImpl),
   request_run_stop: machineryUndo('withdraw_run_stop', withdrawRunStopImpl),
+  start_imagery: imageryUndo('pause_imagery', pauseImageryImpl),
+  pause_imagery: imageryUndo('start_imagery', startImageryImpl),
 };

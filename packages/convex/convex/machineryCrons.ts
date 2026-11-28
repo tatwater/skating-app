@@ -35,8 +35,9 @@ import {
   cronScheduleOf,
 } from './cronJobs';
 import { requireCapability } from './lib/auth';
+import { EVENTS_PAGE_SIZE } from './lib/runEventPage';
 import { literals } from './lib/validators';
-import { EVENTS_PAGE_SIZE, type PersonView, type RunEventView } from './machineryRuns';
+import type { PersonView, RunEventView } from './machineryRuns';
 
 /** A cron as its card and lane read it. */
 export type CronJobView = {
@@ -54,6 +55,8 @@ export type CronJobView = {
     startedAt: number;
     outcome: Doc<'cronRuns'>['outcome'];
     counts: Record<string, number> | null;
+    /** The run's headline (`cronRuns.detail`, at most `RUN_DETAIL_MAX` characters), or `null`. */
+    detail: string | null;
   } | null;
 };
 
@@ -127,6 +130,10 @@ export function cronLivenessInputOf(
     ...(hb?.lastTickAt === undefined ? {} : { lastTickAt: hb.lastTickAt }),
     ...(hb?.lastOutcome === undefined ? {} : { lastOutcome: hb.lastOutcome }),
     ...(hb?.runningSince === undefined ? {} : { runningSince: hb.runningSince }),
+    // Who started the run under way (Ma27 (b)): carried for the card's words, never read by the rule.
+    ...(hb?.runningSince === undefined || hb.runningTrigger === undefined
+      ? {}
+      : { runningTrigger: hb.runningTrigger }),
     ...(floor > 0 ? { quietFloorMs: floor } : {}),
   };
 }
@@ -181,13 +188,16 @@ export async function cronJobViews(
               startedAt: run.startedAt,
               outcome: run.outcome,
               counts: run.counts ?? null,
+              // The run's headline as stored (trimmed by the recorder, `RUN_DETAIL_MAX`): the card's
+              // *6 new*.
+              detail: run.detail ?? null,
             },
     });
   }
   return views;
 }
 
-async function personOf(ctx: QueryCtx, id: Id<'profiles'>): Promise<PersonView> {
+export async function personOf(ctx: QueryCtx, id: Id<'profiles'>): Promise<PersonView> {
   const p = await ctx.db.get(id);
   const gone = p === null || p.status === 'deleted' || p.deletionRequestedAt !== undefined;
   return { id, name: p?.displayName ?? '', avatarUrl: gone ? null : (p.profileImageUrl ?? null) };

@@ -142,6 +142,38 @@ export async function getJson<T>(config: R2Config, key: string): Promise<T | nul
 }
 
 /**
+ * Read an object as text through the signed endpoint, or `null` on a 404 — a cut attempt's log
+ * (B01-8b, D348), which lives under `logs/` only until the pump copies it into Convex. At most
+ * `maxChars` are kept: past that, the first quarter and the last three quarters, around one line
+ * saying how much was cut, so a runaway log can't exhaust the action's memory and its end survives.
+ */
+export async function getText(
+  config: R2Config,
+  key: string,
+  maxChars = 4 * 1024 * 1024,
+): Promise<string | null> {
+  const signed = await config.client.sign(`${config.endpoint}/${config.bucket}/${key}`);
+  const res = await fetch(signed, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (res.status === 404) return null;
+  if (!res.ok) throw new Error(`R2 get ${key}: ${res.status} ${res.statusText}`);
+  const text = await res.text();
+  if (text.length <= maxChars) return text;
+  const head = Math.floor(maxChars / 4);
+  const tail = maxChars - head;
+  return `${text.slice(0, head)}\n[${text.length - maxChars} characters of this log were cut before it was read]\n${text.slice(text.length - tail)}`;
+}
+
+/** Delete one object, signed. A 404 is already gone, which is what was asked. */
+export async function deleteObject(config: R2Config, key: string): Promise<void> {
+  const signed = await config.client.sign(`${config.endpoint}/${config.bucket}/${key}`, {
+    method: 'DELETE',
+  });
+  const res = await fetch(signed, { signal: AbortSignal.timeout(TIMEOUT_MS) });
+  if (res.ok || res.status === 404) return;
+  throw new Error(`R2 delete ${key}: ${res.status} ${res.statusText}`);
+}
+
+/**
  * Whether an object exists, asked of the bucket itself with a signed HEAD, sent once — past any CDN,
  * which may have cached the 404 from before the object was written.
  */

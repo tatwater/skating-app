@@ -45,6 +45,8 @@ import type { Doc, Id } from './_generated/dataModel';
 import { type QueryCtx, query } from './_generated/server';
 import { isDryRunRow } from './importRuns';
 import { requireCapability } from './lib/auth';
+import { EVENTS_PAGE_SIZE } from './lib/runEventPage';
+import { type ImageryLaneTail, imageryLaneTail } from './machineryImagery';
 
 type RunState = Doc<'importRuns'>['status'];
 /** Core's union, verbatim. */
@@ -213,7 +215,7 @@ const CLOCK_SLACK_MS = MINUTE;
 /** The run list's page. */
 export const LIST_PAGE_SIZE = 25;
 /** A log page. */
-export const EVENTS_PAGE_SIZE = 200;
+export { EVENTS_PAGE_SIZE };
 /** A campaign's passes under it (`by_parent`): the script runs seven, so this is a loop gone wrong. */
 export const CAMPAIGN_PASS_LIMIT = 20;
 /** The rows carrying a campaign's id (`by_campaign`): its passes, the by-hand ones, retries. */
@@ -581,10 +583,13 @@ export function laneTailOf(run: Run, liveness: RunLiveness, passes: readonly Run
 
 // ── The reads ──────────────────────────────────────────────────────────────────────────────────
 
-/** The sidebar's tail: one entry per built page; B01-8a's only key is `corpus`. */
+/**
+ * The sidebar's tail: one entry per built page — `corpus` (B01-8a) and `imagery` (B01-8b-2: not
+ * started, paused, ended, or the worst of its three crons' card states; `ImageryLaneTail`).
+ */
 export const lanes = query({
   args: { now: v.optional(v.number()) },
-  handler: async (ctx, args): Promise<{ corpus: LaneTail }> => {
+  handler: async (ctx, args): Promise<{ corpus: LaneTail; imagery: ImageryLaneTail }> => {
     await requireCapability(ctx, 'machinery.read');
     const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
     const tail = await corpusTail(ctx, now);
@@ -593,6 +598,7 @@ export const lanes = query({
         tail === null
           ? { state: 'never', at: null }
           : laneTailOf(tail.run, tail.liveness, tail.passes),
+      imagery: await imageryLaneTail(ctx, now),
     };
   },
 });

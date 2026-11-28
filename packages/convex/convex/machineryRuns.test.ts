@@ -221,6 +221,8 @@ describe('lanes', () => {
     const { as } = await seedUser(t, 'admin');
     expect(await as.query(api.machineryRuns.lanes, {})).toEqual({
       corpus: { state: 'never', at: null },
+      // No watch open: the Imagery lane reads not started (B01-8b-2).
+      imagery: { state: 'notStarted', at: null, crons: null },
     });
     await seedRun(t, { listedIn: undefined, kind: 'lake_depth' });
     expect((await as.query(api.machineryRuns.lanes, {})).corpus.state).toBe('never');

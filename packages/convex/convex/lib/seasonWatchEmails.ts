@@ -127,7 +127,8 @@ export interface EmailContext {
   sentinelNames: readonly string[];
 }
 
-const SEASONS_PAGE = 'the **Seasons** page in /admin';
+/** Where every imagery sentence sends its reader (B01-8b-2): Machinery › Imagery, not the Seasons page. */
+const IMAGERY_PAGE = 'the **Imagery** page in Machinery';
 
 export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): ComposedEmail {
   const title = seasonTitle(ctx.season);
@@ -172,7 +173,7 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
         kind: 'list',
         items: [
           'The region-wide weather sweep runs daily',
-          `Satellite imagery doesn't start until you start it. Press **Start imagery** on ${SEASONS_PAGE} to start it now, or wait until the first ${nudge} night (you'll get a reminder email when that happens)`,
+          `Satellite imagery doesn't start until you start it. Press **Start imagery** on ${IMAGERY_PAGE} to start it now, or wait until the first ${nudge} night (you'll get a reminder email when that happens)`,
         ],
       });
       blocks.push({ kind: 'heading', text: 'What to expect next' });
@@ -203,7 +204,7 @@ export function composeSeasonEmail(email: SeasonEmail, ctx: EmailContext): Compo
           },
           {
             kind: 'paragraph',
-            text: `Press **Start imagery** on ${SEASONS_PAGE}. From then on, Skating checks the satellite catalog every 6 hours and cuts each new image of our lakes, until the watch ends.`,
+            text: `Press **Start imagery** on ${IMAGERY_PAGE}. From then on, Skating checks the satellite catalog every 6 hours and cuts each new image of our lakes, until the watch ends.`,
           },
         ],
       };
@@ -272,7 +273,7 @@ export function composeImageryAlert(
       { kind: 'paragraph', text: detail },
       {
         kind: 'paragraph',
-        text: `The run history is on ${SEASONS_PAGE}. Nothing else is retried until the next scheduled check, six hours from now.`,
+        text: `The run history, and each failed cut's log, is on ${IMAGERY_PAGE}. Nothing else is retried until the next scheduled check, six hours from now.`,
       },
     ],
   };

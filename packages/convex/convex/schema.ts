@@ -1869,7 +1869,12 @@ export default defineSchema({
     granuleRowId: v.id('imageryGranules'),
     granuleId: v.string(),
     season: v.string(),
-    /** 1-based: the granule's `attempts` at the claim. */
+    /**
+     * 1-based, and never reused for the granule (S3, B01-8b-2): one past its newest attempt row, or
+     * past its `attempts` count for a granule tried before this table. A refused spawn spends a
+     * number, and *Retry failed* (which resets `attempts`) doesn't restart them, so the Machine's
+     * name (`-r<n>`) and the log's R2 key (`a<n>.log`) never collide with a Machine still stopped.
+     */
     attempt: v.number(),
     /** `lib/fly.machineName`: the name the spawn asked for. */
     machineName: v.string(),
@@ -1890,7 +1895,14 @@ export default defineSchema({
     machineMsFrom: v.optional(literals(IMAGERY_MACHINE_MS_SOURCES)),
     log: literals(IMAGERY_ATTEMPT_LOG_STATES),
     settledAt: v.optional(v.number()),
-  }).index('by_granule_attempt', ['granuleRowId', 'attempt']),
+  })
+    .index('by_granule_attempt', ['granuleRowId', 'attempt'])
+    // The pump's stopped-Machine sweep (B01-8b-2): is a stopped Machine's attempt settled? Read with
+    // `eq` on a defined id only (`machineId` is optional, so the index is not sparse).
+    .index('by_machine', ['machineId'])
+    // Captures still owed (`log: 'pending'`), oldest settle first: the pump retries them for an hour.
+    // `settledAt` is optional: read with `eq('log', 'pending')` and `gt('settledAt', 0)` as the floor.
+    .index('by_log_settled', ['log', 'settledAt']),
 
   // One row per frame manifest found in R2 for a season (A06i §5): what the season index is composed
   // from. Rebuilt by listing — a row whose manifest is no longer listed is dropped — so the index is

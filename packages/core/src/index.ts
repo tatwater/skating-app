@@ -35,6 +35,7 @@ export * from './corpusFacts';
 export * from './corpusRequests';
 export * from './corpusRunPlan';
 export * from './corpusTasks';
+export * from './cronJobState';
 export * from './cronLiveness';
 export * from './cronReport';
 export * from './cutLog';
