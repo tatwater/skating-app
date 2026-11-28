@@ -107,6 +107,9 @@ import {
   HAZARD_GEOMETRY_KINDS,
   HAZARD_HEALING_STATES,
   HAZARD_STATUSES,
+  IMAGERY_ATTEMPT_LOG_STATES,
+  IMAGERY_ATTEMPT_VERDICTS,
+  IMAGERY_MACHINE_MS_SOURCES,
   IMPORT_RUN_KINDS,
   IMPORT_RUN_SCOPES,
   IMPORT_RUN_STATUSES,
@@ -129,6 +132,7 @@ import {
   REPORT_SOURCES,
   REVIEW_STATUSES,
   RUN_EVENT_KINDS,
+  RUN_EVENT_ORIGINS,
   SATELLITE_IMAGERY_MODES,
   SUPPORT_CATEGORIES,
   SUPPORT_STATUSES,
@@ -1835,10 +1839,58 @@ export default defineSchema({
     lastError: v.optional(v.string()),
     /** Spawns the Fly API refused for this granule — three and it is settled as failed. */
     refusals: v.optional(v.number()),
+    /**
+     * When the catalog published the pass (the STAC item's `created`), stored by the poll (B01-8b):
+     * the page's *In the catalog 09:14 · 10 h after the pass*. Absent on rows queued before it.
+     */
+    catalogedAt: v.optional(v.number()),
+    /**
+     * An empty cut's reason, copied from the cutter's marker at settle (B01-8b, Ma7): a footprint
+     * reason, never cloud. Absent unless `empty`, and on rows settled before it.
+     */
+    emptyReason: v.optional(v.string()),
   })
     .index('by_granule', ['granuleId'])
     .index('by_slot', ['slot'])
-    .index('by_season_status', ['season', 'status', 'queuedAt']),
+    .index('by_season_status', ['season', 'status', 'queuedAt'])
+    // Machinery › Imagery's *All* list (B01-8b): one range per season, newest first. Both fields are
+    // required, so no sparse-index trap.
+    .index('by_season_queued', ['season', 'queuedAt']),
+
+  /**
+   * **One cut attempt: one Machine for one granule** (B01-8b, D344, D348). Inserted when the pump
+   * claims a granule for a spawn (`cutting`), its Machine stamped when Fly answers, closed at the
+   * settle with Fly's exit event, the machine-minutes and where they came from, and its log's state
+   * (the merged lines live in `runEvents` under `attemptId`). Kept with its granule, never swept.
+   * Written by the imagery pump only (`imageryLive.ts`); read by Machinery › Imagery. Granules from
+   * before B01-8b have none: their page says the attempts weren't recorded.
+   */
+  imageryAttempts: defineTable({
+    granuleRowId: v.id('imageryGranules'),
+    granuleId: v.string(),
+    season: v.string(),
+    /** 1-based: the granule's `attempts` at the claim. */
+    attempt: v.number(),
+    /** `lib/fly.machineName`: the name the spawn asked for. */
+    machineName: v.string(),
+    /** Absent while refused, or never confirmed. */
+    machineId: v.optional(v.string()),
+    /** The `FLY_IMAGE` the pump spawned with (Ma6). */
+    image: v.optional(v.string()),
+    spawnedAt: v.number(),
+    /** Fly's `start` event. */
+    startedAt: v.optional(v.number()),
+    /** Fly's exit event. */
+    exitedAt: v.optional(v.number()),
+    exitCode: v.optional(v.number()),
+    oomKilled: v.optional(v.boolean()),
+    verdict: literals(IMAGERY_ATTEMPT_VERDICTS),
+    error: v.optional(v.string()),
+    machineMs: v.optional(v.number()),
+    machineMsFrom: v.optional(literals(IMAGERY_MACHINE_MS_SOURCES)),
+    log: literals(IMAGERY_ATTEMPT_LOG_STATES),
+    settledAt: v.optional(v.number()),
+  }).index('by_granule_attempt', ['granuleRowId', 'attempt']),
 
   // One row per frame manifest found in R2 for a season (A06i §5): what the season index is composed
   // from. Rebuilt by listing — a row whose manifest is no longer listed is dropped — so the index is
@@ -1929,6 +1981,15 @@ export default defineSchema({
     /** Rebuilds asked for, and the last one a build completed — dirty while the first is ahead. */
     dirtySeq: v.optional(v.number()),
     builtSeq: v.optional(v.number()),
+    /**
+     * The pump's row only (B01-8b, Ma6): the `FLY_IMAGE` it last spawned with, and when it first
+     * spawned with it — the page's *cutter pinned 11 Oct*. Absent until its first spawn after 8b.
+     */
+    image: v.optional(v.string()),
+    imageSeenAt: v.optional(v.number()),
+    /** The pump's row only (B01-8b): how many cut Machines were live when it last listed them. */
+    liveMachines: v.optional(v.number()),
+    liveMachinesAt: v.optional(v.number()),
   }).index('by_key', ['key']),
 
   // The manifests the index could not read (A06i §5): one row each, kept until it reads. The next
@@ -1952,6 +2013,11 @@ export default defineSchema({
     landed: v.number(),
     empty: v.number(),
     failed: v.number(),
+    /**
+     * The season's cut machine-minutes, in ms, added at each settle (B01-8b, D346): a counter, never
+     * a scan. Absent until the first settle after 8b; the page counts from that deploy.
+     */
+    machineMs: v.optional(v.number()),
   }).index('by_season', ['season']),
 
   // Per-state distribution basis for the derived caption (A06c §1.5). **One row per state**, holding
@@ -5610,7 +5676,10 @@ export default defineSchema({
    * **Since B01-8b (D343, D347), a cron run's log too**: a row has exactly one parent — `runId` (an
    * import run) or `cronRunId` (a cron run) — set by its only writers (`runEvents.ts`, and the cron
    * dispatchers in `cronRuns.ts`). A cron line carries `keepUntil` and is swept by
-   * `cronRunJobs.prune`; an import run's lines carry none and are never swept. Every index here leads
+   * `cronRunJobs.prune`; an import run's lines carry none and are never swept. **Since B01-8b-2
+   * (D348), a cut attempt's log too**: a third parent, `attemptId`, written by the imagery pump at
+   * settle (the cutter's upload merged with Fly's lines, each line's `origin` kept), with
+   * `keepUntil` (a failed attempt's 200 days, others 30) and the same sweep. Every index here leads
    * with an optional field, so none is sparse: each is read with `eq` on a defined value, and
    * `by_keep_until` with `gt('keepUntil', 0)` as its floor, never a bare range.
    */
@@ -5630,12 +5699,17 @@ export default defineSchema({
     text: v.string(),
     /** On the `cap` row only: how many lines past the cap were not kept. */
     dropped: v.optional(v.number()),
-    /** When the retention sweep may delete it (cron lines only). */
+    /** When the retention sweep may delete it (cron and attempt lines only). */
     keepUntil: v.optional(v.number()),
+    /** The cut attempt (B01-8b, D348). Absent on an import or cron run's line. */
+    attemptId: v.optional(v.id('imageryAttempts')),
+    /** Who wrote a cut attempt's line: the cutter, Fly or the pump. Attempt lines only. */
+    origin: v.optional(literals(RUN_EVENT_ORIGINS)),
   })
     .index('by_run_seq', ['runId', 'seq'])
     .index('by_cron_run_seq', ['cronRunId', 'seq'])
-    .index('by_keep_until', ['keepUntil']),
+    .index('by_keep_until', ['keepUntil'])
+    .index('by_attempt_seq', ['attemptId', 'seq']),
 
   // ── B01-8b: the cron backbone (D343, D347) ──────────────────────────────────────────────────────
 
@@ -5658,6 +5732,14 @@ export default defineSchema({
     lastMs: v.optional(v.number()),
     /** Set by `begin` (announcing actions only), cleared by `finish`; a stale one reads killed. */
     runningSince: v.optional(v.number()),
+    /**
+     * What started the run that stamped `runningSince`, and who pressed it (B01-8b, Ma27 (b), Ma30):
+     * set and cleared with it. A `cron` stamp a later cron tick's `begin` finds is that run's kill at
+     * any age (Convex never runs a cron over itself); a `manual` one (or one stamped before this
+     * field) keeps the age rule. The killed run is recorded with this trigger and presser.
+     */
+    runningTrigger: v.optional(literals(CRON_TRIGGERS)),
+    runningByUserId: v.optional(v.id('profiles')),
     lastRunId: v.optional(v.id('cronRuns')),
   }).index('by_job', ['job']),
 

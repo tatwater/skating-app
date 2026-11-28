@@ -47,6 +47,7 @@ import { Route as SkaterWaterIdRouteImport } from './routes/_skater.water.$id'
 import { Route as AdminBodyIdRouteImport } from './routes/admin.body.$id'
 import { Route as AdminMachineryIndexRouteImport } from './routes/admin.machinery.index'
 import { Route as AdminMachineryCorpusRouteImport } from './routes/admin.machinery.corpus'
+import { Route as AdminMachineryImageryRouteImport } from './routes/admin.machinery.imagery'
 import { Route as AdminPeopleIdRouteImport } from './routes/admin.people.$id'
 import { Route as AdminWaterIndexRouteImport } from './routes/admin.water.index'
 import { Route as AdminWaterIdRouteImport } from './routes/admin.water.$id'
@@ -244,6 +245,11 @@ const AdminMachineryCorpusRoute = AdminMachineryCorpusRouteImport.update({
   path: '/corpus',
   getParentRoute: () => AdminMachineryRoute,
 } as any)
+const AdminMachineryImageryRoute = AdminMachineryImageryRouteImport.update({
+  id: '/imagery',
+  path: '/imagery',
+  getParentRoute: () => AdminMachineryRoute,
+} as any)
 const AdminPeopleIdRoute = AdminPeopleIdRouteImport.update({
   id: '/$id',
   path: '/$id',
@@ -316,6 +322,7 @@ export interface FileRoutesByFullPath {
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/machinery/corpus': typeof AdminMachineryCorpusRoute
+  '/admin/machinery/imagery': typeof AdminMachineryImageryRoute
   '/admin/people/$id': typeof AdminPeopleIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -359,6 +366,7 @@ export interface FileRoutesByTo {
   '/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/machinery/corpus': typeof AdminMachineryCorpusRoute
+  '/admin/machinery/imagery': typeof AdminMachineryImageryRoute
   '/admin/people/$id': typeof AdminPeopleIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -407,6 +415,7 @@ export interface FileRoutesById {
   '/_skater/water/$id': typeof SkaterWaterIdRoute
   '/admin/body/$id': typeof AdminBodyIdRoute
   '/admin/machinery/corpus': typeof AdminMachineryCorpusRoute
+  '/admin/machinery/imagery': typeof AdminMachineryImageryRoute
   '/admin/people/$id': typeof AdminPeopleIdRoute
   '/admin/water/$id': typeof AdminWaterIdRoute
   '/admin/water/place-names': typeof AdminWaterPlaceNamesRoute
@@ -455,6 +464,7 @@ export interface FileRouteTypes {
     | '/water/$id'
     | '/admin/body/$id'
     | '/admin/machinery/corpus'
+    | '/admin/machinery/imagery'
     | '/admin/people/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -498,6 +508,7 @@ export interface FileRouteTypes {
     | '/water/$id'
     | '/admin/body/$id'
     | '/admin/machinery/corpus'
+    | '/admin/machinery/imagery'
     | '/admin/people/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -545,6 +556,7 @@ export interface FileRouteTypes {
     | '/_skater/water/$id'
     | '/admin/body/$id'
     | '/admin/machinery/corpus'
+    | '/admin/machinery/imagery'
     | '/admin/people/$id'
     | '/admin/water/$id'
     | '/admin/water/place-names'
@@ -840,6 +852,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminMachineryCorpusRouteImport
       parentRoute: typeof AdminMachineryRoute
     }
+    '/admin/machinery/imagery': {
+      id: '/admin/machinery/imagery'
+      path: '/imagery'
+      fullPath: '/admin/machinery/imagery'
+      preLoaderRoute: typeof AdminMachineryImageryRouteImport
+      parentRoute: typeof AdminMachineryRoute
+    }
     '/admin/people/$id': {
       id: '/admin/people/$id'
       path: '/$id'
@@ -933,11 +952,13 @@ const SkaterRouteWithChildren =
 
 interface AdminMachineryRouteChildren {
   AdminMachineryCorpusRoute: typeof AdminMachineryCorpusRoute
+  AdminMachineryImageryRoute: typeof AdminMachineryImageryRoute
   AdminMachineryIndexRoute: typeof AdminMachineryIndexRoute
 }
 
 const AdminMachineryRouteChildren: AdminMachineryRouteChildren = {
   AdminMachineryCorpusRoute: AdminMachineryCorpusRoute,
+  AdminMachineryImageryRoute: AdminMachineryImageryRoute,
   AdminMachineryIndexRoute: AdminMachineryIndexRoute,
 }
 

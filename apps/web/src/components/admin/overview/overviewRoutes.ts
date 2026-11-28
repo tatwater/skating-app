@@ -114,6 +114,9 @@ function auditPath(type: string, id: string): string | null {
     case 'importRun':
       // A run marked failed, waited on or asked to stop: its own page in Machinery › Corpus.
       return machineryPath(id);
+    case 'imagerySeason':
+      // A season's imagery started, paused, polled or retried: Machinery › Imagery (one season).
+      return '/admin/machinery/imagery';
     case 'waterBodySubArea':
     case 'putIn':
     case 'parkingArea':
@@ -134,6 +137,8 @@ export function feedTargetPath(
   target: FeedTarget,
   can: (capability: Capability) => boolean = () => true,
 ): string | null {
-  if (target.type === 'importRun' && !can('machinery.read')) return null;
+  if ((target.type === 'importRun' || target.type === 'imagerySeason') && !can('machinery.read')) {
+    return null;
+  }
   return auditPath(target.type, target.id);
 }

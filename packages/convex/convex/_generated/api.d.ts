@@ -197,6 +197,7 @@ import type * as lib_verdictTargets from "../lib/verdictTargets.js";
 import type * as lib_withdrawals from "../lib/withdrawals.js";
 import type * as machinery from "../machinery.js";
 import type * as machineryCrons from "../machineryCrons.js";
+import type * as machineryImagery from "../machineryImagery.js";
 import type * as machineryRuns from "../machineryRuns.js";
 import type * as machineryWrites from "../machineryWrites.js";
 import type * as metrics from "../metrics.js";
@@ -436,6 +437,7 @@ declare const fullApi: ApiFromModules<{
   "lib/withdrawals": typeof lib_withdrawals;
   machinery: typeof machinery;
   machineryCrons: typeof machineryCrons;
+  machineryImagery: typeof machineryImagery;
   machineryRuns: typeof machineryRuns;
   machineryWrites: typeof machineryWrites;
   metrics: typeof metrics;
