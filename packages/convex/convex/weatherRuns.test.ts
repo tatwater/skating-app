@@ -1753,7 +1753,10 @@ describe('the edges of a run', () => {
     expect(lines.at(-1)).toBe('Done in 11 steps · 401 of 401 cells stored, 0 failed');
     expect(summed()).toMatchObject({ cells: 401, cellsStored: 401 });
     expect(openAfter()).toBe(0);
-  }, 60_000);
+    // A heavy test (401 cells, 11 chained batches): ~9 s alone, 35 s on CI's first run of #192 and
+    // past 60 s on its second and in a contended local run. The suite's rule for its heavy tests
+    // is five times their contended time.
+  }, 300_000);
 
   test('a queue longer than a batch is refetched a batch at a time; a cell that throws is counted', async () => {
     const t = harness();
