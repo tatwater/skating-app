@@ -413,6 +413,20 @@ describe('a tick that worked: its run row and its log', () => {
     expect(s.marks).toHaveLength(1);
   });
 
+  test('a refused run is the run’s word: refused on the strip and the row, worked on the heartbeat', async () => {
+    const t = convexTest(schema, probeModules);
+    await t.mutation(internal.cronRuns.finish, {
+      job: 'a quiet',
+      trigger: 'cron',
+      startedAt: T0,
+      finishedAt: T0 + 5,
+      report: { worked: true, outcome: 'refused', detail: 'not configured' },
+    });
+    expect((await all(t)).runs[0]?.outcome).toBe('refused');
+    expect((await heartbeat(t, 'a quiet'))?.lastOutcome).toBe('worked');
+    expect((await ticksOf(t, 'a quiet'))[0]?.code).toBe(CRON_TICK_CODES.refused);
+  });
+
   test('a report of failure is a failed run though it did no work', async () => {
     const t = convexTest(schema, probeModules);
     quiet();
@@ -672,13 +686,23 @@ describe('a killed action', () => {
     expect(hb?.runningSince).toBeUndefined();
   });
 
-  test('a young runningSince is left alone: a run inside the limit, or a kill still ageing', async () => {
+  test('a young runningSince is overwritten, never read as killed; its own finish leaves the newer stamp', async () => {
     const t = convexTest(schema, probeModules);
     const since = T0 - KILLED_AFTER_MS;
     await t.run((ctx) => ctx.db.insert('cronHeartbeats', { job: 'a quiet', runningSince: since }));
-    await tickA(t, 'a quiet');
-    expect((await all(t)).runs).toEqual([]);
-    expect((await heartbeat(t, 'a quiet'))?.runningSince).toBe(since);
+    await t.mutation(internal.cronRuns.begin, { job: 'a quiet', startedAt: T0 });
+    expect((await heartbeat(t, 'a quiet'))?.runningSince).toBe(T0);
+    // The older run finishes now: recorded, and the newer run's stamp stays.
+    await t.mutation(internal.cronRuns.finish, {
+      job: 'a quiet',
+      trigger: 'manual',
+      startedAt: since,
+      finishedAt: T0,
+      report: null,
+    });
+    const hb = await heartbeat(t, 'a quiet');
+    expect(hb?.runningSince).toBe(T0);
+    expect((await all(t)).runs.map((r) => r.outcome)).toEqual(['ok']);
   });
 });
 

@@ -226,8 +226,9 @@ export interface Tick {
 /**
  * A tick's outcomes: the heartbeat's, the strip's code, and the run row's (`null`: a quiet tick, no
  * run row). A thrown job is `failed` whatever it reported; a report that failed or was refused is a
- * run even with `worked: false`; a refused run is `failed` on the heartbeat (someone must act on it)
- * and `refused` on the strip. A manual tick is always a run (`ok` when it found nothing to do), so a
+ * run even with `worked: false`; a refused run (an outside service turned it down) is `worked` on the
+ * heartbeat — the liveness rule's word is the schedule's, the refusal is the run's — and `refused` on
+ * the strip and the run row. A manual tick is always a run (`ok` when it found nothing to do), so a
  * press is recorded with who pressed it.
  */
 export function outcomesOf(tick: Tick): {
@@ -244,7 +245,7 @@ export function outcomesOf(tick: Tick): {
     return { heartbeat: 'failed', code: CRON_TICK_CODES.failed, run: 'failed' };
   }
   if (r?.outcome === 'refused') {
-    return { heartbeat: 'failed', code: CRON_TICK_CODES.refused, run: 'refused' };
+    return { heartbeat: 'worked', code: CRON_TICK_CODES.refused, run: 'refused' };
   }
   if (r?.worked) {
     return { heartbeat: 'worked', code: CRON_TICK_CODES.worked, run: r.outcome ?? 'ok' };
@@ -447,11 +448,12 @@ const reportValidator = v.object({
 });
 
 /**
- * An announcing action's start: stamps `runningSince` — unless one is already there. A stale one
- * (past {@link KILLED_AFTER_MS}) is a tick that never finished: recorded `killed`, then replaced. A
- * young one is left as it is: it is either a run still inside the limit (a manual run beside the
- * cron's) or one killed young by a deploy, which this way ages into a recorded kill rather than
- * being overwritten.
+ * An announcing action's start: stamps `runningSince` with this tick's start (so it is never older
+ * than the heartbeat's last tick). One already there and stale (past {@link KILLED_AFTER_MS}) is a
+ * tick that never finished: recorded `killed` first. A young one is overwritten: a run still inside
+ * the limit (a manual run beside the cron's) finishes and records as usual (its `finish` leaves the
+ * newer stamp alone), and one killed young by a deploy goes unrecorded as killed — its absence is a
+ * gap between ticks, never a false kill.
  */
 export const begin = internalMutation({
   args: { job: v.string(), startedAt: v.number() },
@@ -460,8 +462,7 @@ export const begin = internalMutation({
     const entry = requireCronJob(job, 'action');
     const hb = await heartbeatOf(ctx, job);
     const since = hb?.runningSince;
-    if (since !== undefined && startedAt - since <= KILLED_AFTER_MS) return null;
-    if (since !== undefined) {
+    if (since !== undefined && startedAt - since > KILLED_AFTER_MS) {
       const tick: Tick = {
         startedAt: since,
         finishedAt: since + ACTION_LIMIT_MS,
