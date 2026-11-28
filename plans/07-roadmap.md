@@ -997,7 +997,7 @@ operator opens the aerial on any lake and it is there in a second, with the mont
 #### Owed
 - B05-1 is open as PR #188 (built, integrated, piloted, independently reviewed). It ships `NAIP_FOLIAGE_STRIKES` empty, with the proposal beside it. After it merges, in order:
   1. **The founder's foliage review** (D319): the proposal by flight day on the sheet (`scripts/aerial/review/naip-20261127-foliage-proposed.json`, the sheet beside the campaign); his confirmed entries land as a commit to `NAIP_FOLIAGE_STRIKES`; then the applied run's cloud sheet (one new pick over 3% white, a likely false positive)
-  2. **The full region run, the founder's explicit go/no-go** on the pilot's numbers (~7–9 h on 25 `performance-4x` Machines, ~$37 all told, ~260 GB at ~$3.90 a month, the plan's §6.1; the Machine size is part of the call), from main, after the widen's deploy to dev (`convex dev --once` from main) so its rows can be written
+  2. **The full region run, the founder's explicit go/no-go** on the pilot's numbers (~7–9 h on 25 `performance-4x` Machines, ~$37 all told, ~260 GB at ~$3.90 a month, the plan's §6.1; the Machine size is part of the call), from main, after the widen's deploy to dev (`convex dev --once` from main) so its rows can be written, and on an image rebuilt from main and pinned by its digest (`scripts/aerial/README.md`'s gated step 1: the pilot's image predates the worker's and the assembler's review fixes)
   3. **B05-2, the app's swap**, once the archive is on dev: `VITE_NAIP_PMTILES_URL` on both local web checkouts and Vercel, `NAIP_MANIFEST_URL` on Convex dev
 - G-6 answered at build start: `skating-imagery`, whose public host already serves the winter archive and which the app's staged R2 token writes — no new credential
 

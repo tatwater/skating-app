@@ -86,7 +86,14 @@ nothing names those objects, nothing has served them; `rclone deletefile` them a
 
 **A laptop that sleeps or loses its network never fails what runs on Fly.** A work tile's Machine
 lands its own shard; a re-run waits for any work tile whose Machine is still up rather than
-spawning a second (`spawn.sh`), and a listing it can't read starts nothing. The assembly's follower
+spawning a second (`spawn.sh`), and a listing it can't read starts nothing. **Nothing is called
+landed while a worker runs**: a worker keeps its work tile's old done record until the end of its
+cut and then replaces the shard, so the tiles stage waits before every reconcile until none of the
+campaign's work-tile Machines is up — an earlier selection's, left running when the laptop lost a
+stage, included (`spawn.sh drain`) — and fails, rather than succeeding, if that wait gives up.
+`assemble` refuses while any of them is up (`assemble.workTilesRunning`), and the assembler itself
+reads every cut work tile's done record again after its last pack read: one that changed abandons
+the upload and refuses (`assemble.shardReplaced`), publishing nothing. The assembly's follower
 counts quiet only while it is awake and can read the bucket; the assembler beats at least every five
 minutes inside a zoom, stops itself after twenty minutes without progress (its error object says
 so), and the laptop calls one stuck only after thirty minutes of reading an unmoving progress object
@@ -99,7 +106,8 @@ decide on them, so running the same command again decides the same build.
 **Every stage decides before it writes** (phase doc §2.8). Each is a preflight (`src/preflight.ts`)
 that reads every fact a refusal depends on — the arguments, where its rows go, the variables,
 whether the campaign is published and from what, the bucket's build manifest and record, whether
-its assembler is up (`spawn.sh status <campaign>`, read-only), which work tiles have landed — and a
+its assembler or any of its work tiles' Machines is up (`spawn.sh status <campaign>`, read-only),
+which work tiles have landed — and a
 body (`src/stage/`) that only carries the plan out. **A refusal has written nothing**: no object, no
 scratch file a later stage reads, no Machine, nothing on its row but the open and the failed close.
 Every refusal has an id (`src/refusals.ts`), and `refusals.test.ts` fails on one without a case.
@@ -120,10 +128,12 @@ file. Across machines nothing is exclusive: never run one campaign's stages from
 - *An archive (and index) no manifest names* — an assembly stopped mid-publish: `rclone deletefile`
   them and assemble again (above).
 - *Published from these inputs but no assembly record* — it stopped in the second between its
-  manifest and its record: verify can't check it, nothing serves it. Delete the three published keys
-  (`for k in .pmtiles -cells.json -manifest.json; do rclone deletefile
-  "r2:$R2_BUCKET/dev/naip/naip-summer-<YYYYMMDD>$k"; done`; a pilot's are under `dev/naip/pilot/<name>/`)
-  and assemble again.
+  manifest and its record: verify can't check it. **Only while nothing has served them** (no env
+  file or deploy points the web at this archive), delete exactly the three published keys the
+  refusal names — `for k in .pmtiles -cells.json -manifest.json; do rclone deletefile
+  "${R2_REMOTE:-r2}:$R2_BUCKET/dev/naip/naip-summer-<YYYYMMDD>$k"; done` (a pilot's are under
+  `dev/naip/pilot/<name>/`) — and assemble again. Nothing under the build prefix is deleted: the
+  assembly reads its manifest and shards.
 - *A lock whose process has gone*: above.
 
 **A campaign is published once.** Once its manifest is published, what its archive was built from is
@@ -131,7 +141,11 @@ fixed (core's `naipBuildInputsHash`): re-running a stage with the same inputs fi
 nothing to cut, assemble takes the record), and with other inputs — picks changed by a new strike,
 a new walk — select (not a dry run), tiles, assemble and verify refuse, saying what differs. Make the
 change a new campaign: `run-aerial.sh naip-<YYYYMMDD> --from-current` with `NAIP_MANIFEST_URL` at the
-published campaign's manifest copies its unchanged work tiles. A work tile's worker is killed past
+published campaign's manifest copies its unchanged work tiles. **A pilot is never a base**: it built
+only its own area, so a build from it would cut every other work tile of the region
+(`select.fromCurrentPilot`); a changed pilot is a new pilot, from nothing (`run-aerial.sh
+naip-pilot-<YYYYMMDD> --pilot <name> --cells <file>`). And a pilot always names its area: one with
+no `--cells` or `--states`, or whose `--states` reach every cell, is refused (`select.pilotUnbounded`). A work tile's worker is killed past
 `AERIAL_TILE_DEADLINE` (an hour; the pilot's slowest took six minutes) and re-cut by the next round.
 
 ### Before a full build: the foliage review (D319)
@@ -240,13 +254,18 @@ caffeinate -i scripts/aerial/run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champla
 ```
 
 **3. The full region** — the founder's go, from main after the merge and the run kinds' widen are
-deployed, and after his foliage review is committed (above): `caffeinate -i
+deployed, after his foliage review is committed (above), and on an image rebuilt from main by step
+1 (the pilot's predates the review fixes in the worker and the assembler): `caffeinate -i
 scripts/aerial/run-aerial.sh naip-<YYYYMMDD>`. Its select stage logs the off-season cells by name
 (`noLeafOn`, `allTurned`); the manifest keeps them for the July check.
 
-**Publish and clean up** are §2.5's: `VITE_NAIP_PMTILES_URL` set by the founder, the build prefix
-deleted once verify passes, an old archive by `--stage cleanup --old <key> --live-since <day>` a
-week after its replacement went live. **Note the day you publish** (the redeploy that put the new
+**Publish and clean up** are §2.5's: `VITE_NAIP_PMTILES_URL` set by the founder, and an old archive
+deleted by `--stage cleanup --old <key> --live-since <day>` a week after its replacement went live.
+**Keep the campaign's build prefix** (`naip/build/<campaign>/`: its shards, `manifest.json` and
+`assembly.json`) after verify passes: a re-run of assemble takes the record from it, verify reads
+the record and the build manifest from it, and tiles compares that manifest to the published one.
+It goes only when a later campaign's cleanup removes it as the old build's, with that build's
+archive. **Note the day you publish** (the redeploy that put the new
 URL on Vercel): nothing in the pipeline records it, and the upload's time says nothing about it —
 an archive can sit uploaded for weeks before it is published. Cleanup refuses without
 `--live-since`, with one in the future or before the replacement was uploaded, when the web's env

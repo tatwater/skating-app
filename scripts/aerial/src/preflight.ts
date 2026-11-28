@@ -391,7 +391,7 @@ export async function preflightAssemble(args: StageArgs, view: ReadView): Promis
     if (conflict !== null) throw new StageRefusal('published.otherInputs', conflict);
     throw new StageRefusal(
       'assemble.publishedNoRecord',
-      `${args.campaign} is published from these inputs (${manifestKey(args.campaign, pilot)}) but has no assembly record: an assembly stopped between its manifest and its record, so verify can't check it and nothing should serve it. Delete the three published keys by hand (${archiveKey(args.campaign, pilot)}, ${indexKey(args.campaign, pilot)}, ${manifestKey(args.campaign, pilot)}) and assemble again`,
+      `${args.campaign} is published from these inputs (${manifestKey(args.campaign, pilot)}) but has no assembly record: an assembly stopped between its manifest and its record, so verify can't check it. Only while nothing has served them — no env file or deploy points the web at this archive — delete exactly these three published keys by hand: ${archiveKey(args.campaign, pilot)}, ${indexKey(args.campaign, pilot)}, ${manifestKey(args.campaign, pilot)}; then assemble again (the build prefix, its shards and its manifest stay)`,
     );
   }
   const present = await facts.publishedKeys();

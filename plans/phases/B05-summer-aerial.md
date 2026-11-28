@@ -550,7 +550,8 @@ ahead (the same decision, written again), the tiles stage has nothing to cut and
 the assembler and a re-run of the stage take the record (`finishedAssembly`). **Other inputs are
 refused**, saying what differs (`cells: 1 changed (…)`, `foliage strikes: changed`, …) and what to do
 — the change is a new campaign, `run-aerial.sh naip-<YYYYMMDD> --from-current` with
-`NAIP_MANIFEST_URL` at the published campaign's manifest, which copies its unchanged work tiles —
+`NAIP_MANIFEST_URL` at the published campaign's manifest, which copies its unchanged work tiles (for
+a pilot, a new pilot from nothing: a pilot is never a base, PR #188's ninth review) —
 never an overwrite, and never a success over the earlier selection: the select stage (not a dry
 run) before it writes its manifest, the tiles stage before it uploads that manifest over the
 bucket's, the assembler before it reads a shard, the laptop's re-run against the record's `inputs`
@@ -597,9 +598,13 @@ points at the same dated object. No prod copy is made.
 and on Vercel (Preview and Production), redeploy; set `NAIP_MANIFEST_URL` on Convex dev (§3.3). The
 founder or the governor's named executor sets them; no brief displays a value.
 
-**Clean up.** The build prefix (shards, indexes) is deleted once verify passes and the URL is live.
-The previous archive (and its index and manifest) is deleted no sooner than a week after the new one
-is live on Vercel — never by the build itself, and never the newest key
+**Clean up.** The campaign's build prefix (shards, indexes, its build manifest and assembly record)
+**stays** after verify passes — a re-run of assemble takes the record from it, verify reads the
+record, the build manifest and the shards it spot-compares from it — and goes only with the
+campaign's archive, when a later campaign's cleanup deletes both as the old build's (*corrected at
+the PR's ninth review*: this said the prefix went once verify passed, which would have left a
+finished campaign failing its later checks and without its record). The previous archive (and its
+index and manifest) is deleted no sooner than a week after the new one is live on Vercel — never by the build itself, and never the newest key
 (`run-aerial.sh <campaign> --stage cleanup --old <key> --live-since <day>` refuses both). **The week
 counts from publication, which nothing records** (*changed at the PR's review, 2026-11-27*: it
 counted from the replacement's upload, and an archive uploaded a month before it was published
@@ -697,11 +702,12 @@ live-assembler check.
 **The shape.** Each stage is a **preflight** (`src/preflight.ts`) and a **body** (`src/stage/`). The
 preflight reads every fact a refusal depends on — the arguments, the campaign's lock, where its
 rows may go, which variables are set, whether the campaign is published and from which inputs, what
-the bucket's build manifest and record say, whether its assembler is up (`spawn.sh status`, the one
-file that knows how Machines are named), which work tiles have landed — through a `ReadView`, a
+the bucket's build manifest and record say, whether its assembler or any of its work tiles' Machines
+is up (`spawn.sh status`, the one file that knows how Machines are named), which work tiles have
+landed — through a `ReadView`, a
 world with no way to write, each fact read at most once (`CampaignFacts`); it returns a plan or
 throws a `StageRefusal`. The body carries the plan out. Every refusal has an id (`src/refusals.ts`,
-95 of them); `refusals.test.ts` scans the source so that every refusal constructed names an id from
+100 of them since the ninth review); `refusals.test.ts` scans the source so that every refusal constructed names an id from
 the catalog and every id is thrown somewhere, holds `CASES` (typed `Record<RefusalId, …>`, so an id
 without a case fails `check-types`) and runs each case against a world that records every write
 (`stageHarness.ts`), asserting the named refusal, no write beyond the row's open and failed close,
@@ -735,6 +741,24 @@ refusal: the report is written (no later stage reads it) and the row closes fail
   manifest back (below).
 - **A round's capacity wait past its first batch** fails after some spawns, by design: those Machines
   land their own shards, and the next round or a re-run (which waits for live work tiles) carries on.
+- **A worker the laptop can't see, under a live assembler** (*the PR's ninth review*). The laptop
+  starts no assembler while any of the campaign's work-tile Machines is up
+  (`assemble.workTilesRunning`), and the tiles stage reconciles only once none is (`spawn.sh drain`
+  before every reconcile; a wait that gives up fails the stage). Neither reaches a worker started
+  from a second machine, or one Fly's listing missed. The assembler, which can't see Fly, checks its
+  own reads instead: it keeps a hash of each cut work tile's done record as step 1 read it, and once
+  its last pack byte is read — before the archive's upload completes — reads every one again. A
+  worker drops its done record before it overwrites the pack and uploads its new record last
+  (`cut-aerial.sh`, held structurally by `tilesScripts.test.ts`), so a pack replaced at any moment
+  after step 1 read its record leaves that record gone or different: the assembler abandons the
+  upload (rclone rcat killed before its stdin ends: no object, at most an unfinished multipart
+  upload — H5) and refuses `assemble.shardReplaced`, relayed by the laptop as `assemble.machine`.
+  **The residual window is none for the archive's bytes**: every read of a pack (the overviews' and
+  the stream's) happens between the two reads of its record, and the index and the date index come
+  from step 1's reads of the same records. What it rests on: R2's strong read-after-write
+  consistency, and every worker keeping `cut-aerial.sh`'s order (a worker image older than the
+  drop-first fix would not — the done records name their image). A pack replaced after the second
+  read can't reach this archive; it is the next tiles run's to reconcile.
 
 **Writes in order, and what an interruption between two leaves** (each stage takes the campaign's
 lock first — `${XDG_CACHE_HOME:-$HOME/.cache}/skating-aerial/locks/<campaign>.lock`, one directory for
@@ -747,13 +771,13 @@ the holder's log):
 | select | args, lock, row target, `R2_BUCKET`, `NAIP_MANIFEST_URL`; then (row open) strikes confirmed, `--cells`, the current manifest checked, the published manifest | lock → row open → [kept walk: state files, `walk.json` last] → [thumbs, score caches] → `manifest.json` → cloud sheet → row close | walk files and `walk.json` | a walk with no record | walks again (a snapshot without its record is none) |
 | | | | manifest and sheet | a manifest with no sheet | decides the same build (kept walk, cached scores) and writes both |
 | | | | sheet and row close | a row left running (no aerial kind is ever called stalled) | opens a new row; the old one stays running — cosmetic |
-| tiles | args, lock, scratch manifest, units (pure), row target, `R2_BUCKET`, published and build manifests, `AERIAL_IMAGE`, Fly (assembler up?), under a live assembler the done records, the snapshot's keys | lock → units → build manifest → snapshot → row open → per round: list file, Machines (each: drop done, pack, index, done) → row close | units and the upload | units for a manifest not yet uploaded | rewrites the units, uploads |
+| tiles | args, lock, scratch manifest (a pilot's never built on a build), units (pure), row target, `R2_BUCKET`, published and build manifests, `AERIAL_IMAGE`, Fly (assembler up?), under a live assembler the done records, the snapshot's keys | lock → units → build manifest → snapshot → row open → per reconcile: wait until no work-tile Machine of the campaign is up (`spawn.sh drain`), then read the done records → per round: list file, Machines (each: drop done, pack, index, done) → row close | units and the upload | units for a manifest not yet uploaded | rewrites the units, uploads |
 | | | | the build manifest and the rounds | the bucket naming the new selection, its shards not yet cut | an assemble refuses `assemble.notLanded` before any Machine; tiles cuts what is outstanding |
-| | | | inside a round (the laptop asleep, a lost stage) | Machines still running | waits for live work tiles, never doubles one; reconciles by done record |
+| | | | inside a round (the laptop asleep, a lost stage) | Machines still running — perhaps an earlier selection's, their old done records still standing | waits until none of the campaign's work-tile Machines is up, then reconciles by done record against the manifest it has; never doubles one, and never succeeds over a live one (assemble refuses meanwhile) |
 | | | | a Machine's drop and its done record | the work tile outstanding | re-cut by the next round |
-| assemble | args, lock, `R2_BUCKET`, row target, build manifest, record, Fly (assembler up?), the error object's time, published manifest, the publish prefix's listing, the base manifest, the done records | lock → row open → Machine → [Machine, once decided: progress → archive (one multipart upload) → index → manifest → record] → row close | the Machine's start and its archive | at most an unfinished multipart upload (no object) | starts it again (or attaches to it) |
+| assemble | args, lock, `R2_BUCKET`, row target, build manifest, record, Fly (assembler up? work tiles up?), the error object's time, published manifest, the publish prefix's listing, the base manifest, the done records | lock → row open → Machine → [Machine, once decided: progress → archive (one multipart upload) → index → manifest → record] → row close | the Machine's start and its archive (or a shard replaced under it: the upload abandoned) | at most an unfinished multipart upload (no object) | starts it again (or attaches to it) |
 | | | | archive and index; index and manifest | an archive (and index) no manifest names | refuses `assemble.orphans` before any Machine: delete them by hand (ruling, §2.5), assemble again |
-| | | | manifest and record | a published campaign with no record | refuses `assemble.publishedNoRecord` before any Machine (new: it started a Machine that refused "already assembled"): delete the three published keys by hand, assemble again (README) |
+| | | | manifest and record | a published campaign with no record | refuses `assemble.publishedNoRecord` before any Machine (new: it started a Machine that refused "already assembled"): only while nothing has served them, delete exactly the three published keys it names by hand, assemble again (README; the build prefix stays) |
 | | | | the record and the row close | a row left failed or running | takes the record, closes a new row succeeded |
 | verify | args, lock, `R2_PUBLIC_BASE_URL`, row target, `R2_BUCKET` | lock → row open → report → viewer → row close | report files | part of a report | writes it afresh (read-only on R2) |
 | cleanup | args, lock, `R2_BUCKET`, the publish prefix's listing, the web's env files, the plan (every refusal) | lock → old build prefix → old index → old manifest → **old archive last** | any two deletes | the archive and some of the rest | plans again (the archive its refusals read is still there) and deletes the rest — **fixed**: the archive went first, and a re-run then refused `cleanup.absent` with the index, manifest and build prefix left behind |
@@ -777,6 +801,9 @@ the holder's log):
   (the base's manifest names no archive until it is published), or `select.fromCurrentRead` when
   the URL doesn't answer yet.
 - **An interrupted cleanup**: the re-run finishes it.
+- **Select A → tiles → select B → tiles, interrupted with B's Machines up → select A → tiles** (the
+  ninth review): tiles waits for B's workers, then re-cuts what they replaced with A's; nothing
+  succeeds while they run, and assemble refuses `assemble.workTilesRunning` until they have gone.
 
 ---
 
@@ -1371,12 +1398,15 @@ when it begins, ~5 h in), with what trips it and what to do.
   minutes gives MB/s (the pilot: 47.5). A slower one is still followed (the beat is per five
   minutes, never per zoom); trips below ~25 MB/s (~3 h): let it finish, and size the next one on a
   `performance` Machine (G-10, §8). And `peakRssMb` at the end against the 4 GB.
-- **H5 — Incomplete multipart uploads.** A Machine that dies mid-upload leaves its parts (up to
-  the archive's ~260 GB, ~$0.13 a day) until the bucket aborts them; rclone aborts only the failures
-  it sees, and a re-run starts a fresh upload. Before the run, read the bucket's lifecycle rules in
-  Cloudflare's dashboard (R2's default for a new bucket aborts after seven days — unverified for
-  this one); after any failed assembly, `rclone backend list-multipart-uploads r2:<bucket>`, and
-  abort what it left with `rclone backend cleanup r2:<bucket> -o max-age=1h`.
+- **H5 — Incomplete multipart uploads.** A Machine that dies mid-upload, or abandons one
+  (`assemble.shardReplaced`, §2.8), leaves its parts (up to the archive's ~260 GB, ~$0.13 a day)
+  until the bucket aborts them; rclone aborts only the failures it sees, and a re-run starts a fresh
+  upload. Before the run, read the bucket's lifecycle rules in Cloudflare's dashboard (R2's default
+  for a new bucket aborts after seven days — unverified for this one); after any failed assembly,
+  `rclone backend list-multipart-uploads r2:<bucket>`, and abort what it left with `rclone backend
+  cleanup r2:<bucket> -o max-age=1h` — **only while no assembler is up** (`scripts/aerial/spawn.sh
+  status <campaign>` prints no `assembler` for any campaign that may be assembling): the cleanup
+  aborts every upload older than an hour, a running assembly's included.
 
 ---
 
@@ -2696,3 +2726,82 @@ thirteen facts reach the dangerous combination (a live assembler, a changed sele
 cheap fact passing) about once in 500, so the case tests are what hold it. The real-tool tests
 (`cutAerialServed`, `aerialCounts`, GDAL 3.13.2) and the stream proof (1.8 GB through real `rclone
 rcat`, 15 parts, `pmtiles verify` clean) pass on this branch.
+
+**The PR's ninth review (2026-11-28).** Greptile (3/5) on `a51faa299`, four comments. All four real;
+each reproduced by a test that failed first, then fixed. Nothing drawn changed; tiling stays 2.
+
+- **Assembly overlapped running re-cuts** (`preflight.ts`). Cut selection A, start re-cutting B,
+  lose the laptop with B's Machines up, put A back: a worker drops its done record only at the end
+  of its cut, so A's records stood; the tiles stage's first reconcile found every work tile landed
+  and succeeded without waiting (it waited for live work tiles only when it spawned), and the
+  assemble preflight ignored `live.workTiles` — an assembler started then would take A's records
+  and range-read B's packs at A's offsets. Reproduced in `operatorSequences.test.ts` (tiles returned
+  0 with B's Machines up). Fixed in three places: assemble refuses while any of the campaign's
+  work-tile Machines is up (`assemble.workTilesRunning`; can't list is still `assemble.flyUnlisted`);
+  the tiles stage waits before **every** reconcile until none is (`spawn.sh drain`, read-only, and
+  `runTileRounds`' `settle`), so the first and last reconciles read the records that stay against
+  the current manifest's hashes, and a wait that gives up fails the stage; and the assembler, which
+  can't see Fly, re-reads every cut work tile's done record after its last pack read and before its
+  upload completes — a changed one abandons the upload (`ByteSink.abort`) and refuses
+  (`assemble.shardReplaced`). The residual window, §2.8: none for the archive's bytes, resting on
+  R2's read-after-write consistency and the worker's drop-first order. Tests: the two operator
+  sequences; `assemble.workTilesRunning` and `assemble.shardReplaced` cases (the latter re-cuts a
+  work tile on disk mid-stream; the bucket ends with no published key; a mutation that drops the
+  re-read fails it); `runTileRounds`' order (`settle` before each read); `spawn.sh drain`'s own
+  (which Machines count, the give-up, a failing listing read as "still up"); the property test now
+  draws live workers.
+- **A pilot rebuild cut the region** (`selectManifest.ts`). `--from-current` on a pilot took every
+  work tile any cell touches and found no saved hash outside the pilot's area, so it marked them all
+  `retile` — with `--cells` repeated too; and the `published.otherInputs` advice for a pilot was that
+  very command. Reproduced in `selectManifest.test.ts`. Fixed the smallest sound way: a pilot is
+  never a base (`select.fromCurrentPilot`: a changed pilot is a new pilot from nothing); the advice
+  (`newCampaignAdvice`, used by `published.otherInputs` and verify) and `tiles.assembling`'s message
+  say `--from-current` only for production; and the outcome is guarded whatever its cause — a pilot
+  with no `--cells`/`--states` is refused before the walk, one whose plan would cut every work tile
+  its cells touch at select (`select.pilotUnbounded`), and a pilot manifest built on a build (a
+  scratch from before this fix, a hand edit) at tiles before any write (`tiles.pilotBased`).
+- **Concurrent decodes lost scores** (`score.ts`). Every decode wrote `<jpeg>.ppm` beside the shared
+  thumbnail, and a failure was a bare `return null`: two campaigns decoding one frame removed each
+  other's output, and the loser read as unscored — not unreadable — so a select could cut a pick as
+  partial and a foliage review omit a strike. Reproduced with two concurrent `scoreFrames` over one
+  thumbnail (one came back null). Fixed: a private `fs.mkdtemp` directory per decode; a failure is
+  unscored for good only when the decoder read the image and refused it (`UndecodableImage`: GDAL's
+  own exit naming the file, its words checked against GDAL 3.13.2 here) or its output doesn't parse —
+  anything else (not installed, killed, a disk error, its output gone) is unreadable, for a re-run;
+  and every file two campaigns share is written whole (`atomicFile.ts`). **The sweep for the class**
+  — every path a stage writes that isn't keyed by campaign: `.scratch/thumbs/<item>.jpg` (select,
+  foliage: now atomic), the decode's output (now private), `.scratch/scores.json` (select, foliage)
+  and `.scratch/foliage-scores.json` (foliage: atomic, and merged with what another campaign saved
+  since they were read, which was dropped), the lock directory (`O_EXCL` per campaign, created with
+  `recursive`: sound), and the done-record copies (`mkdtemp`: sound). Keyed by campaign and under
+  its lock: the kept walk (now written atomically too, so a crash leaves no torn state file), the
+  units and round lists, the scratch manifest, the report, and `run-<campaign>.log` (append-only).
+  Off the laptop: the Machines' own disks.
+- **The runbook deleted what later steps read** (`README.md`). It said to delete the build prefix
+  once verify passed — the build manifest and the assembly record a re-run of assemble, verify and
+  tiles read, and the shards verify spot-compares. Now: keep it until a later campaign's cleanup
+  removes it with the old archive, as `cleanup.ts` always said (§2.5 corrected too). **The walk of
+  every operator instruction**, command by command against the code (the README, §2.4–§2.5, §2.8,
+  §7.4, §7.6's H1–H5, §10.7, the roadmap's after-merge list, every refusal that instructs): the
+  `publishedNoRecord` recovery now names exactly the three published keys and says it applies only
+  while nothing has served them (the governor's ruling), its loop uses `${R2_REMOTE:-r2}` rather than
+  a fixed remote, and the build prefix stays; H5's `rclone backend cleanup … -o max-age=1h` aborts
+  every upload older than an hour, a running assembly's included, so it now says to run it only
+  while no assembler is up; the pilot advice above; the Machine's `assemble.noManifest` said "run
+  the select stage" where the laptop's says "run the tiles stage" (the tiles stage uploads it); and
+  the full run's steps (README step 3, the roadmap's) now say the image is rebuilt from main first.
+  Every other command, flag, variable and key path was found to exist and do what it says —
+  `fly deploy`'s flags and rclone's `list-multipart-uploads`/`cleanup` read from their own help
+  here. Pinned by `readme.test.ts`: each `run-aerial.sh` command the README gives parses; a pilot
+  command names its area; every `--flag` it names is placed with its tool (a stage's parses, a
+  script's is in its usage); every variable it names is read by the package, is a core constant, or
+  is named as another tool's; the by-hand keys are the key helpers' own; the lock path is
+  `lockDir`'s; and the `publishedNoRecord` refusal carries the README's words.
+
+Open, for the governor:
+
+- **How big a pilot may be.** As built, a pilot must name an area and may not cut every work tile
+  its cells touch — but `--states NY` (about a third of the region, ~550 work tiles, ~$12) passes.
+  Options: (a) as built; (b) cap a pilot's cut (say 100 work tiles; the pilot was 28); (c) a pilot
+  takes `--cells` only. Recommendation: (c) — the only pilot the plan runs is by `--cells`, and a
+  state is no pilot — a three-line refusal at the argument check.

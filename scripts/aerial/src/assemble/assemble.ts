@@ -428,7 +428,7 @@ export async function readBuildManifest(
   if (bytes === null) {
     refuse(
       'assemble.noManifest',
-      `no manifest at ${buildManifestKey(campaign, pilot)}: run the select stage`,
+      `no manifest at ${buildManifestKey(campaign, pilot)}: run the tiles stage`,
     );
   }
   return JSON.parse(new TextDecoder().decode(bytes as Uint8Array)) as NaipManifest;
