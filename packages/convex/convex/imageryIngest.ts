@@ -52,7 +52,7 @@ import {
   winterOnOrAfter,
   winterTally,
 } from '@skating/core';
-import { type Infer, v } from 'convex/values';
+import { type Infer, type ObjectType, v } from 'convex/values';
 
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -520,68 +520,78 @@ type SeasonWatchResult =
   | { open: true; season: string; opensOn: string; openedBy: string[] }
   | { closed: true; season: string; closesOn: string };
 
+const maybeCheckSeasonOpenArgs = {
+  /** Which same-day retry this is; the cron's run is none. */
+  retry: v.optional(v.number()),
+};
+
 /**
  * The daily tick.
  *
  * A daily interval with a gate rather than a `crons.cron` expression, matching
  * `recurrence.maybeRunRollover` — it keeps `crons.ts` uniform and makes the check **retryable**: a
  * tick that fails on 12 October is tried again twice that day ({@link TICK_RETRIES}), then on the 13th.
+ *
+ * (Its body is exported as `maybeCheckSeasonOpenHandler`, so the cron dispatcher runs it in-process:
+ * `cronRuns.tickAction`, D347.)
  */
-export const maybeCheckSeasonOpen = internalAction({
-  args: {
-    /** Which same-day retry this is; the cron's run is none. */
-    retry: v.optional(v.number()),
-  },
-  handler: async (ctx, { retry = 0 }): Promise<SeasonWatchResult> => {
-    const nowMs = Date.now();
-    const season = archiveSeasonAt(nowMs);
-    let result: SeasonWatchResult;
-    try {
-      result = await tick(ctx, nowMs);
-    } catch (err) {
-      // **All or nothing, by design — so it fails loudly instead of being isolated** (D258). A tick
-      // that decided on the sites that answered would shrink the sample, and a shrinking sample is how
-      // one freezing pond opens a season; so there is no item to isolate. What changes is that a
-      // failing tick is no longer silent past the logs: each failed day is counted with its class,
-      // never parked (parking would stop the watch), and Machinery shows how many days in a row and
-      // since when. The tick still throws, so Convex records it as failed.
-      //
-      // A failed day used to wait for tomorrow's tick, and three in a row left the lows three days
-      // behind (18–20 Nov 2026) for a fault that cleared within hours. Two retries, three hours
-      // apart; nothing is lost either way — every tick re-reads 92 days. Booked before the count, so
-      // a count that fails to write cannot also cost the day its retry.
-      if (retry < TICK_RETRIES) {
-        await ctx.scheduler.runAfter(TICK_RETRY_MS, internal.imageryIngest.maybeCheckSeasonOpen, {
-          retry: retry + 1,
-        });
-      }
-      await ctx.runMutation(internal.recurringJobs.settle, {
-        job: 'seasonWatch',
-        failed: [
-          {
-            key: season,
-            errorClass: err instanceof TickFetchFailure ? err.errorClass : errorClassOf(err),
-          },
-        ],
-        succeeded: [],
-        park: false,
+export async function maybeCheckSeasonOpenHandler(
+  ctx: ActionCtx,
+  { retry = 0 }: ObjectType<typeof maybeCheckSeasonOpenArgs>,
+): Promise<SeasonWatchResult> {
+  const nowMs = Date.now();
+  const season = archiveSeasonAt(nowMs);
+  let result: SeasonWatchResult;
+  try {
+    result = await tick(ctx, nowMs);
+  } catch (err) {
+    // **All or nothing, by design — so it fails loudly instead of being isolated** (D258). A tick
+    // that decided on the sites that answered would shrink the sample, and a shrinking sample is how
+    // one freezing pond opens a season; so there is no item to isolate. What changes is that a
+    // failing tick is no longer silent past the logs: each failed day is counted with its class,
+    // never parked (parking would stop the watch), and Machinery shows how many days in a row and
+    // since when. The tick still throws, so Convex records it as failed.
+    //
+    // A failed day used to wait for tomorrow's tick, and three in a row left the lows three days
+    // behind (18–20 Nov 2026) for a fault that cleared within hours. Two retries, three hours
+    // apart; nothing is lost either way — every tick re-reads 92 days. Booked before the count, so
+    // a count that fails to write cannot also cost the day its retry.
+    if (retry < TICK_RETRIES) {
+      await ctx.scheduler.runAfter(TICK_RETRY_MS, internal.imageryIngest.maybeCheckSeasonOpen, {
+        retry: retry + 1,
       });
-      throw err;
-    } finally {
-      // Whatever is queued — including what this tick just found — goes out last, one a day (D212),
-      // and even when the tick itself failed: a dead weather API must not hold back yesterday's news.
-      await ctx.runMutation(internal.imageryIngest.sendNextEmail, { today: newYorkDate(nowMs) });
     }
-    // A tick that went through clears the count of days it failed (D258) — outside the `try`, so a
-    // failure to clear can never be counted as the tick having failed.
     await ctx.runMutation(internal.recurringJobs.settle, {
       job: 'seasonWatch',
-      failed: [],
-      succeeded: [season],
+      failed: [
+        {
+          key: season,
+          errorClass: err instanceof TickFetchFailure ? err.errorClass : errorClassOf(err),
+        },
+      ],
+      succeeded: [],
       park: false,
     });
-    return result;
-  },
+    throw err;
+  } finally {
+    // Whatever is queued — including what this tick just found — goes out last, one a day (D212),
+    // and even when the tick itself failed: a dead weather API must not hold back yesterday's news.
+    await ctx.runMutation(internal.imageryIngest.sendNextEmail, { today: newYorkDate(nowMs) });
+  }
+  // A tick that went through clears the count of days it failed (D258) — outside the `try`, so a
+  // failure to clear can never be counted as the tick having failed.
+  await ctx.runMutation(internal.recurringJobs.settle, {
+    job: 'seasonWatch',
+    failed: [],
+    succeeded: [season],
+    park: false,
+  });
+  return result;
+}
+
+export const maybeCheckSeasonOpen = internalAction({
+  args: maybeCheckSeasonOpenArgs,
+  handler: maybeCheckSeasonOpenHandler,
 });
 
 async function tick(ctx: ActionCtx, nowMs: number): Promise<SeasonWatchResult> {

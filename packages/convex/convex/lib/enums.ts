@@ -779,6 +779,9 @@ export const IMPORT_RUN_STATUSES = ['running', 'succeeded', 'failed'] as const;
  * (marked failed, or reopened), `wait` (*Wait 30 minutes*, or its undo) and `stop` (a request to
  * stop, or its withdrawal). And `cap`: the one row counting the lines a run wrote past
  * `MAX_RUN_EVENTS`. `close`, `mark`, `wait` and `stop` are always kept, past the cap too.
+ *
+ * Since B01-8b (D343, D347) a cron run's log lives here too, under `cronRunId`: `line` is an ordinary
+ * line from a cron's report, beside its `stage`, `warn` and `fail`. Never a logger kind.
  */
 export const RUN_EVENT_KINDS = [
   'start',
@@ -792,7 +795,28 @@ export const RUN_EVENT_KINDS = [
   'wait',
   'stop',
   'cap',
+  'line',
 ] as const;
+
+/**
+ * **How a cron's tick ended** (`cronHeartbeats.lastOutcome`, D343, D347, B01-8b). `ok`: it ran and
+ * reported no work (a quiet tick). `worked`: it ran and reported work (the tick has a run row).
+ * `failed`: it threw, or reported failure. `killed`: an action that began and never finished
+ * (Convex's action limit, or a deploy), found by the next tick's `begin`. Held in step with
+ * core's `CRON_TICK_CODES`.
+ */
+export const CRON_OUTCOMES = ['ok', 'worked', 'failed', 'killed'] as const;
+
+/**
+ * **A cron run's outcome** (`cronRuns.outcome`, D343, D347): a tick that did work or failed. `ok`:
+ * it did its work. `capped`: it stopped at a bound with work left (its next tick continues).
+ * `refused`: an outside service turned it down (a Fly spawn refused). `failed`: it threw, or
+ * reported failure. `killed`: it began and never finished.
+ */
+export const CRON_RUN_OUTCOMES = ['ok', 'capped', 'refused', 'failed', 'killed'] as const;
+
+/** What started a cron run: its schedule, or a person's press (`cronRuns.byUserId`). */
+export const CRON_TRIGGERS = ['cron', 'manual'] as const;
 
 /** The kinds a run's logger may send through `runEvents.append`; the rest are the server's. */
 export const RUN_EVENT_LOGGER_KINDS = [
