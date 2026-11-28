@@ -86,6 +86,7 @@ import type * as lib_bodySummary from "../lib/bodySummary.js";
 import type * as lib_campaignRuns from "../lib/campaignRuns.js";
 import type * as lib_cellIndex from "../lib/cellIndex.js";
 import type * as lib_cellScan from "../lib/cellScan.js";
+import type * as lib_chainRun from "../lib/chainRun.js";
 import type * as lib_clerkEmail from "../lib/clerkEmail.js";
 import type * as lib_clerkSessions from "../lib/clerkSessions.js";
 import type * as lib_clerkWebhook from "../lib/clerkWebhook.js";
@@ -329,6 +330,7 @@ declare const fullApi: ApiFromModules<{
   "lib/campaignRuns": typeof lib_campaignRuns;
   "lib/cellIndex": typeof lib_cellIndex;
   "lib/cellScan": typeof lib_cellScan;
+  "lib/chainRun": typeof lib_chainRun;
   "lib/clerkEmail": typeof lib_clerkEmail;
   "lib/clerkSessions": typeof lib_clerkSessions;
   "lib/clerkWebhook": typeof lib_clerkWebhook;

@@ -69,7 +69,26 @@ export interface ChainStepTallies {
   error?: string;
 }
 
-/** One step into the run; nothing without a run; a recorder that throws is logged, never rethrown. */
+/**
+ * Convex's words when a mutation lost its write conflict on every one of its own retries: it did not
+ * commit, so sending it again can't count it twice.
+ */
+const WRITE_CONFLICT =
+  /changed while this mutation was being run|OptimisticConcurrencyControlFailure/i;
+/** How many times a step is sent when it keeps losing a write conflict (branches stepping at once). */
+export const CHAIN_STEP_ATTEMPTS = 4;
+/** The first wait before a step is sent again; doubled each time, with up to as much again of jitter. */
+export const CHAIN_STEP_RETRY_MS = 200;
+
+/**
+ * One step into the run; nothing without a run; a recorder that throws is logged, never rethrown.
+ *
+ * A step that lost its write conflict on all of Convex's own retries (two branches stepping on the
+ * one run row at once — measured on a local backend with instant batches) is sent again, up to
+ * {@link CHAIN_STEP_ATTEMPTS} in all, after a short backoff: a lost conflict never committed, so the
+ * resend can't double-count. Any other error is not resent — it may have committed (a reply lost on
+ * the way back), and a double count is worse than a missed one.
+ */
 export async function chainStepSafely(
   ctx: Pick<ActionCtx, 'runMutation'>,
   runId: Id<'cronRuns'> | null | undefined,
@@ -77,9 +96,29 @@ export async function chainStepSafely(
 ): Promise<void> {
   if (runId === null || runId === undefined) return;
   try {
-    await ctx.runMutation(internal.cronRuns.chainStep, { runId, ...step });
+    await retryOnWriteConflict(() =>
+      ctx.runMutation(internal.cronRuns.chainStep, { runId, ...step }),
+    );
   } catch (err) {
     console.error(`cronRuns.chainStep failed on run ${runId}, the work goes on: ${messageOf(err)}`);
+  }
+}
+
+/**
+ * Send a mutation again when it lost its write conflict on all of Convex's own retries, up to
+ * {@link CHAIN_STEP_ATTEMPTS} in all, waiting {@link CHAIN_STEP_RETRY_MS} doubled each time (with
+ * jitter); any other error, or the last attempt's, is thrown. Only for a mutation whose lost
+ * conflict is the one error that certainly didn't commit.
+ */
+export async function retryOnWriteConflict<R>(send: () => Promise<R>): Promise<R> {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await send();
+    } catch (err) {
+      if (!WRITE_CONFLICT.test(messageOf(err)) || attempt >= CHAIN_STEP_ATTEMPTS) throw err;
+      const wait = CHAIN_STEP_RETRY_MS * 2 ** (attempt - 1);
+      await new Promise((resolve) => setTimeout(resolve, wait + Math.random() * wait));
+    }
   }
 }
 

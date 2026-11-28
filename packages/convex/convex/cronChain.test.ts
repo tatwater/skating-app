@@ -39,8 +39,15 @@ import type { Id } from './_generated/dataModel';
 import { type ActionCtx, internalAction, internalMutation } from './_generated/server';
 import * as cronJobsModule from './cronJobs';
 import { CRON_RETENTION, type CronActionJob, SEASON_CRON_RETENTION } from './cronJobs';
-import { OPEN_RUN_LOOKBACK, readCauses, tickContextOf } from './cronRuns';
-import { chainStepSafely, closeChainHead, openChainBranch, openChainRun } from './lib/chainRun';
+import { OPEN_RUN_LOOKBACK, readCauses, recorder, tickContextOf } from './cronRuns';
+import {
+  CHAIN_STEP_ATTEMPTS,
+  chainStepSafely,
+  closeChainHead,
+  openChainBranch,
+  openChainRun,
+  retryOnWriteConflict,
+} from './lib/chainRun';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
@@ -848,5 +855,93 @@ describe('when the recorder throws, the job goes on', () => {
       chain: { open: 0, steps: 0 },
     });
     expect((await t.run((c) => c.db.get(runId)))?.byUserId).toBeUndefined();
+  });
+});
+
+// ─── A lost write conflict is sent again; nothing else is ───────────────────────────────────────
+
+/** Convex's words for a mutation that lost its write conflict on every one of its own retries. */
+const CONFLICT = new Error(
+  'Documents read from or written to the "cronRuns" table changed while this mutation was being run and on every subsequent retry.',
+);
+
+describe('write conflicts (measured on a local backend: branches stepping on one row at once)', () => {
+  test('a lost conflict is sent again with a backoff; any other error is not', async () => {
+    let calls = 0;
+    const flaky = () => {
+      calls++;
+      return calls < 3 ? Promise.reject(CONFLICT) : Promise.resolve('ok');
+    };
+    const p = retryOnWriteConflict(flaky);
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toBe('ok');
+    expect(calls).toBe(3);
+
+    calls = 0;
+    const other = () => {
+      calls++;
+      return Promise.reject(new Error('reply lost'));
+    };
+    await expect(retryOnWriteConflict(other)).rejects.toThrow('reply lost');
+    expect(calls).toBe(1);
+
+    calls = 0;
+    const always = () => {
+      calls++;
+      return Promise.reject(CONFLICT);
+    };
+    const q = retryOnWriteConflict(always).catch((e: Error) => e);
+    await vi.runAllTimersAsync();
+    expect(await q).toBe(CONFLICT);
+    expect(calls).toBe(CHAIN_STEP_ATTEMPTS);
+  });
+
+  test('a step that keeps losing is given up once, logged, never thrown at the job', async () => {
+    const err = quiet();
+    const ctx = { runMutation: vi.fn(() => Promise.reject(CONFLICT)) };
+    const p = chainStepSafely(ctx as never, 'r' as Id<'cronRuns'>, { closed: 1 });
+    await vi.runAllTimersAsync();
+    await expect(p).resolves.toBeUndefined();
+    expect(ctx.runMutation).toHaveBeenCalledTimes(CHAIN_STEP_ATTEMPTS);
+    expect(err).toHaveBeenCalledTimes(1);
+  });
+
+  test('a chained head’s finish that loses a conflict is sent again: the run still closes', async () => {
+    const t = harness();
+    plan.branches = 1;
+    plan.batches = 1;
+    const real = recorder.recordTick;
+    let lost = false;
+    vi.spyOn(recorder, 'recordTick').mockImplementation(async (ctx, entry, tk) => {
+      if (entry.name === JOB && !lost) {
+        lost = true;
+        throw CONFLICT;
+      }
+      return await real(ctx, entry, tk);
+    });
+    const p = tick(t);
+    await vi.runAllTimersAsync();
+    await p;
+    const [run] = await runs(t);
+    expect(lost).toBe(true);
+    expect(run).toMatchObject({ outcome: 'ok', chain: { open: 0, steps: 1 } });
+  });
+
+  test('any other job’s finish is sent once, as before the chain', async () => {
+    const t = convexTest(schema, probeModules);
+    const err = quiet();
+    vi.spyOn(cronJobsModule, 'cronJob').mockImplementation((name) =>
+      name === 'c plain'
+        ? {
+            ...CHAIN_ENTRY,
+            name,
+            handler: (async () => ({ cronReport: { worked: true } })) as CronActionJob['handler'],
+          }
+        : realCronJob(name),
+    );
+    const record = vi.spyOn(recorder, 'recordTick').mockRejectedValue(CONFLICT);
+    await t.action(internal.cronRuns.tickAction, { job: 'c plain' });
+    expect(record).toHaveBeenCalledTimes(1);
+    expect(String(err.mock.calls.at(-1)?.[0])).toMatch(/finish failed, the tick is unrecorded/);
   });
 });

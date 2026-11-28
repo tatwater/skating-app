@@ -76,6 +76,7 @@ import {
   cronJob,
   cronPeriodMs,
 } from './cronJobs';
+import { retryOnWriteConflict } from './lib/chainRun';
 import { cronCauseTally, cronReportLine } from './lib/cronValidators';
 import { type CRON_OUTCOMES, type CRON_RUN_OUTCOMES, CRON_TRIGGERS } from './lib/enums';
 import { literals } from './lib/validators';
@@ -696,17 +697,23 @@ export const tickAction = internalAction({
       thrown = { error };
     }
     const finishedAt = Date.now();
-    try {
-      await ctx.runMutation(internal.cronRuns.finish, {
+    // A thrown error may carry its run's report (core's `withCronReport`): its detail is kept.
+    const report = readReport(thrown === null ? result : thrown.error, finishedAt);
+    const sendFinish = () =>
+      ctx.runMutation(internal.cronRuns.finish, {
         job: entry.name,
         trigger: args.trigger ?? 'cron',
         ...(args.byUserId !== undefined ? { byUserId: args.byUserId } : {}),
         startedAt,
         finishedAt,
         ...(thrown !== null ? { error: errorText(thrown.error) } : {}),
-        // A thrown error may carry its run's report (core's `withCronReport`): its detail is kept.
-        report: readReport(thrown === null ? result : thrown.error, finishedAt),
+        report,
       });
+    try {
+      // A chained head's finish closes its branch on a row its batches are stepping on: a lost write
+      // conflict there would leave the run open until the next run calls it killed, so it is sent
+      // again (it never committed). Every other job's finish is sent once, as before.
+      await (report?.runId !== undefined ? retryOnWriteConflict(sendFinish) : sendFinish());
     } catch (err) {
       console.error(
         `cron "${entry.name}": finish failed, the tick is unrecorded: ${errorText(err)}`,
@@ -741,10 +748,12 @@ export const tickAction = internalAction({
 //   run, every later step is skipped); its head's tick is recorded as before the chain (a run row of
 //   its own, the first batch's counts if the head reports them).
 // - *A `chainStep` throws* (mid-chain): the batch's work is kept and it still schedules its next
-//   (`lib/chainRun.chainStepSafely` catches and logs); the run misses that step's tallies, and — if
-//   the lost step was the one that closed or opened a branch — its `open` is off by one: one too many
-//   and the run never closes, so it reads quiet, then stopped, and the next `openRun` closes it
-//   `killed`; one too few and it closes early (`ok`, its last steps counted as stragglers, logged).
+//   (`lib/chainRun.chainStepSafely` catches and logs); the run misses that step's tallies. A
+//   continuing batch's step opens one branch as it closes its own, so losing it leaves `open` right
+//   (proven: 79 of 80 steps recorded, the run closed `ok`). A lost last step leaves `open` one too
+//   many: the run reads quiet, then stopped, and the next `openRun` closes it `killed`. A lost pure
+//   open (the head's, before a batch) leaves it one too few: the run closes early, `ok`, its last
+//   steps logged as stragglers.
 // - *The closing step never arrives* (a batch killed by the action limit, a deploy, a throw before its
 //   step): `open` stays above 0 and `progressAt` ages — `running` for 15 minutes, then `quiet` (*No
 //   word since …*), then `stopped` past the action limit and a minute (core's `chainLiveness`); the
@@ -752,9 +761,13 @@ export const tickAction = internalAction({
 // - *Two branches close at once*: each step reads the run and patches it in one transaction; Convex
 //   serializes the two (a write conflict retries the later one against the first's write), so `open`
 //   reaches 0 exactly once and the run closes once.
-// - *A step retried by Convex after a write conflict*: a mutation's retry re-runs the whole
-//   transaction against fresh reads, and only one attempt commits, so a step is counted once. (An
-//   action is never retried by Convex; `chainStepSafely` never retries a step itself.)
+// - *A step retried after a write conflict*: a mutation's retry re-runs the whole transaction against
+//   fresh reads, and only one attempt commits, so a step is counted once. Branches stepping on the one
+//   row at once can lose a conflict on all of Convex's own retries (measured on a local backend with
+//   instant batches: 6 of 320 steps over 8 branches); that error means the step didn't commit, so
+//   `chainStepSafely` sends it again (`retryOnWriteConflict`, four attempts in all), and so does the
+//   dispatcher for a chained head's `finish` — whose lost close would otherwise leave the run open
+//   until the next run called it killed. No other error is ever resent (it may have committed).
 // - *A straggler* (a step on a run already closed: a batch outliving its run's kill, or one after an
 //   early close): nothing changes, one log line.
 // - *The head throws* with its run open: its error rides its report (`withCronReport`, `runId` kept),
