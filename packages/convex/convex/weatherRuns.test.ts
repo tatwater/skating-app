@@ -1243,7 +1243,8 @@ describe('the gap repair completes partial past days (fork 2 (b))', () => {
     // Not drained: the next batch's arguments, as stored, carry six candidates, not forty.
     const scheduled = await t.run((ctx) => ctx.db.system.query('_scheduled_functions').collect());
     const next = scheduled.find((f) => f.name.includes('sweepWeatherDayGaps'));
-    const queue = (next?.args[0] as { partial: { queue: unknown[] } }).partial.queue;
+    if (next === undefined) throw new Error('the walk scheduled no next batch');
+    const queue = (next.args[0] as { partial: { queue: unknown[] } }).partial.queue;
     expect(queue).toHaveLength(6);
     expect(summed()).toMatchObject({ partialDays: 40, partialDeferred: 34 });
     await drain(t);
