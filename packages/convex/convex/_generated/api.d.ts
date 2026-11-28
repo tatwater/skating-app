@@ -198,6 +198,7 @@ import type * as lib_undoTypes from "../lib/undoTypes.js";
 import type * as lib_unmergeState from "../lib/unmergeState.js";
 import type * as lib_validators from "../lib/validators.js";
 import type * as lib_verdictTargets from "../lib/verdictTargets.js";
+import type * as lib_weatherReport from "../lib/weatherReport.js";
 import type * as lib_withdrawals from "../lib/withdrawals.js";
 import type * as machinery from "../machinery.js";
 import type * as machineryCrons from "../machineryCrons.js";
@@ -442,6 +443,7 @@ declare const fullApi: ApiFromModules<{
   "lib/unmergeState": typeof lib_unmergeState;
   "lib/validators": typeof lib_validators;
   "lib/verdictTargets": typeof lib_verdictTargets;
+  "lib/weatherReport": typeof lib_weatherReport;
   "lib/withdrawals": typeof lib_withdrawals;
   machinery: typeof machinery;
   machineryCrons: typeof machineryCrons;

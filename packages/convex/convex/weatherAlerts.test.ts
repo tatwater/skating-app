@@ -118,7 +118,7 @@ describe('weatherAlerts.refreshAlerts', () => {
       return real(key, work);
     });
     try {
-      expect(await t.action(internal.weatherAlerts.refreshAlerts, {})).toEqual({
+      expect(await t.action(internal.weatherAlerts.refreshAlerts, {})).toMatchObject({
         statesRefreshed: 4,
         statesFailed: 1,
       });

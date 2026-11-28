@@ -179,7 +179,7 @@ describe('hazardWeather.refreshHazardWeather', () => {
     });
     try {
       // Only the good one is stored; the one that threw is counted as failed, not refreshed.
-      expect(await t.action(internal.hazardWeather.refreshHazardWeather, {})).toEqual({
+      expect(await t.action(internal.hazardWeather.refreshHazardWeather, {})).toMatchObject({
         refreshed: 1,
         failed: 1,
       });

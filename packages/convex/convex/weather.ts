@@ -18,6 +18,7 @@
 
 import {
   bandForCoord,
+  type FetchFailure,
   FORECAST_PLAN_DAYS,
   type ForecastHour,
   type ForecastPayload,
@@ -38,7 +39,7 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import { action, internalMutation, internalQuery } from './_generated/server';
-import { meterOpenMeteo, recordApiCall } from './lib/apiMeter';
+import { meterOpenMeteo, openMeteoCallWeight, recordApiCall } from './lib/apiMeter';
 import { getCurrentProfile } from './lib/auth';
 import { liveSubAreaOf, resolveSurvivor } from './lib/bodies';
 import {
@@ -73,6 +74,71 @@ const FORECAST_DAYS = 2;
 export const OPEN_METEO_PROVIDER = 'open-meteo';
 /** Shared with the daily archive so both request builders agree on the endpoint. */
 export const OPEN_METEO_FORECAST_URL = 'https://api.open-meteo.com/v1/forecast';
+
+/**
+ * **A provider's stand-in for a proof on a throwaway local backend** (B01-8c; as `IMAGERY_STAC_URL`
+ * is for the imagery poll): the base URL `env[name]` names, or `null` for the real provider.
+ *
+ * ⚠ **It can't be set by accident on a real deployment.** It is honored only when it is a plain
+ * `http:` URL on this machine's loopback (`127.0.0.1`, `localhost`, `::1`) **and** the deployment
+ * itself is local — `CONVEX_CLOUD_URL` unset (a test) or a loopback URL (an anonymous local
+ * backend). On a cloud deployment (`https://….convex.cloud`) a value is ignored and logged by name, so
+ * a stray `convex env set` can never send real traffic anywhere but the real provider.
+ */
+export function standInBaseUrl(
+  name: string,
+  env: Record<string, string | undefined> = process.env,
+): string | null {
+  const raw = env[name];
+  if (raw === undefined || raw === '') return null;
+  const deployment = env.CONVEX_CLOUD_URL;
+  if (
+    !isLoopbackHttp(raw) ||
+    (deployment !== undefined && deployment !== '' && !isLoopbackHttp(deployment))
+  ) {
+    console.warn(`${name} is set but ignored: a stand-in is honored only on a local backend`);
+    return null;
+  }
+  return raw.replace(/\/+$/, '');
+}
+
+function isLoopbackHttp(url: string): boolean {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return false;
+  }
+  return (
+    parsed.protocol === 'http:' &&
+    ['127.0.0.1', 'localhost', '[::1]', '::1'].includes(parsed.hostname.toLowerCase())
+  );
+}
+
+/**
+ * The forecast endpoint every archive and weather-since request asks: Open-Meteo's, unless
+ * `OPEN_METEO_BASE_URL` names a local stand-in ({@link standInBaseUrl}; the stand-in serves
+ * `/v1/forecast` under its base).
+ */
+export function openMeteoForecastUrl(
+  env: Record<string, string | undefined> = process.env,
+): string {
+  const base = standInBaseUrl('OPEN_METEO_BASE_URL', env);
+  return base === null ? OPEN_METEO_FORECAST_URL : `${base}/v1/forecast`;
+}
+
+/**
+ * **What one cache-missing weather-since fetch came to** (B01-8c): filled by
+ * `fetchOpenMeteoHourly` when a caller passes it (the hazard decay cron, for its run's report), left
+ * alone on a cache hit. `weighted` is ×10, an integer, as every run count is.
+ */
+export interface OpenMeteoFetchReport {
+  calls: number;
+  weighted: number;
+  fetchMs: number;
+  /** Set when the fetch failed or came back with no usable past hour. */
+  failure?: { failure: FetchFailure; text: string };
+}
 
 /**
  * The hourly variables every weather fetch asks for.
@@ -182,6 +248,7 @@ async function fetchOpenMeteoHourly(
   windowStartMs: number,
   nowMs: number,
   forecastDays: number = FORECAST_DAYS,
+  report?: OpenMeteoFetchReport,
 ): Promise<OpenMeteoHours | null> {
   // Open-Meteo anchors `past_days` to the REAL current date, so size it from `Date.now()`, never from the
   // window end `nowMs` (which a caller may set in the past — e.g. the contradiction settle passes the older
@@ -224,24 +291,42 @@ async function fetchOpenMeteoHourly(
   if (cell.elevationM !== undefined) params.set('elevation', String(cell.elevationM));
 
   let json: OpenMeteoResponse;
+  const fetchStart = Date.now();
+  if (report) {
+    report.calls += 1;
+    report.weighted += Math.round(
+      openMeteoCallWeight(HOURLY_VARS.length, pastDays + forecastDays) * 10,
+    );
+  }
+  let timed = false;
+  const timeIt = () => {
+    if (report && !timed) report.fetchMs += Date.now() - fetchStart;
+    timed = true;
+  };
+  const failed = (failure: FetchFailure, text: string) => {
+    timeIt();
+    if (report) report.failure = { failure, text };
+    return null;
+  };
   try {
     // Metered before the await, so a request that then fails still counts against the day: what D158's
     // trigger needs to know is what we *asked* Open-Meteo for, and a failed call consumed quota just
     // the same. Never a limiter — see the `externalApiCalls` docblock.
     await meterOpenMeteo(ctx, HOURLY_VARS.length, pastDays + forecastDays);
-    const res = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
+    const res = await fetch(`${openMeteoForecastUrl()}?${params.toString()}`);
     if (!res.ok) {
       console.warn(`Open-Meteo request failed: ${res.status}`);
-      return null;
+      return failed({ status: res.status }, `Open-Meteo answered HTTP ${res.status}`);
     }
     json = (await res.json()) as OpenMeteoResponse;
   } catch (err) {
     console.warn('Open-Meteo request threw', err);
-    return null;
+    return failed({ error: err }, err instanceof Error ? err.message || err.name : String(err));
   }
+  timeIt();
 
   const time = json.hourly?.time;
-  if (!Array.isArray(time)) return null;
+  if (!Array.isArray(time)) return failed({ empty: true }, 'Open-Meteo answered with no hours');
 
   // ⚠ **One offset per response, and the response spans a week.** Open-Meteo stamps a single
   // `utc_offset_seconds`; both DST transitions fall inside a skating season, so a 7-day forecast
@@ -324,9 +409,10 @@ async function fetchOpenMeteoHourly(
   // whether an empty `forecast` is one is `resolveForecast`'s. Collapsing them here would let a
   // response carrying forward hours but no past ones look like a success to the decay path, which
   // would then cache an empty summary — the precise failure this comment was written about.
-  return out.length > 0 || forecast.length > 0
-    ? { past: out, forecast, utcOffsetMs: offsetMs }
-    : null;
+  if (out.length === 0 && forecast.length === 0) {
+    return failed({ empty: true }, 'Open-Meteo answered with no usable hour');
+  }
+  return { past: out, forecast, utcOffsetMs: offsetMs };
 }
 
 /**
@@ -469,6 +555,8 @@ export async function resolveWeatherSince(
   cell: WeatherCell,
   startMs: number,
   nowMs: number,
+  /** Filled with what a cache-missing fetch came to (B01-8c); a cache hit leaves it alone. */
+  report?: OpenMeteoFetchReport,
 ): Promise<WeatherSinceSummary | null> {
   const windowStartMs = hourBucket(Math.max(startMs, nowMs - WEATHER_WINDOW_MAX_LOOKBACK_MS));
   const windowEndBucketMs = hourBucket(nowMs);
@@ -482,7 +570,7 @@ export async function resolveWeatherSince(
   });
   if (cached) return cached;
 
-  const hourly = await fetchOpenMeteoHourly(ctx, cell, windowStartMs, nowMs);
+  const hourly = await fetchOpenMeteoHourly(ctx, cell, windowStartMs, nowMs, FORECAST_DAYS, report);
   if (hourly === null) return null; // fetch failed — don't cache, let the caller retry next time
   // **`.past` only, and never `.forecast` (D74).** Everything downstream of this line is a
   // calculation whose result must be re-derivable from what actually happened — the decay
@@ -490,7 +578,12 @@ export async function resolveWeatherSince(
   // `summarizeWeatherSince` would make all three unreproducible after the fact and nothing would
   // report it. The soft-failure rule below is unchanged: an empty past half is still "couldn't
   // tell", regardless of how many forward hours came with it.
-  if (hourly.past.length === 0) return null;
+  if (hourly.past.length === 0) {
+    if (report) {
+      report.failure = { failure: { empty: true }, text: 'Open-Meteo answered with no past hour' };
+    }
+    return null;
+  }
 
   const summary = summarizeWeatherSince(hourly.past);
   await ctx.runMutation(internal.weather.writeWeatherCache, {
