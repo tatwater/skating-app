@@ -13,10 +13,11 @@
  * - **The input hash** is the manifest's (the select stage's, core's `naipWorkTileInputHash`): the
  *   rule's version, `NAIP_TILING_VERSION` and each cell's pick, stack, `partial` and the frames it
  *   cuts (`naipFramesToCut`, which `framesToCut` is). This file only
- *   compares it. Everything in `TILE_SETTINGS` — and the GDAL arguments in `cut-aerial.sh` — draws
- *   pixels the hash can't see, so **changing any of it means bumping `NAIP_TILING_VERSION`** (or a
- *   rebuild copies stale tiles as unchanged); `tiles.test.ts` fingerprints both and fails until the
- *   bump and the new fingerprint land together.
+ *   compares it. Everything in `TILE_SETTINGS` — the GDAL arguments in `cut-aerial.sh`, and the
+ *   unit's geometry this file computes (`pixelExtent`, the outlines, the counts' window, the chunks)
+ *   — draws pixels the hash can't see, so **changing any of it means bumping
+ *   `NAIP_TILING_VERSION`** (or a rebuild copies stale tiles as unchanged); `tiles.test.ts`
+ *   fingerprints them and fails until the bump and the new fingerprint land together.
  * - **Landed** is a done record whose input hash is the manifest's (`shard.ts`' `shardLanded`) —
  *   never presence. `runTileRounds` spawns what is outstanding, drains, asks again, three rounds.
  */

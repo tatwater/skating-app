@@ -703,4 +703,71 @@ describe('the tiling fingerprint', () => {
         `NAIP_TILING_VERSION in core; then record ${print} under it in FINGERPRINTS.`,
     ).toBe(FINGERPRINTS[version]);
   });
+
+  /**
+   * **The unit's geometry draws pixels too** (PR #188's review): which pixels each frame is cut to
+   * (`pixelExtent`, core's `quarterQuadCell`), the counts' window and its ring, the chunks and the
+   * overview pass are computed here and handed to the worker, and neither the input hash nor the
+   * worker's fingerprint sees them. The tests hold their properties (cells partition a window), so
+   * a rounding rule changed from "centers inside" to "left edges inside" — other pixels, the same
+   * partition — passed every test, and a `--from-current` build would have copied the old tiles
+   * beside the new: a half-pixel seam at every join of a copied and a re-cut work tile. So real
+   * work tiles' units are fingerprinted per tiling version, as the drawing is.
+   */
+  const GEOMETRY: Record<number, string> = {
+    // Recorded under 2 (2026-11-27): nothing changed, nothing drawn differently.
+    2: 'cd92c6b6feb233cd77414c1024000dbcc0fd205cebddfbfc79fff061568a4751',
+  };
+
+  function geometry(): string {
+    // A Champlain cell, cells either side of the 72°W UTM seam, a Maine forest cell and a coastal
+    // one, each in every work tile it touches, and one proof-sized window inside a work tile.
+    const keys = ['4407336nw', '4407201ne', '4407101nw', '4507038sw', '4107102se'];
+    const units = keys.flatMap((key) =>
+      core.workTilesOf(key).map((tile) =>
+        buildWorkUnit({
+          campaign: 'naip-20261212',
+          pilot: null,
+          workTile: core.workTileKey(tile),
+          inputHash: '',
+          cells: [{ key, frames: ['x'] }],
+        }),
+      ),
+    );
+    const [first] = core.workTilesOf('4407336nw');
+    const work = first as core.WorkTile;
+    units.push(
+      buildWorkUnit({
+        campaign: 'naip-20261212',
+        pilot: null,
+        workTile: core.workTileKey(work),
+        window: `13/${work.x * 4 + 1}/${work.y * 4 + 2}`,
+        inputHash: '',
+        cells: [{ key: '4407336nw', frames: ['x'] }],
+      }),
+    );
+    return JSON.stringify(
+      units.map((u) => ({
+        window: u.window,
+        bounds: u.bounds,
+        tileZooms: u.tileZooms,
+        resolution: u.resolution,
+        countResolution: u.countResolution,
+        cells: u.cells.map((c) => [c.key, c.outline, c.extent, c.countExtent, c.countWindow]),
+        chunks: u.chunks,
+        overview: u.overview,
+      })),
+    );
+  }
+
+  test('the work unit’s geometry is the one recorded for this NAIP_TILING_VERSION', () => {
+    const version = core.NAIP_TILING_VERSION;
+    const print = createHash('sha256').update(geometry()).digest('hex');
+    expect(
+      print,
+      `the summer aerial's cut geometry changed (pixel extents, outlines, chunks). If a frame is ` +
+        `now cut to other pixels, bump NAIP_TILING_VERSION in core; then record ${print} under ` +
+        `it in GEOMETRY.`,
+    ).toBe(GEOMETRY[version]);
+  });
 });
