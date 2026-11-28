@@ -17705,8 +17705,9 @@ with `{ job: <name> }` as the argument:
   action tick costs no second action and no doubled action time. Around it: a `begin` mutation that
   stamps the heartbeat's `runningSince` (only for entries marked `announces: true`, the long ones:
   the imagery poll, pump and index, the four weather jobs, the hazard weather refresh, the geometry
-  computation) and a `finish` mutation that records the tick. An action killed by Convex's 10-minute
-  limit or a deploy never finishes: the next `begin` finds the stale `runningSince` and records that
+  computation) and a `finish` mutation that records the tick. An action killed by Convex's action
+  limit (30 minutes as measured on a local backend; *What B01-8b-1's build found*) or a deploy
+  never finishes: the next `begin` finds the stale `runningSince` and records that
   tick as **killed** first.
 - **A job reports through its return value**, never through a handle: a function may return
   `{ cronReport: { worked, outcome?, detail?, counts?, season?, lines? } }` (a core type,
@@ -17749,7 +17750,8 @@ the harness (handlers' network calls stubbed): each records one tick.
 
   /**
    * A cron's ticks, one row per job per bucket (D343's "compact day of ticks"): a UTC hour for a job
-   * that ticks more often than every 30 minutes, a UTC day otherwise — at most 60 ticks a row.
+   * that ticks more often than every 30 minutes, a UTC day otherwise — at most 60 ticks a row from
+   * the schedule; manual runs can add more, capped at 240 (as built).
    */
   cronTicks: defineTable({
     job: v.string(),
@@ -17827,7 +17829,7 @@ call (~5,080 a day); an action tick adds its `finish` and, if it announces, its 
 day); **about 6,800 more calls a day, ~200,000 a month**. Run rows: the imagery pump's working ticks
 in season (dozens to a few hundred a day), the poll's four, the index's few, and every failure. Rows
 kept: ~300 tick rows a day (11 hourly jobs × 24 + 41 daily), ~10,500 at 35 days. The array cap is
-never near: a tick row holds at most 60 entries. Against Convex's published allowances these are
+never near: a tick row holds at most 60 entries from its schedule (240 with manual runs). Against Convex's published allowances these are
 under 1 % of Pro's 25 M calls and 50 GB of bandwidth a month; on the free plan's 1 M calls and 1 GB
 they would be about a fifth and a quarter. The plan dev is on is not recorded in the repo: *Forks*, 1.
 
@@ -17864,8 +17866,9 @@ export function cronLiveness(
 ): CronLiveness;
 ```
 
-The rule: *E* is the interval, or a day, or a week. With `runningSince` set: `running` until 10
-minutes and a minute's slack (Convex's action limit), then `killed`. Else with no tick: `never`.
+The rule: *E* is the interval, or a day, or a week. With `runningSince` set: `running` until 30
+minutes and a minute's slack (the action limit as measured, core's `CONVEX_ACTION_LIMIT_MS`, which
+the recorder's `begin` imports), then `killed`. Else with no tick: `never`.
 Else, quiet *q* = now − lastTickAt (never negative): `stalled` past 10*E*, `late` past 2*E* (for a
 fixed-time job: past its next due time plus *E*/12, at most an hour, so a daily job is late an hour
 after it was due, not two days on), else `failed` if the last tick failed or was killed, else `ok`.
@@ -17888,7 +17891,11 @@ for *Failed*, `by_job_outcome_started`); `runLog({ runId, paginationOpts })` (20
 
 - The Overview's card reads the imagery rows from the three heartbeats through `cronLiveness`, not
   from `imageryRuns`; its *owed since* rule (a quiet pump with nothing to do is the schedule, not a
-  fault, `machinery.ts:117-128`) keeps reading the granules. The activity feed reads failed and
+  fault, `machinery.ts:117-128`) keeps reading the granules. *(As built: dropped. The imagery crons
+  record every tick, so a quiet pump's heartbeat moves every three minutes and reads ok, and a pump
+  that has stopped ticking reads late then stalled whether or not granules wait; both are tested.
+  The card keeps main's other reading, the newest run's: a failed or killed run stays failed until a
+  later run.)* The activity feed reads failed and
   refused imagery runs from `cronRuns` (`by_job_outcome_started`, the three jobs), target type
   `cronRun`, opening the Imagery page.
 - **`imageryRuns` stops being written.** A one-shot backfill, `cronRunJobs:copyImageryRuns` (dry run
@@ -18308,10 +18315,20 @@ backend until one happens.
 
 **After merge, on dev, in order.**
 
-*8b-1*: (1) the deploy, asked of the founder: `convex dev --once` from main at the squash, codegen
-first; widen-only. (2) `convex run cronRunJobs:copyImageryRuns '{"dryRun":true}'`, then without. (3)
-An hour later: every cron has a heartbeat (`machineryCrons:jobs` from the dashboard), the Overview's
-imagery rows read the backbone. (4) After a day: Convex's usage page against the estimate.
+*8b-1* (as finally true, B01-8b-1's build): (1) the deploy, asked of the founder: `convex dev
+--once` from main at the squash, codegen first; widen-only, no backfill needed before it. From the
+first tick every cron writes its heartbeat; until step 2 the Seasons panel's runs and the activity
+feed's imagery failures show only runs since the deploy (the Overview's imagery rows read
+heartbeats, so they read *Not recorded yet* until each cron's first tick: the pump's within three
+minutes, the index's ten, the poll's six hours). (2) `convex run cronRunJobs:copyImageryRuns
+'{"dryRun":true}'` (the first pass's counts print; the whole run's totals are one log line, *would
+copy N, already copied 0, quiet (not copied) M*), then the same without `dryRun`. Running it again
+copies nothing (*already copied N*): it is safe to repeat. (3) An hour later: every cron that ticks
+hourly or oftener has a row in the `cronHeartbeats` table (the dashboard's Data view; the daily and
+weekly crons fill theirs within a day and a week; `machineryCrons:jobs` needs an admin's identity, so
+the table is the quick look), and the Overview's imagery rows read the backbone. (4) After a day:
+Convex's usage page against *What B01-8b-1's build found*'s measured costs, and whether a mutation
+tick's nested call is billed as a call of its own (Ma26).
 
 *8b-2*: (1) the deploy, asked of the founder. (2) The image built, pushed and pinned on dev by the
 executor, after telling the founder (*The cutter image*), and the old ref noted for rollback. (3) The
@@ -18432,6 +18449,76 @@ reserved D340–D359, unless main has moved).
 - **D349 — B01-8b is two PRs: the backbone, then Imagery (B01-8b)**, if the founder rules *Forks*, 4
   as recommended; otherwise none.
 
+#### What B01-8b-1's build found
+
+*Integrated 2026-11-27 on `phase-b01-machinery-8b` (X1, S2, S1, then the executor's review).* What
+the build learned that the design didn't say, and what the 8b-2 builders inherit.
+
+- **The action limit is taken as 30 minutes.** A local backend killed a sleeping action at 1,800 s,
+  not the 10 minutes Convex's docs give. Core's `CONVEX_ACTION_LIMIT_MS` is 30 minutes and
+  `CRON_KILLED_AFTER_MS` that plus a minute, defined once; the recorder's `begin` imports both, so a
+  live action can never read or be recorded `killed`. The price, if a deployment's real limit is the
+  documented 10 minutes: an announcing cron that ticks more often than every 20 minutes or so (the
+  pump every 3, the geometry every 5, the index every 10) never has its kill recorded, because its
+  next tick begins inside the 31 minutes and overwrites the stamp (Ma27). The repo elsewhere assumes
+  10 (the imagery pump's 15-minute lease, the support sender's 11-minute claim): if dev's limit is
+  really 30, those are wrong instead (Ma27).
+- **A mutation job's duration is always 0 ms as stored.** `Date.now()` is frozen for a whole
+  mutation, its nested job included. The reads send `null` (`strip`'s `ms`, `runsPage`'s
+  `durationMs`) for a mutation job, never a real 0; an action job's is measured. *For the 8b-2 web
+  builders:* draw no duration where it is `null`, and don't compute one from a run's
+  `finishedAt − startedAt` (equal for a mutation job).
+- **A tick row is in recorded order, not time order**, and holds up to 240 ticks (`TICK_ROW_MAX`; a
+  schedule puts at most 60 there, manual runs add): an overlapping run finishes, and is appended,
+  later. `strip` sorts each row; anything else reading `cronTicks` must too. The heartbeat's
+  `lastTickAt` is the newest tick's start (`max`), and `lastOkAt` / `lastFailedAt` only move
+  forward; its `lastOutcome` is the last tick *recorded*. A manual press is always a run row, `ok`
+  when it found nothing to do, so the press is kept with who pressed it.
+- **The reserve** a mutation job's nested transaction leaves the recorder: 8 ranges, 8 documents
+  read, 208 written, 1.06 MiB read and 1.5 MiB written. Why those: the recorder's worst tick is two
+  point reads and four kinds of write (the heartbeat, the bucket, a run row and up to 200 lines of
+  500 characters), and Convex charges a nested call's overage to its parent (one more range or
+  document, at most a MiB). Proven on the throwaway backend: a job reading to 4,090 of its 4,091
+  ranges records `ok` with its write kept; one range past fails inside its own transaction (*Too
+  many reads … limit: 4091*), its write rolled back, and the recorder's rows commit both times.
+- **What a tick costs**, measured by S1: a quiet tick 654 B read and 345 B written; a `sparse`
+  job's skipped quiet tick 163 B read and no write. Under the founder's fork 1 ruling that is about
+  2,000 extra function calls a day (about 6 % of the free plan's million a month) and about 4 MB of
+  database I/O a day (about 12 % of its 1 GB a month), below the design's count. A mutation tick's
+  nested `ctx.runMutation` shows no execution record of its own on a local backend; whether dev
+  bills it as a call is read from the usage page after the deploy (Ma26).
+- **The Overview's imagery rows.** The old *owed since* rule is dropped, not kept as the design
+  said: the imagery crons record every tick, so a quiet pump with nothing to do moves its heartbeat
+  every three minutes and reads ok, and a pump that has stopped ticking reads late then stalled
+  whether or not granules wait (both tested). What main also read, the newest run, is kept: a run
+  that failed or was killed stays *failed* through the quiet and running ticks after it, dated by
+  that run, until a later run supersedes it (the pump backs off for half an hour after a throw, and
+  without this its row flipped to ok three minutes on). This is the card's reading of
+  `cronLiveness` plus `lastRun` (`machinery.cronJobState`); Machinery's own cron cards (8b-2) should
+  draw the same, from the same two inputs, so the two pages agree.
+- **A pump that throws keeps its detail.** The old run row read *threw: … — backing off 30 minutes
+  unless an admin says try again*; an action job can now throw an error carrying its report (core's
+  `withCronReport`), so the run row has that detail and its season beside the error's message, and
+  the pump's own error stays the run's word when the admins' alert fails too.
+- **At the deploy itself**, a pump action already running on the old code calls the removed
+  `imageryLive.recordRun` and loses that one run's row (its lease is still released). Nothing else
+  straddles the deploy.
+- **The integrated tip's proof** (a throwaway anonymous local backend, no credentials, 32 minutes):
+  every cron ran through its dispatcher; the five `sparse` crons wrote one quiet tick in each UTC
+  hour while the pump wrote all eleven of its ticks; no quiet tick wrote a run row; a sparse job's
+  failures were each recorded at once and its first quiet tick after them too, the next skipped
+  (codes ok, failed, failed, ok); every one of the 53 entries pressed once through its dispatcher
+  (`trigger: manual`) recorded one run, all `ok`, on an empty database; a 40-minute-old stamp was
+  recorded `killed` (30 minutes long) by the next `begin` and a 25-minute-old one was not;
+  `machineryCrons.jobs` over all 53 agreed with core's `cronLiveness` at the same `now`, the
+  sparse crons' floor an hour; a mutation job's strip durations read `null`; `copyImageryRuns`
+  over 5,000 rows copied 4,286 and skipped 714 quiet ones, the feed going from no imagery rows to
+  the copied failures and refusals, and a second run copied nothing; `prune` cleared 20,000
+  expired tick and run rows in under a minute. The only errors in the backend's log were the
+  proofs' own.
+- **The `never` state's word** on the web is left as it is; 8b-2 changes it to *not recorded yet*
+  (Ma28).
+
 #### Machinery follow-ups (the register)
 
 Ruling 20's list, with what this design's reading added. Each row says where it would land.
@@ -18463,7 +18550,12 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma23 | The Overview's Machinery card keeps its tracked set; reading every cron from the backbone drops its *untracked* count to zero | B01-8b's design | Health (8e) | open |
 | Ma24 | The backbone's cost measured on dev against the design's count (~6,800 calls and ~9 MB of I/O a day) | B01-8b's design | a day after 8b-1 deploys | open |
 | Ma25 | Stopped cut Machines left by a pump that was down are cleared on its next tick, but nothing shows how many wait meanwhile | B01-8b's design | Health (8e) | open |
-| Ma26 | Measure whether the dispatcher's nested `ctx.runMutation` is billed as a function call; if so, decide whether the frequent crons keep the wrapper (it doubles their calls, though `sparse` cuts their writes) | the founder's fork 1 ruling | 8b-1 (S1 measures it on the throwaway backend's usage, or from Convex's docs) | open |
+| Ma26 | Measure whether the dispatcher's nested `ctx.runMutation` is billed as a function call; if so, decide whether the frequent crons keep the wrapper (it doubles their calls, though `sparse` cuts their writes) | the founder's fork 1 ruling | 8b-1 measured locally: the nested call leaves no execution record of its own; confirmed from dev's usage page a day after the deploy | open |
+| Ma27 | Which action limit dev really enforces: core takes 30 minutes (measured locally) where Convex's docs say 10. At 30, a frequent announcing cron's kill (the pump, the geometry, the index) is never recorded if the real limit is 10, since its next tick overwrites the stamp inside 31 minutes; at 10, the pump's 15-minute lease and the support sender's 11-minute claim are too short if the real limit is 30. A fix for the first that holds either way: record which trigger set `runningSince` (a widen), so a cron tick calls an older *cron* tick's stamp killed at any age (Convex never overlaps a cron with itself) | B01-8b-1's integration | measured on dev (a sleeping action in a throwaway module, with the founder) before 8b-2's cards draw *killed* | open |
+| Ma28 | The web draws the `never` state with today's word; it should read *not recorded yet* | B01-8b-1's integration | 8b-2 (W2) | open |
+| Ma29 | The runs list's *Failed* tab reads `outcome = failed` only, so a killed run shows under *All* but not *Failed*, though the card and the rule count it failed; one `.paginate()` can't read two outcomes | B01-8b-1's review | 8b-2: a *Failed* filter over `failed` and `killed` (two reads merged, or a `bad` flag on the run row, a widen) | open |
+| Ma30 | A killed tick recorded by `begin` always says `trigger: cron` with no presser, even when the dead run was a manual press (`runningSince` doesn't say who set it) | B01-8b-1's review | with Ma27's widen | open |
+| Ma31 | The season watch's same-day retries (`imageryIngest.maybeCheckSeasonOpen` scheduling itself) bypass the dispatcher: a retry that succeeds never reaches the heartbeat, which reads the morning's failure until the next 11:30 tick | B01-8b-1's review | with Ma20 (the chains as runs), or the dispatcher carrying a retry's arguments | open |
 
 ## Ruled out
 

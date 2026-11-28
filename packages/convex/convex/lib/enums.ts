@@ -802,7 +802,7 @@ export const RUN_EVENT_KINDS = [
  * **How a cron's tick ended** (`cronHeartbeats.lastOutcome`, D343, D347, B01-8b). `ok`: it ran and
  * reported no work (a quiet tick). `worked`: it ran and reported work (the tick has a run row).
  * `failed`: it threw, or reported failure. `killed`: an action that began and never finished
- * (Convex's 10-minute limit, or a deploy), found by the next tick's `begin`. Held in step with
+ * (Convex's action limit, or a deploy), found by the next tick's `begin`. Held in step with
  * core's `CRON_TICK_CODES`.
  */
 export const CRON_OUTCOMES = ['ok', 'worked', 'failed', 'killed'] as const;
