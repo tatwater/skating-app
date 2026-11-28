@@ -217,11 +217,16 @@ export async function finishedAssembly(
   }
   const published = await readPublished();
   const conflict = published === null ? null : publishedConflict(published, manifest);
+  if (conflict !== null) throw new AssembleRefusal('published.otherInputs', conflict);
+  if (typeof record.inputs !== 'string') {
+    throw new AssembleRefusal(
+      'assemble.recordNoInputs',
+      `${record.campaign}'s assembly record (version ${String(record.version)}) names no inputs, so what its archive was built from can't be told — it is not taken as this build's`,
+    );
+  }
   throw new AssembleRefusal(
-    conflict ??
-      (typeof record.inputs !== 'string'
-        ? `${record.campaign}'s assembly record (version ${String(record.version)}) names no inputs, so what its archive was built from can't be told — it is not taken as this build's`
-        : `${record.campaign}'s assembly record names other inputs than ${published === null ? 'the build’s manifest, and no manifest is published beside its archive' : 'the manifest published beside its archive'}: run verify, which holds the record, the published manifest and the build's to one another`),
+    'assemble.recordOtherInputs',
+    `${record.campaign}'s assembly record names other inputs than ${published === null ? 'the build’s manifest, and no manifest is published beside its archive' : 'the manifest published beside its archive'}: run verify, which holds the record, the published manifest and the build's to one another`,
   );
 }
 

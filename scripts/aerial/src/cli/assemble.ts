@@ -17,58 +17,36 @@
  * Every value is read by name; nothing here prints one.
  */
 
-import { spawn } from 'node:child_process';
-import { dirname, join } from 'node:path';
 import process from 'node:process';
-import { fileURLToPath } from 'node:url';
-import type { NaipManifest } from '@skating/core';
-import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import {
   type AssembleDeps,
   type AssembleProgress,
-  AssembleRefusal,
-  type AssemblyRecord,
   assemble,
   assemblyKeys,
   planAssembly,
+  readBuildManifest,
 } from '../assemble/assemble';
 import {
-  assembleScope,
   assemblyCounts,
-  finishedAssembly,
-  followAssembly,
   oneAtATime,
   PROGRESS_WRITE_MS,
-  readObject,
-  spawnExitMessage,
   stallWatch,
   withDeadline,
 } from '../assemble/orchestrate';
 import { gdalRenderer } from '../assemble/overviews';
-import { fileStore, fileUploads, httpStore, type ObjectStore } from '../assemble/stores';
-import { type RcloneTarget, rcatSink, rcloneRun, serveHttp } from '../assemble/upload';
-import { buildManifestKey, manifestKey } from '../keys';
-import { checkRunTarget, RunTargetRefusal } from '../runTarget';
-import { parseStageArgs, StageArgsError } from '../stages';
-
-const HERE = dirname(fileURLToPath(import.meta.url));
+import { fileStore, fileUploads, httpStore } from '../assemble/stores';
+import { type RcloneTarget, rcatSink, serveHttp } from '../assemble/upload';
+import { needEnv } from '../preflight';
+import { outcomeWord, StageRefusal } from '../refusals';
+import { runAssembleStage } from '../stage/assembleStage';
+import { parseStageArgs } from '../stages';
+import { realWorld } from './world';
 
 function need(name: string): string {
-  const v = process.env[name];
-  if (v === undefined || v === '') throw new Error(`${name} is not set`);
-  return v;
+  return needEnv({ env: (n) => process.env[n] }, name);
 }
 
-async function readManifest(
-  store: ObjectStore,
-  campaign: string,
-  pilot?: string,
-): Promise<NaipManifest> {
-  const bytes = await store.get(buildManifestKey(campaign, pilot));
-  if (bytes === null)
-    throw new Error(`no manifest at ${buildManifestKey(campaign, pilot)}: run the select stage`);
-  return JSON.parse(new TextDecoder().decode(bytes)) as NaipManifest;
-}
+const readManifest = readBuildManifest;
 
 function peakMemory(): () => { rss: number; heap: number } {
   let heap = 0;
@@ -125,10 +103,13 @@ async function onMachine(campaign: string, pilot?: string): Promise<void> {
       );
     }),
   );
+  // `assemble` hands over progress only once it has decided (a refused assembly writes none); every
+  // event, held or not, feeds the watchdog.
   const progress = (event: AssembleProgress): void => {
     watch.touch();
     void write(event);
   };
+  const alive = (): void => watch.touch();
   try {
     const store = httpStore(server.baseUrl);
     const manifest = await readManifest(store, campaign, pilot);
@@ -138,12 +119,13 @@ async function onMachine(campaign: string, pilot?: string): Promise<void> {
       renderer: gdalRenderer(),
       memory: peakMemory(),
       progress,
+      alive,
     });
     process.stdout.write(`${JSON.stringify(assemblyCounts(record))}\n`);
   } catch (e) {
     await putJson(errorKey, {
       at: new Date().toISOString(),
-      refused: e instanceof AssembleRefusal,
+      refused: e instanceof StageRefusal,
       message: (e as Error).message,
     }).catch(() => {});
     throw e;
@@ -177,122 +159,23 @@ async function locally(
 }
 
 async function fromLaptop(
+  argv: readonly string[],
   campaign: string,
   pilot: string | undefined,
   dryRun: boolean,
 ): Promise<void> {
+  if (!dryRun) return runAssembleStage(argv, realWorld());
   const target: RcloneTarget = { remote: process.env.R2_REMOTE || 'r2', bucket: need('R2_BUCKET') };
-  if (dryRun) {
-    const server = await serveHttp(target, 8788);
-    try {
-      const store = httpStore(server.baseUrl);
-      const summary = await planAssembly(await readManifest(store, campaign, pilot), {
-        store,
-        renderer: gdalRenderer(),
-      });
-      process.stdout.write(`${JSON.stringify(summary)}\n`);
-    } finally {
-      server.stop();
-    }
-    return;
-  }
-  const deployment = resolveDeployment();
-  checkRunTarget(pilot ?? null, deployment);
-  const logger = new RunLogger({
-    kind: 'aerial_assemble',
-    label: `assemble ${campaign}${pilot ? ` (pilot ${pilot})` : ''}`,
-    campaignId: campaign,
-    target: deployment,
-    scope: assembleScope(pilot ?? null),
-    call: convexRun,
-  });
-  const keys = assemblyKeys(campaign, pilot);
-  const errorKey = keys.progress.replace(/progress\.json$/, 'error.json');
-  // `null` when the object isn't there; a throw when the bucket can't be reached, which the
-  // follower never counts as the Machine's silence (`readObject`).
-  const cat = <T>(key: string): Promise<T | null> =>
-    readObject<T>(() => rcloneRun(target, ['cat', `${target.remote}:${target.bucket}/${key}`]));
-
-  const readPublished = () => cat<NaipManifest>(manifestKey(campaign, pilot));
-
-  // Read before the row opens, and a read that fails starts nothing (can't tell is never "none"):
-  // an earlier run's record, the build's manifest it is held to, and an earlier attempt's error
-  // object, so that message is never read as this run's.
-  const finished = await cat<AssemblyRecord>(keys.record);
-  const manifest = await cat<NaipManifest>(buildManifestKey(campaign, pilot));
-  if (manifest === null) {
-    throw new Error(`no manifest at ${buildManifestKey(campaign, pilot)}: run the tiles stage`);
-  }
-  const stale = finished === null ? ((await cat<{ at?: string }>(errorKey))?.at ?? null) : null;
-  logger.start();
-  // **A re-run never starts a second assembly** — and never takes an earlier one of other inputs
-  // as this one (PR #188's review). A record means an earlier run finished (it is the assembler's
-  // last write): the stage takes it, whatever that run's row says (a laptop that lost its stream
-  // marked it failed), when its `inputs` are this build manifest's; otherwise it refuses, saying
-  // what differs (`finishedAssembly`). A running assembler is attached to by `spawn.sh`.
-  let taken: AssemblyRecord | null;
+  const server = await serveHttp(target, 8788);
   try {
-    taken = await finishedAssembly(finished, manifest, readPublished);
-  } catch (e) {
-    logger.failed(e);
-    throw e;
-  }
-  if (taken !== null) {
-    for (const [name, value] of Object.entries(assemblyCounts(taken))) logger.count(name, value);
-    logger.succeed([
-      `already assembled (${taken.finishedAt}): archive ${taken.archive.key}`,
-      `index ${taken.cellIndex.key}`,
-    ]);
-    process.stdout.write(`already assembled: ${keys.record} names ${taken.archive.key}\n`);
-    return;
-  }
-  const machine = spawn(
-    'bash',
-    [
-      join(HERE, '..', '..', 'spawn.sh'),
-      'assemble',
-      campaign,
-      ...(pilot ? ['--pilot', pilot] : []),
-    ],
-    {
-      stdio: 'inherit',
-    },
-  );
-  let exit: number | null | undefined;
-  machine.on('close', (code) => {
-    exit = code;
-  });
-  try {
-    const followed = await followAssembly({
-      readProgress: () => cat(keys.progress),
-      readRecord: () => cat(keys.record),
-      machineDone: async () => {
-        if (exit === undefined) return false;
-        if (exit === 0) return true;
-        throw new Error(spawnExitMessage(exit));
-      },
-      logger,
-      sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
-      now: () => Date.now(),
+    const store = httpStore(server.baseUrl);
+    const summary = await planAssembly(await readManifest(store, campaign, pilot), {
+      store,
+      renderer: gdalRenderer(),
     });
-    // The record that landed is held to the same inputs: an assembler attached to (or one that
-    // read the manifest before a re-run of the tiles stage replaced it) may have built other ones.
-    const record = (await finishedAssembly(followed, manifest, readPublished)) as AssemblyRecord;
-    for (const [name, value] of Object.entries(assemblyCounts(record))) logger.count(name, value);
-    logger.succeed([`archive ${record.archive.key}`, `index ${record.cellIndex.key}`]);
-  } catch (e) {
-    // Stop the wait (never the Machine: `spawn.sh` only watches it).
-    if (exit === undefined) machine.kill('SIGTERM');
-    const err = await cat<{ at?: string; message?: string; refused?: boolean }>(errorKey).catch(
-      () => null,
-    );
-    // The Machine's refusal stays a refusal (a published campaign's inputs, an incomplete set).
-    const own =
-      err?.message && err.at !== stale
-        ? new (err.refused === true ? AssembleRefusal : Error)(err.message)
-        : null;
-    logger.failed(own ?? e);
-    throw own ?? e;
+    process.stdout.write(`${JSON.stringify(summary)}\n`);
+  } finally {
+    server.stop();
   }
 }
 
@@ -306,12 +189,10 @@ async function main(): Promise<void> {
     // past its deadline, its `rcat` not yet given up — must not hold the Machine up, billing.
     process.exit(0);
   }
-  return fromLaptop(args.campaign, pilot, args.dryRun);
+  return fromLaptop(process.argv.slice(2), args.campaign, pilot, args.dryRun);
 }
 
 main().catch((e) => {
-  const refused =
-    e instanceof StageArgsError || e instanceof AssembleRefusal || e instanceof RunTargetRefusal;
-  process.stderr.write(`${refused ? 'refused' : 'failed'}: ${(e as Error).message}\n`);
+  process.stderr.write(`${outcomeWord(e)}: ${(e as Error).message}\n`);
   process.exit(1);
 });

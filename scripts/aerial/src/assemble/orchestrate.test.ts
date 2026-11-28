@@ -431,6 +431,7 @@ describe('finishedAssembly: a record is taken only for the inputs it was built f
   it('refuses a record that names no inputs (the pilot’s version 1): it can’t be told', async () => {
     await expect(finishedAssembly(of({ version: 1 }), manifest, async () => null)).rejects.toThrow(
       new AssembleRefusal(
+        'assemble.recordNoInputs',
         "naip-20261212's assembly record (version 1) names no inputs, so what its archive was built from can't be told — it is not taken as this build's",
       ),
     );

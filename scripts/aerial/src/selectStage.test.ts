@@ -114,7 +114,8 @@ describe('runSelect', () => {
     expect(out.counts).toMatchObject({ cloudCandidates: 1, pickedOffSeason: 6, noCandidate: 0 });
     expect(out.counts.unscored).toBeGreaterThan(0);
     expect(d.run.start).toHaveBeenCalledOnce();
-    expect(d.run.flush).toHaveBeenCalledTimes(7);
+    // No beat before the close: a refused select's row is its open and its failed close (§2.8).
+    expect(d.run.flush).not.toHaveBeenCalled();
     expect(d.run.count).toHaveBeenCalledWith(
       'droppedOutsideState',
       ITEMS.filter((i) => i.state === 'ME' && i.year === 2025).length,
@@ -308,6 +309,7 @@ describe('a campaign already published (PR #188’s review)', () => {
     const d = deps({ readPublished: async () => published, foliageStrikes: [struck] });
     await expect(runSelect(args(), d.deps)).rejects.toThrow(
       new SelectRefusal(
+        'published.otherInputs',
         'naip-20261125 is already published from other inputs (foliage strikes: changed; cells: 1 changed (4007326nw); work tiles: 4 changed (11/603/770, 11/603/771, 11/604/770, …)). A published key is never overwritten, so naip-20261125 stays as it was built — make the change a new campaign: run-aerial.sh naip-<YYYYMMDD> --from-current, with NAIP_MANIFEST_URL at naip-summer-20261125-manifest.json, copies its unchanged work tiles',
       ),
     );

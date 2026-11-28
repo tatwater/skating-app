@@ -15,65 +15,31 @@
 import { join } from 'node:path';
 import process from 'node:process';
 import { parseNaipCellIndex, quarterQuadAt, quarterQuadCell, quarterQuadsIn } from '@skating/core';
-import { convexRun, RunLogger, resolveDeployment } from '@skating/run-log';
 import { PMTiles } from 'pmtiles';
 import { storeSource } from '../assemble/archiveRead';
-import { assembleScope } from '../assemble/orchestrate';
 import { runProcess } from '../assemble/process';
 import { httpStore } from '../assemble/stores';
 import { serveHttp } from '../assemble/upload';
 import { archiveKey, archiveName, indexKey, scratchPaths } from '../keys';
-import { checkRunTarget, RunTargetRefusal } from '../runTarget';
-import { parseStageArgs, StageArgsError } from '../stages';
+import type { VerifyPlan } from '../preflight';
+import { outcomeWord } from '../refusals';
+import { runVerifyStage } from '../stage/verifyStage';
+import type { StageArgs } from '../stages';
 import { pmtilesCliCheck, publicUrl, verifyBuild } from '../verify';
 import { writeReport } from '../verifyReport';
 import { writeViewer } from '../viewer/page';
-
-function need(name: string): string {
-  const v = process.env[name];
-  if (v === undefined || v === '') throw new Error(`${name} is not set`);
-  return v;
-}
+import type { RunRow } from '../world';
+import { realWorld } from './world';
 
 async function main(): Promise<number> {
-  const args = parseStageArgs(process.argv.slice(2), 'verify');
-  const { campaign } = args;
-  const pilot = args.pilot ?? undefined;
-  const base = need('R2_PUBLIC_BASE_URL');
-  const deployment = resolveDeployment();
-  if (!args.dryRun) checkRunTarget(args.pilot, deployment);
-  const logger = args.dryRun
-    ? null
-    : new RunLogger({
-        kind: 'aerial_assemble',
-        label: `verify ${campaign}${pilot ? ` (pilot ${pilot})` : ''}`,
-        campaignId: campaign,
-        target: deployment,
-        scope: assembleScope(args.pilot),
-        call: convexRun,
-      });
-  logger?.start();
-  // A verify that throws (an unreadable record, a malformed shard index, rclone's server failing to
-  // start) fails its row rather than leaving it running: the other stages' rows do the same.
-  try {
-    return await checkAll(args, base, logger);
-  } catch (e) {
-    logger?.failed(e);
-    throw e;
-  }
+  return runVerifyStage(process.argv.slice(2), realWorld(), checkAll);
 }
 
-async function checkAll(
-  args: ReturnType<typeof parseStageArgs>,
-  base: string,
-  logger: RunLogger | null,
-): Promise<number> {
+async function checkAll(args: StageArgs, plan: VerifyPlan, logger: RunRow | null): Promise<number> {
   const { campaign } = args;
+  const { base } = plan;
   const pilot = args.pilot ?? undefined;
-  const server = await serveHttp(
-    { remote: process.env.R2_REMOTE || 'r2', bucket: need('R2_BUCKET') },
-    8789,
-  );
+  const server = await serveHttp(plan.target, 8789);
   try {
     const published = httpStore(base);
     const indexUrl = publicUrl(
@@ -146,9 +112,7 @@ async function checkAll(
 main().then(
   (code) => process.exit(code),
   (e) => {
-    process.stderr.write(
-      `${e instanceof StageArgsError || e instanceof RunTargetRefusal ? 'refused' : 'failed'}: ${(e as Error).message}\n`,
-    );
+    process.stderr.write(`${outcomeWord(e)}: ${(e as Error).message}\n`);
     process.exit(1);
   },
 );

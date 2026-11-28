@@ -54,6 +54,7 @@ describe('cleanup', () => {
       plan({ old: 'dev/naip/naip-summer-20261212.pmtiles', listing: listing.slice(0, 3) }),
     ).toThrow(
       new CleanupRefusal(
+        'cleanup.newest',
         'dev/naip/naip-summer-20261212.pmtiles is the newest archive: it is never deleted',
       ),
     );

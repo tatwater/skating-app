@@ -48,6 +48,7 @@ import {
   greenShare,
   isFoliageScored,
 } from './foliage';
+import { StageRefusal } from './refusals';
 import type { ScoreTarget } from './score';
 import { checkSelection } from './selectChecks';
 
@@ -323,7 +324,7 @@ export interface FoliageReviewDeps {
 }
 
 /** A review the stage won't hand over: the proposal broke the rule's invariants. */
-export class FoliageRefusal extends Error {
+export class FoliageRefusal extends StageRefusal {
   override name = 'FoliageRefusal';
 }
 
@@ -366,6 +367,7 @@ export async function runFoliageReview(
   ]);
   if (check.holes.length > 0 || check.violations.length > 0) {
     throw new FoliageRefusal(
+      'foliage.breaksRule',
       `the proposal breaks the rule: ${[...check.holes.map((h) => `hole ${h}`), ...check.violations].slice(0, 10).join('; ')}`,
     );
   }
@@ -377,6 +379,7 @@ export async function runFoliageReview(
   for (const p of selectNaipPicks(candidates, exclusions).picks) {
     if (keptPicks.has(p.pick.itemId) && afterByKey.get(p.key)?.pick.itemId !== p.pick.itemId) {
       throw new FoliageRefusal(
+        'foliage.movesKept',
         `the foliage strikes move ${p.key}, whose pick the cloud review kept`,
       );
     }

@@ -13,12 +13,13 @@
  */
 
 import type { resolveDeployment } from '@skating/run-log';
+import { StageRefusal } from './refusals';
 
 /** Where `convex run` will write (run-log exports the resolver, not its type). */
 export type DeploymentTarget = ReturnType<typeof resolveDeployment>;
 
 /** A refusal of the run rows' target: nothing has been written. */
-export class RunTargetRefusal extends Error {
+export class RunTargetRefusal extends StageRefusal {
   override name = 'RunTargetRefusal';
 }
 
@@ -35,16 +36,21 @@ export function checkRunTarget(pilot: string | null, target: DeploymentTarget): 
   if (pilot !== null) {
     if (!isLocalTarget(target)) {
       throw new RunTargetRefusal(
+        'target.pilotNotLocal',
         `a pilot writes its run rows to a local deployment only; this one targets ${describe(target)}`,
       );
     }
     return;
   }
   if (target.isProd) {
-    throw new RunTargetRefusal('the summer aerial is built for dev only; this one targets prod');
+    throw new RunTargetRefusal(
+      'target.prod',
+      'the summer aerial is built for dev only; this one targets prod',
+    );
   }
   if (!target.isDev) {
     throw new RunTargetRefusal(
+      'target.notDev',
       `a build writes its run rows to dev only; this one targets ${describe(target)}`,
     );
   }

@@ -41,13 +41,17 @@ import type { ScoreTarget, ThumbnailScore } from './score';
 import type { CloudCandidates } from './scoreSheet';
 import { cloudCandidates } from './scoreSheet';
 import { checkManifestFrames, checkSelection } from './selectChecks';
-import { buildManifest, framesShowing, manifestCounts, type Narrowing } from './selectManifest';
+import {
+  buildManifest,
+  checkCurrent,
+  framesShowing,
+  manifestCounts,
+  type Narrowing,
+  SelectRefusal,
+} from './selectManifest';
 import { parseCellList, type StageArgs } from './stages';
 
-/** A build the stage won't make. The message is the run row's error and the operator's answer. */
-export class SelectRefusal extends Error {
-  override name = 'SelectRefusal';
-}
+export { SelectRefusal };
 
 /** The run row, as far as this stage writes it; `null` for a dry run (no row). */
 export type SelectRunLog = Pick<RunLogger, 'start' | 'count' | 'flush' | 'succeed' | 'failed'>;
@@ -139,6 +143,7 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
     const unconfirmed = foliageStrikes.filter((s) => s.reviewedBy !== 'founder');
     if (unconfirmed.length > 0 && !args.dryRun) {
       throw new SelectRefusal(
+        'select.unconfirmedStrikes',
         `${unconfirmed.length} foliage strikes await the founder's confirmation: a proposal runs only as a dry run`,
       );
     }
@@ -147,14 +152,24 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
     if (args.cells !== null) {
       const keys = parseCellList(deps.readCellList(args.cells));
       const bad = keys.filter((k) => !isQuarterQuadKey(k));
-      if (bad.length > 0) throw new SelectRefusal(`--cells: not quarter-quads: ${bad.join(', ')}`);
+      if (bad.length > 0)
+        throw new SelectRefusal(
+          'select.cellsNotQuarterQuads',
+          `--cells: not quarter-quads: ${bad.join(', ')}`,
+        );
       narrowing = { cells: keys };
     }
     const current = args.fromCurrent ? await deps.readCurrent() : null;
+    if (current !== null) checkCurrent(current, { narrowing, pilot: args.pilot });
+    // What this campaign has published, read before the walk and the scoring — so a bucket that
+    // can't be read refuses before either writes its cache, and the conflict below is decided from a
+    // fact already in hand (the eighth review: decide before you write).
+    const published = args.dryRun ? null : await deps.readPublished();
 
+    // The per-state counts reach the row with its close, never before: a refused select's row is
+    // its open and its failed close (the walk is minutes, its row's only beat was here).
     const snapshot = await deps.walk((state, items) => {
       run?.count(`items${state}`, items);
-      run?.flush();
       deps.log(`[select] ${state}: ${items} items`);
     });
     const candidates = snapshot.items;
@@ -175,11 +190,13 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
     const check = (deps.check ?? checkSelection)(candidates, exclusions, selection, foliageStrikes);
     if (check.holes.length > 0) {
       throw new SelectRefusal(
+        'select.holes',
         `the exclusion list leaves ${check.holes.length} cells with no frame: ${check.holes.join(', ')}`,
       );
     }
     if (check.violations.length > 0) {
       throw new SelectRefusal(
+        'select.invariants',
         `the rule's invariants fail on ${check.violations.length} cells: ${check.violations.slice(0, 20).join('; ')}`,
       );
     }
@@ -187,7 +204,10 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
       const picked = new Set(selection.picks.map((p) => p.key));
       const uncovered = narrowing.cells.filter((k) => !picked.has(k));
       if (uncovered.length > 0) {
-        throw new SelectRefusal(`--cells lists cells no frame covers: ${uncovered.join(', ')}`);
+        throw new SelectRefusal(
+          'select.cellsUncovered',
+          `--cells lists cells no frame covers: ${uncovered.join(', ')}`,
+        );
       }
     }
 
@@ -207,6 +227,7 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
     const undecided = unreadable.filter((id) => picked.has(id));
     if (undecided.length > 0 && !args.dryRun) {
       throw new SelectRefusal(
+        'select.unreadablePicks',
         `the thumbnails of ${undecided.length} picks couldn't be read this time (${sample(undecided)}): an unscored pick is cut as partial, and a re-run that reads it would decide another build — run the select stage again (the scores are cached, so it reads only these)`,
       );
     }
@@ -246,14 +267,14 @@ export async function runSelect(args: StageArgs, deps: SelectDeps): Promise<Sele
     const undatable = checkManifestFrames(manifest);
     if (undatable.length > 0) {
       throw new SelectRefusal(
+        'select.undatable',
         `${undatable.length} of the manifest's frames can't be dated as verify will date them: ${undatable.slice(0, 20).join('; ')}`,
       );
     }
     if (!args.dryRun) {
-      const published = await deps.readPublished();
       if (published !== null) {
         const conflict = publishedConflict(published, manifest);
-        if (conflict !== null) throw new SelectRefusal(conflict);
+        if (conflict !== null) throw new SelectRefusal('published.otherInputs', conflict);
         deps.log(
           `[select] ${args.campaign} is already published from these inputs: nothing changes`,
         );

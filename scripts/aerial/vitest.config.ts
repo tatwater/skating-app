@@ -11,17 +11,22 @@ export default defineConfig({
       reporter: ['text', 'html', 'lcov'],
       include: ['src/**/*.ts'],
       // Measured is every decision: the key layout, the flags, the shard contract, the tiles'
-      // reconcile, the assembler and verify. Excluded by name are the stage CLIs — argv + stderr
-      // shells over that logic, one per stage, all under `src/cli/` — and the assembler's one
+      // reconcile, the assembler, verify, and every stage's preflight and body (`src/stage/`, run
+      // against the recording world). Excluded by name are the stage CLIs — argv + stderr shells over
+      // that logic, one per stage, all under `src/cli/` — the real world they hand it
+      // (`src/cli/world.ts`: rclone, `spawn.sh`, `convex run`, signals), and the assembler's one
       // process boundary, the `rclone rcat` stream (`src/assemble/upload.ts`); nothing else.
       exclude: [
         'src/**/*.test.ts',
+        // The tests' recording world: test infrastructure, measured by the tests that use it.
+        'src/stageHarness.ts',
         'src/cli/select.ts',
         'src/cli/foliage.ts',
         'src/cli/tiles.ts',
         'src/cli/assemble.ts',
         'src/cli/verify.ts',
         'src/cli/cleanup.ts',
+        'src/cli/world.ts',
         'src/assemble/upload.ts',
       ],
       thresholds: {

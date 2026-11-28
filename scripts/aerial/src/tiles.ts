@@ -46,6 +46,7 @@ import {
   scratchPaths,
   shardKeys,
 } from './keys';
+import { StageRefusal } from './refusals';
 import { type ShardDone, shardLanded } from './shard';
 
 // ── The cut's settings ──────────────────────────────────────────────────────────────────────────
@@ -645,16 +646,23 @@ export function selectUploads(manifest: NaipManifest, scratch: string = AERIAL_S
   const { archivedAt, walkedOn, perState } = manifest.catalog;
   if (archivedAt === null) return uploads;
   if (pilot !== undefined) {
-    throw new Error(
+    throw new StageRefusal(
+      'tiles.pilotArchive',
       `pilot ${pilot}'s manifest asks to archive the catalog at ${archivedAt}, outside its prefixes`,
     );
   }
   const states = (Object.keys(perState) as NaipState[]).sort();
-  if (states.length === 0) throw new Error('the manifest archives a catalog that read no state');
+  if (states.length === 0) {
+    throw new StageRefusal(
+      'tiles.archiveEmpty',
+      'the manifest archives a catalog that read no state',
+    );
+  }
   for (const state of states) {
     const key = inventoryKey(walkedOn, state);
     if (!key.startsWith(archivedAt)) {
-      throw new Error(
+      throw new StageRefusal(
+        'tiles.archiveDay',
         `the manifest says the snapshot is at ${archivedAt}, but ${walkedOn}'s is ${key}`,
       );
     }

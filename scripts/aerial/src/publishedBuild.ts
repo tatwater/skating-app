@@ -20,9 +20,10 @@
 
 import { type NaipManifest, naipBuildInputsDiff } from '@skating/core';
 import { manifestName } from './keys';
+import { StageRefusal } from './refusals';
 
 /** A stage refusing to act on a published campaign with other inputs. Nothing was written. */
-export class PublishedBuildRefusal extends Error {
+export class PublishedBuildRefusal extends StageRefusal {
   override name = 'PublishedBuildRefusal';
 }
 
@@ -65,6 +66,6 @@ export function againstPublished(
 ): 'unpublished' | 'published' {
   if (published === null) return 'unpublished';
   const conflict = publishedConflict(published, next);
-  if (conflict !== null) throw new PublishedBuildRefusal(conflict);
+  if (conflict !== null) throw new PublishedBuildRefusal('published.otherInputs', conflict);
   return 'published';
 }

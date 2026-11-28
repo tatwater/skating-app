@@ -37,6 +37,7 @@ import {
   workTilesOf,
 } from '@skating/core';
 import { manifestName } from './keys';
+import { type RefusalId, StageRefusal } from './refusals';
 import { FULL_COVERAGE, type ThumbnailScore } from './score';
 
 /** What the stage narrowed the build to (`--states` or `--cells`), if anything. */
@@ -102,24 +103,38 @@ function narrowed(narrowing: Narrowing, key: string, states: readonly NaipState[
  * carry another rule's pick under this manifest's `ruleVersion`), and the same kind of build (the
  * assembler reads `basedOn` under this build's own prefix; §2.1.3: never a build based on a pilot).
  */
-function checkCurrent(current: NaipManifest, input: ManifestInput): void {
-  const refuse = (why: string): never => {
-    throw new Error(`--from-current: ${current.campaign}'s manifest ${why}`);
+/** A build the select stage won't make. The message is the run row's error and the operator's answer. */
+export class SelectRefusal extends StageRefusal {
+  override name = 'SelectRefusal';
+}
+
+export function checkCurrent(
+  current: NaipManifest,
+  input: Pick<ManifestInput, 'narrowing' | 'pilot'>,
+): void {
+  const refuse = (id: RefusalId, why: string): never => {
+    throw new SelectRefusal(id, `--from-current: ${current.campaign}'s manifest ${why}`);
   };
   if ((current.version as number) !== NAIP_MANIFEST_VERSION) {
     refuse(
+      'select.fromCurrentFormat',
       `is a version-${String(current.version)} manifest; this select stage reads version ${NAIP_MANIFEST_VERSION} — build from nothing`,
     );
   }
-  if (current.archive === undefined) refuse('names no archive (it was never published)');
+  if (current.archive === undefined)
+    refuse('select.fromCurrentUnpublished', 'names no archive (it was never published)');
   if (input.narrowing !== null && current.ruleVersion !== NAIP_RULE_VERSION) {
     refuse(
+      'select.fromCurrentRule',
       `was built by rule ${current.ruleVersion}, not rule ${NAIP_RULE_VERSION}: a narrowed build would keep its picks — run it whole`,
     );
   }
   const kind = (pilot: string | null) => (pilot === null ? "production's" : `pilot ${pilot}'s`);
   if (current.pilot !== input.pilot) {
-    refuse(`is ${kind(current.pilot)}; this build is ${kind(input.pilot)}`);
+    refuse(
+      'select.fromCurrentKind',
+      `is ${kind(current.pilot)}; this build is ${kind(input.pilot)}`,
+    );
   }
 }
 

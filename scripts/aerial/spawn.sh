@@ -16,6 +16,10 @@
 #       to and never doubled; returns 0 once it has gone (the assembler's own record in the bucket
 #       says whether it succeeded — `cli/assemble.ts` follows it), 3 if it gave up waiting while the
 #       Machine was still up, 1 when it started nothing
+#   spawn.sh status <campaign>
+#       read-only: the campaign's live Machines, one a line — `assembler`, or `worktile 11/<x>/<y>` —
+#       and exit 0; exit 1 when the app's Machines can't be listed. The stages' preflights read it
+#       (`preflight.ts`) before they write anything, so a refusal starts nothing (B05 §2.8)
 #
 # **What to cut is decided upstream** (`src/tiles.ts` writes the units, `src/cli/tiles.ts` reconciles
 # by done record and calls this per round), and **how** is the image's (`cut-aerial.sh`). This file is
@@ -78,25 +82,17 @@ IMAGE="${AERIAL_IMAGE:-}"
 usage() {
   echo "usage: spawn.sh tiles <campaign> <units dir> <work tiles file|-> [--drain]" >&2
   echo "       spawn.sh assemble <campaign> [--pilot <name>]" >&2
+  echo "       spawn.sh status <campaign>" >&2
   exit 64
 }
 
 MODE="${1:-}"
 CAMPAIGN="${2:-}"
-[[ "$MODE" == tiles || "$MODE" == assemble ]] || usage
+[[ "$MODE" == tiles || "$MODE" == assemble || "$MODE" == status ]] || usage
 [[ "$CAMPAIGN" =~ ^naip-(pilot-)?[0-9]{8}$ ]] || { echo "spawn.sh: not a campaign: $CAMPAIGN" >&2; usage; }
 STAMP="${CAMPAIGN#naip-}"; STAMP="${STAMP/pilot-/p}"
 
 command -v fly >/dev/null 2>&1 || { echo "flyctl not installed (brew install flyctl)" >&2; exit 1; }
-
-# Pinned by digest, so every Machine of a build runs the same code and its done record can say
-# which. A label resolves at spawn time; a digest never moves.
-if [[ ! "$IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
-  echo "AERIAL_IMAGE must be the aerial image pinned by digest (registry.fly.io/${APP}@sha256:…)." >&2
-  echo "Build and push it under its own label first — the README's gated step — and pin the digest" >&2
-  echo "it prints. Never the winter cutter's FLY_IMAGE." >&2
-  exit 1
-fi
 
 # macOS has no timeout(1): gtimeout from coreutils, else unbounded (fan-out.sh's degrade).
 if command -v timeout >/dev/null 2>&1; then :
@@ -162,6 +158,34 @@ await_gone() {
   echo "[spawn] ⚠ $live Machines named ${prefix}* still alive — gave up waiting" >&2
   return 1
 }
+
+# --- status: read-only, so no image is needed -----------------------------------------------------
+if [[ "$MODE" == status ]]; then
+  (( $# == 2 )) || usage
+  if ! running="$(live_names "aerial-")"; then
+    echo "[spawn] can't list the app's Machines" >&2
+    exit 1
+  fi
+  # An `if`, not `[[ … ]] && …`: an empty last line would make the loop's status 1, and `set -e` exit.
+  while IFS= read -r n; do
+    if [[ "$n" == "aerial-asm-${STAMP}" ]]; then
+      echo assembler
+    elif [[ "$n" == "aerial-${STAMP}-"* ]]; then
+      xy="${n#"aerial-${STAMP}-"}"
+      echo "worktile 11/${xy%%-*}/${xy#*-}"
+    fi
+  done <<<"$running"
+  exit 0
+fi
+
+# Pinned by digest, so every Machine of a build runs the same code and its done record can say
+# which. A label resolves at spawn time; a digest never moves.
+if [[ ! "$IMAGE" =~ @sha256:[0-9a-f]{64}$ ]]; then
+  echo "AERIAL_IMAGE must be the aerial image pinned by digest (registry.fly.io/${APP}@sha256:…)." >&2
+  echo "Build and push it under its own label first — the README's gated step — and pin the digest" >&2
+  echo "it prints. Never the winter cutter's FLY_IMAGE." >&2
+  exit 1
+fi
 
 if [[ "$MODE" == assemble ]]; then
   shift 2

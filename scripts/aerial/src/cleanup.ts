@@ -38,6 +38,7 @@ import {
   parseCampaign,
   publishPrefix,
 } from './keys';
+import { type RefusalId, StageRefusal } from './refusals';
 
 /** One object in a listing of the publish prefix. */
 export interface ListedObject {
@@ -80,13 +81,17 @@ export function parseLiveSince(text: string): LiveSince {
   if (day) {
     const from = new Date(`${text}T00:00:00Z`);
     if (Number.isNaN(from.getTime()) || from.toISOString().slice(0, 10) !== text) {
-      refuse(`--live-since ${JSON.stringify(text)} is not a day the calendar has`);
+      refuse(
+        'cleanup.liveSinceDay',
+        `--live-since ${JSON.stringify(text)} is not a day the calendar has`,
+      );
     }
     return { from, to: new Date(from.getTime() + DAY_MS) };
   }
   const at = new Date(text);
   if (!ISO_TIME.test(text) || Number.isNaN(at.getTime())) {
     refuse(
+      'cleanup.liveSinceFormat',
       `--live-since ${JSON.stringify(text)} is not a YYYY-MM-DD day or an ISO time with its offset`,
     );
   }
@@ -94,12 +99,12 @@ export function parseLiveSince(text: string): LiveSince {
 }
 
 /** A refusal: nothing was deleted. */
-export class CleanupRefusal extends Error {
+export class CleanupRefusal extends StageRefusal {
   override name = 'CleanupRefusal';
 }
 
-const refuse = (message: string): never => {
-  throw new CleanupRefusal(message);
+const refuse = (id: RefusalId, message: string): never => {
+  throw new CleanupRefusal(id, message);
 };
 
 /** The old campaign id an archive key belongs to. */
@@ -132,13 +137,15 @@ export function planCleanup(args: {
   const current = parseCampaign(campaign);
   if ((target.pilot ?? undefined) !== pilot) {
     refuse(
+      'cleanup.otherKind',
       `--old ${old} is ${target.pilot === null ? 'a production key' : `pilot ${target.pilot}'s`}, this run is ${pilot === undefined ? 'production' : `pilot ${pilot}`}`,
     );
   }
   const replacement = archiveKey(campaign, pilot);
-  if (replacement === old) refuse(`--old is this build's own archive (${old})`);
+  if (replacement === old) refuse('cleanup.own', `--old is this build's own archive (${old})`);
   if (target.date >= current.date) {
     refuse(
+      'cleanup.notOlder',
       `--old ${old} is not older than ${campaign}: cleanup runs from the build that replaced it`,
     );
   }
@@ -153,14 +160,17 @@ export function planCleanup(args: {
     .map((o) => ({ ...o, date: parseArchiveKey(o.key).date }))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   if (!archives.some((a) => a.key === old))
-    refuse(`${old} is not in the bucket: nothing to delete`);
+    refuse('cleanup.absent', `${old} is not in the bucket: nothing to delete`);
   const newest = archives[archives.length - 1] as (typeof archives)[number];
-  if (newest.key === old) refuse(`${old} is the newest archive: it is never deleted`);
+  if (newest.key === old)
+    refuse('cleanup.newest', `${old} is the newest archive: it is never deleted`);
   const next = archives.find((a) => a.key === replacement);
-  if (next === undefined) refuse(`${replacement}, which replaces it, is not in the bucket`);
+  if (next === undefined)
+    refuse('cleanup.noReplacement', `${replacement}, which replaces it, is not in the bucket`);
   const replacedAt = (next as (typeof archives)[number]).modified;
   if (args.liveArchiveUrls === undefined) {
     refuse(
+      'cleanup.webUnreadable',
       `no apps/web env file (${WEB_ENV_FILES.join(', ')}) can be read, so what the web points at (VITE_NAIP_PMTILES_URL) can't be told: run cleanup from a checkout that has one`,
     );
   }
@@ -176,6 +186,7 @@ export function planCleanup(args: {
   };
   if (live.some(named(old))) {
     refuse(
+      'cleanup.webPointsAtOld',
       `${old} is the archive the web points at (VITE_NAIP_PMTILES_URL): repoint and redeploy first`,
     );
   }
@@ -185,6 +196,7 @@ export function planCleanup(args: {
   if (pilot !== undefined) {
     if (liveSince !== null) {
       refuse(
+        'cleanup.pilotLiveSince',
         '--live-since is for a build: a pilot is live from its upload, and its week counts from that',
       );
     }
@@ -192,22 +204,28 @@ export function planCleanup(args: {
   } else {
     if (!live.some(named(replacement))) {
       refuse(
+        'cleanup.replacementNotLive',
         `${replacement} is not the archive the web points at (VITE_NAIP_PMTILES_URL): it has never been live, so ${old} stays — publish the replacement, and clean up a week after`,
       );
     }
     if (liveSince === null) {
       refuse(
+        'cleanup.needsLiveSince',
         `cleanup needs --live-since <YYYY-MM-DD>: the day the web began serving ${replacement} (its upload, ${replacedAt.toISOString()}, says nothing about when it was published)`,
       );
     }
     const since = liveSince as LiveSince;
     if (since.from.getTime() > now.getTime()) {
-      refuse(`--live-since ${since.from.toISOString()} is in the future`);
+      refuse(
+        'cleanup.liveSinceFuture',
+        `--live-since ${since.from.toISOString()} is in the future`,
+      );
     }
     // No moment of it at or after the upload (a bare day's end is exclusive).
     const up = replacedAt.getTime();
     if (since.from.getTime() < up && since.to.getTime() <= up) {
       refuse(
+        'cleanup.liveSinceBeforeUpload',
         `--live-since ${since.from.toISOString()} is before ${replacement} was uploaded (${replacedAt.toISOString()}): it can't have been live then`,
       );
     }
@@ -216,6 +234,7 @@ export function planCleanup(args: {
   const age = now.getTime() - liveFrom.getTime();
   if (age < LIVE_GRACE_DAYS * DAY_MS) {
     refuse(
+      'cleanup.underAWeek',
       `${replacement} has been live ${(Math.max(0, age) / DAY_MS).toFixed(1)} days (since ${liveFrom.toISOString()}): ${old} stays until it has been live a week`,
     );
   }

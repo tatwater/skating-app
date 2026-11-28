@@ -22,6 +22,7 @@ import {
 } from '@skating/core';
 import { parseLiveSince } from './cleanup';
 import { isPilotName, parseArchiveKey, parseCampaign } from './keys';
+import { type RefusalId, StageRefusal } from './refusals';
 
 export { AERIAL_STAGES, type AerialStage };
 
@@ -38,7 +39,7 @@ export const AERIAL_USAGE = [
 ].join('\n');
 
 /** A refused argument list. The message says what was wrong; `AERIAL_USAGE` says what is right. */
-export class StageArgsError extends Error {
+export class StageArgsError extends StageRefusal {
   override name = 'StageArgsError';
 }
 
@@ -65,8 +66,8 @@ const isValueFlag = (name: string): name is ValueFlag =>
   (VALUE_FLAGS as readonly string[]).includes(name);
 const isSwitch = (name: string): name is Switch => (SWITCHES as readonly string[]).includes(name);
 
-function refuse(message: string): never {
-  throw new StageArgsError(message);
+function refuse(id: RefusalId, message: string): never {
+  throw new StageArgsError(id, message);
 }
 
 /**
@@ -75,46 +76,52 @@ function refuse(message: string): never {
  */
 export function parseStageArgs(argv: readonly string[], forStage?: AerialStageName): StageArgs {
   const [campaign, ...rest] = argv;
-  if (campaign === undefined || campaign.startsWith('-')) refuse('the campaign comes first');
+  if (campaign === undefined || campaign.startsWith('-'))
+    refuse('args.campaignFirst', 'the campaign comes first');
   try {
     parseCampaign(campaign);
   } catch (e) {
-    refuse((e as Error).message);
+    refuse('args.campaign', (e as Error).message);
   }
 
   const values = new Map<ValueFlag, string>();
   const switches = new Set<Switch>();
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i] as string;
-    if (!arg.startsWith('--')) refuse(`unexpected argument ${JSON.stringify(arg)}`);
+    if (!arg.startsWith('--'))
+      refuse('args.unexpected', `unexpected argument ${JSON.stringify(arg)}`);
     const eq = arg.indexOf('=');
     const name = eq === -1 ? arg.slice(2) : arg.slice(2, eq);
     if (isSwitch(name)) {
-      if (eq !== -1) refuse(`--${name} takes no value`);
-      if (switches.has(name)) refuse(`--${name} given twice`);
+      if (eq !== -1) refuse('args.switchValue', `--${name} takes no value`);
+      if (switches.has(name)) refuse('args.twice', `--${name} given twice`);
       switches.add(name);
       continue;
     }
-    if (!isValueFlag(name)) refuse(`unknown flag --${name}`);
-    if (values.has(name)) refuse(`--${name} given twice`);
+    if (!isValueFlag(name)) refuse('args.unknownFlag', `unknown flag --${name}`);
+    if (values.has(name)) refuse('args.twice', `--${name} given twice`);
     let value: string | undefined;
     if (eq === -1) {
       value = rest[i + 1];
-      if (value === undefined || value.startsWith('--')) refuse(`--${name} needs a value`);
+      if (value === undefined || value.startsWith('--'))
+        refuse('args.needsValue', `--${name} needs a value`);
       i++;
     } else {
       value = arg.slice(eq + 1);
     }
-    if (value === '') refuse(`--${name} needs a value`);
+    if (value === '') refuse('args.needsValue', `--${name} needs a value`);
     values.set(name, value);
   }
 
   const stageFlag = values.get('stage');
   if (stageFlag !== undefined && !(AERIAL_STAGES as readonly string[]).includes(stageFlag)) {
-    refuse(`unknown stage ${JSON.stringify(stageFlag)}`);
+    refuse('args.unknownStage', `unknown stage ${JSON.stringify(stageFlag)}`);
   }
   if (forStage !== undefined && stageFlag !== undefined && stageFlag !== forStage) {
-    refuse(`this is the ${forStage} stage; --stage ${stageFlag} belongs to run-aerial.sh`);
+    refuse(
+      'args.otherStage',
+      `this is the ${forStage} stage; --stage ${stageFlag} belongs to run-aerial.sh`,
+    );
   }
   const stage = (forStage ?? stageFlag ?? 'all') as AerialStage;
 
@@ -123,50 +130,59 @@ export function parseStageArgs(argv: readonly string[], forStage?: AerialStageNa
   if (statesFlag !== undefined) {
     const codes = statesFlag.split(',').map((s) => s.trim().toUpperCase());
     for (const code of codes) {
-      if (!isNaipState(code)) refuse(`--states: ${JSON.stringify(code)} is not one of the seven`);
+      if (!isNaipState(code))
+        refuse('args.stateUnknown', `--states: ${JSON.stringify(code)} is not one of the seven`);
     }
     states = [...new Set(codes as NaipState[])].sort();
   }
   const cells = values.get('cells') ?? null;
   if (states !== null && cells !== null) {
-    refuse('--states and --cells both narrow the build; give one');
+    refuse('args.statesAndCells', '--states and --cells both narrow the build; give one');
   }
 
   const pilot = values.get('pilot') ?? null;
   if (pilot !== null && !isPilotName(pilot)) {
-    refuse(`--pilot ${JSON.stringify(pilot)} is not lowercase words joined by hyphens`);
+    refuse(
+      'args.pilotName',
+      `--pilot ${JSON.stringify(pilot)} is not lowercase words joined by hyphens`,
+    );
   }
   const read = parseCampaign(campaign);
-  if (read.pilot && pilot === null) refuse(`${campaign} is a pilot campaign: give --pilot <name>`);
+  if (read.pilot && pilot === null)
+    refuse('args.pilotMissing', `${campaign} is a pilot campaign: give --pilot <name>`);
   if (!read.pilot && pilot !== null) {
-    refuse(`--pilot needs a pilot campaign (naip-pilot-<YYYYMMDD>), not ${campaign}`);
+    refuse(
+      'args.pilotNotPilotCampaign',
+      `--pilot needs a pilot campaign (naip-pilot-<YYYYMMDD>), not ${campaign}`,
+    );
   }
 
   const old = values.get('old') ?? null;
   const liveSince = values.get('live-since') ?? null;
   if (stage === 'cleanup') {
-    if (old === null) refuse('cleanup needs --old <key>: the archive to delete');
+    if (old === null) refuse('args.cleanupOld', 'cleanup needs --old <key>: the archive to delete');
     try {
       parseArchiveKey(old);
     } catch (e) {
-      refuse(`--old: ${(e as Error).message}`);
+      refuse('args.oldKey', `--old: ${(e as Error).message}`);
     }
     if (states !== null || cells !== null || switches.has('from-current')) {
-      refuse('cleanup takes --old, --live-since, --pilot and --dry-run only');
+      refuse('args.cleanupFlags', 'cleanup takes --old, --live-since, --pilot and --dry-run only');
     }
     if (liveSince !== null) {
-      try {
-        parseLiveSince(liveSince);
-      } catch (e) {
-        refuse((e as Error).message);
-      }
+      // Its own refusals (`cleanup.liveSinceDay`, `cleanup.liveSinceFormat`), before anything runs.
+      parseLiveSince(liveSince);
       // A pilot is never published: its viewer reads it from the upload, so its week counts from that.
-      if (pilot !== null) refuse('--live-since is for a build: a pilot is live from its upload');
+      if (pilot !== null)
+        refuse(
+          'args.liveSincePilot',
+          '--live-since is for a build: a pilot is live from its upload',
+        );
     }
   } else if (old !== null) {
-    refuse('--old belongs to --stage cleanup');
+    refuse('args.oldOutsideCleanup', '--old belongs to --stage cleanup');
   } else if (liveSince !== null) {
-    refuse('--live-since belongs to --stage cleanup');
+    refuse('args.liveSinceOutsideCleanup', '--live-since belongs to --stage cleanup');
   }
 
   return {
@@ -213,10 +229,13 @@ export function parseCellList(text: string): string[] {
     const line = raw.replace(/#.*$/, '').trim();
     if (line === '') return;
     if (!CELL_KEY.test(line)) {
-      throw new StageArgsError(`--cells line ${i + 1}: ${JSON.stringify(line)} is not a cell key`);
+      throw new StageArgsError(
+        'args.cellsLine',
+        `--cells line ${i + 1}: ${JSON.stringify(line)} is not a cell key`,
+      );
     }
     keys.add(line);
   });
-  if (keys.size === 0) throw new StageArgsError('--cells lists no cell');
+  if (keys.size === 0) throw new StageArgsError('args.cellsEmpty', '--cells lists no cell');
   return [...keys].sort();
 }

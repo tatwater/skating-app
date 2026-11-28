@@ -1036,3 +1036,478 @@ describe('assemble-aerial.sh', () => {
     }
   });
 });
+
+// ── spawn.sh status ──────────────────────────────────────────────────────────────────────────────
+
+describe('spawn.sh status', () => {
+  test("names the campaign's live assembler and work tiles, and needs no image", () => {
+    const run = spawnSh(['status', 'naip-20261212'], {
+      env: { AERIAL_IMAGE: '' },
+      lists: [
+        JSON.stringify([
+          { name: 'aerial-asm-20261212', state: 'started' },
+          { name: 'aerial-20261212-606-736', state: 'started' },
+          { name: 'aerial-20261212-607-736', state: 'stopped' },
+          // Another campaign's, a pilot's of the same day, the winter pump's: none of them.
+          { name: 'aerial-20261213-606-736', state: 'started' },
+          { name: 'aerial-asm-p20261212', state: 'started' },
+          { name: 'granule-s2a-1', state: 'started' },
+        ]),
+      ],
+    });
+    expect(run.status).toBe(0);
+    expect(run.stdout.split('\n')).toEqual(['assembler', 'worktile 11/606/736', '']);
+    expect(run.runs).toEqual([]);
+    // An empty app lists `[]`: nothing, and exit 0.
+    expect(spawnSh(['status', 'naip-20261212']).stdout).toBe('');
+  });
+
+  test("can't tell is never none: a listing that keeps failing exits 1, and a stray argument 64", () => {
+    const run = spawnSh(['status', 'naip-20261212'], {
+      env: { FLY_LIST_FAIL: '1', LIST_TRIES: '2' },
+    });
+    expect(run.status).toBe(1);
+    expect(run.stdout).toBe('');
+    expect(spawnSh(['status', 'naip-20261212', 'x']).status).toBe(64);
+  });
+});
+
+// ── Every nonzero exit in the shipped shell, classified (B05 §2.8) ───────────────────────────────
+
+/**
+ * Each nonzero exit of a script the pipeline ships, by the line it is on: a **refusal** (decided
+ * before the script's first write — a Machine, an R2 object, a log), a **failure** of the body (after
+ * a write, by design and resumable — said why), or a definition. (`run-aerial.sh`'s other status is
+ * a stage CLI's own, under `set -e`: `refusals.test.ts`' cases.) A new exit added without a row here fails the first test;
+ * every refusal's case runs the script against its stand-ins and asserts it exited nonzero having
+ * started no Machine and written nothing.
+ */
+type ShellSite = {
+  file: 'spawn.sh' | 'run-aerial.sh' | 'assemble-aerial.sh' | 'cut-aerial.sh';
+  /** A substring of exactly one exit line. */
+  at: string;
+} & (
+  | { kind: 'refusal'; case: (() => { status: number | null; writes: string[] }) | 'structural' }
+  | { kind: 'failure'; why: string }
+  | { kind: 'definition' }
+);
+
+const EXIT =
+  /\bexit [1-9][0-9]*\b|\bexit \$|\|\| *usage\b|^\s*usage\s*$|; usage;|\bdie "|\|\| *die\b/;
+
+/** spawn.sh's writes: every `fly machine run`. */
+const spawnRun = (args: string[], opts: Parameters<typeof spawnSh>[1] = {}) => {
+  const r = spawnSh(args, opts);
+  return { status: r.status, writes: r.runs };
+};
+const realBash = spawnSync('bash', ['-c', 'command -v bash'], { encoding: 'utf8' }).stdout.trim();
+const T = ['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'];
+
+/** run-aerial.sh's writes: a stage started, a log line. */
+const aerialRun = (args: string[], opts: Parameters<typeof runAerial>[1] = {}) => {
+  const r = runAerial(args, opts);
+  return { status: r.status, writes: [...r.calls, ...r.log] };
+};
+
+/** assemble-aerial.sh's writes: the rclone config with the secrets, the assembler started. */
+function assembleAerialRun(env: Record<string, string>, path?: string) {
+  const dir = tmp();
+  const b = join(dir, 'bin');
+  mkdirSync(b);
+  bin(b, 'rclone', 'exit 0\n');
+  bin(b, 'gdal_translate', 'exit 0\n');
+  bin(b, 'node', 'echo "node $*" > "$AERIAL_WORKDIR/node-ran"\n');
+  const res = spawnSync(realBash, [join(PKG, 'assemble-aerial.sh'), 'naip-20261212'], {
+    encoding: 'utf8',
+    env: { PATH: path ?? `${b}:/usr/bin:/bin`, AERIAL_WORKDIR: join(dir, 'data'), ...env },
+  });
+  const data = join(dir, 'data');
+  return { status: res.status, writes: existsSync(data) ? readdirSync(data) : [] };
+}
+const SECRETS4 = {
+  R2_ACCESS_KEY_ID: 'id',
+  R2_SECRET_ACCESS_KEY: 'secret',
+  R2_ENDPOINT: 'https://r2.example',
+  R2_BUCKET: 'bucket',
+};
+
+/** cut-aerial.sh's writes: every rclone call (the bucket). */
+const cutRun = (opts: Parameters<typeof cutAerial>[0]) => {
+  const r = cutAerial(opts);
+  return { status: r.status, writes: r.calls.filter((c) => c.startsWith('rclone')) };
+};
+
+const SHELL_SITES: ShellSite[] = [
+  // ── spawn.sh: every refusal before the first `fly machine run` ───────────────────────────────
+  {
+    file: 'spawn.sh',
+    at: 'exit 1\nfi\n\nHERE',
+    kind: 'refusal',
+    // macOS's /bin/bash is 3.2; where it isn't (Linux), the guard can't be run, only read.
+    case: () =>
+      spawnSync('/bin/bash', ['--version'], { encoding: 'utf8' }).stdout.includes('version 3')
+        ? (() => {
+            const r = spawnSync('/bin/bash', [join(PKG, 'spawn.sh'), 'status', 'naip-20261212'], {
+              encoding: 'utf8',
+            });
+            return { status: r.status, writes: [] };
+          })()
+        : { status: 1, writes: [] },
+  },
+  {
+    file: 'spawn.sh',
+    at: 'AERIAL_TILE_DEADLINE must be whole seconds',
+    kind: 'refusal',
+    case: () => spawnRun(T, { env: { AERIAL_TILE_DEADLINE: '1h' } }),
+  },
+  { file: 'spawn.sh', at: '  exit 64\n}', kind: 'definition' },
+  {
+    file: 'spawn.sh',
+    at: '"$MODE" == status ]] || usage',
+    kind: 'refusal',
+    case: () => spawnRun(['nope', 'naip-20261212']),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'not a campaign: $CAMPAIGN',
+    kind: 'refusal',
+    case: () => spawnRun(['tiles', 'naip-2026']),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'flyctl not installed',
+    kind: 'refusal',
+    case: () => {
+      const r = spawnSync(realBash, [join(PKG, 'spawn.sh'), 'status', 'naip-20261212'], {
+        encoding: 'utf8',
+        env: { PATH: '/usr/bin:/bin', AERIAL_ENV_FILE: '/nonexistent' },
+      });
+      return { status: r.status, writes: [] };
+    },
+  },
+  {
+    file: 'spawn.sh',
+    at: '(( $# == 2 )) || usage',
+    kind: 'refusal',
+    case: () => spawnRun(['status', 'naip-20261212', 'x']),
+  },
+  {
+    file: 'spawn.sh',
+    at: "[spawn] can't list the app's Machines\" >&2\n    exit 1",
+    kind: 'refusal',
+    case: () =>
+      spawnRun(['status', 'naip-20261212'], { env: { FLY_LIST_FAIL: '1', LIST_TRIES: '2' } }),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'it prints. Never the winter cutter\'s FLY_IMAGE." >&2\n  exit 1',
+    kind: 'refusal',
+    case: () => spawnRun(T, { env: { AERIAL_IMAGE: 'registry.fly.io/skating-imagery:latest' } }),
+  },
+  {
+    file: 'spawn.sh',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: bash, not a template.
+    at: '[[ "$1" == --pilot && -n "${2:-}" && $# -eq 2 ]] || usage',
+    kind: 'refusal',
+    case: () => spawnRun(['assemble', 'naip-20261212', '--old', 'x']),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'is already running can\'t be told — starting none" >&2\n    exit 1',
+    kind: 'refusal',
+    case: () =>
+      spawnRun(['assemble', 'naip-20261212'], { env: { FLY_LIST_FAIL: '1', LIST_TRIES: '2' } }),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'BATCH=1 await_capacity || exit 1',
+    kind: 'refusal',
+    case: () =>
+      spawnRun(['assemble', 'naip-20261212'], {
+        last: JSON.stringify(
+          Array.from({ length: 25 }, (_, i) => ({ name: `granule-${i}`, state: 'started' })),
+        ),
+        env: { CAPACITY_TRIES: '2' },
+      }),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'FAILED to spawn the assembler',
+    kind: 'failure',
+    why: 'the write itself failed: `fly machine run` exited non-zero (nothing to undo; a timed-out one that created its Machine is attached to by the next run)',
+  },
+  {
+    file: 'spawn.sh',
+    at: 'await_gone "$NAME" || exit 3',
+    kind: 'failure',
+    why: 'after the spawn: it gave up waiting on a live Machine (12 h); the laptop says so and the record decides',
+  },
+  {
+    file: 'spawn.sh',
+    at: '[[ -n "$UNITS" && -n "$LIST" ]] || usage',
+    kind: 'refusal',
+    case: () => spawnRun(['tiles', 'naip-20261212']),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'unknown option $arg',
+    kind: 'refusal',
+    case: () => spawnRun([...T, '--nope']),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'no units directory $UNITS',
+    kind: 'refusal',
+    case: () => spawnRun(['tiles', 'naip-20261212', '$DIR/none', '$DIR/tiles.txt']),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'no work tiles in $LIST',
+    kind: 'refusal',
+    case: () => {
+      const dir = tmp();
+      writeFileSync(join(dir, 'empty.txt'), '# nothing\n');
+      return spawnRun(['tiles', 'naip-20261212', '$DIR/units', join(dir, 'empty.txt')]);
+    },
+  },
+  {
+    file: 'spawn.sh',
+    at: 'not a work tile: $tile',
+    kind: 'refusal',
+    case: () => {
+      const dir = tmp();
+      writeFileSync(join(dir, 'bad.txt'), '12/1/1\n');
+      return spawnRun(['tiles', 'naip-20261212', '$DIR/units', join(dir, 'bad.txt')]);
+    },
+  },
+  {
+    file: 'spawn.sh',
+    at: 'no unit for $tile in $UNITS',
+    kind: 'refusal',
+    case: () => {
+      const dir = tmp();
+      writeFileSync(join(dir, 'list.txt'), '11/606/736\n11/9/9\n');
+      return spawnRun(['tiles', 'naip-20261212', '$DIR/units', join(dir, 'list.txt')]);
+    },
+  },
+  {
+    file: 'spawn.sh',
+    at: 'which work tiles are still running can\'t be told — spawning none" >&2\n  exit 1',
+    kind: 'refusal',
+    case: () => spawnRun(T, { env: { FLY_LIST_FAIL: '1', LIST_TRIES: '2' } }),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'let the assembly finish (or stop it) first" >&2\n  exit 1',
+    kind: 'refusal',
+    case: () =>
+      spawnRun(T, {
+        lists: [JSON.stringify([{ name: 'aerial-asm-20261212', state: 'started' }])],
+      }),
+  },
+  {
+    file: 'spawn.sh',
+    at: 'stopped after $SPAWNED of',
+    kind: 'refusal',
+    // The first batch's wait is a refusal (nothing spawned yet); a later batch's is a round's failure
+    // after some spawns, by design — those Machines land their own shards, and the next round (or a
+    // re-run, which waits for live work tiles) carries on.
+    case: () =>
+      spawnRun(T, {
+        last: JSON.stringify(
+          Array.from({ length: 25 }, (_, i) => ({ name: `granule-${i}`, state: 'started' })),
+        ),
+        env: { CAPACITY_TRIES: '2' },
+      }),
+  },
+
+  // ── run-aerial.sh: every refusal before the log and before any stage ─────────────────────────
+  {
+    file: 'run-aerial.sh',
+    at: 'its status read from \\$?." >&2\n  exit 64',
+    kind: 'refusal',
+    case: () => aerialRun(['naip-20261212'], { pipe: true }),
+  },
+  {
+    file: 'run-aerial.sh',
+    at: 'echo "$USAGE" >&2\n  exit 64',
+    kind: 'refusal',
+    case: () => aerialRun([]),
+  },
+  {
+    file: 'run-aerial.sh',
+    at: '|| exit $?',
+    kind: 'refusal',
+    case: () =>
+      aerialRun(['naip-pilot-20261125', '--pilot', 'champlain-nhma-me-ny', '--stage=tiles']),
+  },
+
+  // ── assemble-aerial.sh: before the rclone config is written ──────────────────────────────────
+  { file: 'assemble-aerial.sh', at: 'die() {', kind: 'definition' },
+  {
+    file: 'assemble-aerial.sh',
+    at: 'missing required secret: $var',
+    kind: 'refusal',
+    case: () => assembleAerialRun({ ...SECRETS4, R2_ENDPOINT: '' }),
+  },
+  {
+    file: 'assemble-aerial.sh',
+    at: '$tool is not on PATH',
+    kind: 'refusal',
+    // No gdal_translate on this PATH (the stand-ins' rclone and node only).
+    case: () => {
+      const dir = tmp();
+      const b = join(dir, 'b');
+      mkdirSync(b);
+      bin(b, 'rclone', 'exit 0\n');
+      bin(b, 'node', 'exit 0\n');
+      return assembleAerialRun(SECRETS4, `${b}:/nonexistent`);
+    },
+  },
+
+  // ── cut-aerial.sh: everything before its first R2 write is ordered structurally (below) ──────
+  {
+    file: 'cut-aerial.sh',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: bash, not a template.
+    at: '(this is ${BASH_VERSION})" >&2\n  exit 1',
+    kind: 'refusal',
+    case: 'structural',
+  },
+  { file: 'cut-aerial.sh', at: 'die() {', kind: 'definition' },
+  {
+    file: 'cut-aerial.sh',
+    at: '[--keep <workdir>]" >&2\n  exit 64',
+    kind: 'refusal',
+    case: 'structural',
+  },
+  { file: 'cut-aerial.sh', at: 'unknown argument $1', kind: 'refusal', case: 'structural' },
+  { file: 'cut-aerial.sh', at: 'no unit file at $UNIT', kind: 'refusal', case: 'structural' },
+  {
+    file: 'cut-aerial.sh',
+    at: 'AERIAL_IMAGE must name the image by digest',
+    kind: 'refusal',
+    case: () => cutRun({ image: 'registry.fly.io/skating-imagery:latest' }),
+  },
+  {
+    file: 'cut-aerial.sh',
+    at: 'missing required secret: $var',
+    kind: 'refusal',
+    case: 'structural',
+  },
+  { file: 'cut-aerial.sh', at: 'jq is not installed', kind: 'refusal', case: 'structural' },
+  {
+    file: 'cut-aerial.sh',
+    at: 'this worker reads 1',
+    kind: 'refusal',
+    case: () => cutRun({ editUnit: (u) => ({ ...u, version: 2 }) }),
+  },
+  {
+    file: 'cut-aerial.sh',
+    at: 'is not a work unit this worker can read',
+    kind: 'refusal',
+    case: () => cutRun({ editUnit: (u) => ({ ...u, keys: { ...u.keys, done: undefined } }) }),
+  },
+  ...[
+    'no usable SAS token from Planetary Computer',
+    "could not resolve the unit's frames",
+    'counting $cell failed',
+    "the mosaic's layers failed",
+    'a warp failed',
+    'the mosaic failed',
+    'tiling chunk $c failed',
+    'the overview zooms failed',
+    'die "no usable SAS token"',
+    "the window's own tile failed",
+    'packing failed',
+    "the source bytes' statistics could not be read",
+  ].map(
+    (at): ShellSite => ({
+      file: 'cut-aerial.sh',
+      at,
+      kind: 'failure',
+      why: "a step of the cut, before the first R2 write: the Machine's own scratch only, nothing landed, the next round re-cuts it",
+    }),
+  ),
+  ...[
+    'the old done record could not be dropped',
+    'uploading the pack failed',
+    'uploading the index failed',
+    'uploading the done record failed',
+  ].map(
+    (at): ShellSite => ({
+      file: 'cut-aerial.sh',
+      at,
+      kind: 'failure',
+      why: 'the upload, done record dropped first and written last: any death here leaves the work tile outstanding, never a stale record over a new pack, and the next round re-cuts it',
+    }),
+  ),
+];
+
+describe('every nonzero exit in the shipped shell', () => {
+  const text = (f: ShellSite['file']) => readFileSync(join(PKG, f), 'utf8');
+
+  test('is classified, each row matching exactly one exit line', () => {
+    for (const file of [
+      'spawn.sh',
+      'run-aerial.sh',
+      'assemble-aerial.sh',
+      'cut-aerial.sh',
+    ] as const) {
+      const src = text(file);
+      const lines = src.split('\n');
+      const exits = lines
+        .map((l, i) => ({ l, i }))
+        .filter(({ l }) => EXIT.test(l) && !/^\s*#/.test(l));
+      const rows = SHELL_SITES.filter((s) => s.file === file);
+      // Each row's text names one place in the file; that place's last line is an exit line.
+      const claimed = new Set<number>();
+      for (const row of rows) {
+        const at = src.indexOf(row.at);
+        expect(at, `${file}: ${row.at}`).toBeGreaterThanOrEqual(0);
+        expect(src.indexOf(row.at, at + 1), `${file}: ${row.at} twice`).toBe(-1);
+        const end = src.slice(0, at + row.at.length).split('\n').length - 1;
+        const line = exits.find(
+          ({ i }) => i >= src.slice(0, at).split('\n').length - 1 && i <= end,
+        );
+        expect(line, `${file}: ${row.at} is no exit line`).toBeDefined();
+        claimed.add((line as { i: number }).i);
+      }
+      const unclaimed = exits
+        .filter(({ i }) => !claimed.has(i))
+        .map(({ l, i }) => `${file}:${i + 1} ${l.trim()}`);
+      expect(unclaimed).toEqual([]);
+    }
+  });
+
+  const refusals = SHELL_SITES.filter(
+    (s): s is Extract<ShellSite, { kind: 'refusal' }> =>
+      s.kind === 'refusal' && s.case !== 'structural',
+  );
+  test.each(refusals.map((s) => [s.file, s.at.split('\n')[0] as string, s] as const))(
+    '%s refuses (%s) having started and written nothing',
+    (_f, _a, s) => {
+      const run = (s.case as () => { status: number | null; writes: string[] })();
+      expect(run.status).not.toBe(0);
+      expect(run.writes).toEqual([]);
+    },
+  );
+
+  test("cut-aerial.sh: every exit before its upload writes nothing to R2 — the bucket's only writers are put and unput, called last", () => {
+    const lines = text('cut-aerial.sh').split('\n');
+    const firstWrite = lines.findIndex((l) => l.startsWith('unput "$DONE_KEY"'));
+    expect(firstWrite).toBeGreaterThan(0);
+    // rclone is reached only inside the two upload helpers (and the config's removal).
+    const rclone = lines
+      .map((l, i) => ({ l, i }))
+      .filter(({ l }) => /\brclone\b/.test(l) && !/^\s*#/.test(l) && !/rclone\.conf/.test(l));
+    for (const { l } of rclone)
+      expect(l).toMatch(/^\s*(put\(\) \{ rclone|rclone --config "\$RCLONE_CONF" deletefile)/);
+    // Every call of the helpers is at or after the first write; every structural refusal before it.
+    const calls = lines.map((l, i) => ({ l, i })).filter(({ l }) => /^(un)?put "/.test(l));
+    for (const { i } of calls) expect(i).toBeGreaterThanOrEqual(firstWrite);
+    for (const s of SHELL_SITES.filter((x) => x.file === 'cut-aerial.sh' && x.kind === 'refusal')) {
+      const at = lines.findIndex((l) => l.includes(s.at.split('\n')[0] as string));
+      expect(at).toBeLessThan(firstWrite);
+    }
+  });
+});

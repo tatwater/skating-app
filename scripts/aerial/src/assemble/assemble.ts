@@ -18,7 +18,9 @@
  * 3. **The overviews** from the work tiles' top tiles (`overviews.ts`).
  * 4. **The layout** (`layout.ts`) and the plan: directories, metadata, header.
  * 5. **Refuse to overwrite**: the three published keys are immutable (the CDN caches them), so an
- *    existing one stops the build.
+ *    existing one stops the build — asked at step 0 as well, so it is decided before any read, and
+ *    here again, nearest the first byte. Until here **nothing is written**, not even progress
+ *    (`AssembleDeps.progress`): a refused assembly leaves only its error object.
  * 6. **Stream the archive** (`writer.ts`), hashing as it goes; then the index (gzip-encoded) and,
  *    last, the manifest naming both with their sizes and hashes — so a manifest never names an
  *    archive that didn't finish. The assembly record goes under the build prefix for verify.
@@ -40,6 +42,7 @@ import { tileIdToZxy, zxyToTileId } from 'pmtiles';
 import {
   archiveKey,
   archiveName,
+  buildManifestKey,
   buildPrefix,
   indexKey,
   indexName,
@@ -50,6 +53,7 @@ import {
   shardKeys,
 } from '../keys';
 import { publishedConflict } from '../publishedBuild';
+import { type RefusalId, StageRefusal } from '../refusals';
 import {
   checkShardIndex,
   parseShardDone,
@@ -165,7 +169,13 @@ export interface AssembleDeps {
   /** A sink that uploads to `key` (rclone rcat on a Machine; files in the tests). */
   upload(key: string, options: PublishOptions): ByteSink;
   renderer: OverviewRenderer;
+  /**
+   * Progress for the run row — a write on a Machine — called only once every refusal is behind the
+   * assembler (the latest event before then is held, and handed over at that point).
+   */
   progress?(event: AssembleProgress): void | Promise<void>;
+  /** Every event as it happens, held or not: what the Machine's watchdog is fed. */
+  alive?(): void;
   /** The Machine's clock: the record's times, and when a zoom's next heartbeat is due. */
   now?(): Date;
   /** The longest a zoom being written goes without a progress event (default {@link HEARTBEAT_MS}). */
@@ -193,13 +203,62 @@ export const HEARTBEAT_MS = 5 * 60_000;
 export const IMMUTABLE = 'public, max-age=31536000, immutable';
 
 /** A refusal: the build is incomplete or inconsistent, and nothing was published. */
-export class AssembleRefusal extends Error {
+export class AssembleRefusal extends StageRefusal {
   override name = 'AssembleRefusal';
 }
 
-const refuse = (message: string): never => {
-  throw new AssembleRefusal(message);
+const refuse = (id: RefusalId, message: string): never => {
+  throw new AssembleRefusal(id, message);
 };
+
+/**
+ * The refusals the laptop's preflight (`stage/assembleStage.ts`) also decides, before it spawns a
+ * Machine, in the Machine's own words — so a refusal reads the same wherever it is caught.
+ */
+export const assembleMessages = {
+  notLanded: (
+    workTile: string,
+    done: { campaign: string; workTile: string; inputHash: string } | null,
+    inputHash: string,
+  ): string =>
+    done === null
+      ? `work tile ${workTile} has not landed: no done record`
+      : `work tile ${workTile} has not landed: its done record is for ${done.campaign} ${done.workTile} at input ${done.inputHash}, the manifest wants ${inputHash}`,
+  alreadyAssembled: (campaign: string, publishedKey: string): string =>
+    `${campaign} is already assembled from these inputs (${publishedKey}): nothing to assemble`,
+  orphans: (left: readonly string[]): string =>
+    `an earlier assembly stopped before its manifest: nothing names ${left.join(' or ')} — delete ${left.length === 1 ? 'it' : 'them'} by hand and assemble again`,
+  keyExists: (key: string): string => `${key} already exists: a published key is never overwritten`,
+  pilotMismatch: (campaign: string, pilot: string | null): string =>
+    `manifest ${campaign} and its pilot ${String(pilot)} disagree`,
+  noWorkTiles: 'the manifest has no work tiles',
+  noBase: 'work tiles are marked unchanged, but the manifest is based on no build',
+  baseMissing: (manifest: string): string =>
+    `the current manifest ${manifest} is not in the bucket`,
+  baseArchive: (named: string | undefined, archive: string): string =>
+    `the current manifest names ${String(named)}, not ${archive}`,
+};
+
+/**
+ * Refuses when an earlier assembly's archive or index stands without its manifest (an assembly that
+ * stopped part way), or when any of the three published keys exists. `present` answers for each key.
+ */
+export function refuseExisting(
+  keys: { archive: string; index: string; manifest: string },
+  present: (key: string) => boolean,
+): void {
+  // The manifest is written last and is the only thing that names the other two, so an archive or
+  // an index without it is an assembly that stopped part way (an upload failed, the Machine died):
+  // never verified, never handed to the web. Still never overwritten here — the operator removes
+  // what it left, having looked, and assembles again.
+  if (!present(keys.manifest)) {
+    const left = [keys.archive, keys.index].filter((k) => present(k));
+    if (left.length > 0) refuse('assemble.orphans', assembleMessages.orphans(left));
+  }
+  for (const key of [keys.archive, keys.index, keys.manifest]) {
+    if (present(key)) refuse('assemble.keyExists', assembleMessages.keyExists(key));
+  }
+}
 
 const zoomOf = (tileId: number): number => tileIdToZxy(tileId)[0];
 
@@ -246,22 +305,21 @@ async function readCut(
   const done =
     doneBytes === null ? null : parseShardDone(JSON.parse(new TextDecoder().decode(doneBytes)));
   if (!shardLanded(done, { campaign, workTile: wt.key, inputHash: wt.inputHash })) {
-    refuse(
-      done === null
-        ? `work tile ${wt.key} has not landed: no done record`
-        : `work tile ${wt.key} has not landed: its done record is for ${done.campaign} ${done.workTile} at input ${done.inputHash}, the manifest wants ${wt.inputHash}`,
-    );
+    refuse('assemble.notLanded', assembleMessages.notLanded(wt.key, done, wt.inputHash));
   }
   const record = done as NonNullable<typeof done>;
   const indexBytes = await deps.store.get(keys.index);
-  if (indexBytes === null) refuse(`work tile ${wt.key}: its done record has no index beside it`);
+  if (indexBytes === null)
+    refuse('assemble.noIndex', `work tile ${wt.key}: its done record has no index beside it`);
   const index = checkShardIndex(
     JSON.parse(new TextDecoder().decode(indexBytes as Uint8Array)),
     record.bytes,
   );
-  if (index.workTile !== wt.key) refuse(`work tile ${wt.key}: its index is ${index.workTile}'s`);
+  if (index.workTile !== wt.key)
+    refuse('assemble.indexOtherTile', `work tile ${wt.key}: its index is ${index.workTile}'s`);
   if (index.entries.length !== record.tiles) {
     refuse(
+      'assemble.indexCount',
       `work tile ${wt.key}: the index holds ${index.entries.length} tiles, the record ${record.tiles}`,
     );
   }
@@ -292,13 +350,22 @@ function readCopied(
 ): WorkTileInput {
   const before = old.manifest.workTiles.find((w) => w.key === wt.key);
   if (before === undefined)
-    refuse(`work tile ${wt.key} is unchanged, but ${old.key}'s manifest lacks it`);
+    refuse(
+      'assemble.copiedMissing',
+      `work tile ${wt.key} is unchanged, but ${old.key}'s manifest lacks it`,
+    );
   const prior = before as NaipManifestWorkTile;
   if (prior.inputHash !== wt.inputHash) {
-    refuse(`work tile ${wt.key} is marked unchanged, but its input hash differs from ${old.key}'s`);
+    refuse(
+      'assemble.copiedHash',
+      `work tile ${wt.key} is marked unchanged, but its input hash differs from ${old.key}'s`,
+    );
   }
   if (prior.cellCounts === undefined)
-    refuse(`work tile ${wt.key}: ${old.key}'s manifest has no counts for it`);
+    refuse(
+      'assemble.copiedNoCounts',
+      `work tile ${wt.key}: ${old.key}'s manifest has no counts for it`,
+    );
   const tile = parseWorkTileKey(wt.key);
   const tiles: { tileId: number; offset: number; length: number }[] = [];
   for (let z = SHARD_TILE_ZOOMS.min; z <= SHARD_TILE_ZOOMS.max; z++) {
@@ -346,6 +413,22 @@ function segmentAt(input: WorkTileInput, z: number): TileSegment | null {
 }
 
 const OVERVIEWS = 'memory:overviews';
+
+/** The Machine's first read: the build manifest the tiles stage uploaded, or a refusal. */
+export async function readBuildManifest(
+  store: ObjectStore,
+  campaign: string,
+  pilot?: string,
+): Promise<NaipManifest> {
+  const bytes = await store.get(buildManifestKey(campaign, pilot));
+  if (bytes === null) {
+    refuse(
+      'assemble.noManifest',
+      `no manifest at ${buildManifestKey(campaign, pilot)}: run the select stage`,
+    );
+  }
+  return JSON.parse(new TextDecoder().decode(bytes as Uint8Array)) as NaipManifest;
+}
 
 /** Assemble and publish one build. Returns the record it also writes. */
 export async function assemble(
@@ -398,13 +481,33 @@ async function run(
     mark = Date.now();
   };
   const concurrency = deps.concurrency ?? 16;
+  // **No progress is written until every refusal is behind us** (the eighth review's rule: decide
+  // before you write). An event before then only feeds the Machine's watchdog (`alive`) and is held;
+  // the latest held one is written once the assembler has decided, so a refused assembly leaves no
+  // progress object behind — only its error object, the refusal's own record (`cli/assemble.ts`).
+  let decided = false;
+  let held: AssembleProgress | null = null;
+  const report = async (event: AssembleProgress): Promise<void> => {
+    deps.alive?.();
+    if (!decided) {
+      held = event;
+      return;
+    }
+    await deps.progress?.(event);
+  };
+  const decide = async (): Promise<void> => {
+    decided = true;
+    const last = held;
+    held = null;
+    if (last !== null) await deps.progress?.(last);
+  };
   const { campaign } = manifest;
   const pilot = manifest.pilot ?? undefined;
   const read = parseCampaign(campaign);
   if (read.pilot !== (manifest.pilot !== null)) {
-    refuse(`manifest ${campaign} and its pilot ${String(manifest.pilot)} disagree`);
+    refuse('assemble.pilotMismatch', assembleMessages.pilotMismatch(campaign, manifest.pilot));
   }
-  if (manifest.workTiles.length === 0) refuse('the manifest has no work tiles');
+  if (manifest.workTiles.length === 0) refuse('assemble.noWorkTiles', assembleMessages.noWorkTiles);
 
   // ── 0. A campaign already published is never assembled again ────────────────────────────────
   // Its manifest names what its archive was built from (`publishedBuild.ts`): the same inputs are
@@ -414,26 +517,37 @@ async function run(
   const publishedBytes = await deps.store.get(publishedKey);
   if (publishedBytes !== null) {
     const published = JSON.parse(new TextDecoder().decode(publishedBytes)) as NaipManifest;
-    refuse(
-      publishedConflict(published, manifest) ??
-        `${campaign} is already assembled from these inputs (${publishedKey}): nothing to assemble`,
-    );
+    const conflict = publishedConflict(published, manifest);
+    if (conflict !== null) refuse('published.otherInputs', conflict);
+    refuse('assemble.alreadyAssembled', assembleMessages.alreadyAssembled(campaign, publishedKey));
   }
+  // An earlier assembly's leftovers, or a published key: decided here, before anything is read
+  // (and asked again at step 5, just before the first byte, for an assembler racing this one).
+  const keys = {
+    archive: archiveKey(campaign, pilot),
+    index: indexKey(campaign, pilot),
+    manifest: manifestKey(campaign, pilot),
+  };
+  const presentKeys = async (): Promise<(key: string) => boolean> => {
+    const present = new Map<string, boolean>();
+    for (const key of Object.values(keys)) present.set(key, await deps.store.exists(key));
+    return (key) => present.get(key) === true;
+  };
+  refuseExisting(keys, await presentKeys());
   const builtFrom = naipBuildInputsHash(manifest);
 
   // ── 1. Inputs ───────────────────────────────────────────────────────────────────────────────
   const copiedTiles = manifest.workTiles.filter((w) => !w.retile);
   let old: { key: string; archive: ArchiveEntries; manifest: NaipManifest } | null = null;
   if (copiedTiles.length > 0) {
-    if (manifest.basedOn === null)
-      refuse('work tiles are marked unchanged, but the manifest is based on no build');
+    if (manifest.basedOn === null) refuse('assemble.noBase', assembleMessages.noBase);
     const basedOn = manifest.basedOn as NonNullable<NaipManifest['basedOn']>;
     const prefix = publishPrefix(campaign, pilot);
     const key = `${prefix}${basedOn.archive}`;
     parseArchiveKey(key);
     const oldManifestBytes = await deps.store.get(`${prefix}${basedOn.manifest}`);
     if (oldManifestBytes === null)
-      refuse(`the current manifest ${basedOn.manifest} is not in the bucket`);
+      refuse('assemble.baseMissing', assembleMessages.baseMissing(basedOn.manifest));
     old = {
       key,
       archive: await readArchiveEntries(storeSource(deps.store, key)),
@@ -443,7 +557,8 @@ async function run(
     };
     if (old.manifest.archive?.name !== basedOn.archive) {
       refuse(
-        `the current manifest names ${String(old.manifest.archive?.name)}, not ${basedOn.archive}`,
+        'assemble.baseArchive',
+        assembleMessages.baseArchive(old.manifest.archive?.name, basedOn.archive),
       );
     }
   }
@@ -455,11 +570,14 @@ async function run(
     const cells = new Set(wt.cells);
     for (const cell of Object.keys(input.counts)) {
       if (!cells.has(cell))
-        refuse(`work tile ${wt.key} counts cell ${cell}, which it doesn't touch`);
+        refuse(
+          'assemble.countsCell',
+          `work tile ${wt.key} counts cell ${cell}, which it doesn't touch`,
+        );
     }
     doneCount++;
     if (doneCount % 25 === 0 || doneCount === manifest.workTiles.length) {
-      await deps.progress?.({ step: 'indexes', done: doneCount, total: manifest.workTiles.length });
+      await report({ step: 'indexes', done: doneCount, total: manifest.workTiles.length });
     }
     return input;
   });
@@ -472,6 +590,7 @@ async function run(
   const problems = checkCellIndex({ json: index, archiveName: name, manifest, totals });
   if (problems.length > 0) {
     refuse(
+      'assemble.dateIndex',
       `the date index fails its own check (${problems.length}): ${problems.slice(0, 5).join('; ')}`,
     );
   }
@@ -503,7 +622,7 @@ async function run(
   const overviewTiles = levels.flatMap((l) => l.tiles);
   const overviewBuffer = Buffer.concat(overviewTiles.map((t) => t.bytes));
   reader.memory.set(OVERVIEWS, new Uint8Array(overviewBuffer));
-  await deps.progress?.({ step: 'overviews', tiles: overviewTiles.length });
+  await report({ step: 'overviews', tiles: overviewTiles.length });
   lap('overviews');
 
   // ── 4. Layout ───────────────────────────────────────────────────────────────────────────────
@@ -537,7 +656,7 @@ async function run(
   for (const input of inputs) input.key4 = new Uint32Array(0);
   const bounds = workTilesBox(inputs.filter((i) => i.tileId.length > 0).map((i) => i.tile));
   if (bounds === null || layout.addressed === 0)
-    refuse('no work tile has any tile: nothing to assemble');
+    refuse('assemble.empty', 'no work tile has any tile: nothing to assemble');
   const zooms = [...layout.perZoom.keys()].sort((a, b) => a - b);
   const plan = planArchive({
     layout,
@@ -548,34 +667,19 @@ async function run(
     metadata: archiveMetadata(manifest),
   });
   for (let z = ARCHIVE_ZOOMS.min; z <= ARCHIVE_ZOOMS.max; z++) {
-    if (!zooms.includes(z)) refuse(`the archive would have no tile at zoom ${z}`);
+    if (!zooms.includes(z))
+      refuse('assemble.zoomEmpty', `the archive would have no tile at zoom ${z}`);
   }
-  await deps.progress?.({ step: 'layout', tiles: layout.addressed, bytes: plan.bytes });
+  await report({ step: 'layout', tiles: layout.addressed, bytes: plan.bytes });
   lap('layout');
 
   // ── 5. Never overwrite a published key ──────────────────────────────────────────────────────
-  const keys = {
-    archive: archiveKey(campaign, pilot),
-    index: indexKey(campaign, pilot),
-    manifest: manifestKey(campaign, pilot),
-  };
-  const present = new Map<string, boolean>();
-  for (const key of Object.values(keys)) present.set(key, await deps.store.exists(key));
-  // The manifest is written last and is the only thing that names the other two, so an archive or
-  // an index without it is an assembly that stopped part way (an upload failed, the Machine died):
-  // never verified, never handed to the web. Still never overwritten here — the operator removes
-  // what it left, having looked, and assembles again.
-  if (!present.get(keys.manifest)) {
-    const left = [keys.archive, keys.index].filter((k) => present.get(k));
-    if (left.length > 0) {
-      refuse(
-        `an earlier assembly stopped before its manifest: nothing names ${left.join(' or ')} — delete ${left.length === 1 ? 'it' : 'them'} by hand and assemble again`,
-      );
-    }
-  }
-  for (const [key, exists] of present) {
-    if (exists) refuse(`${key} already exists: a published key is never overwritten`);
-  }
+  // Asked at step 0 too; again here, just before the first byte, for an assembler that raced this
+  // one past step 0 (two Machines never start for one campaign — `spawn.sh` — but nothing in R2
+  // makes a write conditional, so the last check is the one nearest the write).
+  refuseExisting(keys, await presentKeys());
+  // **Decided.** Every refusal is behind this line; the progress held since the start is written now.
+  await decide();
   if (planOnly) {
     return {
       planned: true,
@@ -610,7 +714,7 @@ async function run(
       if (reached !== zoom || at - beatAt >= heartbeat) {
         zoom = reached;
         beatAt = at;
-        await deps.progress?.({ step: 'zoom', zoom, dataBytes: data, totalBytes: plan.bytes });
+        await report({ step: 'zoom', zoom, dataBytes: data, totalBytes: plan.bytes });
       }
       await deps.write?.onRun?.(data, run);
     },
@@ -648,7 +752,7 @@ async function run(
   });
   await manifestSink.write(manifestBytes);
   await manifestSink.end();
-  await deps.progress?.({ step: 'published', archiveBytes: archive.bytes });
+  await report({ step: 'published', archiveBytes: archive.bytes });
   lap('publish');
 
   const memory = deps.memory?.() ?? { rss: 0, heap: 0 };

@@ -375,7 +375,7 @@ describe('assemble refuses, and publishes nothing, when', () => {
       tiles: { ...TILES, density: (z) => (z === 15 ? 0 : 0.01) },
     });
     await expect(assemble(build.manifest, depsFor().deps)).rejects.toThrow(
-      new AssembleRefusal('the archive would have no tile at zoom 15'),
+      new AssembleRefusal('assemble.zoomEmpty', 'the archive would have no tile at zoom 15'),
     );
     await nothingPublished();
   });
@@ -596,6 +596,7 @@ describe('a re-run after the picks changed (PR #188’s review)', () => {
     );
     await expect(assemble(build.manifest, watched)).rejects.toThrow(
       new AssembleRefusal(
+        'assemble.alreadyAssembled',
         'naip-20261212 is already assembled from these inputs (dev/naip/naip-summer-20261212-manifest.json): nothing to assemble',
       ),
     );

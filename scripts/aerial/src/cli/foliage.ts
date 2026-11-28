@@ -14,39 +14,23 @@
  * name, as every stage CLI is. Writes nothing outside the package's scratch; never a run row.
  */
 
-import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import process from 'node:process';
-import { NAIP_FOLIAGE_STRIKES, NaipSasSigner } from '@skating/core';
+import { NaipSasSigner } from '@skating/core';
 import { walkCatalog } from '../catalog';
 import { type FoliageScore, foliagePixels } from '../foliage';
-import { proposalFile, runFoliageReview } from '../foliageReview';
-import { writeFoliageSheet } from '../foliageSheet';
-import { AERIAL_SCRATCH, parseCampaign, scratchPaths } from '../keys';
+import { AERIAL_SCRATCH, scratchPaths } from '../keys';
 import { gdalDecode, ScoreCache, scoreFrames } from '../score';
-import { writeContactSheet } from '../scoreSheet';
-import { pickTable, runSelect } from '../selectStage';
-import { parseStageArgs } from '../stages';
+import { pickTable } from '../selectStage';
+import { parseFoliageArgs, runFoliageStage } from '../stage/foliageRun';
+import { realWorld } from './world';
 
 const log = (line: string) => process.stderr.write(`${line}\n`);
-const USAGE = 'usage: pnpm --filter @skating/aerial foliage <campaign> [--threshold 0.6]';
 
 async function main(): Promise<void> {
-  const [campaign, ...rest] = process.argv.slice(2);
-  if (campaign === undefined) throw new Error(USAGE);
-  if (parseCampaign(campaign).pilot)
-    throw new Error('the foliage review reads a full campaign, not a pilot');
-  let threshold: number | undefined;
-  if (rest.length > 0) {
-    const [flag, value] = rest.length === 1 ? (rest[0] as string).split('=') : rest;
-    if (flag !== '--threshold' || !(Number(value) > 0 && Number(value) < 1) || rest.length > 2) {
-      throw new Error(USAGE);
-    }
-    threshold = Number(value);
-  }
-
+  const argv = process.argv.slice(2);
+  const { campaign } = parseFoliageArgs(argv);
   const paths = scratchPaths(campaign);
-  const reviewDir = join(paths.report, 'foliage');
   const thumbsDir = join(AERIAL_SCRATCH, 'thumbs');
   const signer = new NaipSasSigner((url: string) => fetch(url));
   const walk = () => walkCatalog({ fetchFn: fetch, inventoryDir: paths.inventory });
@@ -54,39 +38,23 @@ async function main(): Promise<void> {
   const progress = (what: string) => (done: number, total: number) => {
     if (done % 1000 === 0 || done === total) log(`[${what}] scored ${done}/${total}`);
   };
-
   const foliageCache = new ScoreCache<FoliageScore>(join(AERIAL_SCRATCH, 'foliage-scores.json'));
-  const review = await runFoliageReview(
-    { campaign, ...(threshold === undefined ? {} : { threshold }) },
-    {
-      walk,
-      score: (targets) =>
-        scoreFrames(
-          targets,
-          {
-            fetchBlob,
-            decode: gdalDecode,
-            thumbsDir,
-            cache: foliageCache,
-            onProgress: progress('foliage'),
-          },
-          foliagePixels,
-        ),
-      log,
-      now: () => new Date(),
-    },
-  );
-  mkdirSync(reviewDir, { recursive: true });
-  const proposalPath = join(reviewDir, 'proposed.json');
-  writeFileSync(proposalPath, `${JSON.stringify(proposalFile(review), null, 2)}\n`);
-  const sheetPath = writeFoliageSheet(reviewDir, thumbsDir, review);
-
-  // The build the proposal would make: the select stage, as a dry run, with it applied.
   const cloudCache = new ScoreCache(join(AERIAL_SCRATCH, 'scores.json'));
-  const manifestPath = join(reviewDir, 'manifest-proposed.json');
-  const applied = await runSelect(parseStageArgs([campaign, '--dry-run'], 'select'), {
-    walk: () => walk(),
-    score: (targets) =>
+  const { review, applied, proposalPath, sheetPath } = await runFoliageStage(argv, realWorld(), {
+    walk,
+    scoreFoliage: (targets) =>
+      scoreFrames(
+        targets,
+        {
+          fetchBlob,
+          decode: gdalDecode,
+          thumbsDir,
+          cache: foliageCache,
+          onProgress: progress('foliage'),
+        },
+        foliagePixels,
+      ),
+    scoreCloud: (targets) =>
       scoreFrames(targets, {
         fetchBlob,
         decode: gdalDecode,
@@ -94,22 +62,10 @@ async function main(): Promise<void> {
         cache: cloudCache,
         onProgress: progress('select'),
       }),
-    readCurrent: () => Promise.reject(new Error('the foliage review builds from nothing')),
-    readPublished: () => Promise.reject(new Error('the foliage review is a dry run')),
-    readCellList: () => '',
-    writeManifest: (manifest) => {
-      writeFileSync(manifestPath, `${JSON.stringify(manifest)}\n`);
-      return manifestPath;
-    },
-    writeSheet: (candidates) =>
-      writeContactSheet(join(reviewDir, 'cloud'), thumbsDir, candidates, {
-        campaign: `${campaign} (foliage proposal applied)`,
-      }),
+    thumbsDir,
     log,
-    run: null,
-    now: () => new Date(),
-    foliageStrikes: [...NAIP_FOLIAGE_STRIKES, ...review.proposal],
   });
+  const manifestPath = applied.manifestPath;
 
   log(`[foliage] ${review.proposal.length} proposed entries; ${review.total.cells} cells change`);
   for (const s of review.states) {

@@ -38,7 +38,9 @@ describe('a stage against what its campaign has published', () => {
     const next = { ...manifest, ruleVersion: 3, foliageStrikesHash: '0'.repeat(64) };
     const said =
       'naip-pilot-20261212 is already published from other inputs (rule: 2 → 3; foliage strikes: changed). A published key is never overwritten, so naip-pilot-20261212 stays as it was built — make the change a new campaign: run-aerial.sh naip-pilot-<YYYYMMDD> --pilot champlain --from-current, with NAIP_MANIFEST_URL at naip-summer-20261212-manifest.json, copies its unchanged work tiles';
-    expect(() => againstPublished(manifest, next)).toThrow(new PublishedBuildRefusal(said));
+    expect(() => againstPublished(manifest, next)).toThrow(
+      new PublishedBuildRefusal('published.otherInputs', said),
+    );
     expect(publishedConflict(manifest, next)).toBe(said);
   });
 
