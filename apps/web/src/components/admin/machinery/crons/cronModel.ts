@@ -1,10 +1,14 @@
 import {
+  type CronCardState as CoreCronCardState,
   CRON_TICK_CODES,
   type CronLiveness,
   type CronLivenessInput,
   type CronSchedule,
+  cronCardState as coreCronCardState,
+  cronJobAt,
   cronLiveness,
   cronNextDueAt,
+  foldCardState,
 } from '@skating/core';
 
 import type { CronJobView, CronLastRun, CronRunView, CronTickView } from './cronViews';
@@ -24,40 +28,15 @@ export function cronLivenessAt(
   return cronLiveness(job.inputs, job.schedule, now);
 }
 
-/** What a cron's card says it is. */
-export type CronCardState =
-  | 'never'
-  | 'running'
-  | 'killed'
-  | 'failed'
-  | 'late'
-  | 'stalled'
-  | 'retried'
-  | 'ok';
-
-/** A run that failed or was killed: it stays the card's word until a later run supersedes it. */
-const lastRunFailed = (lastRun: CronLastRun) =>
-  lastRun?.outcome === 'failed' || lastRun?.outcome === 'killed';
-
 /**
- * A cron's card state, from the verdict and the last run — the Overview's reading
- * (`machinery.cronJobState`) so the two pages agree, with one difference the founder's rule asks
- * for: a run the rule calls **killed** is drawn *killed* (red), where the Overview's row folds it
- * into *failed*. A run that failed or was killed stays failed through the quiet and running ticks
- * after it (the pump backs off for half an hour after a throw), until a later run supersedes it;
- * one a machine host turned down reads *retried*.
+ * What a cron's card says it is — core's `cronCardState`: the Overview's reading
+ * (`cronJobState`, so the two pages agree), with a run cut off mid-way drawn as its own state
+ * (*Cut off*) where the Overview folds it into *failed*. A run that failed or was cut off stays the
+ * card's word through the quiet and running ticks after it, until a later run supersedes it; one a
+ * machine host turned down reads *retried*.
  */
-export function cronCardState(liveness: CronLiveness, lastRun: CronLastRun): CronCardState {
-  switch (liveness.state) {
-    case 'running':
-      return lastRunFailed(lastRun) ? 'failed' : 'running';
-    case 'ok':
-      if (lastRunFailed(lastRun)) return 'failed';
-      return lastRun?.outcome === 'refused' ? 'retried' : 'ok';
-    default:
-      return liveness.state;
-  }
-}
+export type CronCardState = CoreCronCardState;
+export const cronCardState = coreCronCardState;
 
 /** The tone a state is drawn in: red needs a person, amber is late or retrying, live breathes. */
 export type CronTone = 'bad' | 'warn' | 'live' | 'quiet' | 'hollow';
@@ -74,21 +53,15 @@ export const CRON_STATE_TONE: Record<CronCardState, CronTone> = {
 };
 
 /**
- * When the card says it last ran: the last run, when the state is that run's (a failed or refused
- * one the quiet ticks since haven't superseded); else the last tick, the start of the tick still
- * running, or none.
+ * When the card says it last ran (core's `cronJobAt`, the Overview's): the last run, when the state
+ * is that run's; else the last tick, the start of the tick still running, or none.
  */
 export function cronCardAt(
   liveness: CronLiveness,
   lastRun: CronLastRun,
   state: CronCardState,
 ): number | null {
-  if (lastRun !== null && (state === 'failed' || state === 'retried')) {
-    if (liveness.state === 'running' || liveness.state === 'ok') return lastRun.startedAt;
-  }
-  if (liveness.state === 'running' || liveness.state === 'killed') return liveness.since;
-  if (liveness.state === 'never') return null;
-  return liveness.lastTickAt;
+  return cronJobAt(liveness, lastRun, foldCardState(state));
 }
 
 /**

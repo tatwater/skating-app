@@ -1,5 +1,6 @@
 import { shortAge } from '@/lib/ages';
 
+import type { ImageryRunsTab } from '../imagerySearch';
 import type { AttemptVerdict, AttemptView, CronState, GranuleStatus } from './imageryModel';
 
 /**
@@ -27,7 +28,7 @@ export function imageryTailWords(
   tail:
     | { state: 'notStarted'; ready: boolean }
     | { state: 'paused' | 'ended' | 'noWatch' }
-    | { state: CronState; lastTickAt: number | null },
+    | { state: CronState; at: number | null },
   now: number,
 ): { word: string; tone: 'default' | 'lit' | 'warn' | 'bad' } {
   switch (tail.state) {
@@ -46,12 +47,14 @@ export function imageryTailWords(
       return { word: 'failed', tone: 'bad' };
     case 'late':
       return { word: 'late', tone: 'warn' };
+    case 'retried':
+      return { word: 'retried', tone: 'warn' };
     case 'never':
       return { word: NOT_RECORDED_YET_TAIL, tone: 'default' };
     case 'running':
       return { word: 'running', tone: 'lit' };
     default: {
-      const at = 'lastTickAt' in tail ? tail.lastTickAt : null;
+      const at = 'at' in tail ? tail.at : null;
       return { word: at === null ? 'ok' : `ok ${shortAge(now - at)}`, tone: 'default' };
     }
   }
@@ -63,6 +66,57 @@ export function imageryTailWords(
  */
 export const NOT_RECORDED_YET = 'Not recorded yet';
 export const NOT_RECORDED_YET_TAIL = 'not recorded yet';
+
+// ── The crons ───────────────────────────────────────────────────────────────────────────────────
+
+/** Each cron's card name (board 6.4's strip). */
+export const CRON_LABELS: Record<ImageryRunsTab, string> = {
+  poll: 'Poll for new passes',
+  pump: 'Pump the queue',
+  index: 'Rebuild the live index',
+};
+/** Each cron's tab in the runs drawer. */
+export const CRON_TABS: Record<ImageryRunsTab, string> = {
+  poll: 'Poll',
+  pump: 'Pump',
+  index: 'Rebuild',
+};
+
+const n = (x: number) => x.toLocaleString('en-US');
+
+/**
+ * What a run of one of the crons did, in the page's words (*6 new*, *1 starting · 2 landed*,
+ * *nothing new*), from its counts. A failed or cut-off run says nothing here, so its card and its
+ * row fall back to the run's own error; a turned-down one keeps its sentence (`detail`).
+ */
+export function imageryRunHeadline(
+  tab: ImageryRunsTab,
+  run: { outcome: string; counts: Record<string, number> | null; detail: string | null },
+): string | null {
+  if (run.outcome === 'failed' || run.outcome === 'killed') return null;
+  if (run.outcome === 'refused') return run.detail;
+  const c = run.counts ?? {};
+  const get = (k: string) => (typeof c[k] === 'number' && Number.isFinite(c[k]) ? c[k] : 0);
+  const parts: string[] = [];
+  switch (tab) {
+    case 'poll':
+      if (get('queued') > 0) parts.push(`${n(get('queued'))} new`);
+      break;
+    case 'pump':
+      if (get('spawned') > 0) parts.push(`${n(get('spawned'))} starting`);
+      if (get('landed') > 0) parts.push(`${n(get('landed'))} landed`);
+      if (get('empty') > 0) parts.push(`${n(get('empty'))} nothing to cut`);
+      if (get('requeued') > 0) parts.push(`${n(get('requeued'))} back in the queue`);
+      if (get('refused') > 0) parts.push(`${n(get('refused'))} turned down`);
+      break;
+    case 'index':
+      if (get('added') > 0)
+        parts.push(`${n(get('added'))} new ${get('added') === 1 ? 'frame' : 'frames'}`);
+      break;
+  }
+  if (run.outcome === 'capped') parts.push('stopped at its limit');
+  return parts.length === 0 ? 'nothing new' : parts.join(' · ');
+}
 
 // ── The head ────────────────────────────────────────────────────────────────────────────────────
 

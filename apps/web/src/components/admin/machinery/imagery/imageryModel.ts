@@ -5,9 +5,12 @@ import {
   type CronLivenessInput,
   type CronSchedule,
   celsiusToFahrenheit,
+  cronJobState,
   cronLiveness,
+  type JobState,
   parseGranuleId,
   parseSarGranuleId,
+  worstCronJob,
 } from '@skating/core';
 import type { FunctionArgs, FunctionReturnType } from 'convex/server';
 
@@ -15,16 +18,10 @@ import { TODAY, YESTERDAY } from './imageryWords';
 
 /**
  * **Machinery › Imagery's view model** — the one file that reads the server's shapes
- * (`packages/convex/convex/machineryImagery.ts`, a contract X2 landed as stubs; S3 builds the
- * bodies) and turns them into what the page draws. Every Imagery component takes its server types
- * from here, so when S3 refines a view (it may reshape `WatchFacts`, or add a field) the integrator
- * adjusts this file alone.
+ * (`packages/convex/convex/machineryImagery.ts`) and turns them into what the page draws. Every Imagery component takes its server types
+ * from here, so a change to a view is adjusted in this file alone.
  *
- * **Fields read beyond X2's stubs** (each tolerant: absent reads as the stubs' contract):
- * - `machineryRuns.lanes`' `imagery` key (S3 adds it; its shape isn't landed): read by
- *   {@link imageryLaneTailOf} as `{ state: ImageryState, ready?: boolean, crons?: CronJobView[] }`.
- *   Until it arrives, the Imagery lane draws no tail but on its own page, where the page read gives it.
- * - Nothing else: every other fact is the stubs' own.
+ * `machineryRuns.lanes`' `imagery` key is read by {@link imageryLaneTailOf}.
  *
  * Nothing here says anything about the ice (D3): a granule is a satellite pass being cut, a cron is
  * the machinery on time or not — never a claim about conditions.
@@ -71,11 +68,21 @@ export const GRANULE_FILTERS = [
   'failed',
 ] as const satisfies readonly GranuleFilter[];
 
-/**
- * The poll's *Run now*, as the page hands W2's card and drawer (an additive prop, a seam request):
- * pressable, drawn disabled (`null`: imagery isn't running), or not drawn (absent).
- */
+/** The poll's *Run now*: pressable, drawn disabled (`null`: imagery isn't running), or not drawn (absent). */
 export type RunNowProp = { onPress: () => Promise<boolean> } | null;
+
+/**
+ * The poll's *Run now* for a state, one rule for the card and the drawer's foot: pressable while
+ * imagery runs; drawn disabled while the season waits for a start (the server refuses a poll
+ * then); not drawn when paused or ended (`undefined`).
+ */
+export function runNowOf(
+  state: ImageryState,
+  onPress: () => Promise<boolean>,
+): RunNowProp | undefined {
+  if (state === 'running') return { onPress };
+  return pageShapeOf(state) === 'waiting' ? null : undefined;
+}
 
 // ── The page's state ───────────────────────────────────────────────────────────────────────────
 
@@ -90,13 +97,12 @@ export function pageShapeOf(state: ImageryState): PageShape {
 }
 
 /**
- * Whether a waiting season has crossed the imagery line: some sentinel's coldest night so far at or
- * below it. The watch's facts carry both; nothing is inferred from a forecast (D3: an air
- * temperature at a named site, never ice).
+ * Whether a waiting season has crossed the imagery line: the watch recorded the night a sentinel
+ * reached it (`crossed`, the same fact the lane's `ready` and the staff email read). Never inferred
+ * from a forecast (D3: an air temperature at a named site, never ice).
  */
 export function lineCrossed(watch: WatchFactsView | null): boolean {
-  if (watch === null || watch.closestNight === null) return false;
-  return watch.closestNight.lowC <= watch.lineC;
+  return watch !== null && watch.crossed !== null;
 }
 
 /** A °C as the page writes °F: one decimal, a whole number without it ("20", "20.8"). */
@@ -222,8 +228,8 @@ export function lastExit(attempts: readonly AttemptView[]): { code: number; oom:
 
 // ── The crons, at the page's clock ─────────────────────────────────────────────────────────────
 
-/** What a cron says at a moment: core's verdict, read with the card's one extra fact. */
-export type CronState = 'stalled' | 'failed' | 'late' | 'never' | 'running' | 'ok';
+/** What a cron says at a moment: the Overview card's reading (core's `cronJobState`). */
+export type CronState = JobState;
 
 /** A cron as the lane's tail reads it (the card's fields this needs). */
 export type CronTailInput = {
@@ -232,59 +238,34 @@ export type CronTailInput = {
   lastRun: { startedAt: number; outcome: string } | null;
 };
 
-const lastRunFailed = (lastRun: CronTailInput['lastRun']) =>
-  lastRun !== null && (lastRun.outcome === 'failed' || lastRun.outcome === 'killed');
-
 /**
- * A cron's state at `now`: core's `cronLiveness` on the server-sent inputs (the one rule), then the
- * Overview card's reading of it (`machinery.cronJobState`): a killed tick is failed, and a failed
- * last run stays failed through the quiet and running ticks after it until a later run.
- *
- * ⚠ The second half mirrors the server's `cronJobState` (`convex/machinery.ts`), which the web can't
- * import: a seam request asks to move it into core beside `cronLiveness`, so the card, the lane and
- * the Overview read one function.
+ * A cron's state at `now`: core's `cronLiveness` on the server-sent inputs (the one rule), read as
+ * the Overview card reads it (core's `cronJobState`: a killed tick is failed, and a failed last run
+ * stays failed through the ticks after it until a later run). The cards draw a cut-off run as its
+ * own state (`cronCardState`); the lane, like the Overview, folds it into failed.
  */
 export function cronStateAt(
   cron: CronTailInput,
   now: number,
-): {
-  state: CronState;
-  liveness: CronLiveness;
-} {
+): { state: CronState; liveness: CronLiveness } {
   const liveness = cronLiveness(cron.inputs, cron.schedule, now);
-  switch (liveness.state) {
-    case 'killed':
-      return { state: 'failed', liveness };
-    case 'running':
-      return { state: lastRunFailed(cron.lastRun) ? 'failed' : 'running', liveness };
-    case 'ok':
-      return { state: lastRunFailed(cron.lastRun) ? 'failed' : 'ok', liveness };
-    default:
-      return { state: liveness.state, liveness };
-  }
+  return { state: cronJobState(liveness, cron.lastRun), liveness };
 }
 
-const WORST: readonly CronState[] = ['stalled', 'failed', 'late', 'never', 'running', 'ok'];
-
 /**
- * The worst of the crons' states at `now`, and for *ok* the newest tick (the lane's "ok 2 min").
- * No crons is `never`.
+ * The worst of the crons' states at `now`, and when (core's `worstCronJob`, the server's lane rule:
+ * the lane, the head and the Overview agree at the same `now`). No crons is `never`.
  */
 export function worstCron(
   crons: readonly CronTailInput[],
   now: number,
-): { state: CronState; lastTickAt: number | null } {
-  let worst: CronState = crons.length === 0 ? 'never' : 'ok';
-  let lastTickAt: number | null = null;
-  for (const cron of crons) {
-    const { state, liveness } = cronStateAt(cron, now);
-    if (WORST.indexOf(state) < WORST.indexOf(worst)) worst = state;
-    if ('lastTickAt' in liveness) {
-      lastTickAt =
-        lastTickAt === null ? liveness.lastTickAt : Math.max(lastTickAt, liveness.lastTickAt);
-    }
-  }
-  return { state: worst, lastTickAt };
+): { state: CronState; at: number | null } {
+  return worstCronJob(
+    crons.map((c) => ({
+      liveness: cronLiveness(c.inputs, c.schedule, now),
+      lastRun: c.lastRun,
+    })),
+  );
 }
 
 // ── The sidebar's tail ─────────────────────────────────────────────────────────────────────────
@@ -311,13 +292,14 @@ export function imageryLaneTailFromPage(view: ImageryPageView): ImageryLaneTail 
 }
 
 /**
- * The tail from `machineryRuns.lanes`' `imagery` key, which S3 adds (assumed `{ state, ready?,
- * crons? }`; see the file's head). Anything else — absent, or a shape this doesn't know — is no
- * tail, never a guess.
+ * The tail from `machineryRuns.lanes`' `imagery` key (`{ state, at, crons, ready }`): while running
+ * it carries the three crons, re-read here on the sidebar's clock; otherwise the season's state.
+ * Anything else — absent, or a shape this doesn't know — is no tail, never a guess.
  */
 export function imageryLaneTailOf(raw: unknown): ImageryLaneTail | undefined {
   if (typeof raw !== 'object' || raw === null) return undefined;
   const r = raw as { state?: unknown; ready?: unknown; crons?: unknown };
+  if (Array.isArray(r.crons)) return { state: 'running', crons: r.crons as CronTailInput[] };
   switch (r.state) {
     case 'notStarted':
       return { state: 'notStarted', ready: r.ready === true };
@@ -325,10 +307,6 @@ export function imageryLaneTailOf(raw: unknown): ImageryLaneTail | undefined {
     case 'ended':
     case 'noWatch':
       return { state: r.state };
-    case 'running':
-      return Array.isArray(r.crons)
-        ? { state: 'running', crons: r.crons as CronTailInput[] }
-        : undefined;
     default:
       return undefined;
   }

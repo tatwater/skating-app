@@ -39,6 +39,7 @@ const run = (outcome: NonNullable<CronLastRun>['outcome'], startedAt = at(14, 0)
   startedAt,
   outcome,
   counts: null,
+  detail: null,
 });
 const ok: CronLiveness = {
   state: 'ok',
@@ -70,9 +71,11 @@ describe('the card state (the Overview’s reading, killed kept)', () => {
     expect(CRON_STATE_TONE.killed).toBe('bad');
   });
 
-  it('keeps a failed or killed last run until a later run supersedes it', () => {
+  it('keeps a failed or cut-off last run until a later run supersedes it', () => {
     expect(cronCardState(ok, run('failed'))).toBe('failed');
-    expect(cronCardState(ok, run('killed'))).toBe('failed');
+    // A run cut off mid-way stays drawn as such (the Overview folds it into failed).
+    expect(cronCardState(ok, run('killed'))).toBe('killed');
+    expect(cronCardState(running, run('killed'))).toBe('killed');
     expect(cronCardState(running, run('failed'))).toBe('failed');
     expect(cronCardState(running, run('ok'))).toBe('running');
     expect(cronCardState(running, null)).toBe('running');

@@ -20,6 +20,7 @@ import {
   pageShapeOf,
   type RunNowProp,
   relativeDay,
+  runNowOf,
   seasonWords,
   shortDayWords,
   totalQueued,
@@ -29,7 +30,7 @@ import * as W from './imageryWords';
 /**
  * **The Imagery page's head** (boards 6.4, *Waiting for Cold*, *Line Crossed*) — spanning the list
  * and the detail: the page word, its kicker and the link to Seasons; the five stats; the three cron
- * cards (W2's `CronCard`), each opening its runs drawer.
+ * cards (the generic `CronCard` in the page's words, `./crons`), each opening its runs drawer.
  *
  * - **Working** (running, paused, ended): *State*, *Granules landed*, *Machines*, *Live index*,
  *   *Fly · this season* in machine-minutes only (never dollars, ruling 6).
@@ -71,13 +72,7 @@ export function ImageryHead({
 }: ImageryHeadProps) {
   const shape = pageShapeOf(view.state);
   const runNow: RunNowProp | undefined =
-    onRunNow === undefined
-      ? undefined
-      : view.state === 'running'
-        ? { onPress: onRunNow }
-        : shape === 'waiting'
-          ? null
-          : undefined;
+    onRunNow === undefined ? undefined : runNowOf(view.state, onRunNow);
   return (
     <header
       data-slot="imagery-head"
@@ -147,7 +142,10 @@ export function ImageryHead({
             <CronCard
               key={job.job}
               job={job}
+              tab={tab}
               onOpenRuns={() => onOpenRuns(tab)}
+              {...(now !== undefined && { now })}
+              {...(timeZone !== undefined && { timeZone })}
               {...(tab === 'poll' && runNow !== undefined && { runNow })}
             />
           );

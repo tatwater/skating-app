@@ -278,11 +278,30 @@ describe('the writes', () => {
   it('the runs drawer opens from the URL, and a card’s Runs navigates to its tab', () => {
     mount();
     const runs = must(
-      within(slot('imagery-head')).getAllByRole('button', { name: 'Runs' })[1],
+      within(slot('imagery-head')).getAllByRole('button', { name: /^Runs/ })[1],
       'runs',
     );
     fireEvent.click(runs);
     expect(h.navigated.at(-1)?.search).toEqual({ runs: 'pump' });
+  });
+
+  it('Run now on the poll: pressable while running, disabled while waiting, gone when paused', async () => {
+    const runNow = () => within(slot('imagery-head')).queryByRole('button', { name: 'Run now' });
+    const { unmount } = mount();
+    const pressable = must(runNow(), 'run now');
+    expect(pressable).not.toBeDisabled();
+    await act(async () => {
+      fireEvent.click(pressable);
+    });
+    expect(writes.pollNow).toHaveBeenCalledWith('winter-2026-27');
+    unmount();
+    h.answers['machineryImagery:page'] = () => WAITING_PAGE;
+    const waiting = mount();
+    expect(must(runNow(), 'run now')).toBeDisabled();
+    waiting.unmount();
+    h.answers['machineryImagery:page'] = () => PAUSED_PAGE;
+    mount();
+    expect(runNow()).toBeNull();
   });
 });
 

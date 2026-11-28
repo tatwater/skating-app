@@ -240,15 +240,6 @@ describe('Start and Pause', () => {
     ]);
   });
 
-  test('the Seasons page’s old names are the same writes, until that page stops calling them', async () => {
-    const t = harness();
-    const admin = await seedPerson(t, 'admin', 'admin');
-    await openSeason(t);
-    await admin.as.mutation(api.seasonWatch.startImagery, { season: SEASON });
-    await admin.as.mutation(api.seasonWatch.pauseImagery, { season: SEASON });
-    expect((await audit(t)).map((r) => r.action)).toEqual(['start_imagery', 'pause_imagery']);
-  });
-
   test('Pause undoes Start, and Start (Resume) undoes Pause, while the season stands so', async () => {
     const t = harness();
     const admin = await seedPerson(t, 'admin', 'admin');
@@ -681,9 +672,12 @@ describe('the lane', () => {
     const t = harness();
     const admin = await seedPerson(t, 'admin', 'admin');
     const lane = async () => (await admin.as.query(api.machineryRuns.lanes, { now: NOW })).imagery;
-    expect(await lane()).toEqual({ state: 'notStarted', at: null, crons: null });
+    expect(await lane()).toEqual({ state: 'notStarted', at: null, crons: null, ready: false });
     const id = await openSeason(t);
-    expect((await lane()).state).toBe('notStarted');
+    expect(await lane()).toMatchObject({ state: 'notStarted', ready: false });
+    // A sentinel crossed the imagery line: a start now waits on a person.
+    await t.run((ctx) => ctx.db.patch(id, { imageryNudgeOn: '2026-10-12' }));
+    expect(await lane()).toMatchObject({ state: 'notStarted', ready: true });
     await t.run((ctx) => ctx.db.patch(id, { imageryStartedAt: NOW, imageryPausedAt: NOW }));
     expect((await lane()).state).toBe('paused');
     await t.run((ctx) => ctx.db.patch(id, { closesOn: '2027-04-01' }));

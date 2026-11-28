@@ -20,6 +20,7 @@ import {
   callerNow,
   DEFAULT_SEASON_WATCH_SETTINGS,
   seasonStartYear,
+  worstCronJob,
 } from '@skating/core';
 import { type PaginationResult, paginationOptsValidator } from 'convex/server';
 import { ConvexError, v } from 'convex/values';
@@ -36,7 +37,7 @@ import {
   whyNotRunnable,
 } from './imageryLive';
 import { requireCapability } from './lib/auth';
-import { cronJobAt, cronJobState, JOB_STATES, type JobState } from './lib/cronJobState';
+import type { JobState } from './lib/cronJobState';
 import { flyConfigFromEnv } from './lib/fly';
 import { clearBackoff, jobRow } from './lib/imageryPump';
 import { r2ConfigFromEnv } from './lib/r2';
@@ -171,8 +172,9 @@ export type AttemptView = {
 export type GranuleView = { row: GranuleRowView; attempts: AttemptView[]; before8b: boolean };
 
 /**
- * Machinery's *Imagery* lane tail (`machineryRuns.lanes`): `notStarted` (no watch, or not pressed),
- * `paused`, `ended`, or — running — the worst of its three crons' card states (`cronJobState`, the
+ * Machinery's *Imagery* lane tail (`machineryRuns.lanes`): `notStarted` (no watch, or not pressed;
+ * `ready` once a sentinel crossed the imagery line, so a start waits on a person), `paused`,
+ * `ended`, or — running — the worst of its three crons' card states (core's `worstCronJob`, the
  * Overview card's rule), with when; `crons` carries the three views while running, so the sidebar
  * re-reads them on its own clock.
  */
@@ -180,6 +182,7 @@ export type ImageryLaneTail = {
   state: 'notStarted' | 'paused' | 'ended' | JobState;
   at: number | null;
   crons: CronJobView[] | null;
+  ready: boolean;
 };
 
 /** A line of an attempt's log: a run's line, and who wrote it. */
@@ -221,21 +224,18 @@ const IMAGERY_JOBS = [IMAGERY_CRON_JOBS.poll, IMAGERY_CRON_JOBS.pump, IMAGERY_CR
 
 /** The lane's tail, from the season's row and (while running) its crons (`ImageryLaneTail`). */
 export async function imageryLaneTail(ctx: QueryCtx, now: number): Promise<ImageryLaneTail> {
-  const state = imageryStateOf(await seasonRowFor(ctx, archiveSeasonAt(now)));
+  const row = await seasonRowFor(ctx, archiveSeasonAt(now));
+  const state = imageryStateOf(row);
   if (state !== 'running') {
-    return { state: state === 'noWatch' ? 'notStarted' : state, at: null, crons: null };
+    return {
+      state: state === 'noWatch' ? 'notStarted' : state,
+      at: null,
+      crons: null,
+      ready: state === 'notStarted' && row?.imageryNudgeOn !== undefined,
+    };
   }
   const crons = await cronJobViews(ctx, IMAGERY_JOBS, now);
-  let worst: { state: JobState; at: number | null } = { state: 'never', at: null };
-  for (const view of crons) {
-    const s = cronJobState(view.liveness, view.lastRun);
-    const at = cronJobAt(view.liveness, view.lastRun, s);
-    const rank = JOB_STATES.indexOf(s);
-    const was = JOB_STATES.indexOf(worst.state);
-    // Worst first; among equals (ok, say), the newest time — the last tick's age.
-    if (rank < was || (rank === was && (at ?? 0) > (worst.at ?? 0))) worst = { state: s, at };
-  }
-  return { ...worst, crons };
+  return { ...worstCronJob(crons), crons, ready: false };
 }
 
 // ── The views from rows ──────────────────────────────────────────────────────────────────────────
@@ -374,7 +374,7 @@ const INDEX_RUNS_LOOKBACK = 10;
  */
 export const page = query({
   args: { now: v.optional(v.number()) },
-  handler: async (ctx, args): Promise<ImageryPageView | null> => {
+  handler: async (ctx, args): Promise<ImageryPageView> => {
     await requireCapability(ctx, 'machinery.read');
     const now = callerNow(args.now, Date.now(), CLOCK_SLACK_MS);
     const season = archiveSeasonAt(now);

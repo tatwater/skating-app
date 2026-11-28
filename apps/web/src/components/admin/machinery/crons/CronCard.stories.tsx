@@ -108,7 +108,7 @@ export const EveryState: Story = {
     await expect(card(q, 'sparse').dataset.state).toBe('ok');
     // The words a reader who doesn't see the color reads.
     await expect(slot(card(q, 'never'), 'cron-when')).toHaveTextContent('Not recorded yet');
-    await expect(slot(card(q, 'killed'), 'cron-when')).toHaveTextContent('Killed');
+    await expect(slot(card(q, 'killed'), 'cron-when')).toHaveTextContent('Cut off');
     await expect(slot(card(q, 'late'), 'cron-when')).toHaveTextContent('Late');
     await expect(slot(card(q, 'late'), 'cron-sub')).toHaveTextContent('Every 6 hours · last 00:40');
     // An interval cron: its interval and its last run, never a next run.

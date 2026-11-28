@@ -124,7 +124,7 @@ export const Every: Story = {
     // Named by its counts, not color alone.
     const focus = must(pump.querySelector<HTMLElement>('[data-slot="cron-tick-focus"]'));
     await expect(focus.getAttribute('aria-label')).toMatch(
-      /^Ticks · the last 12 hours: \d+ did something, \d+ nothing to do, 1 turned down, 1 failed, 1 killed$/,
+      /^Ticks · the last 12 hours: \d+ did something, \d+ nothing to do, 1 turned down, 1 failed, 1 cut off$/,
     );
     // The poll's long range names days; the pump's short one times, up to now.
     await expect(strip(q, 'poll').querySelector('[data-slot="cron-tick-from"]')).toHaveTextContent(

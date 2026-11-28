@@ -14,14 +14,8 @@ import type { ImageryRunsTab } from '../imagerySearch';
 import { CronRunsDrawer } from './crons';
 import { GranuleList, type GranuleListProps } from './GranuleList';
 import { ImageryHead } from './ImageryHead';
-import type {
-  CronJobView,
-  GranuleView,
-  ImageryPageView,
-  LowsFacts,
-  SentinelRow,
-} from './imageryModel';
-import { pageShapeOf, type RunNowProp } from './imageryModel';
+import type { GranuleView, ImageryPageView, LowsFacts, SentinelRow } from './imageryModel';
+import { pageShapeOf, type RunNowProp, runNowOf } from './imageryModel';
 import * as W from './imageryWords';
 import { WaitingView } from './WaitingView';
 
@@ -91,7 +85,6 @@ export type ImageryViewProps = {
 const WORKING = ['--size-lanes', '--size-list', '--size-inspector'] as const;
 /** The waiting page's: the lanes, the sentinels' room, the start panel. */
 const WAITING = ['--size-lanes', '--size-inspector', '--size-sheet-sm'] as const;
-const TAB_INDEX: Record<ImageryRunsTab, number> = { poll: 0, pump: 1, index: 2 };
 
 export function ImageryView({
   sidebar,
@@ -133,14 +126,8 @@ export function ImageryView({
     }
     focusList();
   };
-  const drawerJob: CronJobView | undefined =
-    view === null || runs === null ? undefined : view.crons[TAB_INDEX[runs]];
   const runNow: RunNowProp | undefined =
-    onRunNow === undefined || view === null
-      ? undefined
-      : view.state === 'running'
-        ? { onPress: onRunNow }
-        : undefined;
+    onRunNow === undefined || view === null ? undefined : runNowOf(view.state, onRunNow);
 
   return (
     <div
@@ -264,12 +251,15 @@ export function ImageryView({
           </>
         )}
       </div>
-      {drawerJob !== undefined && (
+      {view !== null && runs !== null && (
         <CronRunsDrawer
-          job={drawerJob.job}
-          open={runs !== null}
+          crons={view.crons}
+          tab={runs}
+          open
           onClose={() => onRuns(null)}
-          {...(runs === 'poll' && runNow !== undefined && { runNow })}
+          onTab={(tab) => onRuns(tab)}
+          {...(timeZone !== undefined && { timeZone })}
+          {...(runNow !== undefined && { runNow })}
         />
       )}
     </div>

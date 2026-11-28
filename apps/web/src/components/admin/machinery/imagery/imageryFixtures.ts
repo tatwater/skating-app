@@ -42,7 +42,12 @@ type CronSpec = {
   lastTickAt?: number;
   lastOutcome?: 'ok' | 'worked' | 'failed' | 'killed';
   runningSince?: number;
-  lastRun?: { at: number; outcome: 'ok' | 'capped' | 'refused' | 'failed' | 'killed' } | null;
+  lastRun?: {
+    at: number;
+    outcome: 'ok' | 'capped' | 'refused' | 'failed' | 'killed';
+    counts?: Record<string, number>;
+    detail?: string;
+  } | null;
 };
 
 export function cron(spec: CronSpec, now = NOW): CronJobView {
@@ -68,7 +73,8 @@ export function cron(spec: CronSpec, now = NOW): CronJobView {
             id: `cr_${spec.job.length}_${spec.lastRun.at}` as never,
             startedAt: spec.lastRun.at,
             outcome: spec.lastRun.outcome,
-            counts: null,
+            counts: spec.lastRun.counts ?? null,
+            detail: spec.lastRun.detail ?? null,
           },
   } as CronJobView;
 }
@@ -85,7 +91,7 @@ export const RUNNING_CRONS: CronJobView[] = [
     every: 6 * HOUR,
     lastTickAt: at(14, 12, 40),
     lastOutcome: 'worked',
-    lastRun: { at: at(14, 12, 40), outcome: 'ok' },
+    lastRun: { at: at(14, 12, 40), outcome: 'ok', counts: { selected: 10, queued: 6 } },
   }),
   cron({
     job: PUMP,
@@ -94,7 +100,7 @@ export const RUNNING_CRONS: CronJobView[] = [
     lastTickAt: at(14, 14, 9),
     lastOutcome: 'worked',
     runningSince: at(14, 14, 12),
-    lastRun: { at: at(14, 14, 9), outcome: 'ok' },
+    lastRun: { at: at(14, 14, 9), outcome: 'ok', counts: { spawned: 1, landed: 0 } },
   }),
   cron({
     job: INDEX,
@@ -142,18 +148,24 @@ export const NEVER_CRONS: CronJobView[] = [
 
 const WATCH_WAITING: WatchFactsView = {
   season: SEASON,
+  opensOn: '2026-10-03',
   openedAt: at(3, 6, 30),
   lineC: -6.667,
+  crossed: null,
   closestNight: { date: '2026-10-07', lowC: -6.222, site: 'Upper Lake of the Clouds' },
   staffEmailAt: null,
+  openedEmailAt: at(3, 6, 31),
 };
 
 const WATCH_CROSSED: WatchFactsView = {
   season: SEASON,
+  opensOn: '2026-10-03',
   openedAt: at(3, 6, 30),
   lineC: -6.667,
+  crossed: { on: '2026-10-07', sites: [{ name: 'Upper Lake of the Clouds', lowC: -7.222 }] },
   closestNight: { date: '2026-10-07', lowC: -7.222, site: 'Upper Lake of the Clouds' },
   staffEmailAt: at(14, 7, 31),
+  openedEmailAt: at(3, 6, 31),
 };
 
 /** Board 6.4: running, two cutting, one failed, the index not built yet. */

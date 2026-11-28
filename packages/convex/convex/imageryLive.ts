@@ -2222,28 +2222,6 @@ export async function tryAgainNowImpl(
   return { actionId };
 }
 
-/**
- * *Retry failed* as the Seasons page calls it. ⚠ **Deprecated** (B01-8b-2): Machinery's
- * `machineryImagery.retryFailed` is the write; this stays only until the Seasons page stops calling
- * it in the same PR, then goes. The same body.
- */
-export const retryFailed = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const admin = await requireCapability(ctx, 'machinery.imagery');
-    return await retryFailedImpl(ctx, admin);
-  },
-});
-
-/** *Try again now* as the Seasons page calls it. ⚠ **Deprecated**, as {@link retryFailed}. */
-export const tryAgainNow = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const admin = await requireCapability(ctx, 'machinery.imagery');
-    return await tryAgainNowImpl(ctx, admin);
-  },
-});
-
 // ─── 3. Index ───────────────────────────────────────────────────────────────────────────────────
 
 export const framesPage = internalQuery({
@@ -2573,74 +2551,3 @@ async function buildIndexOnce(ctx: ActionCtx): Promise<
     };
   }
 }
-
-// ─── The admin page ─────────────────────────────────────────────────────────────────────────────
-
-/** How many recent runs the panel lists. */
-const ACTIVITY_RUNS = 40;
-
-/**
- * Recent runs and this season's ledger, for `/admin/seasons`. The runs are the three imagery crons'
- * from the backbone (`cronRuns`, D347): each job's newest {@link ACTIVITY_RUNS} (one `eq` range each),
- * merged newest first, in the panel's old shape (`kind` the job's `imageryRuns` kind).
- */
-export const activity = query({
-  args: {},
-  handler: async (ctx) => {
-    await requireCapability(ctx, 'machinery.read');
-    const season = archiveSeasonAt(Date.now());
-    const runs = (
-      await Promise.all(
-        (Object.entries(IMAGERY_CRON_JOBS) as [keyof typeof IMAGERY_CRON_JOBS, string][]).map(
-          async ([kind, job]) =>
-            (
-              await ctx.db
-                .query('cronRuns')
-                .withIndex('by_job_started', (q) => q.eq('job', job))
-                .order('desc')
-                .take(ACTIVITY_RUNS)
-            ).map((r) => ({
-              _id: r._id,
-              kind,
-              season: r.season ?? season,
-              startedAt: r.startedAt,
-              finishedAt: r.finishedAt,
-              outcome: r.outcome,
-              ...((r.detail ?? r.error) ? { detail: r.detail ?? r.error } : {}),
-              ...(r.counts ? { counts: r.counts } : {}),
-            })),
-        ),
-      )
-    )
-      .flat()
-      .sort((a, b) => b.startedAt - a.startedAt)
-      .slice(0, ACTIVITY_RUNS);
-    const ledger = await ctx.db
-      .query('imageryCounts')
-      .withIndex('by_season', (q) => q.eq('season', season))
-      .unique();
-    const failed = await ctx.db
-      .query('imageryGranules')
-      .withIndex('by_season_status', (q) => q.eq('season', season).eq('status', 'failed'))
-      .order('desc')
-      .take(10);
-    const pump = await jobRow(ctx, 'pump');
-    const index = await jobRow(ctx, 'index');
-    return {
-      runs,
-      counts: {
-        queued: ledger?.queued ?? 0,
-        spawned: ledger?.spawned ?? 0,
-        landed: ledger?.landed ?? 0,
-        empty: ledger?.empty ?? 0,
-        failed: ledger?.failed ?? 0,
-      },
-      failed: failed.map((g) => ({ granuleId: g.granuleId, lastError: g.lastError ?? null })),
-      backoffUntil: pump?.backoffUntil ?? null,
-      indexRetryAt: index?.retryAt ?? null,
-      configured: configured().ok,
-      pollCap: POLL_CAP,
-      maxLive: MAX_LIVE_MACHINES,
-    };
-  },
-});

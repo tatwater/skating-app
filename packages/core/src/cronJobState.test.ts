@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { cronJobAt, cronJobState, JOB_STATES } from './cronJobState';
+import {
+  cronCardState,
+  cronJobAt,
+  cronJobState,
+  foldCardState,
+  JOB_STATES,
+  worstCronJob,
+} from './cronJobState';
 import type { CronLiveness } from './cronLiveness';
 
 const T = 1_764_201_600_000;
@@ -42,5 +49,60 @@ describe('cronJobState (the Overview card’s mapping, shared)', () => {
   it('orders worst first', () => {
     expect(JOB_STATES[0]).toBe('stalled');
     expect(JOB_STATES.at(-1)).toBe('never');
+  });
+});
+
+describe('cronCardState (Machinery’s card: killed is its own state)', () => {
+  it('draws a killed tick, and a killed last run not yet superseded, as killed', () => {
+    expect(cronCardState({ state: 'killed', since: T }, null)).toBe('killed');
+    expect(cronCardState(tick('ok'), run('killed'))).toBe('killed');
+    expect(cronCardState({ state: 'running', since: T }, run('killed'))).toBe('killed');
+  });
+
+  it('agrees with the Overview everywhere else, and folds back to it', () => {
+    const livenesses: CronLiveness[] = [
+      { state: 'never' },
+      { state: 'running', since: T },
+      { state: 'killed', since: T },
+      tick('ok'),
+      tick('late'),
+      tick('stalled'),
+      tick('failed'),
+    ];
+    for (const l of livenesses) {
+      for (const r of [null, run('ok'), run('failed'), run('killed'), run('refused')]) {
+        expect(foldCardState(cronCardState(l, r))).toBe(cronJobState(l, r));
+      }
+    }
+    // A stalled or late cron says so, whatever its last run.
+    expect(cronCardState(tick('stalled'), run('killed'))).toBe('stalled');
+  });
+});
+
+describe('worstCronJob (the lane’s tail)', () => {
+  it('is never with no crons, and never ranks below ok', () => {
+    expect(worstCronJob([])).toEqual({ state: 'never', at: null });
+    expect(
+      worstCronJob([
+        { liveness: { state: 'never' }, lastRun: null },
+        { liveness: tick('ok'), lastRun: null },
+      ]),
+    ).toEqual({ state: 'ok', at: T });
+  });
+
+  it('takes the worst, dated by its own run, and the newest among equals', () => {
+    expect(
+      worstCronJob([
+        { liveness: tick('ok'), lastRun: null },
+        { liveness: tick('ok'), lastRun: run('failed') },
+        { liveness: { state: 'running', since: T + 9 }, lastRun: null },
+      ]),
+    ).toEqual({ state: 'failed', at: T - 5 });
+    expect(
+      worstCronJob([
+        { liveness: { ...tick('ok'), lastTickAt: T - 100 }, lastRun: null },
+        { liveness: tick('ok'), lastRun: null },
+      ]),
+    ).toEqual({ state: 'ok', at: T });
   });
 });

@@ -1,4 +1,4 @@
-import { fahrenheitToCelsius } from '@skating/core';
+import { fahrenheitToCelsius, JOB_STATES } from '@skating/core';
 import fc from 'fast-check';
 import { describe, expect, test } from 'vitest';
 
@@ -71,17 +71,18 @@ describe('the page’s state', () => {
     expect(pageShapeOf('ended')).toBe('working');
   });
 
-  test('the line is crossed only when a sentinel’s coldest night reached it', () => {
+  test('the line is crossed only once the watch recorded the night it was', () => {
     expect(lineCrossed(WAITING_PAGE.watch)).toBe(false);
     expect(lineCrossed(CROSSED_PAGE.watch)).toBe(true);
     expect(lineCrossed(NO_WATCH_PAGE.watch)).toBe(false);
     expect(lineCrossed(null)).toBe(false);
-    // At the line exactly counts.
-    const at = {
+    // The watch's record is the fact (the lane's `ready` and the staff email read it too): a
+    // coldest night at the line the watch hasn't recorded yet isn't called crossed here.
+    const unrecorded = {
       ...need(WAITING_PAGE.watch),
       closestNight: { date: 'x', lowC: -6.667, site: 's' },
     };
-    expect(lineCrossed(at)).toBe(true);
+    expect(lineCrossed(unrecorded)).toBe(false);
   });
 
   test('°F from °C: one decimal, whole without it, never −0', () => {
@@ -233,7 +234,7 @@ describe('the crons, at the clock', () => {
     expect(
       cronStateAt({ ...base, lastRun: { startedAt: NOW - 9 * MIN, outcome: 'refused' } }, NOW)
         .state,
-    ).toBe('ok');
+    ).toBe('retried');
     expect(
       cronStateAt(
         {
@@ -262,7 +263,7 @@ describe('the crons, at the clock', () => {
   });
 
   test('the worst of three, and the newest tick for ok', () => {
-    expect(worstCron([], NOW)).toEqual({ state: 'never', lastTickAt: null });
+    expect(worstCron([], NOW)).toEqual({ state: 'never', at: null });
     const ok = (ago: number) => ({
       schedule: every(10 * MIN),
       inputs: { lastTickAt: NOW - ago, lastOutcome: 'ok' as const },
@@ -270,14 +271,14 @@ describe('the crons, at the clock', () => {
     });
     expect(worstCron([ok(5 * MIN), ok(2 * MIN)], NOW)).toEqual({
       state: 'ok',
-      lastTickAt: NOW - 2 * MIN,
+      at: NOW - 2 * MIN,
     });
     expect(worstCron([ok(5 * MIN), ok(25 * MIN)], NOW).state).toBe('late');
     expect(worstCron([ok(5 * MIN), ok(2 * HOUR)], NOW).state).toBe('stalled');
   });
 
   test('the worst never improves as the clock moves on with no tick (property)', () => {
-    const order = ['ok', 'running', 'never', 'late', 'failed', 'stalled'];
+    const order = [...JOB_STATES].reverse();
     fc.assert(
       fc.property(
         fc.array(fc.tuple(fc.integer({ min: 1, max: 600 }), fc.integer({ min: 0, max: 6_000 })), {
@@ -324,6 +325,13 @@ describe('the sidebar’s tail', () => {
       state: 'running',
       crons: [],
     });
+    // The server's shape: while running it names the worst state and carries the crons.
+    expect(
+      imageryLaneTailOf({ state: 'ok', at: 1, crons: RUNNING_PAGE.crons, ready: false }),
+    ).toEqual({ state: 'running', crons: RUNNING_PAGE.crons });
+    expect(imageryLaneTailOf({ state: 'paused', at: null, crons: null, ready: false })).toEqual({
+      state: 'paused',
+    });
   });
 
   test('its words and tones', () => {
@@ -335,15 +343,13 @@ describe('the sidebar’s tail', () => {
     expect(imageryTailWords({ state: 'noWatch' }, NOW).word).toBe('not started');
     expect(imageryTailWords({ state: 'paused' }, NOW)).toEqual({ word: 'paused', tone: 'warn' });
     expect(imageryTailWords({ state: 'ended' }, NOW).word).toBe('ended');
-    expect(imageryTailWords({ state: 'never', lastTickAt: null }, NOW).word).toBe(
-      'not recorded yet',
-    );
-    expect(imageryTailWords({ state: 'stalled', lastTickAt: 1 }, NOW).tone).toBe('bad');
-    expect(imageryTailWords({ state: 'failed', lastTickAt: 1 }, NOW).tone).toBe('bad');
-    expect(imageryTailWords({ state: 'late', lastTickAt: 1 }, NOW).tone).toBe('warn');
-    expect(imageryTailWords({ state: 'running', lastTickAt: 1 }, NOW).tone).toBe('lit');
-    expect(imageryTailWords({ state: 'ok', lastTickAt: NOW - 2 * MIN }, NOW).word).toBe('ok 2 min');
-    expect(imageryTailWords({ state: 'ok', lastTickAt: null }, NOW).word).toBe('ok');
+    expect(imageryTailWords({ state: 'never', at: null }, NOW).word).toBe('not recorded yet');
+    expect(imageryTailWords({ state: 'stalled', at: 1 }, NOW).tone).toBe('bad');
+    expect(imageryTailWords({ state: 'failed', at: 1 }, NOW).tone).toBe('bad');
+    expect(imageryTailWords({ state: 'late', at: 1 }, NOW).tone).toBe('warn');
+    expect(imageryTailWords({ state: 'running', at: 1 }, NOW).tone).toBe('lit');
+    expect(imageryTailWords({ state: 'ok', at: NOW - 2 * MIN }, NOW).word).toBe('ok 2 min');
+    expect(imageryTailWords({ state: 'ok', at: null }, NOW).word).toBe('ok');
   });
 });
 

@@ -55,6 +55,7 @@ export const POLL_JOB = cronJob(POLL, {
     startedAt: at(12, 40),
     outcome: 'ok',
     counts: { found: 10, queued: 6 },
+    detail: null,
   },
 });
 
@@ -71,6 +72,7 @@ export const PUMP_JOB = cronJob(PUMP, {
     startedAt: at(14, 9),
     outcome: 'ok',
     counts: { checked: 2, started: 0 },
+    detail: null,
   },
 });
 
@@ -113,7 +115,13 @@ export const STATE_JOBS: { name: string; job: CronJobView }[] = [
     job: cronJob('failed last run', {
       schedule: { every: 3 * MIN },
       inputs: { lastTickAt: at(14, 12), lastOutcome: 'failed' },
-      lastRun: { id: runId('f'), startedAt: at(14, 12), outcome: 'failed', counts: null },
+      lastRun: {
+        id: runId('f'),
+        startedAt: at(14, 12),
+        outcome: 'failed',
+        counts: null,
+        detail: null,
+      },
     }),
   },
   {
@@ -140,6 +148,7 @@ export const STATE_JOBS: { name: string; job: CronJobView }[] = [
         startedAt: at(14, 9),
         outcome: 'refused',
         counts: { refused: 1 },
+        detail: null,
       },
     }),
   },

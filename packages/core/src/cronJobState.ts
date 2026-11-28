@@ -76,3 +76,43 @@ export function cronJobAt(
   if (liveness.state === 'never') return null;
   return liveness.lastTickAt;
 }
+
+/**
+ * **Machinery's own cron card** (B01-8b-2): the Overview's reading, with one difference the governor
+ * ruled (2026-11-28) — a run cut off mid-way is drawn as its own state (*Cut off*), where the
+ * Overview's row folds it into `failed`. Cut off is a tick the rule calls killed now, or a last run
+ * recorded killed that no later run has superseded; everything else is {@link cronJobState}'s answer,
+ * so the card, the lane and the Overview agree on every other state at the same `now`.
+ */
+export type CronCardState = JobState | 'killed';
+
+export function cronCardState(liveness: CronLiveness, lastRun: CronLastRun): CronCardState {
+  if (liveness.state === 'killed') return 'killed';
+  const state = cronJobState(liveness, lastRun);
+  return state === 'failed' && lastRun?.outcome === 'killed' ? 'killed' : state;
+}
+
+/** The Overview's state a card state folds into (`killed` → `failed`): the one comparison point. */
+export const foldCardState = (state: CronCardState): JobState =>
+  state === 'killed' ? 'failed' : state;
+
+/**
+ * **The worst of a pipeline's crons** (the Imagery lane's tail, on the server and the web): each
+ * cron's {@link cronJobState}, worst first by {@link JOB_STATES} (so `never` ranks below `ok`: a cron
+ * not yet recorded never outranks one that is), dated by {@link cronJobAt}; among equals, the newest
+ * time. No crons is `never`.
+ */
+export function worstCronJob(jobs: readonly { liveness: CronLiveness; lastRun: CronLastRun }[]): {
+  state: JobState;
+  at: number | null;
+} {
+  let worst: { state: JobState; at: number | null } = { state: 'never', at: null };
+  for (const job of jobs) {
+    const state = cronJobState(job.liveness, job.lastRun);
+    const at = cronJobAt(job.liveness, job.lastRun, state);
+    const rank = JOB_STATES.indexOf(state);
+    const was = JOB_STATES.indexOf(worst.state);
+    if (rank < was || (rank === was && (at ?? 0) > (worst.at ?? 0))) worst = { state, at };
+  }
+  return worst;
+}

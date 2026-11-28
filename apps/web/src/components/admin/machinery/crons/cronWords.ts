@@ -13,7 +13,7 @@ import { humanize } from '../corpus/runFormat';
 export const CRON_STATE_WORDS = {
   never: 'Not recorded yet',
   running: 'Running',
-  killed: 'Killed',
+  killed: 'Cut off',
   failed: 'Failed',
   late: 'Late',
   stalled: 'Stalled',
@@ -36,7 +36,7 @@ export const TICK_WORDS = {
   worked: 'Did something',
   refused: 'Turned down',
   failed: 'Failed',
-  killed: 'Killed',
+  killed: 'Cut off',
 } as const;
 
 export const CRON_WORDS = {

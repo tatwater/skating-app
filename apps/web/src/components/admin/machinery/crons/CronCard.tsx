@@ -19,7 +19,7 @@ import { CRON_STATE_WORDS, CRON_WORDS, countsLine } from './cronWords';
  * - **When it ran, never a guessed next run** (ruling 17): an interval cron says its interval and
  *   its last run; a daily or weekly one its fixed UTC time and its next run in the viewer's clock.
  * - **The right slot** holds the last run's time while all is well; otherwise the state's word in
- *   caps (*Running*, *Late*, *Failed*, *Killed*, *Not recorded yet*), toned by meaning, and the last
+ *   caps (*Running*, *Late*, *Failed*, *Cut off*, *Not recorded yet*), toned by meaning, and the last
  *   run moves to the sub-line. The word is there for a reader who doesn't see the color.
  * - **A sparse cron says so**: its quiet checks are kept once an hour, so its last time can be an
  *   hour old while it is on time.

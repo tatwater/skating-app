@@ -625,13 +625,6 @@ export const resetSeason = mutation({
   },
 });
 
-/**
- * *Start imagery* and *Pause*, as the Seasons page calls them. ⚠ **Deprecated** (B01-8b-2): the writes
- * moved to Machinery › Imagery (`machineryImagery.ts`), audited and undoable; these names are the same
- * functions, kept only until the Seasons page stops calling them in the same PR, then they go.
- */
-export { pauseImagery, startImagery } from './machineryImagery';
-
 export const addFieldDate = mutation({
   args: {
     season: v.string(),
