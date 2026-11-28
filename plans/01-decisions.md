@@ -9619,10 +9619,15 @@ the pump reads the Machine's exit event (code, out of memory, times) and, for a 
 land, Fly's own log lines; merges them with the upload (one pure function in core, ordered by each
 line's own clock, Fly's app lines kept only past the upload's last, capped with the end kept);
 stores the lines in Convex under the attempt; deletes the R2 object; and destroys the Machine. A
-stopped cut Machine the pump finds while listing is destroyed then. One attempt is one row
-(`imageryAttempts`), kept with its granule. The bucket is public, so the object lives minutes, a
-30-day lifecycle rule on `logs/` is the net, and where the bucket's public base is a Cloudflare
-custom domain a rule blocks `/logs/*` on it (fork 2, the founder: (b) there, else (a)).
+stopped cut Machine the pump finds while listing is destroyed then: one whose attempt is settled
+(its exit read first if the settle couldn't), or one no attempt claims once stopped an hour; never
+one whose attempt is open, and never another app's Machine. Past 50 stopped cut Machines it can't
+clear, no new cut starts and the admins are emailed once a day; while any are left stopped the pump
+lists and sweeps even with nothing queued. One attempt is one row (`imageryAttempts`), numbered past
+the granule's highest (never reused), kept with its granule; its lines are kept 200 days when it
+failed, 30 otherwise. The bucket is public, so the object lives minutes and a 30-day lifecycle rule
+on `logs/` is the net; the bucket's public base is `r2.dev`, not a custom domain, so no rule blocks
+`/logs/*` (fork 2, the founder: (b) on a custom domain, else (a) — (a), as built).
 
 **Why:** D344's two sources, made capturable: the exit is otherwise destroyed before anything reads
 it, and the page reads only Convex, never a signed URL in a browser.
