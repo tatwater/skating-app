@@ -74,6 +74,7 @@ import {
   termsReaderVia,
   welcomeStep,
 } from './lib/consentValidators';
+import { cronCauseTally, cronChain } from './lib/cronValidators';
 import {
   ACCESS_ALERT_KINDS,
   ACCESS_ALERT_STATUSES,
@@ -2481,6 +2482,14 @@ export default defineSchema({
     startedAt: v.number(),
     /** Set only by the final page. Absent means in flight. */
     completedAt: v.optional(v.number()),
+    /**
+     * The tier's cells after the complete walk's prune (B01-8c): the registry's size, stamped by
+     * `finishCellSync` so the page never counts `weatherCells`. Absent until the first complete walk
+     * after the widen, and left alone by a walk with a failed page.
+     */
+    cellCount: v.optional(v.number()),
+    /** The cells that walk's prune removed (B01-8c). */
+    pruned: v.optional(v.number()),
   }).index('by_tier', ['tier']),
 
   /**
@@ -5805,6 +5814,18 @@ export default defineSchema({
     counts: v.optional(v.record(v.string(), v.number())),
     /** The `imageryRuns` row this was copied from (`copyImageryRuns` only): its idempotence key. */
     copiedFrom: v.optional(v.id('imageryRuns')),
+    /**
+     * A run that continues past its tick (D349, B01-8c): set by `cronRuns.openRun`, kept by
+     * `chainStep` as each batch ends; `open` reaches 0 when its last branch ends. Absent on every
+     * run that isn't a chain, and on every run from before the widen.
+     */
+    chain: v.optional(cronChain),
+    /**
+     * Failures by cause (D345, D349): one entry per cause, its count and one sample (at most one per
+     * cause in `CRON_FAILURE_CAUSES`). Absent: none recorded (a run from before the widen reads *not
+     * recorded*).
+     */
+    causes: v.optional(v.array(cronCauseTally)),
     keepUntil: v.number(),
   })
     .index('by_job_started', ['job', 'startedAt'])

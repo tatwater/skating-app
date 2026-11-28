@@ -2,7 +2,7 @@
  * **The cron registry and its registration** (D343, D347, B01-8b). The move of every cron out of
  * `crons.ts` into `CRON_JOBS` must change nothing a cron does: the same 52 names, each on the same
  * schedule, each running the same function with the same arguments — pinned below against a literal
- * table taken from `crons.crons` before the move. The one intended change is called out in the table.
+ * table taken from `crons.crons` before the move. The intended changes are called out in the table.
  *
  * Reads no repo file (it imports modules), so it stays in the cached convex suite. `crons.test.ts`
  * is the recorder's (S1's) guard file; this one is the registry's.
@@ -22,6 +22,8 @@ import {
   cronScheduleOf,
   FREQUENT_CRON_RECORD,
   SEASON_CRON_RETENTION,
+  WEATHER_PAGE_JOBS,
+  WEATHER_RUNNABLE,
 } from './cronJobs';
 import { requireCronJob } from './cronRuns';
 import crons from './crons';
@@ -37,9 +39,17 @@ const registered = (crons as unknown as { crons: Record<string, Registration> })
  * Every cron as `crons.crons` held it before the backbone: name, the function it ran, its schedule
  * as Convex records it, its arguments. In registration order.
  *
- * ⚠ The two intended changes: *watch for the imagery season to open* was `{ type: 'interval',
- * hours: 24 }`; it is now daily at 11:30 UTC (D346). And the last row, *prune cron records*, is new:
- * the backbone's own retention sweep (D347), registered as an entry like any other — 53 in all.
+ * ⚠ The intended changes, each marked at its row:
+ *
+ * - *watch for the imagery season to open* was `{ type: 'interval', hours: 24 }`; it is daily at
+ *   11:30 UTC (D346, B01-8b).
+ * - The four weather archive crons moved to fixed UTC times (D350, B01-8c), ordered by what each
+ *   depends on: *reconcile weather cell registry* was `{ type: 'interval', hours: 168 }`, now weekly
+ *   on Sunday at 05:00; *append daily weather archive* and *append daily bay weather archive* were
+ *   `{ type: 'interval', hours: 24 }`, now daily at 07:00 and 07:15; *repair weather archive gaps*
+ *   was `{ type: 'interval', hours: 24 }`, now daily at 10:00.
+ * - The last row, *prune cron records*, is new: the backbone's own retention sweep (D347),
+ *   registered as an entry like any other — 53 in all.
  */
 const BEFORE: readonly [string, string, Record<string, unknown>, Record<string, unknown>][] = [
   [
@@ -116,28 +126,29 @@ const BEFORE: readonly [string, string, Record<string, unknown>, Record<string, 
   ],
   ['prune weather cache', 'storageHygiene:pruneWeatherCache', { type: 'interval', hours: 6 }, {}],
   ['prune forecast cache', 'storageHygiene:pruneForecastCache', { type: 'interval', hours: 6 }, {}],
+  // Moved to fixed UTC times (D350, B01-8c): was every 168 h, then three every 24 h.
   [
     'reconcile weather cell registry',
     'weatherArchive:maybeSyncWeatherCells',
-    { type: 'interval', hours: 168 },
+    { type: 'weekly', dayOfWeek: 'sunday', hourUTC: 5, minuteUTC: 0 },
     {},
   ],
   [
     'append daily weather archive',
     'weatherArchive:maybeRefreshFilterTier',
-    { type: 'interval', hours: 24 },
+    { type: 'daily', hourUTC: 7, minuteUTC: 0 },
     {},
   ],
   [
     'append daily bay weather archive',
     'weatherArchive:maybeRefreshBayTier',
-    { type: 'interval', hours: 24 },
+    { type: 'daily', hourUTC: 7, minuteUTC: 15 },
     {},
   ],
   [
     'repair weather archive gaps',
     'weatherArchive:maybeSweepGaps',
-    { type: 'interval', hours: 24 },
+    { type: 'daily', hourUTC: 10, minuteUTC: 0 },
     {},
   ],
   ['sweep orphan photos', 'storageHygiene:sweepOrphanPhotos', { type: 'interval', hours: 24 }, {}],
@@ -168,6 +179,7 @@ const BEFORE: readonly [string, string, Record<string, unknown>, Record<string, 
     { type: 'interval', hours: 24 },
     {},
   ],
+  // Moved to a fixed UTC time (D346, B01-8b): was every 24 h.
   [
     'watch for the imagery season to open',
     'imageryIngest:maybeCheckSeasonOpen',
@@ -304,11 +316,15 @@ describe('what each entry carries', () => {
     }
   });
 
-  test('only the three imagery jobs keep their runs a season', () => {
+  test('only the four weather archive crons and the three imagery jobs keep their runs a season', () => {
     const season = CRON_JOBS.filter((j) => j.retention === SEASON_CRON_RETENTION).map(
       (j) => j.name,
     );
     expect(season).toEqual([
+      'reconcile weather cell registry',
+      'append daily weather archive',
+      'append daily bay weather archive',
+      'repair weather archive gaps',
       'poll for new satellite imagery',
       'pump live satellite imagery',
       'rebuild the live imagery index',
@@ -338,6 +354,26 @@ describe('what each entry carries', () => {
       'compute body geometry facts',
       'retry parked body geometry',
     ]);
+  });
+});
+
+describe('the weather page’s lists (B01-8c)', () => {
+  test('the seven crons Weather draws are entries, in registry order', () => {
+    const order = CRON_JOBS.map((j) => j.name);
+    const at = WEATHER_PAGE_JOBS.map((name) => order.indexOf(name));
+    expect(at.every((i) => i >= 0)).toBe(true);
+    expect([...at].sort((a, b) => a - b)).toEqual(at);
+    // The five labeled weather, plus hazard weather and the season watch, unrelabeled.
+    const weather = CRON_JOBS.filter((j) => j.pipeline === 'weather').map((j) => j.name);
+    expect(WEATHER_PAGE_JOBS.filter((n) => weather.includes(n))).toHaveLength(5);
+    expect(cronJob('refresh hazard weather')?.pipeline).toBe('hazards');
+    expect(cronJob('watch for the imagery season to open')?.pipeline).toBe('imagery');
+  });
+
+  test('every runnable cron is on the page; the walk and the season watch are not runnable', () => {
+    for (const name of WEATHER_RUNNABLE) expect(WEATHER_PAGE_JOBS).toContain(name);
+    expect(WEATHER_RUNNABLE).not.toContain('reconcile weather cell registry');
+    expect(WEATHER_RUNNABLE).not.toContain('watch for the imagery season to open');
   });
 });
 

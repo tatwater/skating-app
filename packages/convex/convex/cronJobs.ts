@@ -7,9 +7,11 @@
  *
  * An entry's `name` is the cron's registered name, unchanged from before the move, so Convex keeps
  * its history and its no-overlap rule per name. Its `schedule` is the one it was registered with,
- * byte for byte, except *watch for the imagery season to open*, which moved from every 24 hours to a
- * fixed 11:30 UTC (D346: a fixed-time cron's next run can be shown). The comment above each entry is
- * the one that sat above its registration, moved whole.
+ * byte for byte, except five that moved from an interval to a fixed UTC time (D346: a fixed-time
+ * cron's next run can be shown): *watch for the imagery season to open* (11:30 daily, B01-8b), and
+ * the four weather archive crons (D350, B01-8c) — the registry walk weekly on Sunday at 05:00, the
+ * two appends daily at 07:00 and 07:15, the gap repair daily at 10:00, each comment saying why. The
+ * comment above each entry is the one that sat above its registration, moved whole.
  *
  * A cron added with a bare `crons.interval` (rather than an entry here) fails `cronJobs.test.ts`.
  *
@@ -17,7 +19,7 @@
  * registry is the same at push time and at run time.
  */
 
-import type { CronSchedule } from '@skating/core';
+import type { CronSchedule, CronTickContext } from '@skating/core';
 import type { FunctionReference } from 'convex/server';
 import type { Value } from 'convex/values';
 import { internal } from './_generated/api';
@@ -93,8 +95,9 @@ export interface CronRetention {
 /** Every cron's: ticks 35 days (Health's seven days of failures, with margin), runs and lines 30. */
 export const CRON_RETENTION: CronRetention = { tickDays: 35, runDays: 30, lineDays: 30 };
 /**
- * The imagery jobs': runs kept 200 days, so the poll's *Since the start* strip and the runs list
- * cover a whole season; their lines stay 30.
+ * The season's jobs': runs kept 200 days, so the runs list covers a whole season — the imagery jobs
+ * (the poll's *Since the start* strip) and the four weather archive crons (B01-8c: a season's
+ * appends list whole); their lines stay 30.
  */
 export const SEASON_CRON_RETENTION: CronRetention = { tickDays: 35, runDays: 200, lineDays: 30 };
 
@@ -160,9 +163,15 @@ export interface CronActionJob extends CronJobBase {
 /**
  * An action cron's body as the dispatcher calls it. Its arguments are the entry's own `args`, which
  * the registered action's validator accepts (`crons.test.ts` checks each); `never` lets every
- * handler's own argument type be assigned here, and the dispatcher passes `args` through.
+ * handler's own argument type be assigned here, and the dispatcher passes `args` through. The third,
+ * the tick (core's `CronTickContext`, D349), is for a chained job to open its run with; a handler
+ * that takes two arguments ignores it, and one called outside the dispatcher gets none.
  */
-export type CronActionHandler = (ctx: ActionCtx, args: never) => Promise<unknown>;
+export type CronActionHandler = (
+  ctx: ActionCtx,
+  args: never,
+  tick?: CronTickContext,
+) => Promise<unknown>;
 
 export type CronJobEntry = CronMutationJob | CronActionJob;
 
@@ -472,15 +481,19 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
   // so daily over both tiers is ~5.1 GB/month — ~10% of Convex Pro's included 50 GB spent re-deriving
   // keys that did not change. Weekly is ~1.5%. NOT season-gated: the registry must be populated
   // *before* a season opens, and the corpus drifts in the off-season as readily as in it.
+  //
+  // **Sunday 05:00 UTC** (D350, B01-8c; was every 168 h from the deploy's phase): midnight Eastern in
+  // winter, the week's quietest hour for a ~170 MB walk, and two hours before Sunday's append, so the
+  // append pages a fresh registry. Imports still trigger it at once (`importRuns.finish`).
   {
     name: 'reconcile weather cell registry',
-    schedule: { every: { hours: 24 * 7 } },
+    schedule: { weekly: { dayOfWeek: 'sunday', hourUTC: 5, minuteUTC: 0 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeSyncWeatherCells,
     handler: weatherArchive.maybeSyncWeatherCellsHandler,
     args: {},
     pipeline: 'weather',
-    retention: CRON_RETENTION,
+    retention: SEASON_CRON_RETENTION,
     announces: true,
     record: 'every',
   },
@@ -494,45 +507,59 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
   // interval-with-a-gate shape as `maybeCheckSeasonOpen` and `recurrence.maybeRunRollover`, and for the
   // same reason — a tick that fails today is retried tomorrow, where a `cron` expression would wait a
   // year.
+  //
+  // **Daily at 07:00 UTC** (D350, B01-8c; was every 24 h from the deploy's phase): the lake's day ends
+  // at 05:00 UTC in winter (04:00 in summer time), so two hours past it yesterday's 24 hours are over
+  // and Open-Meteo's newest model runs cover them. The old phase was arbitrary: an append at 02:00 UTC
+  // stored *yesterday* while it was still 21:00 at the lake.
   {
     name: 'append daily weather archive',
-    schedule: { every: { hours: 24 } },
+    schedule: { daily: { hourUTC: 7, minuteUTC: 0 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeRefreshFilterTier,
     handler: weatherArchive.maybeRefreshFilterTierHandler,
     args: {},
     pipeline: 'weather',
-    retention: CRON_RETENTION,
+    retention: SEASON_CRON_RETENTION,
     announces: true,
     record: 'every',
   },
   // **The Tier-A bay append (A09 / Workstream 7).** Every live bay's browse cell, days and hours, so the
   // season's record is complete for every bay whether or not anyone opened it — ~128 calls a day. Same
   // interval-with-a-gate shape as the filter append above, for the same reason.
+  //
+  // **Daily at 07:15 UTC** (D350, B01-8c; was every 24 h): the filter append's reasoning, a quarter
+  // hour after it starts so the two never start in the same second (well inside Open-Meteo's 600 a
+  // minute either way).
   {
     name: 'append daily bay weather archive',
-    schedule: { every: { hours: 24 } },
+    schedule: { daily: { hourUTC: 7, minuteUTC: 15 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeRefreshBayTier,
     handler: weatherArchive.maybeRefreshBayTierHandler,
     args: {},
     pipeline: 'weather',
-    retention: CRON_RETENTION,
+    retention: SEASON_CRON_RETENTION,
     announces: true,
     record: 'every',
   },
   // The gap sweep (D161's recovery ladder). Separate from the append so a retry storm in one cannot
-  // starve the other, and offset by running on its own 24h interval: past data is immutable, so a gap
-  // is permanent unless something notices — and nothing in the weather path retried before A06h.
+  // starve the other: past data is immutable, so a gap is permanent unless something notices — and
+  // nothing in the weather path retried before A06h.
+  //
+  // **Daily at 10:00 UTC** (D350, B01-8c; was its own 24 h interval from the deploy's phase): after
+  // both appends end (the filter append's length is unmeasured; three hours is margin), so it judges
+  // yesterday after the appends wrote it and the bay tier's borrow finds the filter parent's day; and
+  // before the cron records' prune (10:50) and the season watch (11:30).
   {
     name: 'repair weather archive gaps',
-    schedule: { every: { hours: 24 } },
+    schedule: { daily: { hourUTC: 10, minuteUTC: 0 } },
     kind: 'action',
     fn: internal.weatherArchive.maybeSweepGaps,
     handler: weatherArchive.maybeSweepGapsHandler,
     args: {},
     pipeline: 'weather',
-    retention: CRON_RETENTION,
+    retention: SEASON_CRON_RETENTION,
     announces: true,
     record: 'every',
   },
@@ -1017,7 +1044,7 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
 
   /**
    * The backbone's records past their `keepUntil` — tick rows (35 days), run rows (30, the imagery
-   * jobs' 200) and the cron lines of `runEvents` (30) — deleted a page at a time, one table after the
+   * and weather archive jobs' 200) and the cron lines of `runEvents` (30) — deleted a page at a time, one table after the
    * next, self-continuing (`cronRunJobs.prune`). Daily, after the other daily sweeps: nothing reads
    * a record on the day it expires.
    */
@@ -1032,6 +1059,36 @@ export const CRON_JOBS: readonly CronJobEntry[] = [
     record: 'every',
   },
 ];
+
+/**
+ * **The crons Machinery › Weather draws** (B01-8c), in registry order (the page orders them): the
+ * five the registry labels `weather`, and two more Open-Meteo consumers it files elsewhere — *refresh
+ * hazard weather* (`hazards`) and the season watch (`imagery`) — drawn without relabeling.
+ */
+export const WEATHER_PAGE_JOBS = [
+  'refresh hazard weather',
+  'reconcile weather cell registry',
+  'append daily weather archive',
+  'append daily bay weather archive',
+  'repair weather archive gaps',
+  'watch for the imagery season to open',
+  'refresh nws alerts',
+] as const;
+export type WeatherPageJob = (typeof WEATHER_PAGE_JOBS)[number];
+
+/**
+ * **The weather crons a person may run now** (B01-8c's *Run now* and *Repair gaps now*): the two
+ * appends, the gap repair, NWS alerts and hazard weather. Not the registry walk (a ~170 MB read; it
+ * runs on Sundays and after each corpus load) nor the season watch (Imagery's, `machinery.imagery`).
+ */
+export const WEATHER_RUNNABLE = [
+  'refresh hazard weather',
+  'append daily weather archive',
+  'append daily bay weather archive',
+  'repair weather archive gaps',
+  'refresh nws alerts',
+] as const satisfies readonly WeatherPageJob[];
+export type WeatherRunnableJob = (typeof WEATHER_RUNNABLE)[number];
 
 /** The entries by name, built once at module load. */
 const CRON_JOBS_BY_NAME: ReadonlyMap<string, CronJobEntry> = new Map(

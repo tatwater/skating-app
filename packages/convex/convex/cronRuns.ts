@@ -64,6 +64,7 @@ import {
   cronJob,
   cronPeriodMs,
 } from './cronJobs';
+import { cronCauseTally, cronReportLine } from './lib/cronValidators';
 import { type CRON_OUTCOMES, type CRON_RUN_OUTCOMES, CRON_TRIGGERS } from './lib/enums';
 import { literals } from './lib/validators';
 
@@ -617,4 +618,69 @@ export const tickAction = internalAction({
     if (thrown !== null) throw thrown.error;
     return null;
   },
+});
+
+// ─── A run that continues past its tick (D349, B01-8c) ──────────────────────────────────────────
+
+/**
+ * **Open a chained job's run** before its first batch: the run row exists before any batch is
+ * scheduled, so every batch (and the head tick's `finish`) has a row to add to. Answers `{ runId }`,
+ * or `{ busy }` while the job's newest open run is still live (a second chain would ask Open-Meteo
+ * for the same cells twice); an older open run is closed `killed` first.
+ *
+ * PLACEHOLDER (B01-8c-1 seams): never answers `busy` and closes nothing; inserts the run as designed
+ * (`outcome: 'ok'`, `finishedAt: startedAt`, `chain: { open: 1, steps: 0, … }`, `keepUntil` from the
+ * entry) so its id is real. The chain's builder writes the rule.
+ */
+export const openRun = internalMutation({
+  args: {
+    job: v.string(),
+    startedAt: v.number(),
+    trigger: literals(CRON_TRIGGERS),
+    byUserId: v.optional(v.id('profiles')),
+    detail: v.optional(v.string()),
+    season: v.optional(v.string()),
+  },
+  returns: v.union(v.object({ runId: v.id('cronRuns') }), v.object({ busy: v.id('cronRuns') })),
+  handler: async (ctx, args) => {
+    const entry = requireCronJob(args.job, 'action');
+    const job = entry.name;
+    const runId = await ctx.db.insert('cronRuns', {
+      job,
+      startedAt: args.startedAt,
+      finishedAt: args.startedAt,
+      outcome: 'ok',
+      trigger: args.trigger,
+      ...(args.byUserId !== undefined ? { byUserId: args.byUserId } : {}),
+      ...(args.season !== undefined ? { season: args.season } : {}),
+      ...(args.detail !== undefined ? { detail: args.detail } : {}),
+      chain: { open: 1, steps: 0, progressAt: args.startedAt, lines: 0 },
+      keepUntil: args.startedAt + entry.retention.runDays * DAY_MS,
+    });
+    return { runId };
+  },
+});
+
+/**
+ * **One batch of a chained run ends**: its counts added key by key, its causes merged (counts
+ * summed, the first sample kept), its lines appended under core's `CHAIN_LINES_MAX`, `steps + 1`,
+ * `open + opened − closed`, `progressAt` stamped; at `open === 0` the run closes (`failed` if any
+ * step sent an `error`, else `ok`). A step on a closed run changes nothing.
+ *
+ * PLACEHOLDER (B01-8c-1 seams): does nothing. The chain's builder writes it.
+ */
+export const chainStep = internalMutation({
+  args: {
+    runId: v.id('cronRuns'),
+    /** Branches this step starts (1 when it schedules the next batch). */
+    opened: v.optional(v.number()),
+    /** Branches this step ends (1 for every step: it is the batch that ran). */
+    closed: v.optional(v.number()),
+    counts: v.optional(v.record(v.string(), v.number())),
+    causes: v.optional(v.array(cronCauseTally)),
+    lines: v.optional(v.array(cronReportLine)),
+    error: v.optional(v.string()),
+  },
+  returns: v.null(),
+  handler: async () => null,
 });

@@ -94,7 +94,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 | `runEvents` | a run's log, line by line: what its run logger saw (start, stages, the counts at each flush, failures, beats, close) and what the console did to it (marked, waited on, asked to stop); capped per run, with one `cap` row counting the rest — Machinery's live tail; since B01-8b also a cron run's log (`cronRunId`, kind `line`, swept past `keepUntil`), and since B01-8b-2 a cut attempt's (`attemptId`, each line's `origin` — the cutter, Fly or the pump — swept past `keepUntil`), each row under exactly one parent — D341, D347, D348 |
 | `cronHeartbeats` | one row per cron (the registry in `cronJobs.ts`): its last tick and how it ended, last good and last failed tick, last error and duration, `runningSince` for a long action now running (with `runningTrigger` and `runningByUserId`, what started it, since B01-8b-2), its last run — written only by the cron dispatchers; read through core's `cronLiveness` — D343, D347 |
 | `cronTicks` | a cron's ticks, one row per job per UTC hour (crons more often than every 30 minutes) or day, each tick packed as seconds into the bucket × 8 + its outcome's code, with its duration beside it (an action's; a mutation's clock is frozen, so its 0 reads as not measured); at most 60 a row from the schedule, capped at 240 with manual runs; swept at 35 days — D343, D347 |
-| `cronRuns` | a cron tick that did work or failed (a quiet tick has none): outcome, trigger (`cron` or a person's `manual` press), counts, detail, error, with its log in `runEvents`; kept 30 days (the imagery jobs' 200); `copiedFrom` marks the rows carried over from `imageryRuns` — D343, D347 |
+| `cronRuns` | a cron tick that did work or failed (a quiet tick has none): outcome, trigger (`cron` or a person's `manual` press), counts, detail, error, with its log in `runEvents`; kept 30 days (the imagery jobs' 200, and since B01-8c the four weather archive crons'); `copiedFrom` marks the rows carried over from `imageryRuns`; since B01-8c a run that continues past its tick (a chained weather job) is one row, opened before its first batch and added to by each (`chain`: branches open, steps, last progress, lines kept), with its failures by cause (`causes`: one per `CRON_FAILURE_CAUSES` entry, a count and one sample, never content) — D343, D347, D349 |
 
 ### Access
 
@@ -145,7 +145,7 @@ One line per table: what it's for, and the decision or phase that made it. Group
 
 | Table | For |
 | --- | --- |
-| `weatherCells` · `weatherCellSyncs` | the registry of the grid cells the corpus actually occupies, two tiers (browse / filter), and the memory of each tier's last materialization — D152, D161 |
+| `weatherCells` · `weatherCellSyncs` | the registry of the grid cells the corpus actually occupies, two tiers (browse / filter), and the memory of each tier's last materialization — D152, D161; since B01-8c each tier's size after its last complete walk and what that walk pruned (`cellCount`, `pruned`), so Machinery › Weather never counts the registry — D349 |
 | `bodyWeatherCells` | which filter-tier cell each body and bay sits in — the reverse lookup discovery needs — D159 |
 | `weatherDays` | daily observations — an **archive**, not a cache; lazily backfilled 92 days on first open — D153 |
 | `weatherHours` | hourly, for the timeline chart only — A06h §4 |

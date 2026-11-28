@@ -99,6 +99,7 @@ import type * as lib_corpusTaskRepair from "../lib/corpusTaskRepair.js";
 import type * as lib_corpusTaskViews from "../lib/corpusTaskViews.js";
 import type * as lib_corpusTasks from "../lib/corpusTasks.js";
 import type * as lib_cronJobState from "../lib/cronJobState.js";
+import type * as lib_cronValidators from "../lib/cronValidators.js";
 import type * as lib_dailyThrottle from "../lib/dailyThrottle.js";
 import type * as lib_decisionResult from "../lib/decisionResult.js";
 import type * as lib_dedupQueue from "../lib/dedupQueue.js";
@@ -341,6 +342,7 @@ declare const fullApi: ApiFromModules<{
   "lib/corpusTaskViews": typeof lib_corpusTaskViews;
   "lib/corpusTasks": typeof lib_corpusTasks;
   "lib/cronJobState": typeof lib_cronJobState;
+  "lib/cronValidators": typeof lib_cronValidators;
   "lib/dailyThrottle": typeof lib_dailyThrottle;
   "lib/decisionResult": typeof lib_decisionResult;
   "lib/dedupQueue": typeof lib_dedupQueue;
