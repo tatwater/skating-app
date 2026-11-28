@@ -341,11 +341,12 @@ describe('the run pages, mounted', () => {
 });
 
 describe('the sidebar and the gate', () => {
-  it('draws Corpus alone under Pipelines, with its tail, linked to its page', () => {
+  it('draws Corpus under Pipelines, with its tail, linked to its page (Imagery after it)', () => {
     mount();
     const nav = screen.getByRole('navigation', { name: 'Machinery' });
     const lanes = within(nav).getAllByRole('link');
-    expect(lanes).toHaveLength(1);
+    expect(lanes).toHaveLength(2);
+    expect(lanes[1]).toHaveAttribute('href', '/admin/machinery/imagery');
     expect(lanes[0]).toHaveAttribute('href', '/admin/machinery/corpus');
     expect(lanes[0]).toHaveTextContent('Corpus');
     expect(lanes[0]).toHaveTextContent('Local');

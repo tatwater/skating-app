@@ -9,7 +9,7 @@ import { BOARD_ROWS, liveRow, REBUILT_FAILED, STALLED_CAMPAIGN } from './runList
 
 /**
  * Board 6.2 — Machinery › Corpus in the console's frame at 1440 × 900, on the board's clock: the
- * sidebar with Corpus alone under *Pipelines*, the run list newest first with its month dividers,
+ * sidebar with Corpus (and Imagery) under *Pipelines*, the run list newest first with its month dividers,
  * and the open run's column — the run pages mounted as the route mounts them, on the fixtures (their
  * own stories cover every state). Render one beside the board to compare.
  */
@@ -37,14 +37,14 @@ export const Board: Story = {
     await faceLoaded(slot(canvasElement, 'page-word'));
     await expect(slot(canvasElement, 'page-word')).toHaveTextContent('Corpus');
     await expect(slot(canvasElement, 'runs-kicker')).toHaveTextContent('Runs · newest first');
-    // The sidebar: Pipelines › Corpus alone, Local, its tail red.
+    // The sidebar: Pipelines › Corpus, Local, its tail red (Imagery beside it, B01-8b-2).
     const nav = page.getByRole('navigation', { name: 'Machinery' });
     await expect(within(nav).getByRole('list', { name: 'Pipelines' })).toBeVisible();
     const corpus = within(nav).getByRole('button', { name: /^Corpus/ });
     await expect(corpus).toHaveAttribute('aria-current', 'true');
     await expect(corpus).toHaveTextContent('Local');
     await expect(corpus).toHaveTextContent('stalled');
-    await expect(nav).not.toHaveTextContent(/Health|Cost ledger|Imagery|\$/);
+    await expect(nav).not.toHaveTextContent(/Health|Cost ledger|\$/);
     // The list: every row, its months, its end.
     const list = page.getByRole('listbox', { name: 'Corpus runs' });
     const rows = within(list).getAllByRole('option');

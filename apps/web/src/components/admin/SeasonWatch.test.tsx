@@ -1,18 +1,16 @@
 import { DEFAULT_SEASON_WATCH_SETTINGS, evaluateSeason } from '@skating/core';
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { toForm } from '@/lib/seasonPreview';
 import {
   FieldDates,
   historyFillHint,
-  ImageryPanel,
   PreviewTable,
   SettingsEditor,
   WatchCard,
   type WatchRow,
 } from './SeasonWatch';
-import { Refused } from './said';
 
 const ROW: WatchRow = {
   season: 'winter-2026-27',
@@ -107,126 +105,6 @@ describe('WatchCard', () => {
       />,
     );
     expect(screen.getByText(/next daily check fills this in/)).toBeInTheDocument();
-  });
-});
-
-describe('ImageryPanel', () => {
-  const activity = {
-    runs: [
-      { _id: 'r1', kind: 'poll', startedAt: 0, outcome: 'ok', counts: { queued: 3 } },
-      { _id: 'r2', kind: 'reconcile', startedAt: 0, outcome: 'failed', detail: 'boom' },
-    ],
-    counts: { queued: 1, spawned: 0, landed: 5, empty: 2, failed: 1 },
-    failed: [{ granuleId: 'S2C_X', lastError: 'exit 1' }],
-    configured: false,
-    pollCap: 300,
-    maxLive: 25,
-  };
-
-  it('offers Start when not started, and warns when credentials are missing', async () => {
-    const onStart = vi.fn(async () => {});
-    render(
-      <ImageryPanel row={ROW} activity={activity} onStart={onStart} onPause={async () => {}} />,
-    );
-    expect(screen.getByText('Not started. Nothing is cut until you start it.')).toBeInTheDocument();
-    expect(screen.getByText(/missing imagery credentials/)).toBeInTheDocument();
-    expect(screen.getByText('queued 3')).toBeInTheDocument();
-    expect(screen.getByText(/S2C_X \(exit 1\)/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Start imagery' }));
-    expect(onStart).toHaveBeenCalled();
-  });
-
-  it('offers Pause while running; refused, it prints nothing (the write’s toast says it)', async () => {
-    const onPause = vi.fn(async () => {
-      throw new Refused();
-    });
-    render(
-      <ImageryPanel
-        row={{ ...ROW, imageryStartedAt: 1 }}
-        activity={{ ...activity, configured: true }}
-        onStart={async () => {}}
-        onPause={onPause}
-      />,
-    );
-    await userEvent.click(screen.getByRole('button', { name: 'Pause imagery' }));
-    await waitFor(() => expect(onPause).toHaveBeenCalledTimes(1));
-    await waitFor(() =>
-      expect(screen.getByRole('button', { name: 'Pause imagery' })).toBeEnabled(),
-    );
-    expect(screen.queryByText(/No watch is open/)).toBeNull();
-    expect(screen.queryByRole('alert')).toBeNull();
-  });
-
-  it('offers Retry failed beside the failures, and shows a backoff', async () => {
-    const onRetryFailed = vi.fn(async () => {});
-    const onTryAgain = vi.fn(async () => {});
-    render(
-      <ImageryPanel
-        row={{ ...ROW, imageryStartedAt: 1 }}
-        activity={{ ...activity, configured: true, backoffUntil: Date.now() + 60_000 }}
-        onStart={async () => {}}
-        onPause={async () => {}}
-        onRetryFailed={onRetryFailed}
-        onTryAgain={onTryAgain}
-      />,
-    );
-    expect(screen.getByText(/Backing off until/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Try again now' }));
-    expect(onTryAgain).toHaveBeenCalled();
-    await userEvent.click(screen.getByRole('button', { name: 'Retry failed' }));
-    expect(onRetryFailed).toHaveBeenCalled();
-  });
-
-  it('shows a pending index re-read with its own Try again now — one button when both wait', async () => {
-    const onTryAgain = vi.fn(async () => {});
-    const panel = (extra: Record<string, unknown>) => (
-      <ImageryPanel
-        row={{ ...ROW, imageryStartedAt: 1 }}
-        activity={{ ...activity, configured: true, ...extra }}
-        onStart={async () => {}}
-        onPause={async () => {}}
-        onTryAgain={onTryAgain}
-      />
-    );
-    const { rerender } = render(panel({ indexRetryAt: Date.now() + 30 * 60_000 }));
-    expect(screen.getByText(/could not be read into the index/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Try again now' }));
-    expect(onTryAgain).toHaveBeenCalled();
-    rerender(panel({ indexRetryAt: Date.now() + 30 * 60_000, backoffUntil: Date.now() + 60_000 }));
-    expect(screen.getAllByRole('button', { name: 'Try again now' })).toHaveLength(1);
-    // A retry already due has not yet succeeded: still shown, as the next check's.
-    rerender(panel({ indexRetryAt: Date.now() - 1 }));
-    expect(screen.getByText(/reads them again at the next check/)).toBeInTheDocument();
-  });
-
-  it('says why there is nothing to do', () => {
-    const { rerender } = render(
-      <ImageryPanel
-        row={null}
-        activity={undefined}
-        onStart={async () => {}}
-        onPause={async () => {}}
-      />,
-    );
-    expect(screen.getByText(/No watch is open/)).toBeInTheDocument();
-    rerender(
-      <ImageryPanel
-        row={{ ...ROW, closesOn: '2027-05-01' }}
-        activity={undefined}
-        onStart={async () => {}}
-        onPause={async () => {}}
-      />,
-    );
-    expect(screen.getByText(/The watch ended May 1/)).toBeInTheDocument();
-    rerender(
-      <ImageryPanel
-        row={{ ...ROW, imageryStartedAt: 1, imageryPausedAt: 2 }}
-        activity={undefined}
-        onStart={async () => {}}
-        onPause={async () => {}}
-      />,
-    );
-    expect(screen.getByText(/Paused/)).toBeInTheDocument();
   });
 });
 

@@ -8,6 +8,7 @@ import { useTickingNow } from '../body/tabs/tabParts';
 import { isFailed, loaded, read, useConsoleReadSet } from '../reads/consoleReads';
 import { ReadNote } from '../reads/ReadNote';
 import { useHeldRead, useMinuteNow } from '../shell/presence';
+import { type ImageryLaneTail, imageryLaneTailOf } from './imagery/imageryModel';
 import { laneTailAt } from './liveness';
 import { type MachineryLaneId, MachineryLanes } from './MachineryLanes';
 import type { MachineryLanesView } from './machineryTypes';
@@ -25,13 +26,22 @@ import { LANES_FAILED } from './words/machineryWords';
  * page reached by its URL reads nothing.
  */
 
-type SidebarFor = (selected: MachineryLaneId) => ReactNode;
+/** A page's own word for its lane's tail, read fresher than the lanes' minute (its own read). */
+export type LaneOverrides = { imagery?: ImageryLaneTail };
+
+type SidebarFor = (selected: MachineryLaneId, overrides?: LaneOverrides) => ReactNode;
 
 const SidebarContext = createContext<SidebarFor>(() => null);
 
-/** The sidebar, as the page under this layout mounts it, with its lane on screen. */
-export function useMachinerySidebar(selected: MachineryLaneId): ReactNode {
-  return useContext(SidebarContext)(selected);
+/**
+ * The sidebar, as the page under this layout mounts it, with its lane on screen. A page whose own
+ * read already holds its lane's facts passes them (`overrides`), so its tail never lags its page.
+ */
+export function useMachinerySidebar(
+  selected: MachineryLaneId,
+  overrides?: LaneOverrides,
+): ReactNode {
+  return useContext(SidebarContext)(selected, overrides);
 }
 
 /** The sidebar's lane links: each built page, opened fresh. */
@@ -48,23 +58,33 @@ export function MachinerySidebarProvider({ children }: { children: ReactNode }) 
   const shown = useHeldRead<MachineryLanesView>(loaded(state), !canRead || isFailed(state));
   // The tail re-read on the list's clock, from the inputs a live tail carries (`laneTailAt`).
   const tick = useTickingNow(TAIL_TICK_MS);
-  const sidebar: SidebarFor = (selected) => (
-    <>
-      <MachineryLanes
-        tails={shown === undefined ? {} : { corpus: laneTailAt(shown.corpus, tick) }}
-        selected={selected}
-        now={now}
-        link={laneLink}
-      />
-      <ReadNote
-        data-slot="lanes-error"
-        className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
-        reads={[state]}
-      >
-        {LANES_FAILED}
-      </ReadNote>
-    </>
-  );
+  const sidebar: SidebarFor = (selected, overrides) => {
+    const imagery =
+      overrides?.imagery ??
+      (shown === undefined
+        ? undefined
+        : imageryLaneTailOf((shown as { imagery?: unknown }).imagery));
+    return (
+      <>
+        <MachineryLanes
+          tails={{
+            ...(shown !== undefined && { corpus: laneTailAt(shown.corpus, tick) }),
+            ...(imagery !== undefined && { imagery }),
+          }}
+          selected={selected}
+          now={tick}
+          link={laneLink}
+        />
+        <ReadNote
+          data-slot="lanes-error"
+          className="shrink-0 border-0 border-t border-solid border-line px-(--space-4_5) py-(--space-3) empty:border-0 empty:p-0"
+          reads={[state]}
+        >
+          {LANES_FAILED}
+        </ReadNote>
+      </>
+    );
+  };
   return <SidebarContext.Provider value={sidebar}>{children}</SidebarContext.Provider>;
 }
 
