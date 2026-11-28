@@ -99,7 +99,10 @@ export function standInBaseUrl(
     console.warn(`${name} is set but ignored: a stand-in is honored only on a local backend`);
     return null;
   }
-  return raw.replace(/\/+$/, '');
+  // Rebuilt from its parts, never the raw string: no userinfo, query or fragment rides along, so
+  // what is fetched is exactly the loopback origin the check passed (and a path under it).
+  const parsed = new URL(raw);
+  return `${parsed.origin}${parsed.pathname}`.replace(/\/+$/, '');
 }
 
 function isLoopbackHttp(url: string): boolean {

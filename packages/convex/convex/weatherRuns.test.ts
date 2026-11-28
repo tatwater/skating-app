@@ -387,6 +387,19 @@ describe('the provider stand-ins (OPEN_METEO_BASE_URL, NWS_BASE_URL)', () => {
     ).toBe('http://localhost:9000');
   });
 
+  test('loopback spellings that are loopback are honored, rebuilt without userinfo, query or fragment', () => {
+    const honored = (url: string, deployment = 'http://127.0.0.1:3210') =>
+      standInBaseUrl('OPEN_METEO_BASE_URL', {
+        OPEN_METEO_BASE_URL: url,
+        CONVEX_CLOUD_URL: deployment,
+      });
+    expect(honored('http://[::1]:8787/')).toBe('http://[::1]:8787');
+    expect(honored('HTTP://LOCALHOST:8787')).toBe('http://localhost:8787');
+    expect(honored('http://127.1:8787')).toBe('http://127.0.0.1:8787');
+    expect(honored('http://user:pw@127.0.0.1:8787/base/?q=1#f')).toBe('http://127.0.0.1:8787/base');
+    expect(honored('http://127.0.0.1:8787', 'http://[::1]:3210')).toBe('http://127.0.0.1:8787');
+  });
+
   test('impossible to set by accident on a real deployment', () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     // A cloud deployment ignores even a loopback stand-in…
@@ -404,6 +417,33 @@ describe('the provider stand-ins (OPEN_METEO_BASE_URL, NWS_BASE_URL)', () => {
       'nonsense',
     ]) {
       expect(standInBaseUrl('OPEN_METEO_BASE_URL', { OPEN_METEO_BASE_URL: url })).toBeNull();
+    }
+    // A hostile reading: look-alike hosts, userinfo and fragment tricks, other loopback spellings
+    // that aren't the three named, and a cloud deployment with a loopback stand-in set.
+    for (const url of [
+      'http://localhost.evil.com',
+      'http://127.0.0.1@evil.com',
+      'http://evil.com#@127.0.0.1',
+      'http://evil.com\\@127.0.0.1',
+      'http://127.0.0.1.nip.io',
+      'http://[::ffff:127.0.0.1]',
+      'http://localhost.:1',
+      'ftp://127.0.0.1',
+      'file:///etc/hosts',
+    ]) {
+      expect(standInBaseUrl('OPEN_METEO_BASE_URL', { OPEN_METEO_BASE_URL: url })).toBeNull();
+    }
+    for (const deployment of [
+      'https://diligent-guanaco-965.convex.cloud',
+      'https://127.0.0.1:3210',
+      'http://localhost.evil.com:3210',
+    ]) {
+      expect(
+        standInBaseUrl('NWS_BASE_URL', {
+          NWS_BASE_URL: 'http://[::1]:9000',
+          CONVEX_CLOUD_URL: deployment,
+        }),
+      ).toBeNull();
     }
     // Logged by name, never by value.
     expect(warn.mock.calls.every(([m]) => !String(m).includes('8787'))).toBe(true);
@@ -686,10 +726,13 @@ describe('the filter append records one run of its whole chain (D349)', () => {
       throw new Error('batch died: https://x/?latitude=1');
     };
     await expect(maybeRefreshFilterTierHandler(ctx, {})).rejects.toThrow('batch died');
+    // The dead inline batch's branch, then the head's own: every branch closed, the run failed.
     expect(steps()).toEqual([
       expect.objectContaining({ runId: expect.any(String), opened: 1 }),
       { runId: expect.any(String), closed: 1, head: true, error: 'batch died: https://x/' },
+      { runId: expect.any(String), closed: 1, head: true, error: 'batch died: https://x/' },
     ]);
+    expect(openAfter()).toBe(0);
   });
 
   test('with a tick, the thrown error carries the run for the recorder to close failed', async () => {
@@ -713,8 +756,13 @@ describe('the filter append records one run of its whole chain (D349)', () => {
       worked: true,
       runId: expect.any(String),
     });
-    // Only the branch it opened for the batch that never reported: the recorder closes the run.
-    expect(steps()).toEqual([expect.objectContaining({ runId: expect.any(String), opened: 1 })]);
+    // The branch it opened for the batch that never reported is closed by the head; its own is
+    // left for the recorder's merge of the thrown report.
+    expect(steps()).toEqual([
+      expect.objectContaining({ runId: expect.any(String), opened: 1 }),
+      { runId: expect.any(String), closed: 1, head: true, error: 'boom' },
+    ]);
+    expect(openAfter()).toBe(1);
   });
 
   test('out of season: a quiet tick, no run opened', async () => {
@@ -1503,13 +1551,17 @@ describe('the edges of a run', () => {
     expect(steps()).toEqual([
       expect.objectContaining({ runId: expect.any(String), opened: 1 }),
       { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
+      { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
     ]);
+    expect(openAfter()).toBe(0);
     rec.steps.length = 0;
     await expect(maybeSyncWeatherCellsHandler(ctx, {})).rejects.toThrow('tier died');
     expect(steps()).toEqual([
       expect.objectContaining({ runId: expect.any(String), opened: 1 }),
       { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
+      { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
     ]);
+    expect(openAfter()).toBe(0);
     // With the open failing too, the throw is the job's own.
     rec.openThrows = true;
     vi.spyOn(console, 'warn').mockImplementation(() => {});

@@ -107,6 +107,8 @@ Read by running functions only; `.env.local` values are read by the CLI, never b
 | `FLY_API_TOKEN` · `FLY_IMAGE` · `FLY_APP` · `FLY_REGION` | ⬜ owed — A06i spawns cut Machines; `FLY_IMAGE` is the pinned cutter image, `FLY_APP`/`FLY_REGION` default to `skating-imagery`/`sjc` | ⬜ | token **yes** |
 | `FLY_API_URL` | a knob, **never set on dev or prod** — B01-8b-2: replaces both of Fly's hosts (the Machines API and the log API) with a local stand-in, for a proof on a throwaway backend only | never | no |
 | `IMAGERY_STAC_URL` | a knob, **never set on dev or prod** — B01-8b-2: replaces Earth Search (the poll's STAC catalog) with a local stand-in, for a proof on a throwaway backend only | never | no |
+| `OPEN_METEO_BASE_URL` | a knob, **never set on dev or prod** — B01-8c-1: replaces Open-Meteo's forecast host (the archive, the weather-since fetch) with a local stand-in, for a proof on a throwaway backend only; honored only when it is a plain `http:` loopback URL (`127.0.0.1`, `localhost`, `::1`) **and** the deployment is local (`CONVEX_CLOUD_URL` unset or loopback), so a cloud deployment ignores it and logs the name | never | no |
+| `NWS_BASE_URL` | a knob, **never set on dev or prod** — B01-8c-1: replaces NWS's alerts host with a local stand-in, under the same loopback-and-local-deployment guard as `OPEN_METEO_BASE_URL` | never | no |
 | `CONVEX_CLOUD_URL` · `CONVEX_SITE_URL` | provided by Convex | provided | no |
 
 ### 2b. Mobile — EAS environments (`development`, `preview`, `production`) and local `apps/mobile/.env.local`

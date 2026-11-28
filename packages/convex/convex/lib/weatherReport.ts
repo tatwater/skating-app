@@ -236,9 +236,19 @@ export async function closeHead(
 }
 
 /**
- * A chained head that threw after its run opened: under the dispatcher the error carries the run's
- * id (core's `withCronReport`), so the recorder closes the run `failed`; with no tick the head closes
- * its own branch with the error. Returns the error to rethrow.
+ * A chained head whose inline batch threw (the one call in a head's `try` that can: the
+ * `ctx.runAction` of a tier's first batch, after the head opened that batch's branch).
+ *
+ * That batch's branch is closed here first, with the error: it can never close itself — it threw
+ * before its step, or after a step that opened a continuation it never scheduled (its scheduler call
+ * is the only thing after its step), so either way exactly one branch is left that no batch will end.
+ * Without this the run read *running*, then *No word since …*, for the 31 minutes until a press could
+ * open another, and stayed open until the next day's run closed it `killed` — when its outcome,
+ * `failed`, was known at once. Sent as a `head` step (no batch reported, so `steps` doesn't move).
+ *
+ * Then under the dispatcher the error carries the run's id (core's `withCronReport`), so the
+ * recorder's merge closes the head's own branch and the run `failed`; with no tick the head closes its
+ * own branch with the error. Returns the error to rethrow.
  */
 export async function failHead(
   ctx: Pick<ActionCtx, 'runMutation'>,
@@ -247,6 +257,11 @@ export async function failHead(
   err: unknown,
   extra: { season?: string } = {},
 ): Promise<Error> {
+  await chainStepSafely(ctx, runId, {
+    closed: 1,
+    head: true,
+    error: sampleTextOf(thrownText(err)),
+  });
   if (tick !== undefined) {
     return withCronReport(err, {
       worked: true,
