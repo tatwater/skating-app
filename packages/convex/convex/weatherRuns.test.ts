@@ -17,7 +17,7 @@ import { internal } from './_generated/api';
 import type { Id } from './_generated/dataModel';
 import type { ActionCtx } from './_generated/server';
 import * as recurringWork from './lib/recurringWork';
-import { CAUSE_WORDS, StepTally, sampleTextOf } from './lib/weatherReport';
+import { CAUSE_WORDS, StepTally, sampleTextOf, thrownText } from './lib/weatherReport';
 import schema from './schema';
 import { standInBaseUrl } from './weather';
 import {
@@ -52,6 +52,10 @@ const rec = vi.hoisted(() => ({
   failures: [] as unknown[],
   /** A cell key whose digest rebuild throws. */
   digestThrows: null as string | null,
+  /** The archive's day write refuses what it is given. */
+  writeThrows: false,
+  openThrows: false,
+  stepThrows: false,
 }));
 
 // The chain's two writes, recorded with the stubs' own validators (the contract's shapes).
@@ -76,6 +80,7 @@ vi.mock('./cronRuns', async (importOriginal) => {
       returns: v.union(v.object({ runId: v.id('cronRuns') }), v.object({ busy: v.id('cronRuns') })),
       handler: async (ctx, args) => {
         rec.opens.push(args);
+        if (rec.openThrows) throw new Error('open refused');
         if (rec.busy !== null) return { busy: rec.busy as never };
         const runId = await ctx.db.insert('cronRuns', {
           job: args.job,
@@ -101,6 +106,7 @@ vi.mock('./cronRuns', async (importOriginal) => {
       },
       returns: v.null(),
       handler: async (_ctx, args) => {
+        if (rec.stepThrows) throw new Error('step refused');
         rec.steps.push(args);
         return null;
       },
@@ -113,6 +119,11 @@ vi.mock('@skating/core', async (importOriginal) => {
   const core = await importOriginal<typeof import('@skating/core')>();
   return {
     ...core,
+    summarizeWeatherDays: (...args: Parameters<typeof core.summarizeWeatherDays>) => {
+      const days = core.summarizeWeatherDays(...args);
+      // A day the write's validator refuses: the write throws, as an over-limit write would.
+      return rec.writeThrows ? days.map((d) => ({ ...d, localDate: 5 as never })) : days;
+    },
     buildWeatherCellDigest: (...args: Parameters<typeof core.buildWeatherCellDigest>) => {
       if (rec.digestThrows !== null) throw new RangeError('digest refused');
       return core.buildWeatherCellDigest(...args);
@@ -150,6 +161,9 @@ beforeEach(() => {
   rec.failures.length = 0;
   rec.busy = null;
   rec.digestThrows = null;
+  rec.writeThrows = false;
+  rec.openThrows = false;
+  rec.stepThrows = false;
   vi.useFakeTimers({ now: T0 });
 });
 afterEach(() => {
@@ -1301,5 +1315,230 @@ describe('the gap repair completes partial past days (fork 2 (b))', () => {
         (c.partialLeft ?? 0),
     );
     expect(c.partialDays).toBe(7);
+  });
+});
+
+// ─── The edges ──────────────────────────────────────────────────────────────────────────────────
+
+describe('the edges of a run', () => {
+  test('a thrown non-Error reads as its string', () => {
+    expect(thrownText('plain')).toBe('plain');
+    expect(thrownText(new RangeError(''))).toBe('RangeError');
+  });
+
+  test('a write that throws is writeFailed, the cell counted failed, the batch going on', async () => {
+    const t = harness();
+    await openSeason(t);
+    await seedCells(t, 2);
+    standIn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rec.writeThrows = true;
+    await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await drain(t);
+    // A cold start: 14 past days and today, two billing units (2.4 each).
+    expect(summed()).toMatchObject({ cells: 2, cellsFailed: 2, calls: 2, weighted: 48 });
+    expect([...mergedCauses().keys()]).toEqual(['writeFailed']);
+    expect(rec.failures).toEqual([]);
+  });
+
+  test('a refetch whose write throws is counted, and its partial days stay as they were', async () => {
+    const t = harness();
+    await seedCells(t, 1);
+    await seedDays(t, 0, 8, 1, [hole(ago(3)), written(ago(2))]);
+    standIn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rec.writeThrows = true;
+    await sweep(t);
+    expect(summed()).toMatchObject({ holes: 1, calls: 1, partialStill: 1, stillMissing: 1 });
+    expect(mergedCauses().get('writeFailed')?.count).toBe(1);
+    expect((await dayRow(t, 0, ago(2)))?.hours).toBe(10);
+  });
+
+  test('an answer with times but no usable hour is emptyAnswer', async () => {
+    const t = harness();
+    await openSeason(t);
+    await seedCells(t, 1);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ hourly: { time: [Math.floor(T0 / 1000)], temperature_2m: [null] } }),
+            { status: 200 },
+          ),
+      ),
+    );
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await drain(t);
+    expect(mergedCauses().get('emptyAnswer')).toMatchObject({
+      count: 1,
+      sampleText: 'Open-Meteo answered with no usable hour',
+    });
+  });
+
+  test('a run that couldn’t be opened: every job still does its work, unreported', async () => {
+    const t = harness();
+    await openSeason(t);
+    await seedCells(t, 2);
+    await seedDays(t, 0, 6, 1, [hole(ago(3))]);
+    const urls = standIn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rec.openThrows = true;
+    // The repair first, while the hole is still there for it (the append's fortnight would fill it).
+    const gaps = await t.action(internal.weatherArchive.maybeSweepGaps, {});
+    const append = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    const bays = await t.action(internal.weatherArchive.maybeRefreshBayTier, {});
+    const walk = await t.action(internal.weatherArchive.maybeSyncWeatherCells, {});
+    await drain(t);
+    expect(append).toMatchObject({ started: true, cronReport: { worked: true } });
+    expect(bays.cronReport.worked).toBe(true);
+    expect(gaps).toMatchObject({
+      started: true,
+      cronReport: { worked: true, detail: 'Gap repair' },
+    });
+    expect(walk.cronReport).toEqual({ worked: true, detail: 'Walk started by hand' });
+    expect(steps()).toEqual([]);
+    // The append's two cells and the repair's one hole were all asked for.
+    expect(urls).toHaveLength(3);
+  });
+
+  test('a step that couldn’t be recorded changes nothing the job does', async () => {
+    const t = harness();
+    await openSeason(t);
+    await seedCells(t, 45);
+    const urls = standIn();
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rec.stepThrows = true;
+    await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await drain(t);
+    expect(urls).toHaveLength(45);
+  });
+
+  test('a repair or a walk still going starts nothing', async () => {
+    const t = harness();
+    await openSeason(t);
+    await seedCells(t, 1);
+    await seedDays(t, 0, 6, 1, [hole(ago(3))]);
+    const urls = standIn();
+    rec.busy = await anyRun(t);
+    expect(await t.action(internal.weatherArchive.maybeSweepGaps, {})).toMatchObject({
+      started: false,
+      reason: 'a run is still going',
+      cronReport: { worked: false },
+    });
+    expect(await t.action(internal.weatherArchive.maybeRefreshBayTier, {})).toMatchObject({
+      started: false,
+    });
+    expect(await t.action(internal.weatherArchive.maybeSyncWeatherCells, {})).toMatchObject({
+      skipped: 'a run is still going',
+      tiers: [],
+    });
+    expect(urls).toHaveLength(0);
+    expect(await t.run((ctx) => ctx.db.query('weatherCellSyncs').collect())).toEqual([]);
+  });
+
+  test('the repair out of season is a quiet tick; a repair or walk head that throws closes its run', async () => {
+    const t = harness();
+    expect(await t.action(internal.weatherArchive.maybeSweepGaps, {})).toMatchObject({
+      started: false,
+      cronReport: { worked: false },
+    });
+    expect(opens()).toHaveLength(0);
+    await openSeason(t);
+    const ctx = actionCtx(t);
+    (ctx as { runAction: unknown }).runAction = async () => {
+      throw new Error('tier died');
+    };
+    await expect(maybeSweepGapsHandler(ctx, {})).rejects.toThrow('tier died');
+    expect(steps()).toEqual([{ runId: expect.any(String), closed: 1, error: 'tier died' }]);
+    rec.steps.length = 0;
+    await expect(maybeSyncWeatherCellsHandler(ctx, {})).rejects.toThrow('tier died');
+    expect(steps()).toEqual([{ runId: expect.any(String), closed: 1, error: 'tier died' }]);
+    // With the open failing too, the throw is the job's own.
+    rec.openThrows = true;
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    await expect(maybeSweepGapsHandler(ctx, {})).rejects.toThrow('tier died');
+    await expect(maybeSyncWeatherCellsHandler(ctx, {})).rejects.toThrow('tier died');
+  });
+
+  test('a progress line every tenth step', async () => {
+    const t = harness();
+    await openSeason(t);
+    await seedCells(t, 401);
+    standIn();
+    await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await drain(t);
+    const lines = steps()
+      .flatMap((s) => s.lines ?? [])
+      .map((l) => l.text);
+    expect(lines).toContain('Step 10 · 400 cells so far, 400 stored, 0 failed');
+    expect(lines.at(-1)).toBe('Done in 11 steps · 401 of 401 cells stored, 0 failed');
+    expect(summed()).toMatchObject({ cells: 401, cellsStored: 401 });
+    expect(openAfter()).toBe(0);
+  }, 60_000);
+
+  test('a queue longer than a batch is refetched a batch at a time; a cell that throws is counted', async () => {
+    const t = harness();
+    await seedCells(t, 45);
+    for (let i = 0; i < 45; i++) await seedDays(t, i, 4, 1, [written(ago(2))]);
+    const urls = standIn();
+    const real = recurringWork.asItem;
+    vi.spyOn(recurringWork, 'asItem').mockImplementation(async (key, work) => {
+      // The refetch of the last cell throws (its walk item, earlier, went through).
+      if (key === `filter:${cellKey(44)}` && urls.length >= 44) throw new Error('poison');
+      return real(key, work);
+    });
+    await sweep(t);
+    expect(urls).toHaveLength(44);
+    expect(summed()).toMatchObject({ partialDays: 45, partialFilled: 44, partialStill: 1 });
+    expect(openAfter()).toBe(0);
+    expect(await t.run((ctx) => ctx.db.query('jobFailures').collect())).toMatchObject([
+      { job: 'weatherGaps', key: `filter:${cellKey(44)}` },
+    ]);
+  });
+
+  test('oldest first stops at the first refetch the budget can’t pay, though a cheaper one would fit', async () => {
+    const t = harness();
+    await seedCells(t, 3);
+    // 4.0 run-wide → 32 for filter: one 2.4 refetch (16+ days back) leaves 8, under any refetch.
+    await meterAt(t, PARTIAL_REPAIR_DAY_CEILING - 4);
+    await seedDays(t, 0, 20, 1, [written(ago(18))]);
+    await seedDays(t, 1, 20, 1, [written(ago(17))]);
+    await seedDays(t, 2, 20, 1, [written(ago(2))]);
+    const urls = standIn();
+    await sweep(t);
+    expect(urls.map(indexOf)).toEqual([0]);
+    expect(summed()).toMatchObject({ partialFilled: 1, partialDeferred: 2, weighted: 24 });
+  });
+  test('a queued refetch that fails keeps its days partial; digest rebuilds that throw are counted', async () => {
+    const t = harness();
+    await seedCells(t, 2);
+    await seedDays(t, 0, 6, 1, [written(ago(2))]);
+    await seedDays(t, 1, 6, 1, [hole(ago(3))]);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    rec.digestThrows = 'any';
+    standIn((i) => (i === 0 ? '503' : null));
+    await sweep(t);
+    expect(summed()).toMatchObject({ partialStill: 1, filled: 1, digestFailed: 2 });
+    expect((await dayRow(t, 0, ago(2)))?.hours).toBe(10);
+  });
+
+  test('a batch that pages nothing still ends its branch', async () => {
+    const t = harness();
+    await seedCells(t, 1);
+    await t.action(internal.weatherArchive.refreshTierDays, {
+      tier: 'filter',
+      afterKey: 'zzz',
+      cronRun: { runId: await anyRun(t), step: 2 },
+    });
+    expect(steps()).toEqual([
+      expect.objectContaining({
+        closed: 1,
+        lines: [
+          expect.objectContaining({ text: 'Done in 2 steps · 0 of 0 cells stored, 0 failed' }),
+        ],
+      }),
+    ]);
   });
 });
