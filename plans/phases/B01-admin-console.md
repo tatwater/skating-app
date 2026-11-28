@@ -18168,6 +18168,13 @@ path every cron runs on), so it earns a review of its own.
 | **W2 — the drawer** | `machinery/crons/*` and their stories and tests | W1's files |
 | **Executor** | merges X2, S3, P, W1, W2 in order; the image build and pin (after telling the founder); the proofs; the render-compare | — |
 
+**Before 8b-2's cards draw *killed*** (register Ma27, ruled (b) for 8b-2; Ma30 rides along): X2
+widens the heartbeat beside `runningSince` with the trigger that set it (`runningTrigger`, and the
+presser for a manual run); S3's `begin` then calls a stamp set by an older *cron* tick killed at any
+age (Convex never runs a cron over itself), keeps the age rule for a manual press, and records the
+killed run with the trigger and presser it really had. The liveness rule's `killed` follows the same
+split. The action limit measured on dev (Ma27 (a)) settles the manual age and the leases.
+
 **The seams that land first**, in each PR: the schema, the registry and its loop (8b-1), and the
 contracts below, as 8a's X did; the web derives its types from `api`, so the stubs return these
 shapes.
@@ -18463,6 +18470,9 @@ the build learned that the design didn't say, and what the 8b-2 builders inherit
   next tick begins inside the 31 minutes and overwrites the stamp (Ma27). The repo elsewhere assumes
   10 (the imagery pump's 15-minute lease, the support sender's 11-minute claim): if dev's limit is
   really 30, those are wrong instead (Ma27).
+  *Ruled 2026-11-27 (the governor):* 8b-1 ships as is, the limit to be measured on dev; 8b-2
+  records which trigger set `runningSince`, so a cron's kill is recorded at any age, before its
+  cards draw *killed*.
 - **A mutation job's duration is always 0 ms as stored.** `Date.now()` is frozen for a whole
   mutation, its nested job included. The reads send `null` (`strip`'s `ms`, `runsPage`'s
   `durationMs`) for a mutation job, never a real 0; an action job's is measured. *For the 8b-2 web
@@ -18551,10 +18561,10 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma24 | The backbone's cost measured on dev against the design's count (~6,800 calls and ~9 MB of I/O a day) | B01-8b's design | a day after 8b-1 deploys | open |
 | Ma25 | Stopped cut Machines left by a pump that was down are cleared on its next tick, but nothing shows how many wait meanwhile | B01-8b's design | Health (8e) | open |
 | Ma26 | Measure whether the dispatcher's nested `ctx.runMutation` is billed as a function call; if so, decide whether the frequent crons keep the wrapper (it doubles their calls, though `sparse` cuts their writes) | the founder's fork 1 ruling | 8b-1 measured locally: the nested call leaves no execution record of its own; confirmed from dev's usage page a day after the deploy | open |
-| Ma27 | Which action limit dev really enforces: core takes 30 minutes (measured locally) where Convex's docs say 10. At 30, a frequent announcing cron's kill (the pump, the geometry, the index) is never recorded if the real limit is 10, since its next tick overwrites the stamp inside 31 minutes; at 10, the pump's 15-minute lease and the support sender's 11-minute claim are too short if the real limit is 30. A fix for the first that holds either way: record which trigger set `runningSince` (a widen), so a cron tick calls an older *cron* tick's stamp killed at any age (Convex never overlaps a cron with itself) | B01-8b-1's integration | measured on dev (a sleeping action in a throwaway module, with the founder) before 8b-2's cards draw *killed* | open |
+| Ma27 | Which action limit dev really enforces: core takes 30 minutes (measured locally) where Convex's docs say 10. At 30, a frequent announcing cron's kill (the pump, the geometry, the index) is never recorded if the real limit is 10, since its next tick overwrites the stamp inside 31 minutes; at 10, the pump's 15-minute lease and the support sender's 11-minute claim are too short if the real limit is 30. **Governor ruling, 2026-11-27:** (a) now — 8b-1 ships kill detection at 31 minutes, and the real cloud limit is measured on dev; (b) is scheduled for 8b-2, before its cards draw *killed*: record which trigger set `runningSince` (a widen), so a cron tick calls an older *cron* tick's stamp killed at any age (Convex never overlaps a cron with itself), and the manual-press age rule follows the measured limit | B01-8b-1's integration | (a) the measurement on dev (a sleeping action in a throwaway module, with the founder), then the leases re-checked against it; (b) 8b-2's X2 (the widen) and S3, before W2's cards draw *killed* | open |
 | Ma28 | The web draws the `never` state with today's word; it should read *not recorded yet* | B01-8b-1's integration | 8b-2 (W2) | open |
 | Ma29 | The runs list's *Failed* tab reads `outcome = failed` only, so a killed run shows under *All* but not *Failed*, though the card and the rule count it failed; one `.paginate()` can't read two outcomes | B01-8b-1's review | 8b-2: a *Failed* filter over `failed` and `killed` (two reads merged, or a `bad` flag on the run row, a widen) | open |
-| Ma30 | A killed tick recorded by `begin` always says `trigger: cron` with no presser, even when the dead run was a manual press (`runningSince` doesn't say who set it) | B01-8b-1's review | with Ma27's widen | open |
+| Ma30 | A killed tick recorded by `begin` always says `trigger: cron` with no presser, even when the dead run was a manual press (`runningSince` doesn't say who set it) | B01-8b-1's review | 8b-2, with Ma27's (b) widen (the trigger and presser recorded beside `runningSince`) | open |
 | Ma31 | The season watch's same-day retries (`imageryIngest.maybeCheckSeasonOpen` scheduling itself) bypass the dispatcher: a retry that succeeds never reaches the heartbeat, which reads the morning's failure until the next 11:30 tick | B01-8b-1's review | with Ma20 (the chains as runs), or the dispatcher carrying a retry's arguments | open |
 
 ## Ruled out
