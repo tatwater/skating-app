@@ -178,6 +178,10 @@ describe('samples', () => {
       'GET https://user:pw@api.example.com/v1/forecast?latitude=44&apikey=SECRET#x failed; token=abc Bearer eyJhbGci.x',
     );
     expect(text).toBe('GET https://api.example.com/v1/forecast failed; token=… Bearer …');
+    // An auth scheme is case-insensitive: a lowercase one hides a token just the same.
+    expect(redactSample('sent bearer eyJhbGci.x and basic dXNlcjpwdw==')).toBe(
+      'sent bearer … and basic …',
+    );
     fc.assert(
       fc.property(
         fc.webUrl({

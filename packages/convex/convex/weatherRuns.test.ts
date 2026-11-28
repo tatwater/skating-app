@@ -11,6 +11,7 @@
  */
 
 import type { CronFailureCause, CronTickContext, FetchFailure } from '@skating/core';
+import { getFunctionName } from 'convex/server';
 import { convexTest } from 'convex-test';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
@@ -163,6 +164,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  // Here, not only at a test's end: a test that fails mid-way must not leave a stand-in honored.
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -1567,6 +1570,38 @@ describe('the edges of a run', () => {
     vi.spyOn(console, 'warn').mockImplementation(() => {});
     await expect(maybeSweepGapsHandler(ctx, {})).rejects.toThrow('tier died');
     await expect(maybeSyncWeatherCellsHandler(ctx, {})).rejects.toThrow('tier died');
+  });
+
+  test('a registry size the report can’t read never stops the append or the repair', async () => {
+    const t = harness();
+    await openSeason(t);
+    await seedCells(t, 3);
+    standIn();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const ctx = actionCtx(t);
+    const read = ctx.runQuery as unknown as Call;
+    (ctx as { runQuery: unknown }).runQuery = async (ref: unknown, args: unknown) => {
+      if (getFunctionName(ref as never) === 'weatherArchive:cellSyncStates') {
+        throw new Error('read refused');
+      }
+      return read(ref, args);
+    };
+    expect(await maybeRefreshFilterTierHandler(ctx, {})).toMatchObject({ started: true });
+    await drain(t);
+    // The size is unknown, so the open carries none; the batch ran and the run closed.
+    expect(rec.opens[0]).not.toHaveProperty('counts.registry');
+    expect(summed()).toMatchObject({ cells: 3, cellsStored: 3 });
+    expect(openAfter()).toBe(0);
+    rec.steps.length = 0;
+    // The repair reads it after its run is open: it still runs, and closes every branch.
+    expect(await maybeSweepGapsHandler(ctx, {})).toMatchObject({ started: true });
+    await drain(t);
+    expect(steps()[0]?.lines?.[0]?.text).toMatch(/: checking the registered cells$/);
+    expect(openAfter()).toBe(0);
+    expect(warn).toHaveBeenCalledWith(
+      'weatherArchive: the registry size for the run report could not be read',
+      expect.any(Error),
+    );
   });
 
   test('a progress line every tenth step', async () => {

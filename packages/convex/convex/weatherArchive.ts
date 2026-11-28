@@ -2684,9 +2684,24 @@ export async function maybeRefreshFilterTierHandler(
   });
 }
 
+/**
+ * The tiers' sync states, read only for a run's report (its start counts and lines). Reporting is an
+ * observation, never part of the job (`lib/weatherReport.ts`), so a read that throws is logged and
+ * reads as unknown (`[]`): it never stops an append or a repair that would have run without it, nor
+ * throws between a head's `openChainRun` and the `try` that closes its branches.
+ */
+async function syncStatesForReport(ctx: ActionCtx): Promise<CellSyncState[]> {
+  try {
+    return await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
+  } catch (err) {
+    console.warn('weatherArchive: the registry size for the run report could not be read', err);
+    return [];
+  }
+}
+
 /** A tier's registry size from its last complete walk (`weatherCellSyncs.cellCount`), if known. */
 async function tierCellCount(ctx: ActionCtx, tier: WeatherTier): Promise<number | null> {
-  const states: CellSyncState[] = await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
+  const states = await syncStatesForReport(ctx);
   return states.find((s) => s.tier === tier)?.cellCount ?? null;
 }
 
@@ -2766,8 +2781,7 @@ export async function maybeSweepGapsHandler(
       cronReport: BUSY_REPORT,
     };
   }
-  const states: CellSyncState[] =
-    runId === null ? [] : await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
+  const states: CellSyncState[] = runId === null ? [] : await syncStatesForReport(ctx);
   const repaired: Record<string, number> = {};
   try {
     for (const tier of WEATHER_TIERS) {

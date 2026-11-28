@@ -742,7 +742,7 @@ export const tickAction = internalAction({
 // order the steps arrive. `steps` counts the batches (steps that closed a branch, the head's close
 // excepted).
 //
-// **What happens when something fails** (each order has its test in `crons.test.ts`):
+// **What happens when something fails** (each order has its test in `cronChain.test.ts`):
 //
 // - *`openRun` throws*: the job runs unrecorded as a chain (`lib/chainRun.openChainRun` answers no
 //   run, every later step is skipped); its head's tick is recorded as before the chain (a run row of
@@ -994,16 +994,24 @@ async function chainRunStartedAt(
   return runs.find((run) => run.chain !== undefined) ?? null;
 }
 
-/** How many of a job's newest runs `openRun` reads for an open chain. */
+/** How many of a job's newest chained runs `openRun` reads for an open chain. */
 export const OPEN_RUN_LOOKBACK = 3;
+/**
+ * How many of a job's newest runs `openRun` scans to find those chained runs. A run row that isn't a
+ * chain — a press skipped as busy (a manual tick always has a row), a tick that ran unrecorded
+ * beside a live chain, a killed tick — doesn't count toward {@link OPEN_RUN_LOOKBACK}, so a few of
+ * them can't push a live chain out of sight and let a second one open beside it.
+ */
+export const OPEN_RUN_SCAN = 24;
 
 /**
  * **Open a chained job's run** before its first batch: the run row exists before any batch is
  * scheduled, so every batch (and the head tick's `finish`) has a row to add to. Reads the job's
- * newest {@link OPEN_RUN_LOOKBACK} runs (`by_job_started`, desc): an open chain among them that
- * hasn't stopped (core's `chainLiveness`: a step inside the action limit and a minute) makes the
- * answer `{ busy }` (a second chain would ask Open-Meteo for the same cells twice) and opens
- * nothing; one that has stopped is closed `killed` first. Then inserts the run: `outcome: 'ok'`,
+ * newest {@link OPEN_RUN_LOOKBACK} chained runs among its newest {@link OPEN_RUN_SCAN} runs
+ * (`by_job_started`, desc): an open chain among them that hasn't stopped (core's `chainLiveness`: a
+ * step inside the action limit and a minute) makes the answer `{ busy }` (a second chain would ask
+ * Open-Meteo for the same cells twice) and opens nothing; one that has stopped is closed `killed`
+ * first. Then inserts the run: `outcome: 'ok'`,
  * `finishedAt: startedAt`, `chain: { open: 1 }` (the head's own branch), `keepUntil` from the
  * entry, and any `counts` known at the start (the registry's size, the days asked for).
  */
@@ -1027,10 +1035,13 @@ export const openRun = internalMutation({
       .query('cronRuns')
       .withIndex('by_job_started', (q) => q.eq('job', job))
       .order('desc')
-      .take(OPEN_RUN_LOOKBACK);
+      .take(OPEN_RUN_SCAN);
     let busy: Id<'cronRuns'> | null = null;
+    let chains = 0;
     for (const run of recent) {
-      if (run.chain === undefined || !(run.chain.open > 0)) continue;
+      if (run.chain === undefined) continue;
+      if (++chains > OPEN_RUN_LOOKBACK) break;
+      if (!(run.chain.open > 0)) continue;
       if (chainLiveness(run.chain, now) === 'stopped') await killChain(ctx, run, now);
       else busy ??= run._id;
     }

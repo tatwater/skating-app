@@ -18848,7 +18848,7 @@ Board 6.5 is the only Weather board; the lanes board's *Weather* lane and the st
   (ruling 17): *Every 15 minutes · 14:01*.
 - The fixed times differ (*02:06*, *02:31*, *Sunday 03:12*): the chosen times are below.
 - *Watch for the imagery season to open · next 06:00*: it runs at 11:30 UTC since 8b.
-- *Refresh hazard weather* and the watch are labelled `hazards` and `imagery` in the registry; the
+- *Refresh hazard weather* and the watch are labeled `hazards` and `imagery` in the registry; the
   page draws them because they are Open-Meteo consumers, without relabeling (*Design's calls*).
 - *$75.80* and the *Cost ledger* lane go (ruling 6).
 
@@ -18901,10 +18901,12 @@ web's.
 **The writes, in `cronRuns.ts`** (the dispatchers' module stays the one writer of `cronRuns`):
 
 - `openRun({ job, startedAt, trigger, byUserId?, detail?, season? })` → `{ runId } | { busy:
-  runId }`: reads the job's newest three runs (`by_job_started`, `desc`, `take(3)`); one still open
-  whose `progressAt` is younger than `CRON_KILLED_AFTER_MS` makes it `busy` (a second chain would
-  ask Open-Meteo for the same cells twice); an older open one is closed `killed` with *No word
-  since 02:40, after step 31*. Then inserts the run (`outcome: 'ok'`, `finishedAt: startedAt`,
+  runId }`: reads the job's newest three chained runs among its newest 24 (`by_job_started`,
+  `desc`, `take(24)`; a row that isn't a chain, such as a press skipped as busy, doesn't count, so a
+  few can't hide a live chain — the review of 2026-11-28); one still open whose `progressAt` is
+  younger than `CRON_KILLED_AFTER_MS` makes it `busy` (a second chain would ask Open-Meteo for the
+  same cells twice); an older open one is closed `killed` with *No word since 02:40, after step
+  31*. Then inserts the run (`outcome: 'ok'`, `finishedAt: startedAt`,
   `chain: { open: 1, steps: 0, progressAt: startedAt, lines: 0 }`, `keepUntil` from the entry).
 - `chainStep({ runId, opened?, closed?, counts?, causes?, lines?, error? })`: adds `counts` key by
   key, merges `causes` (counts summed, the first sample kept), appends `lines` under the cap
@@ -18974,8 +18976,8 @@ measured, Ma38), the registry walk ~50 pages a tier once a week — so **~160–
 day, each one document read and one patched (~1–2 KB), plus at most 300 line inserts a run**: under
 1 MB of database I/O a day and ~7,500 calls a month, about 0.75 % of the free plan's million.
 (Checked against the contracts at 8c-1's seams: one `chainStep` per batch, one `openRun` per run
-and the head's merge, which inserts no second row — the count holds; `openRun`'s read is three
-rows, `take(3)`.)
+and the head's merge, which inserts no second row — the count holds; `openRun`'s read is at most
+24 rows, `take(24)`, three of them chains.)
 
 **The partial-day repair's cost** (fork 2 (b)). *Steady state*: a cell that failed today's 07:00
 append still holds yesterday as a partial row (written as *today* by yesterday's append), so the

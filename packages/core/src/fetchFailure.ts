@@ -132,7 +132,7 @@ const WRITE_TEXT =
 const BAD_ANSWER_TEXT =
   /\bJSON\b|unexpected (?:end|token|character)|\bterminated\b|premature close|invalid response body|cut off|truncated|unterminated/i;
 
-/** A thrown value's cause, or `other` when nothing in it is recognised. */
+/** A thrown value's cause, or `other` when nothing in it is recognized. */
 function errorCause(error: unknown): CronFailureCause {
   const links = errorLinks(error);
   // A status the error carries (an SDK's HTTP error) is the plainest word there is.
@@ -180,7 +180,8 @@ export function fetchFailureCause(failure: FetchFailure): CronFailureCause {
 
 /**
  * Strip what a sample must never carry: a URL's query string, fragment and credentials (a provider's
- * key rides there), and any `key=value` pair whose name says it is a secret.
+ * key rides there), any `key=value` pair whose name says it is a secret, and a `Bearer` or `Basic`
+ * credential in any case (an auth scheme's name is case-insensitive, so `bearer abc` is one too).
  */
 export function redactSample(text: string): string {
   return text
@@ -190,7 +191,7 @@ export function redactSample(text: string): string {
       /\b((?:api[_-]?key|apikey|access[_-]?token|token|secret|password|passwd|sig|signature|auth|key)\s*[=:]\s*)[^\s&,;]+/gi,
       '$1…',
     )
-    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/g, '$1 …');
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, '$1 …');
 }
 
 /** `text` cut to `max` characters, never through a surrogate pair. */

@@ -490,6 +490,33 @@ describe('openRun', () => {
     expect((await t.run((ctx) => ctx.db.get(old)))?.chain?.open).toBe(1);
   });
 
+  test('rows that are not chains (presses skipped as busy) never hide a live chain', async () => {
+    const t = harness();
+    const live = await open(t, JOB, T0);
+    // More skipped presses than the lookback, each a manual tick's run row of its own.
+    for (let i = 1; i <= OPEN_RUN_LOOKBACK + 2; i++) {
+      await t.run((ctx) =>
+        ctx.db.insert('cronRuns', {
+          job: JOB,
+          startedAt: T0 + i * MINUTE,
+          finishedAt: T0 + i * MINUTE,
+          outcome: 'ok',
+          trigger: 'manual',
+          detail: 'A run of this job is already going',
+          keepUntil: T0 + DAY,
+        }),
+      );
+    }
+    vi.setSystemTime(T0 + 10 * MINUTE);
+    expect(
+      await t.mutation(internal.cronRuns.openRun, {
+        job: JOB,
+        startedAt: Date.now(),
+        trigger: 'manual',
+      }),
+    ).toEqual({ busy: live });
+  });
+
   test('another job’s open run never makes this one busy', async () => {
     const t = harness();
     await open(t, OTHER_ENTRY.name);
