@@ -284,6 +284,14 @@ and a CDN may re-encode it — and each work tile's per-cell counts (`cellCounts
 later `--from-current` build that copies a work tile can still date it once the shards are deleted.
 The types are `NaipManifest` in core's `naipManifest.ts`.
 
+**What a build is built from is one value** (*added at the PR's sixth review, 2026-11-27*): core's
+`naipBuildInputsHash`, over everything the select stage decides — the format, campaign, rule, the
+catalog it read, both review lists' hashes, the off-season cells, `basedOn`, every frame, cell and
+work tile — and never `createdAt` (a re-run that decides the same build is the same build) or what
+the assembler adds, so the select stage's manifest and the published one hash alike exactly when they
+name the same build; `naipBuildInputsDiff` says what differs. The assembly record carries it
+(`inputs`), and once a campaign is published its inputs are fixed (§2.4).
+
 The run's counts say how many cells picked by each step, how many fell back to October, how many
 items each exclusion dropped, and assert the rule's invariants on the whole catalog (every cell has
 a pick; no candidate beats its pick under the rule; no struck frame sits above a green one; the
@@ -529,6 +537,22 @@ URL is CDN-cached, so a key is never overwritten):
 - `dev/naip/pilot/<name>/naip-summer-<YYYYMMDD>{.pmtiles,-cells.json,-manifest.json}` — a pilot's
   three, never at the production names (§3.1)
 
+**A campaign is published once** (*added at the PR's sixth review, 2026-11-27*). Its keys are named
+for it, so once its manifest is published, what its archive was built from is fixed: the published
+manifest's `naipBuildInputsHash` (§2.1.3). Every stage that would act on a campaign holds the
+manifest it has to that value first. **The same inputs are already done**: the select stage goes
+ahead (the same decision, written again), the tiles stage has nothing to cut and uploads nothing,
+the assembler and a re-run of the stage take the record (`finishedAssembly`). **Other inputs are
+refused**, saying what differs (`cells: 1 changed (…)`, `foliage strikes: changed`, …) and what to do
+— the change is a new campaign, `run-aerial.sh naip-<YYYYMMDD> --from-current` with
+`NAIP_MANIFEST_URL` at the published campaign's manifest, which copies its unchanged work tiles —
+never an overwrite, and never a success over the earlier selection: the select stage (not a dry
+run) before it writes its manifest, the tiles stage before it uploads that manifest over the
+bucket's, the assembler before it reads a shard, the laptop's re-run against the record's `inputs`
+(and again on the record that lands after it follows a Machine), and verify (§2.5). A dry run of
+the select stage reads nothing from the bucket and checks nothing: its manifest reaches the bucket
+only through the tiles stage, which refuses it.
+
 **Dev only** (the founder's ruling, F-4 a). Prod has never been initialized; at the cutover prod
 points at the same dated object. No prod copy is made.
 
@@ -536,6 +560,10 @@ points at the same dated object. No prod copy is made.
 
 **Verify** (the operator's laptop, after assembly; refuses to call a build good on any miss):
 
+- **What it was built from** (*added at the PR's sixth review, 2026-11-27*). The assembly record's
+  `inputs`, the published manifest's and the build's manifest's as it is now are one value (§2.1.3):
+  a build manifest re-selected after the assembly — even one whose change re-cuts nothing, a strike
+  on a frame that never shows — refuses the build, saying what differs.
 - **Counts.** The header's addressed tiles against the shards' indexes plus what was copied; every
   work tile in the manifest present; every zoom present.
 - **Spot reads.** A few hundred tiles fetched from the **public URL** by HTTP range, byte-compared to
@@ -670,7 +698,9 @@ run-aerial.sh <campaign> [--stage select|tiles|assemble|verify|cleanup|all]
 ```
 
 - **`all`** runs select → tiles → assemble → verify, stopping at the first refusal.
-- **One stage** re-runs that stage against the campaign's stored manifest.
+- **One stage** re-runs that stage against the campaign's stored manifest — under a campaign already
+  published, only with the inputs it was published from (§2.4: the same are already done, others
+  refused).
 - **`--states` / `--cells`** narrow what is *considered changed*, not what is selected: the rule is
   always applied to the whole catalog (a cell's pick can come from a neighboring state's flight), and
   then only cells in those states (or listed) whose stack differs from the current archive's are
@@ -2271,3 +2301,94 @@ Checked and fine, with the numbers:
 - **Clocks and order.** Landed is a done record's input hash, never a time; the newest archive is
   the key's date, one campaign a day; cleanup's week counts from `--live-since` (or a pilot's upload
   time); the follower compares the progress object's `at` for identity, never against its own clock.
+
+**The PR's sixth review, and the sweep of every "already done" shortcut (2026-11-27).** Greptile
+(4/5) on the fifth review's re-run rule: changed picks never reach the archive. Real. Each fix landed
+with a test that failed first (commits on the branch); nothing drawn changed, tiling stays 2.
+
+- **A re-run of `assemble` took any assembly record as "already assembled"** (the fifth review's
+  "a re-run attaches"), without reading the build's manifest. Re-run select and tiles under the same
+  campaign after the founder strikes a frame, and the tiles stage replaced the bucket's manifest and
+  re-cut the changed work tiles, while `assemble` reported success on the old record and the archive
+  kept the earlier selection; verify then said the re-cut work tiles "had not landed" — or passed,
+  when the change moved no pick (a strike on a frame that never shows). A test assembles a campaign,
+  changes one cell's pick, re-cuts its work tile and re-runs: before the fix the laptop answered
+  "already assembled". **One identity** now says what an archive was built from — core's
+  `naipBuildInputsHash` (§2.1.3) — and every stage holds a campaign to it (§2.4): the record carries
+  it; the laptop compares it before it spawns and again on the record that lands; the assembler
+  refuses a published campaign before it reads a shard (the same inputs as done, others as a new
+  campaign's: what differs, and `--from-current` from the published one); verify holds the record,
+  the published manifest and the build's to one value (§2.5); and **the door upstream is closed** —
+  the select stage (not a dry run) and the tiles stage read the campaign's published manifest
+  first, so other inputs never replace the manifest a published archive was built from (the tiles
+  stage, with the same inputs, has nothing to cut and uploads nothing). Measured on the kept region
+  manifest (`naip-20261127`, 5.8 MB, 9,168 cells, 1,764 work tiles): the hash takes 94 ms, a diff
+  37 ms. The pilot's record (version 1) names no inputs and is never taken as a build's.
+- **The work unit's geometry drew pixels nothing pinned** (the sweep): which pixels each frame is cut
+  to (`pixelExtent`, core's outlines), the counts' window and ring, the chunks and the overview pass
+  are computed in `tiles.ts`, and neither the input hash nor the worker's fingerprint saw them. The
+  tests hold their properties, so a rounding rule changed from "centers inside" to "left edges
+  inside" — other pixels, the same partition — passed all 537 tests, and a `--from-current` build
+  would have copied the old tiles beside the new: a half-pixel seam at every join of a copied and a
+  re-cut work tile. Real work tiles' units are now fingerprinted per tiling version beside the
+  drawing (recorded under 2; the same mutation fails it).
+- **Re-reading the fifth review's three commits**, two more were real: a progress write that hung
+  (an upload R2 accepted, then stalled) held every later one behind it, so the laptop read an
+  unmoving progress object while the archive streamed on and, after 30 minutes, told the operator
+  to stop a healthy Machine — each write is now abandoned after two minutes (`PROGRESS_WRITE_MS`),
+  the watchdog still fed by the events, never their writes, and the Machine exits once its record is
+  written; and `readObject` read any "not found" in rclone's output as an absent object, so a laptop
+  whose rclone has no config (`Config file "…" not found - using defaults`, then a failure to reach
+  the bucket) read the record, the build manifest and a published manifest as absent — only exit 3
+  or 4, or "object/file/directory not found", is absent now. Smaller: the earlier attempt's error
+  object is read before the row opens and a failed read starts nothing (it was swallowed, so a blip
+  could read an old message as this run's), and a Machine's refusal stays "refused" on the laptop.
+
+Checked and sound, each "already done, skip" shortcut by what identifies its inputs and who compares
+it:
+
+- **The tiles stage's done records.** Landed is campaign, work tile and input hash, compared by the
+  reconcile, the assembler and verify (`shardLanded`); the hash covers the rule's version, the tiling
+  version, zooms and tile size, the work tile and each cell's pick, stack, `partial` and the frames
+  cut (`naipFramesToCut`, which reads the states); `TILE_SETTINGS`, the worker's GDAL lines, the
+  counts helper and now the unit's geometry are fingerprinted per tiling version. A cloud score
+  changes no pixel and is outside the hash; a frame's COG is read by item id through STAC.
+- **The kept catalog walk** is the campaign's by design (§2.1: a campaign reads one snapshot, its
+  per-state counts checked against `walk.json`); its day is in the manifest and so in the identity.
+  A change after publication is a new campaign, which walks afresh — or reads a walk copied in by
+  hand (the README's recipe).
+- **The score caches** (`scores.json`, `foliage-scores.json`) are by item id; a thumbnail is
+  immutable by id, and neither measure has changed since it was written (`git log` on both). The
+  measure itself is not in the key: a future change to `scorePixels`' or `foliagePixels`' constants
+  must move its cache aside by hand. Not guarded; noted for the founder.
+- **The date index** is built by every assembly from the manifest and the counts — the cut's, or a
+  copied work tile's from the current manifest under the same input hash — never kept; verify checks
+  its hash against the published manifest, and the client refuses one naming another archive.
+- **Verify's report** is written afresh on each run; files a run doesn't write stay in the directory
+  but nothing links them.
+- **Cleanup's replacement** is `<campaign>`'s archive key, which must be in the bucket, newer than
+  `--old` and the one the web's env files name, live a week by `--live-since`. What it copied is in
+  its own archive by then (a `--from-current` build range-copies, never links).
+- **`--from-current`'s copies**: each copied work tile's input hash is the current manifest's, read
+  from the bucket by the name `basedOn` gives and the archive the manifest names; the assembler
+  re-checks both, so a stale local `NAIP_MANIFEST_URL` copy only refuses.
+- **The fifth review's other changes**: the retry wrapper repeats only reads (GET, HEAD, ranges), a
+  404 is "absent", any other 4xx and a short read fail at once, and a stream only before its first
+  byte; a programming `TypeError` is retried as a network one and then thrown unchanged (21 s, never
+  masked). The tiles row's beats skip a failed read and never outlive their round. `spawn.sh`'s
+  listing failures start nothing; its give-up reads a list that keeps failing as "still up" (exit 3),
+  the conservative way.
+
+Open, for the founder:
+
+- **A campaign's keys after cleanup.** Cleanup deletes an old campaign's published three and its
+  build prefix; nothing then stops the old campaign id being selected and published again, at keys
+  CDNs may still hold for a year. One-line guard: the select stage refuses a production campaign not
+  newer than the newest archive its prefix has held (cleanup would need to leave a marker for that).
+  Not built; rare by hand.
+- **An assembly that dies between its manifest and its record** leaves a published campaign with
+  no record: the stage then refuses as "already assembled from these inputs", and verify refuses
+  without the record. Rebuilding the record from the published manifest and the plan is possible;
+  not built (two tiny uploads a second apart).
+- **Two pilots on one day share Machine names** (`spawn.sh`'s stamp drops the pilot's name), so a
+  re-run could attach to, or wait for, the other pilot's Machines. Pilots are run one at a time.

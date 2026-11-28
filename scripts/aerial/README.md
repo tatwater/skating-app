@@ -90,8 +90,16 @@ spawning a second (`spawn.sh`), and a listing it can't read starts nothing. The 
 counts quiet only while it is awake and can read the bucket; the assembler beats at least every five
 minutes inside a zoom, stops itself after twenty minutes without progress (its error object says
 so), and the laptop calls one stuck only after thirty minutes of reading an unmoving progress object
-while Fly lists its Machine. A re-run of `assemble` takes a finished assembly from its record and
-attaches to a running one — never a second assembler. A work tile's worker is killed past
+while Fly lists its Machine. A re-run of `assemble` takes a finished assembly from its record — when
+the record's inputs are the build manifest's — and attaches to a running one — never a second
+assembler.
+
+**A campaign is published once.** Once its manifest is published, what its archive was built from is
+fixed (core's `naipBuildInputsHash`): re-running a stage with the same inputs finds it done (tiles has
+nothing to cut, assemble takes the record), and with other inputs — picks changed by a new strike,
+a new walk — select (not a dry run), tiles, assemble and verify refuse, saying what differs. Make the
+change a new campaign: `run-aerial.sh naip-<YYYYMMDD> --from-current` with `NAIP_MANIFEST_URL` at the
+published campaign's manifest copies its unchanged work tiles. A work tile's worker is killed past
 `AERIAL_TILE_DEADLINE` (an hour; the pilot's slowest took six minutes) and re-cut by the next round.
 
 ### Before a full build: the foliage review (D319)
