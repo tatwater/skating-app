@@ -1,6 +1,6 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { type ReactNode, useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 
 import { toast } from '@/components/kit/toast';
 
@@ -62,6 +62,8 @@ export type CronRunsDrawerProps = {
   columnsOf?: (job: string) => readonly CronRunsColumn[];
   /** What a run did, in the page's words. */
   headlineOf?: (run: CronRunView) => string | null;
+  /** What a cron's last run did, in the page's words, for its tab (as its card says it). */
+  jobHeadlineOf?: (job: CronJobView) => string | null;
   /** A cron's strip range: from when, and its words. The last 12 hours or 30 days otherwise. */
   stripRangeOf?: (job: string, now: number) => { from: number; label: string };
   /** The foot's action for a cron (the poll's *Run now*); none, no foot. */
@@ -100,6 +102,7 @@ export function CronRunsDrawer({
   labelOf,
   columnsOf,
   headlineOf,
+  jobHeadlineOf,
   stripRangeOf,
   footOf,
   timeZone,
@@ -182,7 +185,11 @@ export function CronRunsDrawer({
       open={open}
       onClose={onClose}
       title={CRON_WORDS.drawerTitle(pipeline ?? null)}
-      tabs={jobsList?.map((j) => ({ job: j, label: labelOf?.(j.job) ?? j.title }))}
+      tabs={jobsList?.map((j) => ({
+        job: j,
+        label: labelOf?.(j.job) ?? j.title,
+        ...(jobHeadlineOf !== undefined && { headline: jobHeadlineOf(j) }),
+      }))}
       job={job}
       onJobChange={chooseJob}
       strip={{
@@ -275,13 +282,16 @@ function joinLines(pages: readonly Loadable<CronRunLogPage>[] | null) {
  */
 function useFailureToast(failure: ReadFailure | null, title: string, key: string) {
   const failing = failure !== null && !failure.pending;
+  // The latest retry, read when pressed: a failure handed back afresh is the same failure.
+  const retry = useRef<() => void>(() => {});
+  retry.current = failure?.retry ?? (() => {});
   useEffect(() => {
-    if (!failing || failure === null) return;
+    if (!failing) return;
     toast({
       id: `cron-read:${key}`,
       title,
       tone: 'bad',
-      action: { label: CRON_WORDS.tryAgain, onAction: failure.retry },
+      action: { label: CRON_WORDS.tryAgain, onAction: () => retry.current() },
     });
-  }, [failing, failure, key, title]);
+  }, [failing, key, title]);
 }

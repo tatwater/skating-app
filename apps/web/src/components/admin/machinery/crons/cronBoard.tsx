@@ -82,6 +82,13 @@ const LABELS: Record<string, string> = {
   'rebuild the live imagery index': 'Rebuild',
 };
 
+/** The board's tab headlines: what each cron's last run did, as the page words it. */
+const HEADLINES: Record<string, string> = {
+  'poll for new satellite imagery': '6 new',
+  'pump live satellite imagery': '1 starting',
+  'rebuild the live imagery index': 'nothing new',
+};
+
 export type CronBoardProps = {
   /** The open tab. */
   job?: string;
@@ -124,7 +131,11 @@ export function CronBoard({
       tabs={
         jobs === 'loading'
           ? undefined
-          : jobs.map((j) => ({ job: j, label: LABELS[j.job] ?? j.title }))
+          : jobs.map((j) => ({
+              job: j,
+              label: LABELS[j.job] ?? j.title,
+              headline: HEADLINES[j.job] ?? null,
+            }))
       }
       modal={false}
       job={job}

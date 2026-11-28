@@ -70,8 +70,11 @@ export type CronRunsViewProps = {
   onClose: () => void;
   /** The sheet's title ("Imagery runs"). */
   title: string;
-  /** The pipeline's crons, as the tabs read them; `undefined` while they load. */
-  tabs: readonly { job: CronJobView; label: string }[] | undefined;
+  /**
+   * The pipeline's crons, as the tabs read them (each with its short name, and what its last run
+   * did in the page's words — its counts otherwise); `undefined` while they load.
+   */
+  tabs: readonly { job: CronJobView; label: string; headline?: string | null }[] | undefined;
   /** The open cron's registered name. */
   job: string;
   onJobChange: (job: string) => void;
@@ -228,8 +231,15 @@ function CronTabs({
         data-slot="cron-tabs"
         className="flex shrink-0 border-b border-solid border-line"
       >
-        {tabs.map(({ job: j, label }) => (
-          <CronTab key={j.job} job={j} label={label} now={now} timeZone={timeZone} />
+        {tabs.map(({ job: j, label, headline }) => (
+          <CronTab
+            key={j.job}
+            job={j}
+            label={label}
+            headline={headline === undefined ? countsLine(j.lastRun?.counts ?? null) : headline}
+            now={now}
+            timeZone={timeZone}
+          />
         ))}
       </TabsPrimitive.List>
     </TabsPrimitive.Root>
@@ -239,17 +249,19 @@ function CronTabs({
 function CronTab({
   job,
   label,
+  headline,
   now,
   timeZone,
 }: {
   job: CronJobView;
   label: string;
+  headline: string | null;
   now: number;
   timeZone: string | undefined;
 }) {
   const reading = cronReading(job, now);
   const when = tabWhen(reading, now, timeZone);
-  const sub = cronSubLine(job, reading, countsLine(job.lastRun?.counts ?? null), now, timeZone);
+  const sub = cronSubLine(job, reading, headline, now, timeZone);
   return (
     <TabsPrimitive.Tab
       value={job.job}
@@ -388,9 +400,13 @@ function RunsSection({
             <tr>
               <TableHead className="w-[2.125rem] pr-0" />
               <TableHead>{CRON_WORDS.columns.run}</TableHead>
-              {timed && <TableHead align="end">{CRON_WORDS.columns.took}</TableHead>}
+              {timed && (
+                <TableHead align="end" className="w-[4.5rem]">
+                  {CRON_WORDS.columns.took}
+                </TableHead>
+              )}
               {columns.map((c) => (
-                <TableHead key={c.key} align="end">
+                <TableHead key={c.key} align="end" className="w-[4.75rem]">
                   {c.label}
                 </TableHead>
               ))}
@@ -518,12 +534,12 @@ function RunRow({
         {when}
       </TableCell>
       {timed && (
-        <TableCell align="end" mono className="text-fg3">
+        <TableCell align="end" mono className="whitespace-nowrap text-fg3">
           {run.durationMs === null ? '' : tookWords(run.durationMs)}
         </TableCell>
       )}
       {columns.map((c) => (
-        <TableCell key={c.key} align="end" mono className="text-fg3">
+        <TableCell key={c.key} align="end" mono className="whitespace-nowrap text-fg3">
           {(run.counts?.[c.key] ?? 0).toLocaleString('en-US')}
         </TableCell>
       ))}

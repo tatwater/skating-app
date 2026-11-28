@@ -109,7 +109,7 @@ export function CronRunLog({
           lines={drawn}
           state={failed ? 'failed' : 'finished'}
           {...(onCopy !== undefined && { onCopy })}
-          boxClassName="max-h-[17rem]"
+          boxClassName="h-auto max-h-[17rem] bg-bg"
         />
       ) : (
         <p data-slot="cron-run-log-empty" className="m-0 text-assist text-fg3">
