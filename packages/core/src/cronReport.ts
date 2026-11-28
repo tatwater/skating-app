@@ -12,8 +12,8 @@
  * times eight, plus its outcome's code. A UTC day is 86,400 s, so the largest packed value is
  * 691,199 — an exact integer in any Convex number.
  *
- * PLACEHOLDER (B01-8b seams): the shape, the codes and the packing are the contract; the property
- * tests and any validation of the packing's domain are S2's.
+ * A tick row's bucket is a UTC hour for a job that ticks more often than every 30 minutes, a UTC
+ * day otherwise ({@link cronTickBucketMs}): at most 60 ticks a row for a job recorded every tick.
  */
 
 /** The most lines one report may carry; the recorder keeps the first ones past it. */
@@ -50,12 +50,43 @@ export interface CronReport {
 export const CRON_TICK_CODES = { ok: 0, worked: 1, failed: 2, killed: 3, refused: 4 } as const;
 export type CronTickCode = (typeof CRON_TICK_CODES)[keyof typeof CRON_TICK_CODES];
 
-/** A tick packed: `offsetSec × 8 + code`. */
+const HOUR_MS = 3_600_000;
+const DAY_MS = 24 * HOUR_MS;
+
+/** The largest offset a tick can have: the last second of a UTC day, the largest bucket. */
+export const CRON_TICK_MAX_OFFSET_SEC = DAY_MS / 1000 - 1;
+/** How many codes fit under a tick's offset: the low three bits. */
+const CODE_SPAN = 8;
+
+/**
+ * A tick packed: `offsetSec × 8 + code`. The offset is floored to a whole second and held inside a
+ * day (`0 … CRON_TICK_MAX_OFFSET_SEC`), so a clock's fraction or a stamp a moment outside its bucket
+ * never spills into the code's bits; a code outside `0 … 7`, or an offset that isn't a number, is a
+ * wiring fault and throws.
+ */
 export function packTick(offsetSec: number, code: number): number {
-  return offsetSec * 8 + code;
+  if (!Number.isInteger(code) || code < 0 || code >= CODE_SPAN) {
+    throw new RangeError(`packTick: code ${code} is not 0–7`);
+  }
+  if (!Number.isFinite(offsetSec)) throw new RangeError('packTick: offset is not a number');
+  const offset = Math.min(CRON_TICK_MAX_OFFSET_SEC, Math.max(0, Math.floor(offsetSec)));
+  return offset * CODE_SPAN + code;
 }
 
-/** A packed tick read back. */
+/** A packed tick read back: the inverse of {@link packTick} on its range. */
 export function unpackTick(value: number): { offsetSec: number; code: number } {
-  return { offsetSec: Math.floor(value / 8), code: value % 8 };
+  return { offsetSec: Math.floor(value / CODE_SPAN), code: value % CODE_SPAN };
+}
+
+/**
+ * A job's tick-row bucket, from how often it ticks: a UTC hour when more often than every 30
+ * minutes, a UTC day otherwise. A sub-minute job would overrun 60 ticks an hour; none is registered.
+ */
+export function cronTickBucketMs(periodMs: number): number {
+  return periodMs < 30 * 60_000 ? HOUR_MS : DAY_MS;
+}
+
+/** The start of the bucket holding `at`, for a bucket of `bucketMs` (an hour or a day, UTC). */
+export function cronTickBucketStart(at: number, bucketMs: number): number {
+  return Math.floor(at / bucketMs) * bucketMs;
 }
