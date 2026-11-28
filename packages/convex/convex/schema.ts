@@ -2002,6 +2002,12 @@ export default defineSchema({
     /** The pump's row only (B01-8b): how many cut Machines were live when it last listed them. */
     liveMachines: v.optional(v.number()),
     liveMachinesAt: v.optional(v.number()),
+    /**
+     * The pump's row only (B01-8b-2, D348's keep rule): cut Machines left stopped on Fly when it last
+     * listed them. While above zero a tick lists and sweeps even with nothing queued or cutting, so a
+     * Machine whose destroy failed never waits for the next season.
+     */
+    stoppedMachines: v.optional(v.number()),
   }).index('by_key', ['key']),
 
   // The manifests the index could not read (A06i §5): one row each, kept until it reads. The next

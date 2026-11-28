@@ -291,6 +291,7 @@ export const end = internalMutation({
     backoff: v.optional(v.boolean()),
     refusalStreak: v.optional(v.number()),
     blindTicks: v.optional(v.number()),
+    stoppedMachines: v.optional(v.number()),
   },
   handler: async (ctx, { key, token, ...outcome }) => {
     await endRun(ctx, key, token, outcome);
@@ -349,8 +350,9 @@ export const recordUnreadable = internalMutation({
 });
 
 /**
- * Whether a tick has anything to do: a cut in flight, a cut's log still owed (B01-8b-2), or one queued
- * and allowed to start. Reads only, so a quiet tick writes nothing.
+ * Whether a tick has anything to do: a cut in flight, a cut's log still owed (B01-8b-2), cut Machines
+ * left stopped when it last listed (the sweep's), or one queued and allowed to start. Reads only, so a
+ * quiet tick writes nothing.
  */
 export const hasWork = internalQuery({
   args: { season: v.string() },
@@ -366,6 +368,7 @@ export const hasWork = internalQuery({
       .withIndex('by_log_settled', (q) => q.eq('log', 'pending').gt('settledAt', 0))
       .first();
     if (owed) return true;
+    if (((await jobRow(ctx, 'pump'))?.stoppedMachines ?? 0) > 0) return true;
     if (!(await first('queued'))) return false;
     return whyNotRunnable(await seasonRowFor(ctx, season)) === null;
   },
@@ -1687,6 +1690,8 @@ interface RunOutcome {
   backoff?: boolean;
   refusalStreak?: number;
   blindTicks?: number;
+  /** Cut Machines left stopped at this run's listing; absent when it didn't list. */
+  stoppedMachines?: number;
 }
 
 const pumpArgs = {};
@@ -1711,7 +1716,13 @@ export async function pumpHandler(
   // as a failed run with its message (D347) — the same as any other failure, never a silent gap.
   let outcome: RunOutcome = { backoff: true };
   try {
-    const result = await pumpOnce(ctx, season, begun.refusalStreak, begun.blindTicks);
+    const result = await pumpOnce(
+      ctx,
+      season,
+      begun.refusalStreak,
+      begun.blindTicks,
+      begun.stoppedMachines,
+    );
     outcome = result.outcome;
     if ('skipped' in result.counts) return result.counts;
     return result.cronReport ? { ...result.counts, cronReport: result.cronReport } : result.counts;
@@ -1751,6 +1762,7 @@ async function pumpOnce(
   season: string,
   refusalStreakIn: number,
   blindTicksIn: number,
+  stoppedIn: number,
 ): Promise<{
   counts: PumpCounts | { skipped: string };
   outcome: RunOutcome;
@@ -1888,10 +1900,12 @@ async function pumpOnce(
     });
   }
 
-  // ── List the Machines once: the sweep of stopped cuts, then new cuts while imagery is running ──
+  // ── List the Machines once: the sweep of stopped cuts, then new cuts while imagery is running.
+  //    Listed too while Machines were left stopped last time, paused or not: none waits a season. ──
   const state = await ctx.runQuery(internal.imageryLive.liveState, { season });
   const mayStart = state.runnable && !backoff && Date.now() - startedAt < RUN_DEADLINE_MS;
-  if (mayStart || inFlight.length > 0) {
+  let listed = false;
+  if (mayStart || inFlight.length > 0 || stoppedIn > 0) {
     let machines: FlyMachine[] | null = null;
     let listError: string | null = null;
     try {
@@ -1900,6 +1914,7 @@ async function pumpOnce(
       listError = errorMessage(error);
     }
     if (machines !== null) {
+      listed = true;
       counts.stopped = await sweepStopped(
         ctx,
         config.fly,
@@ -1952,7 +1967,12 @@ async function pumpOnce(
       detail: `${failures.slice(0, 10).join(', ')}${failures.length > 10 ? ', …' : ''}. The failed attempts' logs are on the Imagery page in Machinery, where *Retry failed* queues them again.`,
     });
   }
-  const runOutcome: RunOutcome = { backoff, refusalStreak: streak, blindTicks };
+  const runOutcome: RunOutcome = {
+    backoff,
+    refusalStreak: streak,
+    blindTicks,
+    ...(listed ? { stoppedMachines: counts.stopped } : {}),
+  };
   const did = settled.length + counts.spawned + counts.refused + counts.captured + counts.destroyed;
   if (did === 0 && !backoff) {
     return { counts, outcome: runOutcome };

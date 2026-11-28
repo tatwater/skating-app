@@ -800,6 +800,34 @@ describe('the keep rule: Machines kept until the pump reads them', () => {
     expect(w.destroyed).toEqual(['orphan']);
   });
 
+  test('a Machine whose destroy failed is cleared later even when nothing is queued or cutting', async () => {
+    const t = convexTest(schema, modules);
+    const season = await openSeason(t, { imageryPausedAt: undefined });
+    const w = world();
+    stub(w);
+    const { gid, machineId } = await spawnOne(t, w);
+    const t0 = Date.now();
+    w.objects.set(`frames/${SEASON}/${G}.json`, { granuleId: G });
+    exitMachine(w, machineId, { code: 0, oom: false, startedAt: t0, exitedAt: t0 + 9_000 });
+    // The settle reads the exit, but Fly won't destroy: the Machine is left stopped.
+    w.destroyFails = true;
+    vi.advanceTimersByTime(4 * MIN);
+    await pump(t);
+    expect((await granuleRow(t, gid))?.status).toBe('landed');
+    expect(w.machines.has(machineId)).toBe(true);
+    expect((await pumpRow(t))?.stoppedMachines).toBe(1);
+    // Paused, nothing queued, nothing cutting, no log owed: the tick still lists and clears it.
+    await t.run((ctx) => ctx.db.patch(season, { imageryPausedAt: Date.now() }));
+    w.destroyFails = false;
+    vi.advanceTimersByTime(3 * MIN);
+    expect(await pump(t)).toMatchObject({ destroyed: 1, stopped: 0 });
+    expect(w.destroyed).toEqual([machineId]);
+    expect((await pumpRow(t))?.stoppedMachines).toBe(0);
+    // And then the pump is quiet again: nothing to do, no listing.
+    vi.advanceTimersByTime(3 * MIN);
+    expect(await pump(t)).toEqual({ skipped: 'nothing to do' });
+  });
+
   test(`past ${MAX_STOPPED_MACHINES} stopped cut Machines it can't clear, no new cut starts`, async () => {
     const t = convexTest(schema, modules);
     await openSeason(t, { imageryPausedAt: undefined });

@@ -336,6 +336,21 @@ export const byThePoll = (day: string) => `${day} · by the poll`;
 export const EXIT = 'Exit';
 export const OUT_OF_MEMORY = 'Killed: out of memory';
 export const exitedWithError = 'The cutter stopped with an error';
+export const EXITED_CLEANLY = 'It exited cleanly but left no frame';
+
+const SIGNALS: Record<number, string> = { 1: 'SIGHUP', 2: 'SIGINT', 9: 'SIGKILL', 15: 'SIGTERM' };
+/** A signal's name from an exit code past 128 (a death by signal), or `null` for an ordinary exit. */
+export function signalOf(code: number): string | null {
+  if (code <= 128 || code > 128 + 64) return null;
+  return SIGNALS[code - 128] ?? `signal ${code - 128}`;
+}
+/** The exit stat's line: out of memory (Fly's word), stopped from outside, or the cutter's own error. */
+export function exitWords(code: number, oom: boolean): string {
+  if (oom) return OUT_OF_MEMORY;
+  if (code === 0) return EXITED_CLEANLY;
+  const signal = signalOf(code);
+  return signal === null ? exitedWithError : `Stopped from outside (${signal})`;
+}
 export const NO_EXIT = 'Fly didn’t say';
 export const LANDED_AT = 'Landed';
 export const SETTLED_AT = 'Settled';
@@ -417,6 +432,11 @@ export function whatToCheck(
     rows.push({
       label: 'Machine size',
       body: 'Set in the cutter’s config, not here. Retry once it changes.',
+    });
+  } else if (last !== null && last.exitCode !== null && signalOf(last.exitCode) !== null) {
+    rows.push({
+      label: `Exit ${last.exitCode}`,
+      body: `Something outside the cutter stopped the Machine (${signalOf(last.exitCode)}) before it finished, and Fly didn’t say it ran out of memory. Fly stops a Machine now and then for work on its host; a retry sends a new one.`,
     });
   } else if (last !== null && last.exitCode !== null && last.exitCode !== 0) {
     rows.push({

@@ -209,15 +209,7 @@ function fourthStat(view: GranuleView, now: number, timeZone?: string): ReactNod
           label={<span className="text-bad">{W.EXIT}</span>}
           value={exit === null ? W.NOT_RECORDED : String(exit.code)}
           tone={exit === null ? 'dim' : 'bad'}
-          sub={
-            exit === null
-              ? (row.lastError ?? W.NO_EXIT)
-              : exit.oom
-                ? W.OUT_OF_MEMORY
-                : exit.code === 0
-                  ? W.NO_EXIT
-                  : W.exitedWithError
-          }
+          sub={exit === null ? (row.lastError ?? W.NO_EXIT) : W.exitWords(exit.code, exit.oom)}
         />
       );
     }

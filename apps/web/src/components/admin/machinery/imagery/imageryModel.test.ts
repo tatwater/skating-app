@@ -52,7 +52,7 @@ import {
   waitingToRetry,
   worstCron,
 } from './imageryModel';
-import { imageryTailWords, whatToCheck } from './imageryWords';
+import { exitWords, imageryTailWords, signalOf, whatToCheck } from './imageryWords';
 
 const MIN = 60_000;
 /** A fixture's value, there by construction (a test fails loudly if not). */
@@ -365,6 +365,20 @@ describe('What to check', () => {
       'Exit 2',
       'No cutter log',
     ]);
+  });
+
+  test('a death by signal without Fly’s OOM word is a stop from outside, never the cutter’s error', () => {
+    const stopped = { ...need(OOM_VIEW.attempts[0]), exitCode: 130, oomKilled: false };
+    const rows = whatToCheck([stopped], 0);
+    expect(rows.map((r) => r.label)).toEqual(['Exit 130']);
+    expect(rows[0]?.body).toMatch(/outside the cutter stopped the Machine \(SIGINT\)/);
+    expect(exitWords(130, false)).toBe('Stopped from outside (SIGINT)');
+    expect(exitWords(137, false)).toBe('Stopped from outside (SIGKILL)');
+    expect(exitWords(137, true)).toBe('Killed: out of memory');
+    expect(exitWords(2, false)).toBe('The cutter stopped with an error');
+    expect(exitWords(0, false)).toBe('It exited cleanly but left no frame');
+    expect(signalOf(255)).toBeNull();
+    expect(signalOf(128 + 6)).toBe('signal 6');
   });
 
   test('refused three times, never confirmed, a clean landing', () => {
