@@ -101,9 +101,14 @@ STAMP="${CAMPAIGN#naip-}"; STAMP="${STAMP/pilot-/p}"
 command -v fly >/dev/null 2>&1 || { echo "flyctl not installed (brew install flyctl)" >&2; exit 1; }
 
 # macOS has no timeout(1): gtimeout from coreutils, else unbounded (fan-out.sh's degrade).
+# **`--foreground` on every spawn call here** (PR #188's eleventh review): by default coreutils'
+# `timeout` puts itself in a process group of its own, out of reach of the signal the stage sends
+# this script's group when it exits (`cli/world.ts`' `launched`) — so a stopped stage's in-flight
+# `fly machine run`s went on creating Machines. In the foreground it stays in this group, and still
+# kills `fly` when the time is up (only `fly`'s own children, which it has none of, go untimed).
 if command -v timeout >/dev/null 2>&1; then :
 elif command -v gtimeout >/dev/null 2>&1; then timeout() { gtimeout "$@"; }
-else timeout() { shift; "$@"; }; fi
+else timeout() { [[ "$1" == --foreground ]] && shift; shift; "$@"; }; fi
 
 # Live Machines on the app, in every live state — and an API error is not zero Machines: it reads as
 # the cap, so a failing list makes the caller wait rather than flood (fan-out.sh's lesson).
@@ -230,7 +235,7 @@ if [[ "$MODE" == assemble ]]; then
     # One Machine, but under the same cap as every other: the app is shared with the winter pump.
     BATCH=1 await_capacity || exit 1
     # ⚠ No comments inside this command: a `#` between continuations drops every argument after it.
-    timeout "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
+    timeout --foreground "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
       --app "$APP" \
       --region "$ASSEMBLE_REGION" \
       --vm-size "$ASSEMBLE_VM_SIZE" \
@@ -331,7 +336,7 @@ for tile in ${TODO[@]+"${TODO[@]}"}; do
     # --rm --restart no: a batch job, never a crash loop on the bill. --detach: return once created.
     # --file-local: the unit, written into the Machine at /data/unit.json. `timeout`: the deadline,
     # above. No comments below.
-    timeout "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
+    timeout --foreground "$SPAWN_TIMEOUT" fly machine run "$IMAGE" \
       --app "$APP" \
       --region "$REGION" \
       --vm-size "$VM_SIZE" \

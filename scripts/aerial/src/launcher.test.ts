@@ -6,7 +6,7 @@
  * call in flight in the background, as `spawn.sh`'s `( fly machine run … ) &` is).
  */
 
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -48,8 +48,27 @@ async function until(pred: () => boolean, ms: number): Promise<boolean> {
   return pred();
 }
 
+/** coreutils' `timeout`, as `spawn.sh` finds it (CI's Linux has it; a Mac has it from Homebrew). */
+const hasTimeout = spawnSync('bash', ['-c', 'command -v timeout']).status === 0;
+
 describe('launched', { timeout: 120_000 }, () => {
-  test('a stage that exits mid-round stops its launcher and the spawn call in flight', async () => {
+  test('every spawn call spawn.sh makes on the laptop runs under `timeout --foreground`', () => {
+    const sh = readFileSync(join(PKG, 'spawn.sh'), 'utf8');
+    const calls = sh.split('\n').filter((l) => /\bfly machine run\b/.test(l) && !/^\s*#/.test(l));
+    expect(calls.length).toBe(2);
+    for (const line of calls)
+      expect(line.trim()).toMatch(/^timeout --foreground "\$SPAWN_TIMEOUT" fly/);
+  });
+
+  test.each([
+    ['a spawn call in flight', 'sleep 600'],
+    // As `spawn.sh` makes each `fly machine run`: under coreutils' `timeout`, which by default puts
+    // itself in a process group of its own — out of reach of the group's signal (the eleventh
+    // review); `--foreground` keeps it in the launcher's group.
+    ...(hasTimeout
+      ? [['a spawn call in flight under spawn.sh’s timeout', 'timeout --foreground 600 sleep 600']]
+      : []),
+  ])('a stage that exits mid-round stops its launcher and %s', async (_, inflight) => {
     const dir = mkdtempSync(join(tmpdir(), 'aerial-launch-'));
     dirs.push(dir);
     const spawned = join(dir, 'spawned');
@@ -59,7 +78,7 @@ describe('launched', { timeout: 120_000 }, () => {
       launcher,
       [
         `echo $$ > "${dir}/launcher.pid"`,
-        `sleep 600 & echo $! > "${dir}/inflight.pid"`,
+        `${inflight} & echo $! > "${dir}/inflight.pid"`,
         `while true; do echo machine >> "${spawned}"; sleep 0.05; done`,
       ].join('\n'),
     );

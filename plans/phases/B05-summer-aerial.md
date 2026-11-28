@@ -2895,11 +2895,18 @@ kill, and the kept-thumbnail drop.
   stops the group the same way. Test: `launcher.test.ts` (a stand-in launcher spawning forever, with
   a call in flight; the stage exits 130; both are gone and nothing more is spawned) — fails without
   the group and the exit stop.
+- *Its re-review (4/5 on `d7da158e1`, the same thread)*: the group missed in-flight spawn calls —
+  coreutils' `timeout` puts itself in a process group of its own, so each `timeout … fly machine run`
+  in flight outlived the group's signal (reproduced: the stand-in's `timeout 600 sleep 600` survived
+  the stage's exit). Fixed: `spawn.sh`'s two laptop-side spawn calls run under `timeout
+  --foreground`, which stays in the group and still kills `fly` on expiry (exit 124, checked); the
+  no-coreutils degrade skips the flag. Tests: `launcher.test.ts` (that case, where `timeout` is on
+  the PATH, as on CI; and both spawn calls written so).
 - **Cleanup breaks a later verify of a `--from-current` build** (`cleanup.ts`) — real, not fixed: a
   verify of B re-run after cleanup deleted its base A fails `counts` (A's directories are what tell it
   which tile ids B's copied work tiles hold) and can't byte-compare them. B's archive itself is whole
   (copied tiles are copied bytes). A fix means choosing what a re-verify may stop checking, so it is
-  the founder's call (below, and in the report).
+  the founder's call.
 
 Residual, not fixed (small, recorded): two pilots of one campaign date share Machine names
 (`aerial-p<date>-*`, `aerial-asm-p<date>`), so one's live assembler reads as the other's — a tiles
