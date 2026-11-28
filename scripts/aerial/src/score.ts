@@ -16,7 +16,7 @@
  */
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync } from 'node:fs';
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -231,10 +231,11 @@ export interface ScoreDeps<T = ThumbnailScore> {
    * Filled with the frames whose read failed in a way the next run may not repeat — a network
    * error, any refusal but a 404 or 410 (a 5xx, a 429, an expired token's 403), or a decode that
    * failed for any reason but the image's own (`UndecodableImage`: the decoder didn't run, was
-   * killed, lost its output). Such a frame is unscored now and is never cached, so a re-run reads it
-   * again and may score it: the select stage refuses to decide a build on one (`selectStage.ts`). No
-   * thumbnail listed, a blob that is gone and a kept image the decoder refuses (it fails the same
-   * way every time) are unscored for good.
+   * killed, lost its output), or a kept thumbnail the decoder refuses (it may be one an earlier
+   * writer left torn: dropped, and read afresh next run). Such a frame is unscored now and is never
+   * cached, so a re-run reads it again and may score it: the select stage refuses to decide a build
+   * on one (`selectStage.ts`). No thumbnail listed, a blob that is gone and a freshly read image the
+   * decoder refuses (it fails the same way every time) are unscored for good.
    */
   unreadable?: Set<string>;
 }
@@ -281,7 +282,18 @@ export async function scoreFrames<T>(
     const cached = deps.cache.get(t.itemId);
     if (cached !== undefined) return cached;
     const jpeg = thumbnailPath(deps.thumbsDir, t.itemId);
-    if (!existsSync(jpeg)) {
+    // **A kept thumbnail is not yet the image's word** (PR #188's tenth review): one an earlier
+    // writer left torn — before thumbnails were written whole, or a crash mid-write — reads as
+    // `libjpeg: Premature end of JPEG file` or `not recognized` every time, exactly as a bad image
+    // does, and was unscored for good. A kept one the decoder refuses is dropped and the frame is
+    // unreadable, so a re-run reads it afresh; only a fresh read refused is the image's own.
+    const kept = existsSync(jpeg);
+    const refusedBy = (e: unknown): null => {
+      if (!kept) return null; // the image's own: the same every run
+      rmSync(jpeg, { force: true });
+      throw e;
+    };
+    if (!kept) {
       if (t.thumbnail === null) return null;
       const res = await deps.fetchBlob(t.thumbnail);
       if (!res.ok) {
@@ -300,7 +312,7 @@ export async function scoreFrames<T>(
       try {
         await deps.decode(jpeg, ppm);
       } catch (e) {
-        if (e instanceof UndecodableImage) return null; // the image's own: the same every run
+        if (e instanceof UndecodableImage) return refusedBy(e);
         throw e; // couldn't tell: unreadable, for a re-run
       }
       // The decoder's own output of a whole file: one it can't parse is the image's, every time.
@@ -308,8 +320,8 @@ export async function scoreFrames<T>(
       let rgb: Uint8Array;
       try {
         rgb = parsePpm(bytes).rgb;
-      } catch {
-        return null;
+      } catch (e) {
+        return refusedBy(e);
       }
       const score = measure(rgb);
       deps.cache.set(t.itemId, score);

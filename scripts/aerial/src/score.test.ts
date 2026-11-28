@@ -1,4 +1,12 @@
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
@@ -314,7 +322,7 @@ describe('scoreFrames', () => {
       fine: { white: 0.5, valid: 1 },
     });
     // Only the reads a re-run may answer: a 503 and a network error. No thumbnail, a blob that is
-    // gone and a kept image GDAL can't decode fail the same way every time.
+    // gone and a freshly read image the decoder can't decode fail the same way every time.
     expect([...unreadable].sort()).toEqual(['busy', 'net']);
     expect(cache.get('busy')).toBeUndefined();
   });
@@ -357,6 +365,62 @@ describe('scoreFrames', () => {
       'lost.jpg',
       'refused.jpg',
     ]);
+  });
+});
+
+describe('a kept thumbnail the decoder refuses (PR #188’s tenth review)', () => {
+  test('is dropped and unreadable, so a re-run reads it afresh; only a fresh read refused is unscored for good', async () => {
+    // A thumbnail an earlier writer left torn (before thumbnails were written whole, or a crash
+    // mid-write) reads exactly as a bad image does — and was unscored for good, every run after.
+    const cloudy = ppm([
+      [250, 250, 250],
+      [10, 80, 20],
+    ]);
+    const dir = tmp();
+    const thumbsDir = join(dir, 'thumbs');
+    mkdirSync(thumbsDir, { recursive: true });
+    writeFileSync(thumbnailPath(thumbsDir, 'torn'), cloudy.subarray(0, 3));
+    writeFileSync(thumbnailPath(thumbsDir, 'garbled'), new Uint8Array([1, 2, 3]));
+    let fresh: Uint8Array = cloudy;
+    const fetchBlob = vi.fn(async () => answer(fresh));
+    // GDAL's refusal for the torn one; the garbled one decodes to bytes no PPM parse accepts.
+    const decode = async (jpeg: string, out: string) => {
+      const bytes = readFileSync(jpeg);
+      if (bytes.length === 3 && bytes[0] !== 1)
+        throw new UndecodableImage('ERROR 1: libjpeg: Premature end of JPEG file');
+      writeFileSync(out, bytes);
+    };
+    const targets = ['torn', 'garbled'].map((id) => ({
+      itemId: id,
+      thumbnail: `https://blob/${id}`,
+    }));
+    const run = (unreadable: Set<string>) =>
+      scoreFrames(targets, {
+        fetchBlob,
+        decode,
+        thumbsDir,
+        cache: new ScoreCache(join(dir, 'scores.json')),
+        unreadable,
+      });
+    const first = new Set<string>();
+    expect(Object.fromEntries(await run(first))).toEqual({ torn: null, garbled: null });
+    expect([...first].sort()).toEqual(['garbled', 'torn']);
+    expect(fetchBlob).not.toHaveBeenCalled();
+    expect(readdirSync(thumbsDir)).toEqual([]);
+    // The re-run reads both afresh and scores them.
+    const second = new Set<string>();
+    expect(Object.fromEntries(await run(second))).toEqual({
+      torn: { white: 0.5, valid: 1 },
+      garbled: { white: 0.5, valid: 1 },
+    });
+    expect(second.size).toBe(0);
+    // A fresh read the decoder refuses is the image's own: unscored, not unreadable.
+    rmSync(join(dir, 'scores.json'));
+    rmSync(thumbsDir, { recursive: true });
+    fresh = new Uint8Array([1, 2, 3]);
+    const third = new Set<string>();
+    expect(Object.fromEntries(await run(third))).toEqual({ torn: null, garbled: null });
+    expect(third.size).toBe(0);
   });
 });
 
