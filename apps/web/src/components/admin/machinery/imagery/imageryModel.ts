@@ -175,6 +175,13 @@ export function granuleAgeFrom(row: GranuleRowView): number {
 }
 
 /**
+ * The most failed granules *All* draws first: the server's `FAILED_FIRST_LIMIT`
+ * (`machineryImagery.failedFirst`'s `.take`). A section this full may have left older ones out, so
+ * the list says *Failed* lists them all, and never calls its count every granule.
+ */
+export const FAILED_FIRST_SHOWN = 50;
+
+/**
  * The list under *All*: the failed granules first (the server's `failedFirst`, at most 50), then
  * everything else newest first — each failed row once, never again in the page below.
  */

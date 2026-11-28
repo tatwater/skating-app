@@ -19,14 +19,16 @@ import { cn } from '@/lib/utils';
 import type { ChainStatus } from '../../reads/joinChain';
 import { RunChipBadge } from '../corpus/RunRow';
 import type { GranuleRowModel } from './granuleRows';
-import { GRANULE_FILTERS, type GranuleFilter } from './imageryModel';
+import { FAILED_FIRST_SHOWN, GRANULE_FILTERS, type GranuleFilter } from './imageryModel';
 import * as W from './imageryWords';
 
 /**
  * **The granule list** (board 6.4's middle column): the filter row (*All*, *Queued*, *Cutting*,
  * *Empty*, *Failed*), then the rows. Under *All* the failed granules come first (the server's
  * `failedFirst`, at most 50), then *Everything else · newest first*; under a filter, that filter's
- * granules newest first. The list ends in its tab (*All 24*). Drawn from props; the route reads.
+ * granules newest first. The list ends in its tab (*All 24*) — or, when the failed section is full
+ * and may have left older failures out, says *Failed* lists them all and ends in what it shows
+ * (*74 shown*). Drawn from props; the route reads.
  *
  * - **One tab stop** for the rows: a `listbox` with a cursor (`aria-activedescendant`); ↑↓ move,
  *   Home/End jump, **⏎ or Space opens** the granule (and from the keys focus follows into the
@@ -56,7 +58,8 @@ export type GranuleListProps = {
 
 type Entry =
   | { type: 'row'; row: GranuleRowModel; index: number }
-  | { type: 'divider'; label: string };
+  | { type: 'divider'; label: string }
+  | { type: 'note'; label: string };
 
 export function GranuleList({
   filter,
@@ -79,12 +82,17 @@ export function GranuleList({
   const scroller = useRef<HTMLDivElement | null>(null);
 
   const ordered: GranuleRowModel[] = [...(failed?.rows ?? []), ...rows];
+  // A full failed section may have left older failures out (the rows below never repeat one).
+  const capped = failed !== null && failed.rows.length >= FAILED_FIRST_SHOWN;
   const entries: Entry[] = [];
   ordered.forEach((row, index) => {
     if (failed !== null && failed.rows.length > 0 && index === failed.rows.length) {
       entries.push({ type: 'divider', label: W.EVERYTHING_ELSE });
     }
     entries.push({ type: 'row', row, index });
+    if (capped && failed !== null && index === failed.rows.length - 1) {
+      entries.push({ type: 'note', label: W.failedShownOf(failed.rows.length) });
+    }
   });
 
   const [cursorId, setCursorId] = useState<string | null>(null);
@@ -202,6 +210,15 @@ export function GranuleList({
             : entries.map((e) =>
                 e.type === 'divider' ? (
                   <Divider key="divider">{e.label}</Divider>
+                ) : e.type === 'note' ? (
+                  <p
+                    key="failed-capped"
+                    role="presentation"
+                    data-slot="granule-failed-capped"
+                    className="m-0 px-gutter pt-(--space-2) text-assist text-fg3"
+                  >
+                    {e.label}
+                  </p>
                 ) : (
                   <GranuleRow
                     key={e.row.id}
@@ -221,7 +238,11 @@ export function GranuleList({
           {done && (
             <div role="presentation">
               <ListEnd data-slot="granule-list-end">
-                {total === 0 ? W.NONE_IN_FILTER[filter] : W.allGranules(total)}
+                {total === 0
+                  ? W.NONE_IN_FILTER[filter]
+                  : capped
+                    ? W.shownGranules(total)
+                    : W.allGranules(total)}
               </ListEnd>
             </div>
           )}

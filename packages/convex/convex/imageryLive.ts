@@ -1646,8 +1646,9 @@ export const granuleOf = internalQuery({
  * - one no attempt claims (a spawn whose answer never came, a Machine from before attempts) is
  *   destroyed once Fly says it has been stopped `ORPHAN_STOPPED_MS`.
  *
- * At most `SWEEP_PER_RUN` a run, `CHECK_CONCURRENCY` at a time, none started past `deadline`.
- * Answers how many stopped cut Machines are left.
+ * At most `SWEEP_PER_RUN` a run ({@link sweepWindow}: from a random place in the listing, so
+ * Machines that can't be cleared never hold every run's slots), `CHECK_CONCURRENCY` at a time, none
+ * started past `deadline`. Answers how many stopped cut Machines are left.
  */
 async function sweepStopped(
   ctx: ActionCtx,
@@ -1659,7 +1660,7 @@ async function sweepStopped(
 ): Promise<number> {
   const stopped = machines.filter((m) => isCutMachine(m) && STOPPED_STATES.has(m.state));
   if (stopped.length === 0) return 0;
-  const batch = stopped.slice(0, SWEEP_PER_RUN);
+  const batch = sweepWindow(stopped, SWEEP_PER_RUN, Math.random());
   const known = await ctx.runQuery(internal.imageryLive.attemptsByMachine, {
     machineIds: batch.map((m) => m.id),
   });
@@ -1702,6 +1703,18 @@ async function sweepStopped(
   }
   counts.destroyed += destroyed;
   return stopped.length - destroyed;
+}
+
+/**
+ * The sweep's window over a listing: all of it when it fits, else `size` in a row (wrapping) from
+ * the place `random` (in [0, 1)) picks. Fly lists Machines in a stable order, so a fixed window
+ * would let the same Machines — an open attempt's, a destroy that keeps failing — fill every run's
+ * window while the ones behind them, clearable, kept the stopped count over the cap.
+ */
+export function sweepWindow<T>(items: readonly T[], size: number, random: number): T[] {
+  if (items.length <= size) return [...items];
+  const start = Math.min(items.length - 1, Math.max(0, Math.floor(random * items.length)));
+  return Array.from({ length: size }, (_, i) => items[(start + i) % items.length] as T);
 }
 
 interface RunOutcome {

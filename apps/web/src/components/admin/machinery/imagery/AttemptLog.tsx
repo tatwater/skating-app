@@ -1,12 +1,16 @@
 import { api } from '@skating/convex/api';
 import type { Id } from '@skating/convex/dataModel';
-import { usePaginatedQuery } from 'convex/react';
+import type { FunctionReturnType } from 'convex/server';
 import { useEffect, useMemo, useRef } from 'react';
 
 import { Log, type LogCopy, type LogLine } from '@/components/kit/log';
 import { CellLoader } from '@/components/kit/meter';
 
+import { isFailed, type Loadable, read } from '../../reads/consoleReads';
+import { joinChain, useJoinedPages } from '../../reads/joinChain';
+import { useChainedPages } from '../../reads/useChainedPages';
 import { clockSeconds } from '../corpus/runFormat';
+import { useFailureToast } from '../crons/CronRunsDrawer';
 import type { AttemptLogLine } from './imageryModel';
 import * as W from './imageryWords';
 
@@ -128,7 +132,9 @@ export function AttemptLog({
 
 /**
  * The log wired to `machineryImagery.attemptLog`: 200 lines a page, newest first, reversed to draw
- * oldest first; scrolling up loads the next older page.
+ * oldest first; scrolling up loads the next older page. Read through the console's one read layer
+ * as a chain of cursor pages, as a cron run's log is: a page that fails is a toast with *Try again*
+ * (D268), and the lines already read stand — never a throw that takes the page down.
  */
 export function LiveAttemptLog({
   attemptId,
@@ -136,23 +142,43 @@ export function LiveAttemptLog({
 }: Omit<AttemptLogProps, 'lines' | 'more' | 'loadingOlder' | 'onLoadOlder'> & {
   attemptId: Id<'imageryAttempts'>;
 }) {
-  const { results, status, loadMore } = usePaginatedQuery(
-    api.machineryImagery.attemptLog,
-    { attemptId },
-    { initialNumItems: ATTEMPT_LOG_PAGE },
+  const chain = useChainedPages<AttemptLogPage>(attemptId, (link) =>
+    read(api.machineryImagery.attemptLog, {
+      attemptId,
+      paginationOpts: {
+        numItems: ATTEMPT_LOG_PAGE,
+        cursor: link.cursor,
+        ...(link.end !== null && { endCursor: link.end }),
+      },
+    }),
   );
+  const joined = useJoinedPages(chain.pages, joinLines);
+  useFailureToast(chain.pages.find(isFailed) ?? null, W.LOG_FAILED, `attempt-log:${attemptId}`);
   const lines = useMemo(
-    () => (status === 'LoadingFirstPage' ? undefined : [...results].reverse()),
-    [results, status],
+    () =>
+      joined.status === 'loading' || joined.status === 'unread'
+        ? undefined
+        : [...joined.rows].reverse(),
+    [joined],
   );
   return (
     <AttemptLog
       key={attemptId}
       lines={lines}
-      more={status === 'CanLoadMore' || status === 'LoadingMore'}
-      loadingOlder={status === 'LoadingMore'}
-      onLoadOlder={() => loadMore(ATTEMPT_LOG_PAGE)}
+      more={joined.status === 'more' || joined.status === 'fetching'}
+      loadingOlder={joined.status === 'fetching'}
+      onLoadOlder={chain.loadMore}
       {...rest}
     />
+  );
+}
+
+type AttemptLogPage = FunctionReturnType<typeof api.machineryImagery.attemptLog>;
+
+function joinLines(pages: readonly Loadable<AttemptLogPage>[] | null) {
+  return joinChain(
+    pages,
+    (p) => p.page,
+    (l) => String(l.seq),
   );
 }

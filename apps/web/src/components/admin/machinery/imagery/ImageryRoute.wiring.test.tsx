@@ -154,6 +154,29 @@ describe('the page', () => {
     expect(within(list).getAllByRole('option')).toHaveLength(1 + BOARD_ROWS.length);
   });
 
+  it('a full failed section says Failed lists them all, and never calls its count All', () => {
+    const many = Array.from({ length: 50 }, (_, i) => ({
+      ...FAILED_OOM,
+      id: `jg${String(1000 + i).padStart(30, '0')}` as typeof FAILED_OOM.id,
+    }));
+    h.answers['machineryImagery:failedFirst'] = () => many;
+    mount();
+    expect(slot('granule-failed-capped')).toHaveTextContent(
+      'The newest 50 failed are shown here; Failed lists them all.',
+    );
+    const total = 50 + BOARD_ROWS.length;
+    expect(slot('granule-list-end')).toHaveTextContent(`${total} shown`);
+    expect(slot('granule-list-end')).not.toHaveTextContent('All');
+  });
+
+  it('a failed section under the cap ends the list in its tab, with no note', () => {
+    mount();
+    expect(document.querySelector('[data-slot="granule-failed-capped"]')).toBeNull();
+    expect(slot('granule-list-end')).toHaveTextContent(
+      `All ${BOARD_FAILED.length + BOARD_ROWS.length}`,
+    );
+  });
+
   it('a filter reads that filter alone, with no failed-first read', () => {
     mount();
     h.asked = [];
@@ -235,6 +258,17 @@ describe('the open granule', () => {
     expect(document.querySelector('[data-slot="live-log"]')).toBeNull();
     fireEvent.click(screen.getByRole('button', { name: /Show the log/ }));
     expect(slot('live-log')).not.toHaveAttribute('data-failed');
+  });
+
+  it('tried before attempts were recorded and since: the note, and the attempts recorded since', () => {
+    h.search = { granule: FAILED_OOM.id, attempt: 1 };
+    h.answers['machineryImagery:granule'] = () => ({ ...OOM_VIEW, before8b: true });
+    mount();
+    expect(slot('attempts-before')).toHaveTextContent('weren’t recorded');
+    expect(document.querySelectorAll('[data-slot="attempt-row"]')).toHaveLength(2);
+    // An earlier recorded attempt is still there to choose.
+    expect(slot('live-log').dataset.attempt).toBe(OOM_VIEW.attempts[0]?.id);
+    expect(document.querySelector('[data-slot="attempts-none"]')).toBeNull();
   });
 
   it('a granule that is gone says so', () => {

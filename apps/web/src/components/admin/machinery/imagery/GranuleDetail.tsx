@@ -161,17 +161,21 @@ export function GranuleDetail({
         </StatGrid>
 
         <Section data-slot="attempts" title={W.ATTEMPTS} level={3} count={attempts.length}>
-          {view.before8b ? (
+          {/* Tried before attempts were recorded: said, and beside the attempts recorded since. */}
+          {view.before8b && (
             <Note data-slot="attempts-before">
               {W.attemptsBefore(
                 recordedFrom === null ? null : shortDayWords(recordedFrom, timeZone),
               )}{' '}
               {W.keptCount(row.attempts, row.lastError)}
             </Note>
-          ) : attempts.length === 0 ? (
-            <p data-slot="attempts-none" className="m-0 text-assist text-fg3">
-              {W.NO_ATTEMPTS_YET}
-            </p>
+          )}
+          {attempts.length === 0 ? (
+            !view.before8b && (
+              <p data-slot="attempts-none" className="m-0 text-assist text-fg3">
+                {W.NO_ATTEMPTS_YET}
+              </p>
+            )
           ) : (
             // Its columns never squeeze to a phone: below its width the table scrolls in its own box.
             <div

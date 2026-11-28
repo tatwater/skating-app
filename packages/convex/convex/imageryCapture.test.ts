@@ -9,6 +9,7 @@
 
 import { CUT_LOG_MAX_LINES, cutLogKey, formatCutLogLine, tileSurveyKey } from '@skating/core';
 import { convexTest } from 'convex-test';
+import fc from 'fast-check';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { internal } from './_generated/api';
 import type { Doc, Id } from './_generated/dataModel';
@@ -23,6 +24,7 @@ import {
   ORPHAN_STOPPED_MS,
   slotOf,
   stacUrlFromEnv,
+  sweepWindow,
 } from './imageryLive';
 import schema from './schema';
 
@@ -905,6 +907,70 @@ describe('the keep rule: Machines kept until the pump reads them', () => {
     await pump(t);
     expect(w.destroyed).toHaveLength(25);
     expect(w.spawnBodies).toHaveLength(1);
+  });
+
+  test('Machines that can’t be cleared, first in Fly’s listing, never hold every run’s window', async () => {
+    const t = convexTest(schema, modules);
+    await openSeason(t, { imageryPausedAt: undefined });
+    const w = world();
+    // 50 stopped orphans; Fly refuses to destroy the first 25 it lists, every time.
+    for (let i = 0; i < MAX_STOPPED_MACHINES; i++) {
+      w.machines.set(`s${i}`, {
+        id: `s${i}`,
+        name: `granule-x${i}`,
+        state: 'stopped',
+        updated_at: new Date(Date.now() - 2 * ORPHAN_STOPPED_MS).toISOString(),
+      });
+    }
+    stub(w);
+    const fetchFn = globalThis.fetch;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: Request | string, init?: RequestInit) => {
+        const req = input instanceof Request ? input : new Request(input, init);
+        const id = Number(new URL(req.url).pathname.split('/machines/s')[1]);
+        if (req.method === 'DELETE' && id < 25) return new Response('', { status: 500 });
+        return fetchFn(req);
+      }),
+    );
+    vi.spyOn(console, 'log').mockImplementation(() => {});
+    // A window that starts at the listing's top would only ever ask for the 25 that refuse.
+    const random = vi.spyOn(Math, 'random').mockReturnValue(0);
+    await queue(t, G);
+    expect(await pump(t)).toMatchObject({ destroyed: 0, stopped: MAX_STOPPED_MACHINES });
+    // The next run's window starts elsewhere: the clearable ones behind them are cleared.
+    random.mockReturnValue(0.5);
+    vi.advanceTimersByTime(3 * MIN);
+    expect(await pump(t)).toMatchObject({ destroyed: 25, stopped: 25 });
+    expect(w.destroyed.sort()).toEqual(Array.from({ length: 25 }, (_, i) => `s${25 + i}`).sort());
+    random.mockRestore();
+  });
+});
+
+describe('the sweep’s window', () => {
+  const ids = Array.from({ length: 60 }, (_, i) => i);
+  test('all of a listing that fits; otherwise `size` in a row from where the draw lands, wrapping', () => {
+    expect(sweepWindow([1, 2, 3], 25, 0.99)).toEqual([1, 2, 3]);
+    expect(sweepWindow(ids, 25, 0)).toEqual(ids.slice(0, 25));
+    expect(sweepWindow(ids, 25, 0.5)).toEqual(ids.slice(30, 55));
+    expect(sweepWindow(ids, 25, 0.9)).toEqual([...ids.slice(54), ...ids.slice(0, 19)]);
+  });
+  test('every Machine is in some window, and a window never repeats one', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 200 }),
+        fc.integer({ min: 1, max: 50 }),
+        fc.double({ min: 0, max: 1, maxExcluded: true, noNaN: true }),
+        (n, size, r) => {
+          const items = Array.from({ length: n }, (_, i) => i);
+          const got = sweepWindow(items, size, r);
+          expect(got).toHaveLength(Math.min(n, size));
+          expect(new Set(got).size).toBe(got.length);
+          // Each item starts some window: the draw that lands on it.
+          if (n > size) expect(sweepWindow(items, size, (n - 1) / n)[0]).toBe(n - 1);
+        },
+      ),
+    );
   });
 });
 

@@ -513,6 +513,33 @@ describe('the page', () => {
     });
   });
 
+  test('the index: its last published build stays in sight past a stretch of failed rebuilds', async () => {
+    const t = harness();
+    const admin = await seedPerson(t, 'admin', 'admin');
+    await openSeason(t, { imageryStartedAt: NOW - 86_400_000 });
+    const run = (startedAt: number, fields: Partial<Doc<'cronRuns'>>) =>
+      t.run((ctx) =>
+        ctx.db.insert('cronRuns', {
+          job: IMAGERY_CRON_JOBS.index,
+          startedAt,
+          finishedAt: startedAt,
+          outcome: 'ok',
+          trigger: 'cron',
+          keepUntil: NOW + 86_400_000,
+          ...fields,
+        }),
+      );
+    const index = async () =>
+      (await admin.as.query(api.machineryImagery.page, { now: NOW }))?.index;
+    await run(NOW - 60 * MIN, { season: SEASON, counts: { frames: 41 } });
+    // Twelve rebuilds since, each thrown before it counted anything.
+    for (let i = 0; i < 12; i++) await run(NOW - (40 - i) * MIN, { outcome: 'failed' });
+    expect(await index()).toMatchObject({ built: true, frames: 41 });
+    // A rebuild that published with a few manifests unreadable is `failed`, and still the newest.
+    await run(NOW - 2 * MIN, { outcome: 'failed', season: SEASON, counts: { frames: 44 } });
+    expect(await index()).toMatchObject({ built: true, frames: 44 });
+  });
+
   test('countedFrom: the first attempt, when the season’s oldest granule was tried before it', async () => {
     const t = harness();
     const admin = await seedPerson(t, 'admin', 'admin');

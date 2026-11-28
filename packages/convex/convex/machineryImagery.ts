@@ -363,18 +363,34 @@ async function countedFromOf(
   return firstOfItsOwn === null ? first.spawnedAt : null;
 }
 
-/** The live index for the season: the index cron's newest run that counted this season's frames. */
+/**
+ * The live index for the season: the index cron's newest run that counted this season's frames —
+ * among its newest runs of any outcome (a rebuild with unreadable manifests is `failed` yet published)
+ * and its newest `ok` ones, so a stretch of failed rebuilds never pushes the last published build out
+ * of sight and reads the index as never built.
+ */
 async function indexFactsOf(ctx: QueryCtx, season: string) {
-  const runs = await ctx.db
+  const job = IMAGERY_CRON_JOBS.index;
+  const recent = await ctx.db
     .query('cronRuns')
-    .withIndex('by_job_started', (q) => q.eq('job', IMAGERY_CRON_JOBS.index))
+    .withIndex('by_job_started', (q) => q.eq('job', job))
     .order('desc')
     .take(INDEX_RUNS_LOOKBACK);
-  const built = runs.find((r) => r.season === season && typeof r.counts?.frames === 'number');
+  const recentOk = await ctx.db
+    .query('cronRuns')
+    .withIndex('by_job_outcome_started', (q) => q.eq('job', job).eq('outcome', 'ok'))
+    .order('desc')
+    .take(INDEX_RUNS_LOOKBACK);
+  const built = [...recent, ...recentOk]
+    .filter((r) => r.season === season && typeof r.counts?.frames === 'number')
+    .reduce<Doc<'cronRuns'> | undefined>(
+      (best, r) => (best === undefined || r.startedAt > best.startedAt ? r : best),
+      undefined,
+    );
   return { built: built !== undefined, frames: built?.counts?.frames ?? 0 };
 }
 
-/** The index cron's runs the head looks back over for the season's frame count. */
+/** The index cron's runs the head looks back over (of each kind) for the season's frame count. */
 const INDEX_RUNS_LOOKBACK = 10;
 
 // ── The reads ──────────────────────────────────────────────────────────────────────────────────

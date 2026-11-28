@@ -278,9 +278,10 @@ function joinLines(pages: readonly Loadable<CronRunLogPage>[] | null) {
 
 /**
  * A failed read's toast, once per failure (D268: errors are toasts, never inline), with *Try again*.
- * Keyed by what failed, so a failure that stands doesn't toast again on every render.
+ * Keyed by what failed, so a failure that stands doesn't toast again on every render. (Imagery's
+ * attempt log reads through it too.)
  */
-function useFailureToast(failure: ReadFailure | null, title: string, key: string) {
+export function useFailureToast(failure: ReadFailure | null, title: string, key: string) {
   const failing = failure !== null && !failure.pending;
   // The latest retry, read when pressed: a failure handed back afresh is the same failure.
   const retry = useRef<() => void>(() => {});

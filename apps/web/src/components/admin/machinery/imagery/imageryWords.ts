@@ -295,6 +295,8 @@ export const nothingToCut = (reason: string | null) =>
   reason === null ? 'Nothing to cut · the reason wasn’t recorded' : `Nothing to cut · ${reason}`;
 export const FRAME_LANDED = 'frame landed';
 export const allGranules = (n: number) => `All ${n.toLocaleString('en-US')}`;
+/** The list's end when *All* had more failed than it draws first: what's shown, not every granule. */
+export const shownGranules = (n: number) => `${n.toLocaleString('en-US')} shown`;
 export const NO_GRANULES = 'No granules yet';
 export const NONE_IN_FILTER = {
   all: 'No granules yet',
