@@ -16545,7 +16545,7 @@ before it opens, each with its dev deploy asked of the founder.
 |---|---|---|
 | **B01-8a — The frame, and watching the campaign** | the Machinery mode, route and sidebar (Corpus its only entry); the campaign's live record (events, the campaign row, the silent passes' flushes, the pass names); the stall rule in core; *Mark failed*, *Wait 30 minutes* and the hidden *Stop*; the run list, the campaign page and the re-homed run detail; the Overview's card producing `late`, `stalled` and `running`; Inbox Zero's *Machinery →*; the misleading readers fixed | **~15,000–20,000 over ~120–160 files**, about half tests and stories. Over the guideline: the founder will run the campaign only on this page, and the record and the page review worse apart (the record's every field exists for one drawn element) |
 | **B01-8b — The cron backbone and Imagery** | one recorder for every cron (a registry, two dispatchers, a heartbeat, hourly or daily tick rows, run rows and their logs, a retention sweep, D343); board 6.4 and its states: attempts, the cutter's R2 log merged with Fly's exit and lines at settle (D344), machine-minutes (D346), the granule list and detail, *Run now* on the poll, *Pause* and *Try again now*; the imagery panel leaves `/admin/seasons` and the operator emails are re-pointed; Health's lamp is not yet drawn. **Designed** in *B01-8b — The design*, below, as two PRs if the founder agrees (its fork 4): **8b-1** the backbone, **8b-2** Imagery | ~25,000 bottom-up (8b-1 ~8,600; 8b-2 ~16,600); the design recommends the two PRs, each shippable alone |
-| **B01-8c — Weather** | run ids through the three self-scheduling chains, per-run counters and weighted calls, failures by cause (D345), the counter per tier per day, the registry size, the fixed UTC times (D346), *Run now* and *Repair gaps now* under `machinery.weather`, board 6.5; the Open-Meteo meter leaves `/admin/ice-calibration` | ~12,000–16,000 |
+| **B01-8c — Weather** | run ids through the self-scheduling chains (a chained run is one run, D349 to mint), per-run counts, weighted calls and failures by cause (D345), the registry size, the fixed UTC times (D346, D350 to mint), *Run now* and *Repair gaps now* under `machinery.weather`, board 6.5; the Open-Meteo meter leaves `/admin/ice-calibration`. **Designed** in *B01-8c — The design*, below, as two PRs: **8c-1** the weather jobs' reporting and times (no page), **8c-2** the page | ~16,000 bottom-up (8c-1 ~7,300; 8c-2 ~8,500) |
 | **B01-8d — The rest of Corpus, and Enrichment** | *Your machine* with the filled-in resume commands, *Afterwards on Convex* (the triggers: sync weather cells, measure catalog coverage, recompute region stats), the diagnosis prompt; board 6.3 (the depth ladder's aggregate, the coverage header, D303's enrichment gaps); `/admin/imports` retired with its docs swept | ~16,000–22,000; the governor may split it at the Corpus/Enrichment line |
 | **B01-8e — Health** | board 6.0: what needs a look, 7-day failures, every job's heartbeat, the shell's machinery lamp; register Sh4 (each job's last run), In26 (parked photo jobs), Co2 (a cross-lake list of hazard merges, with *Unmerge*) | ~12,000–16,000 |
 | **B01-8f — The Cost Ledger** | D219's ledger table, the meters generalized, invoices, rates (boards 6.1); dollars appear only here; the Overview's ledger link | ~15,000–20,000 |
@@ -18691,6 +18691,629 @@ wasn't running on the laptop (P's vitest harness runs `cut-log.sh` itself under 
   to finish; one that hangs is never stopped (as before 8b-2) — Ma32.
 - A chained pump tick that found nothing still records a run row (a manual tick always does) — Ma33.
 
+#### B01-8c — The design
+
+*Designed 2026-11-28 against `phase-b01-machinery-8b2` at `d668588f8` (#191, B01-8b-2, about to
+merge); nothing built.* 8c is Machinery › Weather (board 6.5), the weather jobs' reporting through
+the backbone, the weather crons' fixed UTC times (D346), `machinery.weather` with its first gates
+(*Run now*, *Repair gaps now*), and the Open-Meteo meter's move off `/admin/ice-calibration`. The
+founder's rulings 17–20 and 23 are settled and not reopened here. Its decisions would mint from
+**D349** (*Decisions to mint (8c)*, below; D349 was held for 8b's split and never minted).
+
+##### What the code says today (weather)
+
+Checked at `d668588f8`. The earlier inventory's claims were re-read at their lines; where they and
+the code differ, the code is taken. Paths are `packages/convex/convex/` unless named.
+
+**The crons.** The registry (`cronJobs.ts`) labels five crons `pipeline: 'weather'`; board 6.5 draws
+seven, adding two more Open-Meteo consumers the registry files elsewhere. Every one is an action
+cron run through `cronRuns.tickAction`, and none returns a `cronReport`, so since 8b-1 each records
+ticks and failures only: no run row unless it throws.
+
+| Cron (registry name) | Schedule today | Pipeline label | Announces | Its handler, and what it does |
+|---|---|---|---|---|
+| *refresh nws alerts* | every 15 min | weather | no | `weatherAlerts.refreshAlertsHandler` (`weatherAlerts.ts:226`): five states (`KNOWN_STATE_CODES`), one NWS request each, a 429 paused 5 s and retried once (`:122`); a state that didn't answer keeps its rows (`fetchStateAlerts` returns `null`, `:115-145`, **counted nowhere**); a write that throws is a `jobFailures` row (`nwsAlerts`, never parked); then the staleness sweep. Returns `{ statesRefreshed, statesFailed }`, dropped |
+| *refresh hazard weather* | every 1 h | **hazards** | yes | `hazardWeather.refreshHazardWeatherHandler` (`hazardWeather.ts:209`): hazards with an active window, each re-fetched at most every `WEATHER_REFRESH_MIN_INTERVAL_HOURS`; a throw is a `jobFailures` row (`hazardWeather`) and the hazard goes to the back. Returns `{ refreshed, failed }`, dropped |
+| *append daily weather archive* | every 24 h (phase set at deploy) | weather | yes | `weatherArchive.maybeRefreshFilterTierHandler` (`:1897`): the season gate (`isSweepSeasonOpen`, the watch's `opensOn`/`closesOn`), an empty-registry self-heal, a cold start (no row for yesterday: 14 past days, else 3), then the **first batch inline** (`refreshTierDays`, `:1533`, 40 cells) which **schedules the next batch itself** (`runAfter(0)`, `:1569`) until the tier is done: ~77 batches for 3,043 cells, every one but the first outside the dispatcher |
+| *append daily bay weather archive* | every 24 h | weather | yes | `maybeRefreshBayTierHandler` (`:2758`): same gate and cold start, then `refreshBayDays` (`:2708`), 40 bays a batch, self-scheduling, ~128 bays (one to four batches) |
+| *repair weather archive gaps* | every 24 h | weather | yes | `maybeSweepGapsHandler` (`:1989`): same gate; per tier, `sweepWeatherDayGaps` (`:1588`) inline, 40 cells a batch, self-scheduling; per cell `repairCellGaps` (`:1648`): holes over the last 30 days inside the cell's known range, one refetch, the borrow from the filter parent for `browse`, the rest written `missing: true`. A cell that throws is a `jobFailures` row (`weatherGaps`) |
+| *reconcile weather cell registry* | every 168 h | weather | yes | `maybeSyncWeatherCellsHandler` (`:952`): per tier, `backfillWeatherCells` (`:540`) — the corpus walk, self-scheduling by page, the bays inline on the last page, the prune and `finishCellSync` only after a complete walk with no failed page. **Also scheduled directly by `importRuns.finish`** (`importRuns.ts:384-388`) with `requestedAt`, outside the dispatcher (the board's *and after each load*) |
+| *watch for the imagery season to open* | daily 11:30 UTC (8b) | **imagery** | no | `imageryIngest.maybeCheckSeasonOpenHandler`: the sentinels' and the sample's overnight lows (`lib/openMeteoHourly.fetchHourlyRows`), the season's `opensOn` and `closesOn` — **the gate every archive cron reads** |
+
+The two cache prunes (*prune weather cache*, *prune forecast cache*, every 6 h) are `hygiene`
+mutations and are not drawn on Weather.
+
+**The chains carry no run.** `refreshTierDays`, `refreshBayDays`, `sweepWeatherDayGaps` and
+`backfillWeatherCells` reschedule themselves with a cursor and nothing else (the registry walk mints
+its own `runId` for ownership of `weatherCells`, `:560`, not for a record). The dispatcher records
+the cron's tick when the **first** batch returns; the other ~76 batches of an append, and the
+gap sweep's and the walk's later pages, are invisible to the backbone (Ma8, Ma20).
+
+**How a cell fails.** `fetchLocalHourly` (`:212`) meters the request first (`meterOpenMeteo`, so a
+failed request is counted, as Open-Meteo counts it), then returns `null` on a non-2xx, a throw, a
+response with no `hourly.time`, or no usable hour — **the cause is dropped** (one `console.warn`).
+`ingestCellDays` (`:1319`) returns `null` for that; `refreshTierDays` and `refreshBayDays` catch a
+throw per cell and `console.warn` it (`:1559`, `:2731`), so a failed cell of an append leaves no
+trace but the log. **The archive's fetch has no deadline** (no `AbortSignal`, unlike
+`lib/openMeteoHourly.ts`, which gives each attempt 60 s and one retry): a request that hangs holds
+its batch until Convex's action limit kills it, and the chain stops there for the rest of the tier,
+silently. `rebuildDigestFor` (`:1565`) sits **outside** the per-cell `try`, so a digest write that
+throws ends the batch and the chain the same way. Nothing retries inside a run.
+
+**What actually picks up a failed cell** (D345's text says the gap repair; the code says otherwise):
+
+- An append re-requests three days (`APPEND_PAST_DAYS`), and each run writes today's row partial. A
+  cell that fails one day keeps **yesterday's partial row** from the day before; **the next day's
+  append** completes it (its three-day overlap).
+- The gap repair (`repairCellGaps`) counts a day as present if **any** non-`missing` row exists
+  (`listCellDayKeys`, `:498-511`), so **a partial past day is never a hole to it**. It repairs a
+  day only when no row exists at all (a cell that failed two appends running, or a cell first
+  opened after a gap).
+- Readers already treat a partial past day as unknown (`isCompleteDay`, `COMPLETE_DAY_MIN_HOURS`
+  23: `:2070`, `:2337`, `:2525`, `inbox.ts:1653`), never as data — so a stranded partial day is a
+  hole in the record, never a false reading (D3 holds). A cell failing three appends running is
+  left with a partial day nothing will ever repair (Ma34).
+
+**What is recorded.** `externalApiCalls` (`schema.ts:2806`): one row per provider per UTC day,
+`calls` and `weightedCalls`, patched by every metered request (`lib/apiMeter.ts:65`; Open-Meteo's
+weight `openMeteoCallWeight`, `:51`) from five paths: the archive (`weatherArchive.ts:238`), the
+cached hourly fetch (`weather.ts:231`), the point lookup (`conditions.ts:74`), and the season watch's
+two (`lib/openMeteoHourly.ts:67`). **No source is recorded** — a day's total can't be split between
+the crons and the app. `weatherCellSyncs` (`:2476`): one row per tier, the last walk's `startedAt`
+and `completedAt` — **no registry size** (counting `weatherCells` is a whole-tier read).
+`weatherAlerts`: the rows themselves, `fetchedAt` per state. `jobFailures` (`:4365`): per-item
+failing keys for `weatherCells`, `weatherGaps`, `nwsAlerts`, `hazardWeather`, `seasonWatch`, by
+`by_job_last_failed` — the only failure memory the weather jobs have.
+
+**The quota.** Open-Meteo's published free (non-commercial) limits, read from
+`open-meteo.com/en/pricing` on 2026-11-28: **600 calls a minute, 5,000 an hour, 10,000 a day,
+300,000 a month**; a request over 10 variables or two weeks for one location counts as several,
+fractionally. The page doesn't say when the day resets: the meter's UTC day is an assumption (Ma43).
+So the board's *Of 10,000 free* is real, not invented (Ma5's claim is corrected); *paid plan past
+7,000* is D158's trigger (`admin.ice-calibration.tsx:37`, a web constant). **What a day costs**: the
+filter append's request is 12 variables over 4 days (`APPEND_PAST_DAYS` + today), weight 1.2, so
+~3,650 weighted for 3,043 cells; a **cold start is 14 + 1 = 15 days, weight 2.4, ~7,300** —
+`SEASON_OPEN_PAST_DAYS`' comment says 14 days is "exactly one billing unit", but the request adds
+today and the meter itself counts it as two (Ma40). The bay append is ~150; the gap repair's
+refetches up to ~32 days (weight 3.6 each), only for cells with holes.
+
+**The meter today** is a card on `/admin/ice-calibration` (`routes/admin.ice-calibration.tsx:44`,
+`:109-127`) over `iceCalibration.apiCallBudget` (`iceCalibration.ts:296`, `instruments.calibration`,
+30 days `collect`ed); nothing else reads it. `OPEN_METEO_PAID_TRIGGER_PER_DAY = 7000` lives in the
+route.
+
+**Times on the page.** Every time 8c draws is an epoch instant (a run's `startedAt`, an alert's
+`fetchedAt`, a heartbeat's tick) formatted in the viewer's zone. Two traps the founder's notes name:
+Open-Meteo's own labels carry one fixed offset per fetch (no DST), and a day's `dayMs` is **UTC
+midnight of the lake's local date**, so it is drawn from `localDate` (or formatted in `UTC`), never
+formatted in the viewer's zone (which shows the previous date in the Northeast). No `startMs` from a
+weather row reaches the page.
+
+##### What 8c ships, board by board
+
+Board 6.5 is the only Weather board; the lanes board's *Weather* lane and the status bar are shared.
+
+| Board element | 8c | Why |
+|---|---|---|
+| **Head · Open-Meteo · today, UTC** (*1,940 weighted calls*, the meter, *Of 10,000 free · paid plan past 7,000*) | Built: today's weighted calls; the meter against Open-Meteo's 10,000 with D158's 7,000 marked; under it *Yesterday 4,410 · peak this week 4,520* and, when the crons still due today have run before, *about 3,800 more from the crons due today* (from their last runs' weighted calls; *Design's calls*) | rulings 7, 20; Ma5 |
+| **Head · Last night · the sentinels** (*Clouds 31 · Eagle 33 · Kinsman 37 °F*, *fetched 06:00 · 3 of 3*) | Built from `sentinelLows.forSeason` (the Overview's read, unchanged): each sentinel's last stored low in °F, *Overnight air lows*, the watch's last tick time and how many sentinels had a low | an air temperature at a named site, never ice (D3) |
+| **Head · Archive · yesterday** (*1,160 / 3,043 cells*, *Append late · bays complete*) | Built: the newest filter-append run's cells stored of the registry's size, and the bay run's word. While a run is going: *1,160 of 3,043 so far* | the run is the counter; no per-day counter table |
+| **Head · Cell registry** (*3,043 cells · Reconciled Sunday*) | Built: the filter tier's size from the last complete walk (`cellCount`, new), and when it completed | — |
+| **Head · NWS alerts** (*2 active · 5 states · 14:01*) | Built: distinct active alerts, the states answering in the last run, the newest `fetchedAt` | — |
+| **Crons · next run first** (seven rows) | Built: the seven, on the card's rules (8b-2's `cronCardState`): a fixed-time cron's next run, an interval cron's interval and last run. Order: anything failed, cut off or running first, then by when each is next due (an interval's is estimated for the order only, never drawn) | ruling 17 |
+| A row's sub-line facts (*2 active*, *14 hazards refreshed*, *128 bays*, *0 gaps open*, *the sentinels' lows*) | Built from each cron's last run's counts | — |
+| **Detail · head and state** (*Append daily weather archive · Late · retrying*) | Built with the card's state words (*Running*, *Late*, *Failed*, *Cut off*, *Not recorded yet*) plus the run's own: *Running · step 9*, *No word since 02:40*, *Stopped after step 9*. **Never *retrying***: nothing retries | ruling 18 |
+| **Detail · stats** (*This run 9 / 21 batches*, *Cells closed*, *Weighted calls*, *Next try 14:40*) | Built as *This run* (steps so far; no *of 21*: the step count isn't known until the chain ends, so the progress is cells of the registry), *Cells stored* (of the registry), *Weighted calls*, and **Failed** in place of *Next try*: the count and its causes (*3 · timed out*). Per cron, its own four (below) | ruling 18; D345 |
+| **Detail · the assist line** (*Each retry waits longer; nothing is lost … the gap repair fills it*) | Built, true: *3 cells weren't fetched (Open-Meteo timed out). The next append asks for the last three days again, so tomorrow's run fills yesterday for them.* Words per cron in `weatherWords.ts` | ruling 18; the finding above |
+| **Detail · This run, live** (Follow, Copy log) | Built over the run's lines (`machineryCrons.runLog`, reactive) with 8b's `CronRunLog`: stage lines, a progress line every ten steps, one line per cause per step with its sample. No *waiting · next try* line | — |
+| **Detail · Runs** (Day, Started, Took, Batches, Cells, Wtd calls, Outcome, Log) | Built: 8b's runs list in the pane, not a sheet (*Web*), columns per cron; *Took* is the whole chain's; *Batches* reads *Steps*; outcome *ok*, *ok · 3 failed*, *stopped*, *failed* — never *retries* | — |
+| **Floating bar · This cron: Run now (R) · Repair gaps now** | Built under `machinery.weather`: *Run now* for the selected cron where it may run (below), *Repair gaps now* always (it is the gap repair's *Run now*) | ruling 17's triggers |
+| **The lane** (*Weather · Convex · LATE*) | Built: *Weather* joins *Pipelines* under Imagery; its tail the worst of the seven at the clock, else *ok* and the newest tick's age; *season not open* (quiet, not amber) while the gate is shut | ruling 6 |
+| Lanes for Health, the ledger, Notifications…; *$75.80*; the status bar's lamp and counts | Not built | rulings 4, 6; Health (8e) owns the lamp |
+
+**States the board doesn't draw** (drawn as the running board with its words):
+
+- **The season isn't open** (most of the year): the four archive crons tick quietly; the head says
+  *The archive starts when the watch opens the season* and the archive stats show the last
+  season's last run (*Last appended 12 Apr*); *Run now* on the appends and *Repair gaps now* are
+  drawn disabled with the reason as their tooltip.
+- **Nothing recorded yet** (the first day after the deploy): *Not recorded yet* (Ma28's word) on a
+  cron with no tick; the archive stats *—*.
+- **A run that stopped** (a batch killed by the action limit, or a step that threw): *Stopped after
+  step 31 · 1,240 of 3,043 cells*, red; the assist line says the rest of the registry wasn't asked
+  today and the next append's overlap covers yesterday.
+
+**Per cron, the detail's four stats** (the board draws the append's; the rest are this design's):
+
+| Cron | Stat 1 | Stat 2 | Stat 3 | Stat 4 |
+|---|---|---|---|---|
+| Append (filter) | This run: steps, started | Cells stored / registry | Weighted calls | Failed, by cause |
+| Append (bays) | This run | Bays stored / live bays | Weighted calls | Failed, by cause |
+| Repair gaps | Cells checked (of both registries) | Gaps found → filled · borrowed · still missing | Open gaps now, the oldest day | Partial days seen (Ma34) |
+| Reconcile registry | Last walk: started, took, *after a load* or *weekly* | Cells (filter · browse) | Pruned | Writes that failed |
+| NWS alerts | States answered / 5 | Active alerts | New · ended this run | Failed, by cause |
+| Hazard weather | Hazards refreshed | Skipped (refreshed recently) | Failed, by cause | Weighted calls |
+| Season watch | Its last tick | The sentinels' lows (as the head) | — | *Its record is on Seasons* (a link, `season.read`) |
+
+**Where the board and this design differ** (later rulings and the code win; for the founder's look):
+
+- *Late · retrying*, *Next try 14:40*, *Each retry waits longer*, the log's *→ retry 09:10* and
+  *waiting · next try* lines, *ok · 2 retries*, *1 h 48 m*: the pipeline has no retry (ruling 18).
+  A run that met timeouts reads *ok · 3 failed* and its log names each cause once per step.
+- *Batch 9 of 21*: 3,043 cells at 40 a batch is ~77 batches, and the chain only learns it is done
+  at its end; the page counts cells of the registry instead.
+- *Next 14:16* on *Refresh NWS alerts*, *next 14:52* on hazard weather: interval crons
+  (ruling 17): *Every 15 minutes · 14:01*.
+- The fixed times differ (*02:06*, *02:31*, *Sunday 03:12*): the chosen times are below.
+- *Watch for the imagery season to open · next 06:00*: it runs at 11:30 UTC since 8b.
+- *Refresh hazard weather* and the watch are labelled `hazards` and `imagery` in the registry; the
+  page draws them because they are Open-Meteo consumers, without relabeling (*Design's calls*).
+- *$75.80* and the *Cost ledger* lane go (ruling 6).
+
+##### The server: a run that continues past its tick (D349 to mint)
+
+**The model.** A chained job **opens its run before its first batch**, every batch it schedules
+carries the run's id, each batch **adds to the run** as it ends, and the run **closes when its last
+branch ends**. The dispatcher's tick and the run are then one: the head tick's report names the run
+it opened, and the recorder merges the tick into it instead of inserting a second row. Four chains
+use it: the filter append, the bay append, the gap repair (two branches, one per tier) and the
+registry walk (two branches, one per tier). The same model is what Health later offers the erasure
+and photo walks (Ma20).
+
+**The schema** (widen-only; every field optional, every old row reads *not recorded*):
+
+```ts
+  cronRuns: defineTable({
+    …,                                   // 8b's fields, unchanged
+    /** A run that continues past its tick (D349): set by `openRun`, kept by `chainStep`. */
+    chain: v.optional(v.object({
+      open: v.number(),                  // branches still running; 0 = closed
+      steps: v.number(),                 // batches reported so far
+      progressAt: v.number(),            // the last step's end
+      lines: v.number(),                 // lines kept so far (the cap's counter)
+      linesDropped: v.optional(v.number()),
+    })),
+    /** Failures by cause (D345): one entry per cause, its count and one sample. At most 12. */
+    causes: v.optional(v.array(v.object({
+      cause: literals(CRON_FAILURE_CAUSES),
+      count: v.number(),
+      sampleKey: v.optional(v.string()), // a cell key, a state code, a hazard id; never content
+      sampleText: v.string(),            // trimmed to 300
+      sampleAt: v.number(),
+    }))),
+  })
+  weatherCellSyncs: defineTable({
+    …,
+    cellCount: v.optional(v.number()),   // the tier's cells after the complete walk's prune
+    pruned: v.optional(v.number()),
+  })
+```
+
+`CRON_FAILURE_CAUSES` (`lib/enums.ts`, mirrored in core with a guard row): `timeout` (an attempt's
+deadline, or Convex's fetch timing out), `rateLimit` (HTTP 429), `serverError` (5xx), `refused`
+(any other 4xx), `unreachable` (the connection failed), `badAnswer` (the body didn't parse, or was
+cut off), `emptyAnswer` (a 200 with no usable hour), `writeFailed` (a Convex write threw: an OCC, a
+limit), `other`. Core's `fetchFailureCause(error | status)` is the one rule; its words are the
+web's.
+
+**The writes, in `cronRuns.ts`** (the dispatchers' module stays the one writer of `cronRuns`):
+
+- `openRun({ job, startedAt, trigger, byUserId?, detail?, season? })` → `{ runId } | { busy:
+  runId }`: reads the job's newest three runs (`by_job_started`, `desc`, `take(3)`); one still open
+  whose `progressAt` is younger than `CRON_KILLED_AFTER_MS` makes it `busy` (a second chain would
+  ask Open-Meteo for the same cells twice); an older open one is closed `killed` with *No word
+  since 02:40, after step 31*. Then inserts the run (`outcome: 'ok'`, `finishedAt: startedAt`,
+  `chain: { open: 1, steps: 0, progressAt: startedAt, lines: 0 }`, `keepUntil` from the entry).
+- `chainStep({ runId, opened?, closed?, counts?, causes?, lines?, error? })`: adds `counts` key by
+  key, merges `causes` (counts summed, the first sample kept), appends `lines` under the cap
+  (`CHAIN_LINES_MAX`, 300; past it `linesDropped`), `steps + 1`, `open + (opened ?? 0) − (closed ??
+  0)`, stamps `progressAt`. At `open === 0`: `finishedAt` now, `outcome` `failed` if any step sent an
+  `error`, else `ok` (failures are counted and caused, not an outcome). A step on a run already
+  closed (a straggler after a kill) changes nothing and logs one line. Patches the heartbeat's
+  `lastRunId` only through the recorder (unchanged).
+- **The recorder** (`readReport` and `recordTick`): a report may carry `runId` (a string the
+  validator checks is a `cronRuns` id of the same job). Then no run row is inserted: the tick is
+  recorded as usual (heartbeat `worked`, the strip's code), `lastRunId` points at the open run, and
+  the head's own `counts`, `causes` and `lines` are merged into it as a `chainStep` with `closed: 1`.
+  A head that throws carries the `runId` through `withCronReport`, so the open run is closed
+  `failed` with the error. **Ordering is safe by construction**: the run exists before the first
+  batch is scheduled, so a batch that ends before the head's `finish` has its row to add to.
+- **The handler learns its tick** (`tickAction` passes a third argument, `{ job, startedAt,
+  trigger, byUserId? }`, `CronTickContext`; the registered `internalAction`s call the handler with
+  none). A chained handler with no tick (the registry walk scheduled by `importRuns.finish`) opens
+  its run as `trigger: 'manual'` with no presser, the 8b-2 convention for a run another job chained,
+  and the detail *After the corpus load at 14:02*; such a run has no tick and moves no heartbeat.
+- **Each step's order**: do the work; call `chainStep` with this step's tallies and `opened: 1,
+  closed: 1` when it is about to schedule the next (or `closed: 1` when it is the last); then
+  schedule. A step that dies after its `chainStep` and before scheduling leaves `open` at 1 with an
+  ageing `progressAt`: the read says *No word since …*, and the next `openRun` closes it `killed`.
+
+**The liveness of an open run** (core, `chainLiveness(run.chain, now)`, pure, beside 8b's
+`cronLiveness`): `running` while `progressAt` is younger than `CHAIN_QUIET_MS` (15 minutes: a batch
+of 40 requests takes a minute or two); `quiet` (*No word since 02:40*) after it; `stopped` past
+`CRON_KILLED_AFTER_MS` (the action limit and a minute: no batch can still be alive); `closed` at
+`open === 0`. The card, the lane and the detail read it from the same inputs; 8b-2's `cronCardState`
+gains the open run as an input (a running chain reads *Running*, a stopped one *Cut off*, the word
+8b-2's card already has). Property tests (`fast-check`): monotone in time; never `stopped` inside the
+action limit; `closed` only at `open === 0`.
+
+**What each weather job reports** (handlers change; what each job *does* doesn't — ruling 18):
+
+| Job | `worked` when | Counts (keys) | Causes from | Lines |
+|---|---|---|---|---|
+| Filter append (`refreshTierDays`, with its head) | the gate is open and a run opened | `cells`, `cellsStored`, `cellsFailed`, `daysWritten`, `calls`, `weighted` (×10, an integer), `fetchMs`, `fetchMsMax`, `digestFailed`, `pastDays`, `registry` (the tier's `cellCount` at open) | `fetchLocalHourly` returns its cause; a per-cell throw is `writeFailed` or `other` | start (*3-day append · 3,043 cells registered*), every tenth step, one per cause per step with its sample, the end |
+| Bay append | the same | the same over bays (`bays` for `registry`) | the same | the same |
+| Gap repair (two branches) | the gate is open | `cellsChecked`, `cellsUntouched` (no rows yet), `holes`, `filled`, `borrowed`, `stillMissing`, `missingOpen`, `oldestOpenDay`, `partialDays`, `oldestPartialDay`, `calls`, `weighted` | the refetch's cause; a cell's throw (already a `weatherGaps` failure) | per tier: start and end; per cause per step |
+| Registry walk (two branches) | always (not season-gated) | `scanned`, `cellsFiltered` / `cellsBrowse` (each tier's `cellCount`), `pruned`, `writesFailed`, `superseded` | `writeFailed` | per tier: start, superseded, *nothing pruned: a page failed*, end |
+| NWS alerts | a state failed, or an alert started or ended (else a quiet tick) | `states`, `statesFailed`, `active`, `started`, `ended` | `fetchStateAlerts` returns its cause; a write's throw | one per state that failed |
+| Hazard weather | a hazard was refreshed or failed | `refreshed`, `skipped`, `failed`, `calls`, `weighted` | the resolver's cause; a throw | one per cause |
+
+`fetchLocalHourly` returns `{ batch } | { cause, text }` and the weight it metered, through a new
+`ingestCellDaysReported`; `ingestCellDays` keeps its signature for the drawer's lazy backfill and
+the sub-area prime (`:2273`, `:2619`), which are not runs. `listCellDayKeys` adds a third list,
+`partial` (a non-`missing` row with fewer than `COMPLETE_DAY_MIN_HOURS` hours, on or before
+yesterday), read from the rows it already reads — a count for the report; the repair is unchanged.
+`pruneVacatedCells` returns the cells it kept beside the ones it pruned (its `.collect()` already
+reads the tier), and `finishCellSync` stamps `cellCount` and `pruned`. Every count is an integer
+(the weight is stored ×10). The chain's tallies ride its own step's `chainStep`; nothing is stored
+per cell (a cell that fails every day is a follow-up, Ma42).
+
+**The cost, counted** (in season, per day; out of season the archive crons are quiet ticks as
+today): one `chainStep` per batch — the filter append ~77, the bays 1–4, the gap repair one per 40
+cells of each registry (~77 for filter; browse's registry size is unknown until the first walk is
+measured, Ma38), the registry walk ~50 pages a tier once a week — so **~160–250 small mutations a
+day, each one document read and one patched (~1–2 KB), plus at most 300 line inserts a run**: under
+1 MB of database I/O a day and ~7,500 calls a month, about 0.75 % of the free plan's million.
+Retention: the four daily and weekly weather crons keep runs 200 days (`SEASON_CRON_RETENTION`, so a
+season's appends list whole: ~4 rows a day); NWS and hazard weather keep 30. The NWS cron's run rows
+are a few a day (only a change or a failure makes one).
+
+**Fixed UTC times** (D346; the four change in `cronJobs.ts`, each comment saying why):
+
+| Cron | Today | 8c | Why this time |
+|---|---|---|---|
+| *reconcile weather cell registry* | every 168 h | **weekly, Sunday 05:00 UTC** | Midnight Eastern in winter: the week's quietest hour for a ~170 MB walk, and two hours before Sunday's append, so the append pages a fresh registry. Imports still trigger it at once |
+| *append daily weather archive* | every 24 h | **daily 07:00 UTC** | The lake's day ends at 05:00 UTC in winter (04:00 in summer time); two hours past it, yesterday's 24 hours are past and Open-Meteo's newest model runs cover them. Today's phase is arbitrary: an append at 02:00 UTC stores *yesterday* while it is still 21:00 at the lake |
+| *append daily bay weather archive* | every 24 h | **daily 07:15 UTC** | Same reasoning; after the filter append starts, so the two don't start in the same second (well inside Open-Meteo's 600 a minute either way) |
+| *repair weather archive gaps* | every 24 h | **daily 10:00 UTC** | After both appends end (the filter append's length is unmeasured; three hours is margin), so it judges yesterday after the appends wrote it, and the bay tier's borrow finds the filter parent's day. Before the cron records prune (10:50) and the season watch (11:30) |
+| *refresh nws alerts*, *refresh hazard weather* | 15 min, 1 h | unchanged | Interval crons: the page shows the interval and the last run |
+
+On the day the season opens, the watch sets `opensOn` at 11:30 UTC and the first append runs at
+07:00 the next morning, where today's arbitrary phase might have run it that afternoon; its cold
+start reaches back 14 days, so nothing is lost.
+
+##### The reads and the writes (`convex/machineryWeather.ts`)
+
+**The reads** (each `machinery.read`, each taking the caller's `now` through `callerNow`):
+
+- `page({ now })` → the seven crons (`machineryCrons.jobs` for the page's list, `WEATHER_PAGE_JOBS`),
+  each with its last run's counts and causes and its open run's chain; the gate (`isSweepSeasonOpen`'s
+  answer: open, `opensOn`, `closesOn`); the registry (two `weatherCellSyncs` rows); the alerts (the
+  `weatherAlerts` rows, `take(500)` as `listAll`, folded to a count, the states and the newest
+  `fetchedAt`); the still-failing work (`jobFailures` by `by_job_last_failed` for `weatherGaps`,
+  `nwsAlerts`, `hazardWeather`, `weatherCells`, `take(20)` each, newest first, keys and classes only).
+  At most ~25 point reads and ~600 small rows.
+- `meterToday({ now })` → **one** `externalApiCalls` row (today's, by `by_provider_day`, `eq`, `eq`).
+  Kept apart because that row is patched by every Open-Meteo request (about two a second during an
+  append): only this one-document read reruns that often.
+- `meterHistory({ now })` → the 30 days before today (`gte`/`lt` today: rows that no longer change),
+  folded to yesterday, the 7-day peak and the days counted.
+- The sentinels: the page mounts `sentinelLows.forSeason` as the Overview does (its capability,
+  `SENTINEL_LOWS_CAPABILITY`).
+- The runs and logs: 8b's `machineryCrons.runsPage` and `runLog`, unchanged (their views gain
+  `chain` and `causes`, which `CronRunView` passes through).
+- `machineryRuns.lanes` gains `weather` (the seven heartbeats and open runs through the same rule;
+  the gate for *season not open*).
+
+**The writes** (each `machinery.weather`, admin; each one audit row, verb `run_cron`, target
+`cronJob` keyed by the registry name — generic, so Health's *Run now* reuses them; refusals are
+thrown sentences, toasts on the web):
+
+| Write | Schedules | Refused when | Inverse (D226) |
+|---|---|---|---|
+| `runNow({ job })` | `cronRuns.tickAction` with `trigger: 'manual'` and the presser | the job isn't one of `WEATHER_RUNNABLE` (the two appends, the gap repair, NWS alerts, hazard weather); an archive cron while the season isn't open (*The archive starts when the watch opens the season*); a run of that job still going (an open, live chain, or an announcing job's live `runningSince`) | none: a trigger; the receipt says it started |
+| `repairGapsNow({})` | `runNow` for *repair weather archive gaps* | the same | none |
+
+The receipts are `{ actionId }`; the run itself says who pressed it. `run_cron` and `cronJob` join
+`MODERATION_ACTIONS` and the targets, with their words in `actionLabels.ts` and the Overview's
+`ACTION_WORDS`; `undoPolicy` gets the row (`none`, *a trigger: nothing a person would undo*);
+`capabilityGates` and `adminWriters` hold the two; `machinery.weather` joins
+`core/capabilities.ts`: *Run the weather crons now and repair the archive's gaps (B01-8c).* No
+*Run now* on the registry walk (fork 1) or on the season watch (Imagery's, `machinery.imagery`).
+
+##### The web
+
+**Route** `admin.machinery.weather.tsx` (search: `job` — one of the seven registry names, the
+selected cron, default the most urgent; `run` — a `cronRuns` id, its log open; anything else
+dropped). `MachineryLanes` gains *Weather* (*Convex*) after Imagery. `/admin/machinery` still opens
+Corpus until Health lands.
+
+**Two panes under a head**, as the board: the head's five stats span the page; the cron list (the
+console's `--container-list`); the detail. Under `components/admin/machinery/weather/`:
+
+```
+WeatherRoute.tsx        wiring: page, meterToday, meterHistory, sentinelLows, the writes
+WeatherHead.tsx         the five stats (the meter is the kit's Meter, 4 px, two marks)
+WeatherCronList.tsx     the seven rows (CronCard in its row form), ordered as above
+WeatherCronDetail.tsx   the head, the four stats per cron, the assist line, This run, Runs
+WeatherActions.tsx      the floating bar: Run now (R), Repair gaps now
+weatherModel.ts         the order, the chain's state words, the outlook line (pure)
+weatherWords.ts         every word no board supplied, the causes' words, the assist lines
+```
+
+**Reuse of `machinery/crons/*`** (W2's pieces, generic): `CronCard` gains a row form (`variant:
+'row'`, the board's list row: square, name, sub-line, age), `cronModel` takes the open run's
+`chainLiveness`, and `CronRunsView`'s body is exported as `CronRunsPane` (the same list, columns,
+folded quiet line and logs, without the `Sheet`) so the detail mounts the runs in place. The tick
+strip is not drawn (the board doesn't). `CronRunLog` draws *This run* with Follow while the chain is
+open.
+
+**The meter's move.** `iceCalibration.apiCallBudget` and the *Open-Meteo calls* card leave
+`admin.ice-calibration.tsx` in this PR (D305): the calibration pairs and fit stay; where the card
+stood, one line, *Open-Meteo calls are on Machinery › Weather →* (drawn for `machinery.read`).
+`OPEN_METEO_PAID_TRIGGER_PER_DAY` moves to core beside `OPEN_METEO_FREE_PER_DAY = 10_000` (its
+source and date in the comment).
+
+**Copy (D3).** Temperatures are *overnight air lows* at named sites, in °F; the archive's words
+are *stored*, *fetched*, *cells*, *days* — never *frozen*, *ice*, *skateable*, *good*, *safe* or a
+forecast of anything on the water. A gap is *not recorded*, never *clear* or *no snow*. Relaxed and
+plain: *Open-Meteo didn't answer in time for 3 cells. Tomorrow's append asks for the last three days
+again, so it fills yesterday for them.* No D#, § or phase tokens; refusals are toasts.
+
+**Stories and tests**: the page in every state four-up in both themes (season open and running;
+running with failures by three causes; a chain quiet then stopped; season not open; nothing recorded
+yet; the meter past 7,000 and past 10,000), the row card's states, `CronRunsPane` in the drawer and
+in place; wiring tests on the reads' shapes; the render-compare beside board 6.5 at 1440 × 900, each
+difference fixed or listed.
+
+##### Size, and the split
+
+Bottom-up at the measured half-tests ratio, against 8b-2's estimate (16,600) and 8b-1's landed size:
+
+| Builder | Lines | Of which tests and stories |
+|---|---|---|
+| X3 (seams: the widens, causes, verb and target, capability, the four schedules and retentions, `openRun`/`chainStep` stubs, `CronTickContext`, core stubs, `_generated`, `06-data-model.md`) | ~900 | ~200 |
+| S4 (the chain in `cronRuns.ts`, the recorder's `runId` merge, core `chainLiveness` and `fetchFailureCause` with property tests, the real-backend proofs of the chain) | ~2,800 | ~1,800 |
+| S5 (the six jobs' reports: `weatherArchive.ts`, `weatherAlerts.ts`, `hazardWeather.ts`; `cellCount`; the stand-in URLs) | ~3,600 | ~2,300 |
+| **8c-1** | **~7,300** (~6,000–9,000) over ~40 files | ~4,300 |
+| S6 (`machineryWeather.ts` reads and writes, the lanes key, the guards' inventories, `cronCardState`'s chain input) | ~2,400 | ~1,500 |
+| W3 (the page, its states, the lane, the meter's move, the calibration line) | ~4,800 | ~2,800 |
+| W4 (`crons/*`: the row card, `CronRunsPane`, the chain's words in the model) | ~1,300 | ~800 |
+| **8c-2** | **~8,500** (~7,000–10,500) over ~55 files | ~5,100 |
+
+**About 16,000 lines in all**, the PR table's upper figure. Recommended: **two PRs, each shippable
+alone**, as 8b. 8c-1 changes no page and no job's behavior: the four crons move to their times,
+every weather run is recorded whole with its causes from the day it deploys (D310's reasoning: the
+page can show only history that exists), and the chain changes `cronRuns.ts`, the path every
+announcing cron runs on, which reviews best alone. 8c-2 is the page, the writes and the meter's move
+on that record. One PR is the fallback (*Design's calls*).
+
+##### Builder territories
+
+**8c-1** (branch `phase-b01-machinery-8c1`, from `origin/main` after #191's squash):
+
+| Builder | Owns | Asks for, never edits |
+|---|---|---|
+| **X3 — the seams (first)** | `schema.ts` (`cronRuns.chain?`, `causes?`; `weatherCellSyncs.cellCount?`, `pruned?`); `lib/enums.ts` (`CRON_FAILURE_CAUSES`, `run_cron`, `cronJob`); `cronJobs.ts` (the four schedules and comments, `SEASON_CRON_RETENTION` on the four, `WEATHER_PAGE_JOBS` and `WEATHER_RUNNABLE` exported); `cronJobs.test.ts`' literal table; stubs marked `PLACEHOLDER`: `cronRuns.openRun`/`chainStep`, `core/src/cronChain.ts` (`chainLiveness`, `CHAIN_QUIET_MS`, `CHAIN_LINES_MAX`), `core/src/fetchFailure.ts` (`fetchFailureCause`), `CronReport.runId?` and `causes?`, `CronTickContext`; `convex/_generated`; `plans/06-data-model.md` | — |
+| **S4 — the chain** | `cronRuns.ts` (`openRun`, `chainStep`, the recorder's merge, `tickAction`'s third argument); `core/src/cronChain.ts`, `cronReport.ts`, `fetchFailure.ts` and their property tests; `crons.test.ts`; the chain's real-backend proofs | X3's files |
+| **S5 — the weather jobs** | `weatherArchive.ts` (the four chains' reports, `ingestCellDaysReported`, `listCellDayKeys`' `partial`, `cellCount`), `weatherAlerts.ts`, `hazardWeather.ts`, `weather.ts` (the stand-in URL read, never set on a real deployment); their tests | `cronRuns.ts` (S4's) |
+| **Executor** | merges X3, S4, S5 in order with the full gates after each; the proofs; `/code-review xhigh --fix`; `gh run watch` | — |
+
+**8c-2** (a fresh branch from `origin/main` once 8c-1 merges):
+
+| Builder | Owns | Asks for, never edits |
+|---|---|---|
+| **X4 — the seams (first)** | `core/capabilities.ts` (`machinery.weather`); `lib/undoPolicy.ts` (the `run_cron` row); `actionLabels.ts`, `overviewData.ts`' `ACTION_WORDS`, `overviewRoutes.ts` (`cronJob` opens its pipeline's page); stubs: `machineryWeather.ts` returning the views below; the route shell and `routeTree.gen.ts`; core's `OPEN_METEO_FREE_PER_DAY`, `OPEN_METEO_PAID_TRIGGER_PER_DAY`; `_generated` | — |
+| **S6 — the reads and writes** | `machineryWeather.ts`; `machineryRuns.ts` (`lanes.weather`); `machineryCrons.ts` (the run view's `chain`, `causes`); core `cronJobState.ts` (`cronCardState`'s open-run input); `iceCalibration.ts` (`apiCallBudget` gone); the guards' inventories; tests | X4's files |
+| **W3 — the page** | `machinery/weather/*`; `MachineryLanes.tsx`; the route's body; `admin.ice-calibration.tsx` (the card's retirement); stories and tests | `crons/*` (W4's); `kit/` |
+| **W4 — the cron pieces** | `machinery/crons/*` and their stories and tests | W3's files |
+| **Executor** | merges X4, S6, W4, W3 in order; the render-compare; the proofs; `/code-review xhigh --fix` | — |
+
+**The contracts** (the stubs return these shapes; the web derives its types from `api`):
+
+```ts
+// core/src/fetchFailure.ts
+export type CronFailureCause = 'timeout' | 'rateLimit' | 'serverError' | 'refused' | 'unreachable'
+  | 'badAnswer' | 'emptyAnswer' | 'writeFailed' | 'other';
+export function fetchFailureCause(failure: { status?: number; error?: unknown; empty?: boolean }): CronFailureCause;
+export interface CronCauseTally { cause: CronFailureCause; count: number; sampleKey?: string; sampleText: string; sampleAt: number }
+
+// core/src/cronReport.ts (widened)
+export interface CronReport { …; runId?: string; causes?: CronCauseTally[] }
+export interface CronTickContext { job: string; startedAt: number; trigger: 'cron' | 'manual'; byUserId?: string }
+
+// core/src/cronChain.ts
+export const CHAIN_QUIET_MS = 15 * 60_000;
+export const CHAIN_LINES_MAX = 300;
+export type ChainState = { open: number; steps: number; progressAt: number; lines: number; linesDropped?: number };
+export type ChainLiveness = 'running' | 'quiet' | 'stopped' | 'closed';
+export function chainLiveness(chain: ChainState, now: number): ChainLiveness;
+
+// convex/cronRuns.ts (8c-1)
+export const openRun: (args: { job: string; startedAt: number; trigger: 'cron' | 'manual';
+  byUserId?: Id<'profiles'>; detail?: string; season?: string }) => { runId: Id<'cronRuns'> } | { busy: Id<'cronRuns'> };
+export const chainStep: (args: { runId: Id<'cronRuns'>; opened?: number; closed?: number;
+  counts?: Record<string, number>; causes?: CronCauseTally[]; lines?: CronReportLine[]; error?: string }) => null;
+
+// convex/machineryWeather.ts (8c-2) — reads `machinery.read`, writes `machinery.weather`
+type WeatherGate = { open: boolean; season: string; opensOn: string | null; closesOn: string | null };
+type WeatherCronView = CronJobView & { lastRun: (CronRunView & { chain: ChainState | null; causes: CronCauseTally[] }) | null };
+export const page: (args: { now?: number }) => {
+  crons: WeatherCronView[];                        // WEATHER_PAGE_JOBS, in registry order; the web orders them
+  gate: WeatherGate;
+  registry: { filter: { cells: number | null; completedAt: number | null };
+              browse: { cells: number | null; completedAt: number | null } };
+  alerts: { active: number; states: string[]; newestAt: number | null };
+  failing: { job: string; key: string; errorClass: string; attempts: number; firstFailedAt: number; lastFailedAt: number }[];
+};
+export const meterToday: (args: { now?: number }) => { dayMs: number; calls: number; weighted: number } ;
+export const meterHistory: (args: { now?: number }) => { yesterday: number | null; peak7: number | null; days: { dayMs: number; weighted: number }[] };
+export const runNow: (args: { job: string }) => { actionId: Id<'moderationActions'> };
+export const repairGapsNow: (args: {}) => { actionId: Id<'moderationActions'> };
+```
+
+Where a snippet and the landed file differ, the file wins; each builder says so in its report.
+
+##### Briefs (B01-8c)
+
+The governor wraps each with §12.4's invariants and 7a's harness notes.
+
+- **X3.** The widens, the vocabulary with its guard row, the four schedules (and their comments'
+  *why*), the stubs returning the shapes above (`openRun` answers `busy` never; `chainStep` does
+  nothing). Done when the suites pass on the stubs, `dataModelRegister` holds the widens, the
+  registry's literal table holds the new schedules, and codegen verifies.
+- **S4.** The chain as specified, every order of *The model* tested in `convex-test` under the
+  harness (a step before the head's `finish`; a head that throws with an open run; a straggler step
+  on a killed run; `busy`; the line cap; a stale run closed by the next `openRun`), the recorder's
+  merge, `chainLiveness` and `fetchFailureCause` with `fast-check` and their mutations named. Done
+  when a three-batch stand-in chain records one run with summed counts and causes, and the real
+  backend agrees (*Proof plan*).
+- **S5.** Each job's report as the table says; no change to what a job fetches, writes, retries or
+  skips (a diff that changes a fetch, a gate, a cursor or a write is out of scope). The stand-in base
+  URLs (`OPEN_METEO_BASE_URL`, `NWS_BASE_URL`; read only by the fetches, never set on a real
+  deployment, as `IMAGERY_STAC_URL`). Done when every cause is produced by a stubbed `fetch` in a
+  test, a 77-batch append and a two-tier gap repair record one run each with the counts the stand-in
+  implies, `cellCount` is stamped by a complete walk and left alone by a failed one, and
+  `ingestCellDays`' other callers are byte-identical in behavior.
+- **X4.** The capability, the verb's words and route, the stubs, the route shell. Done when the
+  suites pass on the stubs and codegen verifies.
+- **S6.** The reads bounded under the harness (the page at its worst: seven runs with full causes,
+  500 alert rows, 80 failing keys); `meterToday` reading exactly one document; the writes' refusals
+  each tested; `cronCardState` with the open run held equal across card, lane and Overview at one
+  `now` (8b-2's agreement test widened). `apiCallBudget` gone with no reader left.
+- **W3**, **W4.** As *The web*; the render-compare; refusals as toasts; `adminWriters` holding the
+  new hooks; no time formatted from a weather row's `startMs` or a `dayMs` in the viewer's zone (a
+  test feeds a `dayMs` at UTC midnight and asserts the local date).
+
+##### Proof plan
+
+**On a throwaway local backend, before each PR opens** (as 8b-2's: `convex dev` kept up in the
+background, anonymous, no credentials; stand-ins served locally):
+
+- *8c-1*: a stand-in Open-Meteo answering by cell with a scripted mix — 200s, a 429, a 503, a
+  truncated body, a 200 with no hours, and one request that never answers — and a stand-in NWS with
+  one state failing. 3,043 synthetic filter cells and 128 bays registered, the season's record open.
+  Press each archive cron once through its dispatcher (`trigger: manual`): the filter append records
+  **one run** of ~77 steps whose `cellsStored + cellsFailed = 3,043`, causes grouped with one sample
+  each, lines under the cap; the hung request stops its batch at the action limit (30 minutes, as 8b
+  measured): the run reads `quiet` at 15 minutes and the next press closes it `killed` with the step
+  it reached. The gap repair over seeded holes, `missing` rows and partial days reports each count
+  exactly. The registry walk over 25,000 synthetic bodies stamps `cellCount` on both tiers; a walk
+  with a failing page stamps nothing. A step racing the head's `finish` (the stand-in answering the
+  first batch instantly) still merges into one run.
+- *8c-2*: the page's reads at their worst under the read limits; `meterToday` under a stream of
+  meter writes; *Run now* while a chain is open refused; *Repair gaps now* out of season refused; the
+  receipts and audit rows.
+
+**Only on dev, with the founder** (D340): real Open-Meteo answers, real step durations (the append's
+length, which sets whether 10:00 UTC leaves enough margin, Ma41), the browse registry's real size
+(Ma38), and the founder's first presses.
+
+**After merge, on dev, in order.**
+
+*8c-1*: (1) the deploy, asked of the founder: `convex dev --once` from main at the squash, codegen
+first; widen-only, no backfill. **Check the season gate first**: if the archive season is open, the
+moved crons run at their new times on the deploy day, and an append that already ran today under the
+old phase runs again at 07:00 UTC (idempotent, ~3,650 weighted calls more that one day; Ma39) —
+deploying after 07:00 UTC on a day the old phase has already run, or out of season, avoids it. (2)
+The next morning: the filter append's run in `cronRuns` (the dashboard's Data view) with its counts
+and causes; the gap repair's at 10:00. (3) A week on: the walk's `cellCount` on both tiers.
+
+*8c-2*: (1) the deploy, asked of the founder. (2) Read-only checks: the head against the dashboard's
+`externalApiCalls` row; the seven crons' states; a run's log; the lane and the Overview agreeing;
+`/admin/ice-calibration` without the card. (3) **The buttons awaiting the founder's first press**:
+*Run now* on NWS alerts (cheap, any time); *Run now* on hazard weather; *Repair gaps now* and the
+appends' *Run now* only in season, and only after reading the meter (each append is ~3,650 weighted
+calls).
+
+##### Every schema change, and its rollout
+
+| Table | Change | Rollout |
+|---|---|---|
+| `cronRuns` | `chain?`, `causes?` (8c-1) | widen only; older runs read *not recorded* |
+| `weatherCellSyncs` | `cellCount?`, `pruned?` (8c-1) | widen only; filled by the next complete walk (Sunday, or the next load) |
+| `moderationActions` | verb `run_cron`; target `cronJob` (8c-1's enums, 8c-2's writers) | widen only |
+| `externalApiCalls` | none | — |
+
+##### Forks for the founder
+
+1. ***Run now* on the cell registry walk.** The walk reads the whole corpus, about 85 MB a tier
+   (~170 MB a run, `cronJobs.ts`' comment), which is about a sixth of the free plan's 1 GB a month
+   of bandwidth in one press. It already runs weekly and after every corpus load, so a press is
+   rarely needed. Options: **(a)** no *Run now* on it; the page says *It runs on Sundays and after
+   each corpus load*; **(b)** *Run now* with the cost in its tooltip; **(c)** *Run now* behind a
+   confirm that names the cost. **Recommend (a)**: the load trigger covers the case a person would
+   press it for, and the free-plan aim (ruling 23) makes a casual 170 MB press the wrong default; it
+   can be added the day it's wanted.
+2. **The gap repair doesn't do what D345 says it does.** D345's wording (*the gap repair picks the
+   failures up*) assumed the repair catches a failed append; in the code, a cell that fails an
+   append keeps yesterday's **partial** row, the repair counts a partial row as present, and it's the
+   **next day's append** (its three-day overlap) that fills it. A cell that fails three appends
+   running is left with a partial day nothing repairs (readers treat it as unknown, never as data, so
+   D3 holds). Options: **(a)** draw the truth now (the assist line names tomorrow's append; the gap
+   repair's detail counts *partial days seen*), and make the repair treat a partial past day as a
+   hole later (Ma34, a pipeline change, first in line); **(b)** make that change in 8c-1 (a few
+   lines in `repairCellGaps`; a partial day costs one refetch of up to ~32 days, weight 3.6);
+   **(c)** (a), and reword D345 only. **Recommend (a)**: ruling 18 keeps behavior fixed for this
+   page, the overlap already covers a one- or two-day miss, and the page's new count will show how
+   often a partial day is actually stranded before anything is changed. Either way D345's text
+   gets a dated amendment.
+
+##### The design's own calls, which the governor may overturn
+
+- **A chained run is one run**, opened by the job before its first batch and closed by its last
+  branch (D349), rather than one run row per batch or a separate chain table: one row is what the
+  runs list draws, and opening first removes the race between the head's `finish` and its batches.
+- **The handler learns its tick through a third argument** rather than the dispatcher carrying job
+  arguments; the load-triggered walk opens its own run as a chained manual run (no heartbeat move).
+- **Two PRs** (8c-1 the reporting and the times, 8c-2 the page), as 8b; one PR (~16,000) is the
+  fallback if the governor prefers one review.
+- **The page draws seven crons** (the board's), including *refresh hazard weather* (`hazards`) and
+  the season watch (`imagery`), by a page list rather than relabelling the registry; the watch gets
+  no *Run now* here.
+- **No tick strip** on Weather (the board has none); the runs list sits in the detail pane through
+  an exported `CronRunsPane` rather than the sheet.
+- **The quota line**: today against 10,000 (Open-Meteo's published free limit) with D158's 7,000
+  marked, yesterday and the 7-day peak, and *about N more from the crons due today* from their last
+  runs' weighted calls (Ma5's forecast, in its simplest honest form); no extrapolation of the app's
+  share.
+- **The fixed times**: Sunday 05:00 (walk), 07:00 and 07:15 (appends), 10:00 (repair), all UTC.
+- **Retention**: the four daily and weekly weather crons' runs 200 days (a season); NWS and hazard
+  weather 30.
+- **Partial-day and response-time counts are reported now** (Ma4's Open-Meteo half; Ma34's
+  measure), from data the jobs already hold.
+- **The NWS cron makes a run row only on a change or a failure**: 96 ticks a day stay ticks.
+- **`run_cron` and `cronJob` are generic** (Health's *Run now* reuses them under each pipeline's
+  capability).
+- **The meter's history read excludes today**, so only a one-document read reruns at Open-Meteo's
+  pace during an append.
+
+##### Decisions to mint (8c)
+
+- **D349 — A run that continues past its tick is one run (B01-8c).** A job that schedules its own
+  continuations opens its run before its first batch; every continuation carries the run's id and
+  adds its counts, failures by cause and lines as it ends; the run closes when its last branch ends,
+  and a run with no word past the action limit is closed as killed by the next one. The dispatcher's
+  tick and the run are merged, not doubled. *Why:* a weather append is ~77 batches and the backbone
+  saw one; a page can only answer *did the last run do its job* for a run it can see whole.
+- **D350 — The weather crons run at fixed UTC times ordered by what they depend on, and Machinery ›
+  Weather holds the Open-Meteo meter (B01-8c).** The registry walk weekly on Sunday at 05:00, the
+  appends daily at 07:00 and 07:15 (two hours past the lake's midnight), the gap repair at 10:00
+  (after both); the meter reads against Open-Meteo's published 10,000 a day with D158's 7,000
+  marked, and leaves `/admin/ice-calibration`. *Why:* D346's fixed times, chosen so a day is
+  complete before it is stored and repaired after it is written.
+- **D345, amended** (dated, with the founder's answer to fork 2): what picks up a failed append is
+  the next append's overlap; the gap repair fills a day only when no row exists.
+
+##### The follow-up list (the founder's question)
+
+The founder asked what would make this page as helpful as possible, and which pipeline changes would
+give it more to say later. The answer is register rows Ma34–Ma44 (below), in the order this design
+would take them: Ma34 (the gap repair counts partial past days as holes), Ma35 (a deadline and one
+retry per archive request, the season watch's own shape — Ma3 generalized), Ma36 (the digest rebuild
+inside the per-cell isolation), Ma42 (an archive cell that fails day after day remembered in
+`jobFailures`), Ma37 (the meter split by source), then the rest.
+
 #### Machinery follow-ups (the register)
 
 Ruling 20's list, with what this design's reading added. Each row says where it would land.
@@ -18730,6 +19353,17 @@ Ruling 20's list, with what this design's reading added. Each row says where it 
 | Ma31 | The season watch's same-day retries (`imageryIngest.maybeCheckSeasonOpen` scheduling itself) bypass the dispatcher: a retry that succeeds never reaches the heartbeat, which reads the morning's failure until the next 11:30 tick | B01-8b-1's review | with Ma20 (the chains as runs), or the dispatcher carrying a retry's arguments | open |
 | Ma32 | A landed cut whose Machine keeps running past `LANDED_WAIT_MS` (a cutter hung after its upload) lands and leaves its Machine live; nothing ever stops it, and once it stops while imagery is paused it waits for the next listing | B01-8b-2's review | a later pump change: stop a landed cut's Machine past a bound, and count it toward `stoppedMachines` | open |
 | Ma33 | A manual tick always records a run row, so the poll's chained pump tick that found the lease held, or nothing to do, still lists in the pump's runs as *ok* | B01-8b-2's review | a recorder change: a presser-less manual tick recorded only when it worked | open |
+| Ma34 | The gap repair counts a partial past day (fewer than 23 hours) as present (`listCellDayKeys`), so a cell that failed three appends running keeps a partial day nothing repairs; readers treat it as unknown. Make a partial day on or before yesterday a hole (one refetch, weight up to 3.6) | B01-8c's design (fork 2) | after 8c, first in line; 8c-1 reports `partialDays` so the page shows how often it happens | open |
+| Ma35 | The archive's Open-Meteo request has no deadline and no retry (`fetchLocalHourly`): a hung request holds its batch to the action limit and the chain stops for the rest of the tier. Give it the season watch's shape (`lib/openMeteoHourly.ts`: a 60 s attempt, one retry for a timeout, a 5xx or a cut-off answer, never a 4xx) — Ma3 generalized | B01-8c's design | a pipeline change after 8c; 8c's causes and *Stopped after step N* show its need | open |
+| Ma36 | `refreshTierDays`' digest rebuild sits outside the per-cell isolation (`weatherArchive.ts:1565`): one digest write that throws ends the batch and the chain | B01-8c's design | a pipeline change after 8c | open |
+| Ma37 | The Open-Meteo meter has no source: a day's total can't be split between the crons, the season watch and the app's drawer opens. A `bySource` record on the day's row (the same write) | B01-8c's design | after 8c; 8c shows the crons' share from their runs | open |
+| Ma38 | The `browse` registry's size is unknown, and `pruneVacatedCells` `.collect()`s a whole tier in one mutation (`weatherArchive.ts:790-805`): an unbounded corpus-wide read. 8c-1 stamps `cellCount`; if browse is large, page the prune | B01-8c's design | read after the first complete walk on dev; a paging change if needed | open |
+| Ma39 | Moving an interval cron to a fixed time can run it twice on the deploy day (the old phase's tick, then the new time's): ~3,650 weighted calls more for the filter append, once | B01-8c's design | 8c-1's deploy: check the season gate and the meter first (*After merge*) | open |
+| Ma40 | A cold start asks for 14 past days plus today: 15 days, two billing units (~7,300 weighted for the filter tier, over D158's 7,000 on its own), where `SEASON_OPEN_PAST_DAYS`' comment says one; 13 past days would be one unit | B01-8c's design | a one-constant change after 8c, with the founder | open |
+| Ma41 | The filter append's real length is unmeasured; the gap repair at 10:00 UTC assumes it ends within three hours | B01-8c's design | read from the first dev runs (8c-1); move the repair if needed | open |
+| Ma42 | An archive cell that fails day after day is visible only one run at a time: append failures write no `jobFailures` row (only the gap repair's do). A never-parked `weatherAppend` failure per cell would let the page say *failing 4 days running* | B01-8c's design | after 8c (a reporting change; the job's behavior stays) | open |
+| Ma43 | When Open-Meteo's daily counter resets isn't published (its pricing page, read 2026-11-28); the meter assumes UTC midnight | B01-8c's design | ask Open-Meteo, or read it off a day of real traffic | open |
+| Ma44 | Open-Meteo's free tier is for non-commercial use; D158 decides the paid plan by volume alone. A store launch (B02) may change the premise before the volume does | B01-8c's design | the founder, with B02 | open |
 
 ## Ruled out
 
