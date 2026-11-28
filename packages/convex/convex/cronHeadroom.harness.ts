@@ -15,9 +15,10 @@
  * which `tickMutation` pays as a registered function, so the route reads that many ranges first.
  */
 
-import { getFunctionName } from 'convex/server';
+import { type FunctionReference, getFunctionName } from 'convex/server';
 import * as convexTestModule from 'convex-test';
 import { afterAll, beforeEach, expect, vi } from 'vitest';
+import type { DatabaseReader, MutationCtx } from './_generated/server';
 
 /** `vitest.config.ts`' `START_RANGES`: what `tickMutation` is charged before its handler runs. */
 const START_RANGES = 96;
@@ -32,23 +33,25 @@ function throughDispatcher(t: Harness): Harness {
   return new Proxy(t, {
     get(target, prop, receiver) {
       if (prop !== 'mutation') return Reflect.get(target, prop, receiver);
-      return async (ref: never, args?: Record<string, unknown>, ...rest: never[]) => {
+      return async (ref: FunctionReference<'mutation'>, args?: Record<string, unknown>) => {
         const name = getFunctionName(ref);
         const { CRON_JOBS } = await import('./cronJobs');
         const isCron = CRON_JOBS.some(
           (e) => e.kind === 'mutation' && getFunctionName(e.fn) === name,
         );
-        if (!isCron) return target.mutation(ref, args as never, ...rest);
+        if (!isCron) return target.mutation(ref, (args ?? {}) as never);
         routed.add(name);
         const { nestedLimits } = await import('./cronRuns');
-        return target.run(async (ctx) => {
+        return target.run(async (raw) => {
+          const ctx = raw as unknown as MutationCtx;
+          const db: DatabaseReader = ctx.db;
           for (let i = 0; i < START_RANGES; i++) {
-            await ctx.db
+            await db
               .query('cronHeartbeats')
               .withIndex('by_job', (q) => q.eq('job', `start ${i}`))
               .first();
           }
-          return await ctx.runMutation(ref, (args ?? {}) as never, {
+          return await ctx.runMutation(ref as never, (args ?? {}) as never, {
             transactionLimits: await nestedLimits(ctx),
           });
         });

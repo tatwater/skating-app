@@ -37,7 +37,8 @@ import { IMAGERY_CRON_JOBS } from './imageryLive';
 import schema from './schema';
 
 const modules = import.meta.glob('./**/*.*s');
-type T = ReturnType<typeof convexTest>;
+const harness = () => convexTest(schema, modules);
+type T = ReturnType<typeof harness>;
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -162,7 +163,7 @@ function mutationJob(
     name,
     schedule: { every: { minutes: 1 } },
     kind: 'mutation',
-    fn: makeFunctionReference<'mutation'>(`cronProbe:${fn}`) as FunctionReference<
+    fn: makeFunctionReference<'mutation'>(`cronProbe:${fn}`) as unknown as FunctionReference<
       'mutation',
       'internal'
     >,
