@@ -10,12 +10,17 @@
  *
  * Decoding is GDAL's (`gdal_translate` to binary PPM, the 3.13.2 already on the operator's Mac) rather
  * than a new npm image library. Thumbnails are kept under the package's scratch, by item id: they
- * never change, so a re-run (or the next campaign) scores only what's new.
+ * never change, so a re-run (or the next campaign) scores only what's new. That directory and the
+ * score caches are shared by every campaign, so each is written atomically (`atomicFile.ts`) and each
+ * decode writes into a private temporary directory.
  */
 
 import { execFile } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
+import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { writeFileAtomic } from './atomicFile';
 
 /** A thumbnail's two shares, each 0–1. */
 export interface ThumbnailScore {
@@ -106,8 +111,40 @@ export function scorePixels(rgb: Uint8Array): ThumbnailScore {
   return { white: valid === 0 ? 0 : white / valid, valid: pixels === 0 ? 0 : valid / pixels };
 }
 
-/** Turns a JPEG on disk into a PPM on disk. */
+/**
+ * Turns a JPEG on disk into a PPM on disk. Rejects with {@link UndecodableImage} when the decoder
+ * read the file and says it is no image it can decode — the same answer every time — and with
+ * anything else when it couldn't tell (it didn't run, it was killed, its output went missing).
+ */
 export type DecodeJpeg = (jpegPath: string, ppmPath: string) => Promise<void>;
+
+/** The decoder read the image and refused it: a kept thumbnail fails so on every run. */
+export class UndecodableImage extends Error {
+  override name = 'UndecodableImage';
+}
+
+/**
+ * What GDAL says of a file that isn't a JPEG it can read — its driver's and libjpeg's words (GDAL
+ * 3.13.2, read here: `not recognized as being in a supported file format` for junk, `libjpeg:
+ * Premature end of JPEG file` for a cut-short one).
+ */
+const GDAL_REFUSED =
+  /not recognized as being in a supported file format|libjpeg: |JPEGLib|Not a JPEG file|Corrupt JPEG|Premature end of JPEG/;
+
+/**
+ * A failed `gdal_translate`, classified: GDAL ran to an exit of its own and named the image as the
+ * fault → {@link UndecodableImage}; anything else (not installed, killed by a signal, a disk or
+ * system error) is returned as is, for a re-run to try again.
+ */
+export function gdalFailure(
+  error: Error & { code?: unknown; signal?: unknown },
+  stderr: string,
+): Error {
+  if (typeof error.code === 'number' && error.signal == null && GDAL_REFUSED.test(stderr)) {
+    return new UndecodableImage(stderr.trim() || error.message);
+  }
+  return error;
+}
 
 /**
  * GDAL's: `gdal_translate -q -of PNM`. (Its `/vsistdout/` refuses PNM, hence the file.) Asynchronous,
@@ -115,8 +152,8 @@ export type DecodeJpeg = (jpegPath: string, ppmPath: string) => Promise<void>;
  */
 export const gdalDecode: DecodeJpeg = (jpegPath, ppmPath) =>
   new Promise((resolve, reject) => {
-    execFile('gdal_translate', ['-q', '-of', 'PNM', jpegPath, ppmPath], (error) =>
-      error ? reject(error) : resolve(),
+    execFile('gdal_translate', ['-q', '-of', 'PNM', jpegPath, ppmPath], (error, _out, stderr) =>
+      error ? reject(gdalFailure(error, String(stderr))) : resolve(),
     );
   });
 
@@ -138,7 +175,11 @@ export class ScoreCache<T = ThumbnailScore> {
   private dirty = false;
 
   constructor(private readonly path: string) {
-    this.scores = existsSync(path)
+    this.scores = ScoreCache.read(path);
+  }
+
+  private static read<T>(path: string): Map<string, T> {
+    return existsSync(path)
       ? new Map(Object.entries(JSON.parse(readFileSync(path, 'utf8')) as Record<string, T>))
       : new Map();
   }
@@ -156,11 +197,19 @@ export class ScoreCache<T = ThumbnailScore> {
     return this.scores.size;
   }
 
+  /**
+   * Writes the cache — merged with what is on disk now, and atomically (PR #188's ninth review): the
+   * file is shared by every campaign, so another campaign's stage may have saved scores since this
+   * one read it (they are kept, not overwritten), and may be reading it as this one writes (it
+   * sees the old file or the new, never part of one).
+   */
   save(): void {
     if (!this.dirty) return;
-    mkdirSync(dirname(this.path), { recursive: true });
+    for (const [id, score] of ScoreCache.read<T>(this.path)) {
+      if (!this.scores.has(id)) this.scores.set(id, score);
+    }
     const sorted = Object.fromEntries([...this.scores].sort(([a], [b]) => (a < b ? -1 : 1)));
-    writeFileSync(this.path, `${JSON.stringify(sorted)}\n`);
+    writeFileAtomic(this.path, `${JSON.stringify(sorted)}\n`);
     this.dirty = false;
   }
 }
@@ -180,10 +229,12 @@ export interface ScoreDeps<T = ThumbnailScore> {
   saveEvery?: number;
   /**
    * Filled with the frames whose read failed in a way the next run may not repeat — a network
-   * error, or any refusal but a 404 or 410 (a 5xx, a 429, an expired token's 403). Such a frame is
-   * unscored now and is never cached, so a re-run reads it again and may score it: the select stage
-   * refuses to decide a build on one (`selectStage.ts`). No thumbnail listed, a blob that is gone and
-   * an image GDAL can't decode (it is kept, so it fails the same way every time) are unscored for good.
+   * error, any refusal but a 404 or 410 (a 5xx, a 429, an expired token's 403), or a decode that
+   * failed for any reason but the image's own (`UndecodableImage`: the decoder didn't run, was
+   * killed, lost its output). Such a frame is unscored now and is never cached, so a re-run reads it
+   * again and may score it: the select stage refuses to decide a build on one (`selectStage.ts`). No
+   * thumbnail listed, a blob that is gone and a kept image the decoder refuses (it fails the same
+   * way every time) are unscored for good.
    */
   unreadable?: Set<string>;
 }
@@ -237,18 +288,34 @@ export async function scoreFrames<T>(
         if (res.status !== 404 && res.status !== 410) deps.unreadable?.add(t.itemId);
         return null;
       }
-      writeFileSync(jpeg, new Uint8Array(await res.arrayBuffer()));
+      // Whole or not at all: another campaign's stage may read this thumbnail the moment it exists.
+      writeFileAtomic(jpeg, new Uint8Array(await res.arrayBuffer()));
     }
-    const ppm = `${jpeg}.ppm`;
+    // **The decode's output is this decode's own** (PR #188's ninth review): a private directory, never
+    // a name beside the shared thumbnail — two campaigns decoding one frame at once removed each
+    // other's output, and the loser read as unscored.
+    const work = await mkdtemp(join(tmpdir(), 'aerial-decode-'));
+    const ppm = join(work, 'thumb.ppm');
     try {
-      await deps.decode(jpeg, ppm);
-      const score = measure(parsePpm(new Uint8Array(readFileSync(ppm))).rgb);
+      try {
+        await deps.decode(jpeg, ppm);
+      } catch (e) {
+        if (e instanceof UndecodableImage) return null; // the image's own: the same every run
+        throw e; // couldn't tell: unreadable, for a re-run
+      }
+      // The decoder's own output of a whole file: one it can't parse is the image's, every time.
+      const bytes = new Uint8Array(await readFile(ppm));
+      let rgb: Uint8Array;
+      try {
+        rgb = parsePpm(bytes).rgb;
+      } catch {
+        return null;
+      }
+      const score = measure(rgb);
       deps.cache.set(t.itemId, score);
       return score;
-    } catch {
-      return null;
     } finally {
-      rmSync(ppm, { force: true });
+      await rm(work, { recursive: true, force: true });
     }
   };
 
@@ -258,7 +325,8 @@ export async function scoreFrames<T>(
       try {
         score = await one(t);
       } catch {
-        score = null; // a network error is an unscored frame, not a failed stage…
+        // A network error, or a decode that couldn't tell: an unscored frame, not a failed stage…
+        score = null;
         deps.unreadable?.add(t.itemId); // …but one a re-run may score
       }
       out.set(t.itemId, score);

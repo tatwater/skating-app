@@ -10,7 +10,7 @@
  * the full run's executor's to upload; these files are the shape it uploads as-is.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { gunzipSync, gzipSync } from 'node:zlib';
 import {
@@ -20,6 +20,7 @@ import {
   type NaipState,
   walkNaipState,
 } from '@skating/core';
+import { writeFileAtomic } from './atomicFile';
 
 /** `walk.json`: what the snapshot holds. */
 export interface CatalogWalkRecord {
@@ -75,14 +76,16 @@ export async function walkCatalog(options: WalkCatalogOptions): Promise<CatalogS
   const pages: CatalogWalkRecord['pages'] = {};
   for (const state of NAIP_STATES) {
     const walk = await walkNaipState(options.fetchFn, state, options.walk);
-    writeFileSync(stateFile(options.inventoryDir, state), gzipSync(toJsonl(walk.items)));
+    // Each file whole or not at all (`atomicFile.ts`): a walk cut short leaves no torn state file
+    // for a copied-in walk or a later read to trip on, and `walk.json` is still written last.
+    writeFileAtomic(stateFile(options.inventoryDir, state), gzipSync(toJsonl(walk.items)));
     items.push(...walk.items);
     perState[state] = walk.items.length;
     pages[state] = walk.pages;
     options.onState?.(state, walk.items.length, walk.pages);
   }
   const record: CatalogWalkRecord = { walkedOn, perState, pages };
-  writeFileSync(join(options.inventoryDir, WALK_RECORD), `${JSON.stringify(record, null, 2)}\n`);
+  writeFileAtomic(join(options.inventoryDir, WALK_RECORD), `${JSON.stringify(record, null, 2)}\n`);
   return { ...record, items, walked: true };
 }
 

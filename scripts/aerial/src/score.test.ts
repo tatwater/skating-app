@@ -1,15 +1,17 @@
-import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   type BlobAnswer,
   gdalDecode,
+  gdalFailure,
   parsePpm,
   ScoreCache,
   scoreFrames,
   scorePixels,
   thumbnailPath,
+  UndecodableImage,
 } from './score';
 
 const dirs: string[] = [];
@@ -87,6 +89,21 @@ describe('scorePixels', () => {
 });
 
 describe('ScoreCache', () => {
+  test("two campaigns' caches over one file keep each other's scores, and never leave a part file", () => {
+    // The file is shared by every campaign: one that saved after the other read it once dropped the
+    // other's new scores (each wrote its whole map), and a reader mid-write could see a torn file.
+    const dir = tmp();
+    const path = join(dir, 'scores.json');
+    const one = new ScoreCache(path);
+    const two = new ScoreCache(path);
+    one.set('a', { white: 0, valid: 1 });
+    two.set('b', { white: 1, valid: 1 });
+    one.save();
+    two.save();
+    expect(Object.keys(JSON.parse(readFileSync(path, 'utf8')))).toEqual(['a', 'b']);
+    expect(readdirSync(dir)).toEqual(['scores.json']);
+  });
+
   test('keeps scores by item id across runs, written only when something changed', () => {
     const path = join(tmp(), 'nested', 'scores.json');
     const a = new ScoreCache(path);
@@ -214,6 +231,51 @@ describe('scoreFrames', () => {
     expect(out.get('kept')).toEqual({ white: 0, valid: 0.5 });
   });
 
+  test('two campaigns decoding the same kept thumbnail at once never touch each other’s output', async () => {
+    // The ninth review: each decode wrote `<jpeg>.ppm` beside the shared thumbnail. Two campaigns'
+    // stages (separate locks, one thumbnail directory) decoding one frame at once: the first to
+    // finish removed the other's output, whose frame then read as unscored — silently, not as
+    // unreadable — so a select could cut a pick as partial on it.
+    const dir = tmp();
+    const thumbsDir = join(dir, 'thumbs');
+    await scoreFrames([], {
+      fetchBlob: vi.fn(),
+      decode: copyDecode,
+      thumbsDir,
+      cache: new ScoreCache(join(dir, 'unused.json')),
+    });
+    writeFileSync(thumbnailPath(thumbsDir, 'a'), cloudy);
+    let started = 0;
+    let both: () => void = () => {};
+    const together = new Promise<void>((r) => {
+      both = r;
+    });
+    const outputs = new Set<string>();
+    const decode = async (jpeg: string, out: string) => {
+      outputs.add(out);
+      writeFileSync(out, readFileSync(jpeg));
+      if (++started === 2) both();
+      await together;
+    };
+    const run = (cache: string) =>
+      scoreFrames([{ itemId: 'a', thumbnail: 'https://blob/a.jpg' }], {
+        fetchBlob: vi.fn(),
+        decode,
+        thumbsDir,
+        cache: new ScoreCache(join(dir, cache)),
+        unreadable: new Set(),
+      });
+    const [one, two] = await Promise.all([run('one.json'), run('two.json')]);
+    expect(one.get('a')).toEqual({ white: 0.5, valid: 1 });
+    expect(two.get('a')).toEqual({ white: 0.5, valid: 1 });
+    expect(outputs.size).toBe(2);
+    // Each decode's output was its own, outside the shared directory, and is gone.
+    for (const out of outputs) {
+      expect(out.startsWith(thumbsDir)).toBe(false);
+      expect(existsSync(out)).toBe(false);
+    }
+  });
+
   test('no thumbnail, a refused read, a network error or an undecodable image is unscored, and the rest go on', async () => {
     const dir = tmp();
     const cache = new ScoreCache(join(dir, 'scores.json'));
@@ -256,6 +318,77 @@ describe('scoreFrames', () => {
     expect([...unreadable].sort()).toEqual(['busy', 'net']);
     expect(cache.get('busy')).toBeUndefined();
   });
+
+  test('a decode that fails for any reason but the image is unreadable (re-run), never unscored for good', async () => {
+    const dir = tmp();
+    const thumbsDir = join(dir, 'thumbs');
+    const unreadable = new Set<string>();
+    const decode = async (jpeg: string, out: string) => {
+      if (jpeg.endsWith('refused.jpg')) throw new UndecodableImage('not recognized');
+      if (jpeg.endsWith('killed.jpg'))
+        throw Object.assign(new Error('killed'), { signal: 'SIGTERM' });
+      if (jpeg.endsWith('lost.jpg')) return; // exited 0, wrote nothing
+      writeFileSync(out, readFileSync(jpeg));
+    };
+    const out = await scoreFrames(
+      ['refused', 'killed', 'lost', 'fine'].map((id) => ({
+        itemId: id,
+        thumbnail: `https://blob/${id}`,
+      })),
+      {
+        fetchBlob: async () => answer(clear),
+        decode,
+        thumbsDir,
+        cache: new ScoreCache(join(dir, 'scores.json')),
+        unreadable,
+      },
+    );
+    expect(Object.fromEntries(out)).toEqual({
+      refused: null,
+      killed: null,
+      lost: null,
+      fine: { white: 0, valid: 0.5 },
+    });
+    expect([...unreadable].sort()).toEqual(['killed', 'lost']);
+    // Every thumbnail was written whole: no part file beside them.
+    expect(readdirSync(thumbsDir).sort()).toEqual([
+      'fine.jpg',
+      'killed.jpg',
+      'lost.jpg',
+      'refused.jpg',
+    ]);
+  });
+});
+
+describe('gdalFailure', () => {
+  const exited = (code: number) =>
+    Object.assign(new Error(`Command failed`), { code, signal: null });
+  test.each([
+    [
+      'not a JPEG',
+      exited(1),
+      "ERROR 4: `x.jpg' not recognized as being in a supported file format.",
+      true,
+    ],
+    ['libjpeg refused it', exited(1), 'ERROR 1: libjpeg: Premature end of JPEG file', true],
+    ['a disk error', exited(1), 'ERROR 1: x.ppm: Free disk space available is 0 bytes', false],
+    [
+      'not installed',
+      Object.assign(new Error('spawn gdal_translate ENOENT'), { code: 'ENOENT' }),
+      '',
+      false,
+    ],
+    [
+      'killed',
+      Object.assign(new Error('killed'), { code: null, signal: 'SIGKILL' }),
+      'Not a JPEG file',
+      false,
+    ],
+  ])('%s', (_, error, stderr, undecodable) => {
+    const got = gdalFailure(error as Error, stderr);
+    expect(got instanceof UndecodableImage).toBe(undecodable);
+    if (!undecodable) expect(got).toBe(error);
+  });
 });
 
 describe('gdalDecode', () => {
@@ -273,5 +406,13 @@ describe('gdalDecode', () => {
     const read = parsePpm(new Uint8Array(readFileSync(join(dir, 'a.ppm'))));
     expect([read.width, read.height]).toEqual([1, 1]);
     await expect(gdalDecode(join(dir, 'missing.jpg'), join(dir, 'b.ppm'))).rejects.toThrow();
+    // An image GDAL reads and refuses is the image's own fault; a missing one is not.
+    writeFileSync(join(dir, 'junk.jpg'), new Uint8Array([1, 2, 3]));
+    await expect(gdalDecode(join(dir, 'junk.jpg'), join(dir, 'c.ppm'))).rejects.toBeInstanceOf(
+      UndecodableImage,
+    );
+    await expect(
+      gdalDecode(join(dir, 'missing.jpg'), join(dir, 'b.ppm')),
+    ).rejects.not.toBeInstanceOf(UndecodableImage);
   });
 });
