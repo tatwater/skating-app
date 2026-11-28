@@ -16,6 +16,8 @@
  * day otherwise ({@link cronTickBucketMs}): at most 60 ticks a row for a job recorded every tick.
  */
 
+import type { CronCauseTally } from './fetchFailure';
+
 /** The most lines one report may carry; the recorder keeps the first ones past it. */
 export const CRON_REPORT_MAX_LINES = 200;
 /** A report line's length, trimmed by the recorder. */
@@ -41,6 +43,26 @@ export interface CronReport {
   season?: string;
   /** At most {@link CRON_REPORT_MAX_LINES}, each trimmed to {@link CRON_REPORT_LINE_MAX}. */
   lines?: CronReportLine[];
+  /**
+   * A chained job's open run (D349, `cronRuns.openRun`): the tick is merged into that run rather
+   * than recorded as a second row. A `cronRuns` id of the same job, as a string.
+   */
+  runId?: string;
+  /** Failures by cause (D345): one entry per cause, its count and one sample. */
+  causes?: CronCauseTally[];
+}
+
+/**
+ * **What the action dispatcher tells a handler about its tick** (D349): its third argument, so a
+ * chained job can open its run with the tick's own start, trigger and presser. A handler called
+ * outside the dispatcher (a registered action, a chain's later batch) gets none.
+ */
+export interface CronTickContext {
+  job: string;
+  startedAt: number;
+  trigger: 'cron' | 'manual';
+  /** A manual run's presser (a `profiles` id). */
+  byUserId?: string;
 }
 
 /**

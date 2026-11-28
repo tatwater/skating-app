@@ -50,10 +50,14 @@ import {
   buildSubAreaSpread,
   buildWeatherCellDigest,
   COLD_CHAIN_MAX_SPAN_DAYS,
+  COMPLETE_DAY_MIN_HOURS,
   type ColdChain,
   type ColdChainDay,
+  type CronReport,
+  type CronTickContext,
   coldChain,
   dayMsToLocalDate,
+  type FetchFailure,
   HARD_FREEZE_NIGHT_F,
   isActive,
   isCompleteDay,
@@ -86,15 +90,35 @@ import {
   internalQuery,
   query,
 } from './_generated/server';
-import { meterOpenMeteo } from './lib/apiMeter';
+import { apiCallDayMs, meterOpenMeteo, openMeteoCallWeight } from './lib/apiMeter';
 import { liveSubAreaOf } from './lib/bodies';
+import { openChainBranch, openChainRun } from './lib/chainRun';
 import { WEATHER_DAY_SOURCES } from './lib/enums';
 import { isListed } from './lib/listing';
 import { errorClassOf } from './lib/readBudget';
 import { asItem, type Isolated, runItem } from './lib/recurringWork';
 import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { literals } from './lib/validators';
-import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_FORECAST_URL } from './weather';
+import {
+  addCounts,
+  BUSY_REPORT,
+  type CausedFailure,
+  type CronRunArg,
+  causedFetchFailure,
+  closeHead,
+  cronRunArg,
+  endBatch,
+  failHead,
+  fmt,
+  nextCronRun,
+  runOf,
+  StepTally,
+  sampleTextOf,
+  stageLine,
+  statusText,
+  thrownText,
+} from './lib/weatherReport';
+import { HOURLY_VARS, MAX_PAST_DAYS, OPEN_METEO_PROVIDER, openMeteoForecastUrl } from './weather';
 
 const DAY_MS = 86_400_000;
 
@@ -204,17 +228,40 @@ interface LocalHourlyBatch {
 }
 
 /**
+ * What one archive request came to (B01-8c): its hours, or why it got none — the failure core's
+ * `fetchFailureCause` sorts by, and a sample's text (a status or a message, never the URL) — with
+ * the weight it metered (×10) and how long the request took.
+ */
+interface FetchedLocalHourly {
+  batch: LocalHourlyBatch | null;
+  failure?: { failure: FetchFailure; text: string };
+  /** The weight metered for the request, ×10 (Open-Meteo's fractional count, as an integer). */
+  weighted: number;
+  fetchMs: number;
+}
+
+/**
  * Fetch `pastDays` of local-stamped hourly weather for a cell, plus today.
  *
- * Returns `null` on any failure so the caller can leave the days it could not get **absent rather
- * than zeroed** — the distinction the whole `missing` flag exists to preserve.
+ * `batch` is `null` on any failure so the caller can leave the days it could not get **absent rather
+ * than zeroed** — the distinction the whole `missing` flag exists to preserve — and `failure` says
+ * why (B01-8c: the run reports it; nothing the job does reads it).
  */
 async function fetchLocalHourly(
   ctx: ActionCtx,
   cell: WeatherCell,
   pastDays: number,
-): Promise<LocalHourlyBatch | null> {
+): Promise<FetchedLocalHourly> {
   const days = Math.min(MAX_PAST_DAYS, Math.max(1, pastDays));
+  const weighted = Math.round(openMeteoCallWeight(HOURLY_VARS.length, days + 1) * 10);
+  const started = Date.now();
+  let fetchMs = 0;
+  const failed = (failure: FetchFailure, text: string): FetchedLocalHourly => ({
+    batch: null,
+    failure: { failure, text },
+    weighted,
+    fetchMs: fetchMs || Date.now() - started,
+  });
   const params = new URLSearchParams({
     latitude: String(cell.lat),
     longitude: String(cell.lng),
@@ -236,19 +283,22 @@ async function fetchLocalHourly(
   let json: UnixHourlyResponse;
   try {
     await meterOpenMeteo(ctx, HOURLY_VARS.length, days + 1);
-    const res = await fetch(`${OPEN_METEO_FORECAST_URL}?${params.toString()}`);
+    const res = await fetch(`${openMeteoForecastUrl()}?${params.toString()}`);
     if (!res.ok) {
       console.warn(`Open-Meteo archive request failed: ${res.status}`);
-      return null;
+      return failed({ status: res.status }, statusText('Open-Meteo', res.status));
     }
     json = (await res.json()) as UnixHourlyResponse;
   } catch (err) {
     console.warn('Open-Meteo archive request threw', err);
-    return null;
+    return failed({ error: err }, thrownText(err));
   }
+  fetchMs = Math.max(1, Date.now() - started);
 
   const time = json.hourly?.time;
-  if (!Array.isArray(time) || time.length === 0) return null;
+  if (!Array.isArray(time) || time.length === 0) {
+    return failed({ empty: true }, 'Open-Meteo answered with no hours');
+  }
   const col = (k: string) => json.hourly?.[k] as (number | null)[] | undefined;
   const temp = col('temperature_2m');
   const precip = col('precipitation');
@@ -317,8 +367,8 @@ async function fetchLocalHourly(
     if (typeof wcv === 'number') h.weatherCode = wcv;
     out.push(h);
   }
-  if (out.length === 0) return null;
-  return { hours: out, utcOffsetSeconds, timeZone };
+  if (out.length === 0) return failed({ empty: true }, 'Open-Meteo answered with no usable hour');
+  return { batch: { hours: out, utcOffsetSeconds, timeZone }, weighted, fetchMs };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -494,22 +544,68 @@ export const writeMissingDays = internalMutation({
   },
 });
 
-/** The day keys a cell already holds real (non-`missing`) data for, within `[fromMs, toMs]`. */
+/**
+ * The day keys a cell already holds real (non-`missing`) data for, within `[fromMs, toMs]` — and,
+ * given the clock and the cell's longitude, which of those are **partial past days** (B01-8c, fork 2
+ * (b)): a real row with fewer than `COMPLETE_DAY_MIN_HOURS` hours, dated before the lake's own today
+ * (`cellLocalToday`, the readers' rule: a day still under way is never a gap). Read from the rows the
+ * query already reads.
+ *
+ * - `partial` — a partial past day the gap repair may refetch: its row was **written before that day
+ *   ended at the lake** (an append's *today*, which the next append didn't complete).
+ * - `partialLeft` — a partial past day whose row was written **after** the day ended: a fetch of the
+ *   finished day still came back short, so the provider has no more to give. Left as it is and
+ *   counted, never refetched — what bounds the repair at one refetch per cell-day, so a steady state
+ *   costs nothing. (`dayEndMs` is the date's UTC midnight shifted by that date's stored offset, or the
+ *   longitude's nominal one: never a second shift of an already-local stamp.)
+ */
 export const listCellDayKeys = internalQuery({
-  args: { cellKey: v.string(), fromMs: v.number(), toMs: v.number() },
-  handler: async (ctx, { cellKey, fromMs, toMs }) => {
+  args: {
+    cellKey: v.string(),
+    fromMs: v.number(),
+    toMs: v.number(),
+    /** With `lng`, also judge the partial past days (B01-8c); without, both lists are empty. */
+    nowMs: v.optional(v.number()),
+    lng: v.optional(v.number()),
+  },
+  handler: async (ctx, { cellKey, fromMs, toMs, nowMs, lng }) => {
     const rows = await ctx.db
       .query('weatherDays')
       .withIndex('by_cell_day', (q) =>
         q.eq('cellKey', cellKey).gte('dayMs', fromMs).lte('dayMs', toMs),
       )
       .collect();
+    const present = rows.filter((r) => r.missing !== true);
+    const partial: number[] = [];
+    const partialLeft: number[] = [];
+    if (nowMs !== undefined && lng !== undefined) {
+      const localToday = cellLocalToday(rows, nowMs, lng);
+      for (const r of present) {
+        if (r.dayMs >= localToday) continue; // the lake's today (or later): still arriving
+        if (typeof r.hours === 'number' && r.hours >= COMPLETE_DAY_MIN_HOURS) continue;
+        if (r.fetchedAt < dayEndMs(r.dayMs, r.utcOffsetSeconds, lng)) partial.push(r.dayMs);
+        else partialLeft.push(r.dayMs);
+      }
+    }
     return {
-      present: rows.filter((r) => r.missing !== true).map((r) => r.dayMs),
+      present: present.map((r) => r.dayMs),
       missing: rows.filter((r) => r.missing === true).map((r) => r.dayMs),
+      partial,
+      partialLeft,
     };
   },
 });
+
+/**
+ * When a stored day ended at the lake, as a UTC instant: `dayMs` is UTC midnight of the lake's local
+ * date, so its end is a day on, less the date's offset east of UTC (the stored one, else the
+ * longitude's nominal one). A DST date's stored offset is the one in force at its start, so the end
+ * can be an hour out either way — which moves a row written in that hour across the line, and
+ * nothing else.
+ */
+export function dayEndMs(dayMs: number, utcOffsetSeconds: number | undefined, lng: number): number {
+  return dayMs + DAY_MS - (utcOffsetSeconds ?? approximateUtcOffsetSeconds(lng)) * 1000;
+}
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
 // The cell registry
@@ -545,10 +641,12 @@ export const backfillWeatherCells = internalAction({
     runId: v.optional(v.string()),
     /** When the run began, carried so its last page can tell whether any page of it failed (D258). */
     startedAt: v.optional(v.number()),
+    /** The cron run this page reports to (D349, B01-8c); absent for a walk nothing records. */
+    cronRun: v.optional(cronRunArg),
   },
   handler: async (
     ctx,
-    { cursor, tier, runId, startedAt: runStartedAt },
+    { cursor, tier, runId, startedAt: runStartedAt, cronRun },
   ): Promise<{
     done: boolean;
     scanned: number;
@@ -571,23 +669,43 @@ export const backfillWeatherCells = internalAction({
       });
     }
 
+    // The run's report (D349, B01-8c): observation only — nothing below reads it.
+    const tally = new StepTally();
+    const tierWord = targetTier === 'filter' ? 'Filter' : 'Browse';
+    const report = async (next: boolean, scannedHere: number): Promise<Record<string, number>> => {
+      tally.add('scanned', scannedHere);
+      const so = addCounts(cronRun?.so, { scanned: scannedHere });
+      if (cronRun) {
+        await endBatch(ctx, cronRun, tally, next ? 1 : 0);
+      }
+      return so;
+    };
+
     const page = await ctx.runQuery(internal.weatherArchive.pageBodyCells, {
       cursor: cursor ?? null,
       tier: targetTier,
     });
     const cells = await upsertIsolated(ctx, targetTier, run, page);
+    tallyWriteFailures(tally, cells.failures);
     // ⚠ **A superseded run stops here — it does not write, reschedule or prune.** Two walks running at
     // once would each see the other's rows as foreign and take turns deleting them, so the registry
     // could end up emptier the more often it was reconciled. Ownership is a single `runId` and the
     // newest claim wins; the loser abandons its remaining pages, whose work the winner is redoing.
-    if (cells.superseded) return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
+    if (cells.superseded) {
+      tally.add('superseded');
+      tally.line('warn', `${tierWord}: a newer walk took over; this one stopped`);
+      await report(false, page.scanned);
+      return { done: true, scanned: page.scanned, pruned: 0, superseded: true };
+    }
 
     if (!page.isDone) {
+      const so = await report(true, page.scanned);
       await ctx.scheduler.runAfter(0, internal.weatherArchive.backfillWeatherCells, {
         cursor: page.cursor,
         tier: targetTier,
         runId: run,
         startedAt,
+        ...(cronRun ? { cronRun: nextCronRun(cronRun, so) } : {}),
       });
       return { done: false, scanned: page.scanned, pruned: 0 };
     }
@@ -606,7 +724,13 @@ export const backfillWeatherCells = internalAction({
         tier: targetTier,
       });
       const res = await upsertIsolated(ctx, targetTier, run, bays);
-      if (res.superseded) return { done: true, scanned, pruned: 0, superseded: true };
+      tallyWriteFailures(tally, res.failures);
+      if (res.superseded) {
+        tally.add('superseded');
+        tally.line('warn', `${tierWord}: a newer walk took over; this one stopped`);
+        await report(false, scanned + bays.scanned);
+        return { done: true, scanned, pruned: 0, superseded: true };
+      }
       scanned += bays.scanned;
       if (bays.isDone) break;
       subCursor = bays.cursor;
@@ -628,12 +752,17 @@ export const backfillWeatherCells = internalAction({
       console.error(
         `weatherArchive: the ${targetTier} registry walk had failures — nothing pruned, not marked complete`,
       );
+      tally.line(
+        'warn',
+        `${tierWord}: nothing pruned — a page's writes failed, so the walk isn't complete`,
+      );
+      await report(false, scanned);
       return { done: true, scanned, pruned: 0, failed: 1 };
     }
     // ⚠ **Only after a COMPLETE walk — of both tables.** Pruning mid-run would delete every cell the remaining pages
     // were about to re-stamp — the whole registry, one page in. `isDone` is the only safe moment,
     // and the run id is what distinguishes "not seen this run" from "not seen this page".
-    const pruned = await ctx.runMutation(internal.weatherArchive.pruneVacatedCells, {
+    const { pruned, kept } = await ctx.runMutation(internal.weatherArchive.pruneVacatedCells, {
       tier: targetTier,
       runId: run,
     });
@@ -650,11 +779,14 @@ export const backfillWeatherCells = internalAction({
         pruneCursor = res.cursor;
       }
     }
-    // Last, and only on a genuinely complete walk: this is what the debounce reads.
+    // Last, and only on a genuinely complete walk: this is what the debounce reads. The registry's
+    // size rides along (B01-8c), so nothing ever counts `weatherCells` to show it.
     await ctx.runMutation(internal.weatherArchive.finishCellSync, {
       tier: targetTier,
       runId: run,
       completedAt: Date.now(),
+      cellCount: kept,
+      pruned,
     });
     // A complete walk saw everything that was failing go through, or go: forget the rest.
     await ctx.runMutation(internal.recurringJobs.forgetBefore, {
@@ -662,12 +794,26 @@ export const backfillWeatherCells = internalAction({
       before: startedAt,
       scope: targetTier,
     });
+    tally.add('pruned', pruned);
+    tally.add(targetTier === 'filter' ? 'cellsFilter' : 'cellsBrowse', kept);
+    tally.line('stage', `${tierWord}: ${fmt(kept)} cells registered, ${fmt(pruned)} pruned`);
+    await report(false, scanned);
     return { done: true, scanned, pruned };
   },
 });
 
 /** What a page's writes failed on: a cell's key, or a body's (or bay's) membership. */
 type Failed = { key: string; errorClass: string };
+
+/**
+ * A page's failed writes, for its run: counted (`writesFailed`, a zero still named) and filed under
+ * `writeFailed` — every one is a registry write that threw — keyed by the cell or membership and
+ * sampled by its error's class, so the run names a key to look at, not only a count.
+ */
+function tallyWriteFailures(tally: StepTally, failures: readonly Failed[]): void {
+  tally.add('writesFailed', failures.length);
+  for (const f of failures) tally.fail({ cause: 'writeFailed', text: f.errorClass }, f.key);
+}
 
 /**
  * Write one page of the registry walk — its cells, then its memberships — so that **one row that
@@ -680,7 +826,7 @@ async function upsertIsolated(
   tier: WeatherTier,
   runId: string,
   page: CellPage,
-): Promise<{ superseded: boolean }> {
+): Promise<{ superseded: boolean; failed: number; failures: Failed[] }> {
   const failed: Failed[] = [];
   const cells = await writeIsolated(
     page.cells,
@@ -694,7 +840,7 @@ async function upsertIsolated(
     (cell) => `cell:${tier}:${cell.cellKey}`,
     failed,
   );
-  if (cells.superseded) return { superseded: true };
+  if (cells.superseded) return { superseded: true, failed: failed.length, failures: failed };
   // The discovery join rides the same walk (Workstream 5): the page already resolved every body's
   // filter cell, so writing `bodyWeatherCells` here costs nothing it was not already paying.
   if (page.members.length > 0) {
@@ -709,7 +855,7 @@ async function upsertIsolated(
       (m) => `member:${m.subAreaId ?? m.waterBodyId}`,
       failed,
     );
-    if (joined.superseded) return { superseded: true };
+    if (joined.superseded) return { superseded: true, failed: failed.length, failures: failed };
   }
   if (failed.length > 0) {
     await ctx.runMutation(internal.recurringJobs.settle, {
@@ -720,7 +866,7 @@ async function upsertIsolated(
       park: false,
     });
   }
-  return { superseded: false };
+  return { superseded: false, failed: failed.length, failures: failed };
 }
 
 /** A write whole, then — if it threw — each row alone, collecting what still fails. */
@@ -764,14 +910,25 @@ export const beginCellSync = internalMutation({
  * the registry's guarantee to its own older `startedAt`.
  */
 export const finishCellSync = internalMutation({
-  args: { tier: literals(WEATHER_TIERS), runId: v.string(), completedAt: v.number() },
-  handler: async (ctx, { tier, runId, completedAt }) => {
+  args: {
+    tier: literals(WEATHER_TIERS),
+    runId: v.string(),
+    completedAt: v.number(),
+    /** The tier's cells after the prune, and what it pruned (B01-8c): the registry's size. */
+    cellCount: v.optional(v.number()),
+    pruned: v.optional(v.number()),
+  },
+  handler: async (ctx, { tier, runId, completedAt, cellCount, pruned }) => {
     const row = await ctx.db
       .query('weatherCellSyncs')
       .withIndex('by_tier', (q) => q.eq('tier', tier))
       .unique();
     if (!row || row.runId !== runId) return;
-    await ctx.db.patch(row._id, { completedAt });
+    await ctx.db.patch(row._id, {
+      completedAt,
+      ...(cellCount !== undefined ? { cellCount } : {}),
+      ...(pruned !== undefined ? { pruned } : {}),
+    });
   },
 });
 
@@ -789,7 +946,7 @@ export const finishCellSync = internalMutation({
  */
 export const pruneVacatedCells = internalMutation({
   args: { tier: literals(WEATHER_TIERS), runId: v.string() },
-  handler: async (ctx, { tier, runId }): Promise<number> => {
+  handler: async (ctx, { tier, runId }): Promise<{ pruned: number; kept: number }> => {
     const stale = await ctx.db
       .query('weatherCells')
       .withIndex('by_tier_key', (q) => q.eq('tier', tier))
@@ -800,7 +957,8 @@ export const pruneVacatedCells = internalMutation({
       await ctx.db.delete(cell._id);
       pruned += 1;
     }
-    return pruned;
+    // What stays is the registry's size (B01-8c), counted from the rows this already read.
+    return { pruned, kept: stale.length - pruned };
   },
 });
 
@@ -838,6 +996,7 @@ export const cellSyncStates = internalQuery({
         tier,
         startedAt: row?.startedAt ?? null,
         completedAt: row?.completedAt ?? null,
+        cellCount: row?.cellCount ?? null,
       });
     }
     return out;
@@ -848,6 +1007,8 @@ export interface CellSyncState {
   tier: (typeof WEATHER_TIERS)[number];
   startedAt: number | null;
   completedAt: number | null;
+  /** The tier's size after its last complete walk (B01-8c); `null` until one has stamped it. */
+  cellCount?: number | null;
 }
 
 /**
@@ -952,19 +1113,52 @@ const maybeSyncWeatherCellsArgs = {
 export async function maybeSyncWeatherCellsHandler(
   ctx: ActionCtx,
   { requestedAt }: ObjectType<typeof maybeSyncWeatherCellsArgs>,
-): Promise<{ skipped?: 'already reconciled'; tiers: { tier: string; pruned: number }[] }> {
+  tick?: CronTickContext,
+): Promise<{
+  skipped?: 'already reconciled' | 'a run is still going';
+  tiers: { tier: string; pruned: number }[];
+  cronReport: CronReport;
+}> {
   if (requestedAt !== undefined) {
     const states = await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
     if (reconcileSatisfiedBy(states, requestedAt, Date.now())) {
-      return { skipped: 'already reconciled', tiers: [] };
+      return { skipped: 'already reconciled', tiers: [], cronReport: { worked: false } };
     }
   }
+  // The walk's run (D349): one run over both tiers' branches. Not season-gated, so it always works.
+  // A walk an import scheduled (`importRuns.finish`, no tick) is a run another job chained.
+  const detail =
+    tick === undefined
+      ? requestedAt !== undefined
+        ? 'After a corpus load'
+        : 'Walk started by hand'
+      : tick.trigger === 'cron'
+        ? 'Weekly walk'
+        : 'Walk started by hand';
+  const run = runOf(
+    await openChainRun(ctx, tick, { job: 'reconcile weather cell registry', detail }),
+    tick,
+  );
+  if (run === 'skip')
+    return { skipped: 'a run is still going', tiers: [], cronReport: BUSY_REPORT };
   const tiers: { tier: string; pruned: number }[] = [];
-  for (const tier of WEATHER_TIERS) {
-    const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, { tier });
-    tiers.push({ tier, pruned: res.pruned });
+  try {
+    for (const tier of WEATHER_TIERS) {
+      await openChainBranch(ctx, run, 1, [
+        stageLine(`${tier === 'filter' ? 'Filter' : 'Browse'}: walking the corpus`),
+      ]);
+      const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, {
+        tier,
+        ...(run !== null ? { cronRun: { runId: run, step: 1 } } : {}),
+      });
+      tiers.push({ tier, pruned: res.pruned });
+    }
+  } catch (err) {
+    if (run === null) throw err;
+    throw await failHead(ctx, tick, run, err);
   }
-  return { tiers };
+  if (run === null) return { tiers, cronReport: { worked: true, detail } };
+  return { tiers, cronReport: await closeHead(ctx, tick, run, { detail }) };
 }
 
 export const maybeSyncWeatherCells = internalAction({
@@ -1323,19 +1517,49 @@ export async function ingestCellDays(
   pastDays: number,
   options: { hourlyDays?: number } = {},
 ): Promise<number | null> {
-  const batch = await fetchLocalHourly(ctx, cell, pastDays);
-  if (batch === null) return null;
+  const res = await ingestCellDaysReported(ctx, tier, cell, pastDays, options);
+  return res.days;
+}
+
+/**
+ * **{@link ingestCellDays} with what it came to** (B01-8c), for the runs that report: the same
+ * fetch and the same writes, in the same order, plus why a fetch failed, the weight it metered (×10)
+ * and how long it took. `days` is `ingestCellDays`' answer exactly — `null` when the fetch failed.
+ *
+ * A write that throws still throws — it is marked ({@link isArchiveWriteFailure}) so a run can file
+ * it under `writeFailed` rather than `other`, and is otherwise the error the write threw.
+ */
+export async function ingestCellDaysReported(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  cell: WeatherCell,
+  pastDays: number,
+  options: { hourlyDays?: number } = {},
+): Promise<{
+  days: number | null;
+  failure?: { failure: FetchFailure; text: string };
+  weighted: number;
+  fetchMs: number;
+}> {
+  const fetched = await fetchLocalHourly(ctx, cell, pastDays);
+  const meta = { weighted: fetched.weighted, fetchMs: fetched.fetchMs };
+  const batch = fetched.batch;
+  if (batch === null) {
+    return { days: null, ...(fetched.failure ? { failure: fetched.failure } : {}), ...meta };
+  }
   const days = summarizeWeatherDays(batch.hours);
-  if (days.length === 0) return 0;
-  await ctx.runMutation(internal.weatherArchive.upsertWeatherDays, {
-    cellKey: cell.key,
-    tier,
-    source: 'forecast',
-    fetchedAt: Date.now(),
-    ...(batch.utcOffsetSeconds === null ? {} : { utcOffsetSeconds: batch.utcOffsetSeconds }),
-    ...(batch.timeZone === null ? {} : { timeZone: batch.timeZone }),
-    days: days.map((d) => ({ dayMs: d.dayMs, localDate: d.localDate, ...storableDay(d) })),
-  });
+  if (days.length === 0) return { days: 0, ...meta };
+  await asArchiveWrite(() =>
+    ctx.runMutation(internal.weatherArchive.upsertWeatherDays, {
+      cellKey: cell.key,
+      tier,
+      source: 'forecast',
+      fetchedAt: Date.now(),
+      ...(batch.utcOffsetSeconds === null ? {} : { utcOffsetSeconds: batch.utcOffsetSeconds }),
+      ...(batch.timeZone === null ? {} : { timeZone: batch.timeZone }),
+      days: days.map((d) => ({ dayMs: d.dayMs, localDate: d.localDate, ...storableDay(d) })),
+    }),
+  );
   if (tier === 'browse') {
     const grouped = groupHoursByDay(batch.hours);
     // Newest-first trim, +1 for the forecast day the request always carries: the chart reads
@@ -1344,13 +1568,45 @@ export async function ingestCellDays(
       options.hourlyDays === undefined
         ? grouped
         : grouped.slice(-Math.max(1, Math.ceil(options.hourlyDays) + 1));
-    await ctx.runMutation(internal.weatherArchive.upsertWeatherHours, {
-      cellKey: cell.key,
-      fetchedAt: Date.now(),
-      days: hourly,
-    });
+    await asArchiveWrite(() =>
+      ctx.runMutation(internal.weatherArchive.upsertWeatherHours, {
+        cellKey: cell.key,
+        fetchedAt: Date.now(),
+        days: hourly,
+      }),
+    );
   }
-  return days.length;
+  return { days: days.length, ...meta };
+}
+
+const ARCHIVE_WRITE_FAILED = Symbol.for('weatherArchive.writeFailed');
+
+/** Run an archive write; what it throws is rethrown as it was, marked as a write's failure. */
+async function asArchiveWrite<T>(write: () => Promise<T>): Promise<T> {
+  try {
+    return await write();
+  } catch (err) {
+    if (err !== null && typeof err === 'object') {
+      (err as Record<symbol, unknown>)[ARCHIVE_WRITE_FAILED] = true;
+    }
+    throw err;
+  }
+}
+
+/** Whether `err` was thrown by an archive write ({@link asArchiveWrite}). */
+export function isArchiveWriteFailure(err: unknown): boolean {
+  return (
+    err !== null &&
+    typeof err === 'object' &&
+    (err as Record<symbol, unknown>)[ARCHIVE_WRITE_FAILED] === true
+  );
+}
+
+/** A cell's throw, as a run files it: a write's is `writeFailed`, anything else core's rule. */
+function causedThrow(err: unknown): CausedFailure {
+  return isArchiveWriteFailure(err)
+    ? { cause: 'writeFailed', text: sampleTextOf(thrownText(err)) }
+    : causedFetchFailure({ error: err }, thrownText(err));
 }
 
 /**
@@ -1535,41 +1791,55 @@ export const refreshTierDays = internalAction({
     tier: literals(WEATHER_TIERS),
     afterKey: v.optional(v.string()),
     pastDays: v.optional(v.number()),
+    /** The run this batch reports to (D349, B01-8c); absent for an operator's unrecorded call. */
+    cronRun: v.optional(cronRunArg),
   },
-  handler: async (ctx, { tier, afterKey, pastDays }): Promise<{ done: boolean; cells: number }> => {
+  handler: async (
+    ctx,
+    { tier, afterKey, pastDays, cronRun },
+  ): Promise<{ done: boolean; cells: number }> => {
     const { cells, isDone: tierDone } = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
       tier,
       ...(afterKey === undefined ? {} : { afterKey }),
       limit: CELL_BATCH_SIZE,
     });
-    if (cells.length === 0) return { done: true, cells: 0 };
+    const tally = new StepTally();
+    if (cells.length === 0) {
+      if (cronRun) await endAppendStep(ctx, cronRun, tally, 'cell', false);
+      return { done: true, cells: 0 };
+    }
 
+    const days = pastDays ?? APPEND_PAST_DAYS;
     let lastKey = afterKey;
     for (const cell of cells) {
       lastKey = cell.cellKey;
       // Per-cell isolation: one cell's transport failure must not abandon the rest of the batch, and
       // the gap sweep will come back for whatever this missed.
       try {
-        await ingestCellDays(
-          ctx,
-          tier,
-          { key: cell.cellKey, ...cell },
-          pastDays ?? APPEND_PAST_DAYS,
+        tallyIngest(
+          tally,
+          cell.cellKey,
+          await ingestCellDaysReported(ctx, tier, { key: cell.cellKey, ...cell }, days),
         );
       } catch (err) {
         console.warn(`weatherArchive: cell ${cell.cellKey} failed`, err);
+        tallyIngestThrow(tally, cell.cellKey, days, err);
       }
       // The discovery digest follows the rows it summarizes (Workstream 5). Rebuilt even when the
       // fetch failed: the cell's newest complete day has still moved on, and a digest that keeps
       // describing a chain as of last week is a stale match rather than an honest gap.
-      if (tier === 'filter') await rebuildDigestFor(ctx, cell);
+      if (tier === 'filter' && !(await rebuildDigestFor(ctx, cell))) tally.add('digestFailed');
     }
+    tally.add('cells', cells.length);
 
-    if (!tierDone && lastKey !== undefined) {
+    const next = !tierDone && lastKey !== undefined;
+    const so = cronRun ? await endAppendStep(ctx, cronRun, tally, 'cell', next) : undefined;
+    if (next) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.refreshTierDays, {
         tier,
         afterKey: lastKey,
         ...(pastDays === undefined ? {} : { pastDays }),
+        ...(cronRun && so ? { cronRun: nextCronRun(cronRun, so) } : {}),
       });
       return { done: false, cells: cells.length };
     }
@@ -1577,74 +1847,554 @@ export const refreshTierDays = internalAction({
   },
 });
 
+/** One cell's ingest, tallied for its run: stored (and its days) or failed (and why), and its cost. */
+function tallyIngest(
+  tally: StepTally,
+  cellKey: string,
+  res: Awaited<ReturnType<typeof ingestCellDaysReported>>,
+): void {
+  tally.add('calls');
+  tally.add('weighted', res.weighted);
+  tally.add('fetchMs', res.fetchMs);
+  tally.max('fetchMsMax', res.fetchMs);
+  if (res.days === null) {
+    tally.add('cellsFailed');
+    tally.fail(
+      res.failure
+        ? causedFetchFailure(res.failure.failure, res.failure.text)
+        : { cause: 'other', text: 'no answer' },
+      cellKey,
+    );
+    return;
+  }
+  tally.add('cellsStored');
+  tally.add('daysWritten', res.days);
+}
+
+/** A cell whose ingest threw: its request was asked (and metered) before the write that threw. */
+function tallyIngestThrow(tally: StepTally, cellKey: string, pastDays: number, err: unknown): void {
+  tally.add('calls');
+  tally.add('weighted', archiveWeight(pastDays));
+  tally.add('cellsFailed');
+  tally.fail(causedThrow(err), cellKey);
+}
+
+/** One archive request's weight for `pastDays` (plus today), ×10 — what `fetchLocalHourly` meters. */
+function archiveWeight(pastDays: number): number {
+  const days = Math.min(MAX_PAST_DAYS, Math.max(1, pastDays));
+  return Math.round(openMeteoCallWeight(HOURLY_VARS.length, days + 1) * 10);
+}
+
 /**
- * Find and repair holes in what we hold (D161's ladder).
+ * An append batch's end, for its run: the totals so far (returned, for the next batch), a progress
+ * line every tenth step, one line per cause, the end line on the last batch; then the step itself —
+ * opening the next batch's branch when there is one, closing this one unless it is the head's.
+ */
+async function endAppendStep(
+  ctx: ActionCtx,
+  run: CronRunArg,
+  tally: StepTally,
+  noun: 'cell' | 'bay',
+  next: boolean,
+): Promise<Record<string, number>> {
+  const so = addCounts(run.so, {
+    cells: tally.counts.cells ?? 0,
+    stored: tally.counts.cellsStored ?? 0,
+    failed: tally.counts.cellsFailed ?? 0,
+  });
+  const plural = `${noun}s`;
+  if (run.step % 10 === 0 && next) {
+    tally.line(
+      'line',
+      `Step ${run.step} · ${fmt(so.cells ?? 0)} ${plural} so far, ${fmt(so.stored ?? 0)} stored, ${fmt(so.failed ?? 0)} failed`,
+    );
+  }
+  tally.causeLines(noun);
+  if (!next) {
+    tally.line(
+      'stage',
+      `Done in ${run.step} ${run.step === 1 ? 'step' : 'steps'} · ${fmt(so.stored ?? 0)} of ${fmt(so.cells ?? 0)} ${plural} stored, ${fmt(so.failed ?? 0)} failed`,
+    );
+  }
+  await endBatch(ctx, run, tally, next ? 1 : 0);
+  return so;
+}
+
+// ─── The partial-day repair's bound (fork 2 (b), the founder 2026-11-28; the governor's budget) ──
+
+/**
+ * **The most the gap repair spends on partial past days in one run**, in weighted Open-Meteo calls,
+ * over both tiers.
+ *
+ * Sized from the meter's own numbers against Open-Meteo's 10,000 a day (free) and D158's 7,000 (the
+ * paid-plan trigger): an in-season day already spends ~3,650 on the filter append (3,043 cells ×
+ * 1.2), ~150 on the bays, a few dozen on hazard decay and the season watch, and the app's own reads
+ * (drawer opens, ~1.2 each, ~8.4 for a first touch's 92 days) on top — about 4,000–5,000 before the
+ * repair. 2,000 more keeps a normal day under D158's 7,000 and ~3,000 clear of the free 10,000; and
+ * {@link PARTIAL_REPAIR_DAY_CEILING} shrinks it further on a day that has already spent more (a cold
+ * start's ~7,300). Steady state needs ~36 (1 % of cells failing an append, ~1.2 each), so the bound
+ * only ever bites on the catch-up after a deploy or an outage (worst case ~11,000 over the filter
+ * tier): that drains over ~6 days, oldest days first, since the oldest are the ones about to leave the
+ * 30-day window.
+ */
+export const PARTIAL_REPAIR_BUDGET = 2_000;
+/**
+ * The day's meter the partial-day repair never spends past: D158's paid-plan trigger. A run's budget
+ * is `min(PARTIAL_REPAIR_BUDGET, max(0, ceiling − today's weighted calls so far))`, read once per
+ * tier as its walk starts — so on a day the appends already spent heavily it spends less, or nothing.
+ */
+export const PARTIAL_REPAIR_DAY_CEILING = 7_000;
+/**
+ * The `browse` tier's share of a run's budget; `filter` takes the rest. The two tiers' walks run at
+ * once and can't share one counter, so each gets its own: browse cells hold rows only where a person
+ * opened a lake, so its share is small.
+ */
+export const PARTIAL_REPAIR_BROWSE_SHARE = 0.2;
+
+/** One cell holding partial past days and no holes, awaiting its one refetch of the run. */
+const partialCandidate = v.object({
+  cellKey: v.string(),
+  lat: v.number(),
+  lng: v.number(),
+  elevationM: v.optional(v.number()),
+  /** Its refetchable partial days (`listCellDayKeys.partial`), oldest first. */
+  days: v.array(v.number()),
+});
+type PartialCandidate = ObjectType<(typeof partialCandidate)['fields']>;
+
+/** A tier's partial-day repair as its walk carries it. */
+const partialRepairArg = v.object({
+  /** What is left of this tier's budget this run, in weighted calls ×10. */
+  budget: v.number(),
+  /** The cells to refetch once the walk ends, oldest partial day first; at most what `budget` buys. */
+  queue: v.array(partialCandidate),
+});
+type PartialRepair = { budget: number; queue: PartialCandidate[] };
+
+/** The weighted Open-Meteo calls metered so far today (UTC), from the meter's one row. */
+export const openMeteoWeightedToday = internalQuery({
+  args: { nowMs: v.number() },
+  handler: async (ctx, { nowMs }): Promise<number> => {
+    const dayMs = apiCallDayMs(nowMs);
+    const row = await ctx.db
+      .query('externalApiCalls')
+      .withIndex('by_provider_day', (q) => q.eq('provider', OPEN_METEO_PROVIDER).eq('dayMs', dayMs))
+      .first();
+    return row?.weightedCalls ?? 0;
+  },
+});
+
+/**
+ * What is left of a tier's partial-day budget, re-read against the day's meter now: never more than
+ * it was, and never more than the tier's share of the headroom under the ceiling the meter leaves
+ * ({@link partialBudgetFor}). Hole repairs are never budgeted, but what they (and every other caller)
+ * spent today is on the meter, so the optional partial work is what gives way. A spent budget reads
+ * nothing.
+ */
+async function recheckPartialBudget(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  budget: number,
+  nowMs: number,
+): Promise<number> {
+  if (budget <= 0) return 0;
+  const weightedToday = await ctx.runQuery(internal.weatherArchive.openMeteoWeightedToday, {
+    nowMs,
+  });
+  return Math.min(budget, partialBudgetFor(tier, weightedToday));
+}
+
+/** A tier's partial-day budget for a run starting now, ×10 (see {@link PARTIAL_REPAIR_BUDGET}). */
+export function partialBudgetFor(tier: WeatherTier, weightedToday: number): number {
+  const run = Math.min(
+    PARTIAL_REPAIR_BUDGET,
+    Math.max(0, PARTIAL_REPAIR_DAY_CEILING - weightedToday),
+  );
+  const share = tier === 'browse' ? PARTIAL_REPAIR_BROWSE_SHARE : 1 - PARTIAL_REPAIR_BROWSE_SHARE;
+  return Math.floor(run * share * 10);
+}
+
+/** The `past_days` a refetch reaching back to `oldestMs` asks for (the ladder's step 1 span). */
+function repairSpanDays(oldestMs: number, toMs: number): number {
+  return Math.ceil((toMs - oldestMs) / DAY_MS) + 2;
+}
+
+/** Oldest partial day first, then by key: the order a run spends its budget in. */
+function byOldestPartial(a: PartialCandidate, b: PartialCandidate): number {
+  return (a.days[0] ?? 0) - (b.days[0] ?? 0) || (a.cellKey < b.cellKey ? -1 : 1);
+}
+
+/**
+ * The queue's longest oldest-first prefix the budget buys, each refetch at its own weight (the span
+ * its oldest partial day sets): what a run would refetch if the walk ended now. The rest is deferred.
+ */
+function admitQueue(
+  queue: readonly PartialCandidate[],
+  budget: number,
+  toMs: number,
+): { admitted: PartialCandidate[]; deferred: PartialCandidate[] } {
+  const sorted = [...queue].sort(byOldestPartial);
+  let left = budget;
+  let n = 0;
+  for (const candidate of sorted) {
+    const w = archiveWeight(repairSpanDays(candidate.days[0] ?? toMs, toMs));
+    if (w > left) break;
+    left -= w;
+    n++;
+  }
+  return { admitted: sorted.slice(0, n), deferred: sorted.slice(n) };
+}
+
+/**
+ * Cut the queue, as each walk batch ends, to what the budget could still buy ({@link admitQueue}):
+ * the budget only shrinks as the walk goes on, so a cell cut here could never be refetched this run,
+ * and the queue the walk carries in every batch's arguments stays as small as the refetches it can
+ * pay for. The rest is deferred to the next run and counted.
+ */
+function trimQueue(state: PartialRepair, tally: StepTally, toMs: number): void {
+  const { admitted, deferred } = admitQueue(state.queue, state.budget, toMs);
+  for (const dropped of deferred) tally.add('partialDeferred', dropped.days.length);
+  state.queue = admitted;
+}
+
+/**
+ * The pause between two batches of partial-day refetches, **sized for both tiers at once**: the
+ * filter and browse repairs run side by side against one Open-Meteo quota (600 weighted calls a
+ * minute). A batch is {@link CELL_BATCH_SIZE} requests of up to 3.6 weighted calls each (a refetch
+ * reaching back the whole {@link GAP_SWEEP_DAYS}), asked back to back, so ~144 at most. A tier's next
+ * batch starts at least this long after its last one ended, so any minute sees requests from at most
+ * `⌊60 s ÷ pause⌋ + 1` of its batches: at 40 s, two — ≤ 288 a tier, ≤ 576 for both, under 600 even
+ * when the provider answers instantly. (The walks' hole repairs are unpaced, as they always were;
+ * Ma47 is the minute limit against the appends.)
+ */
+export const PARTIAL_REFETCH_PAUSE_MS = 40_000;
+
+/** The most weighted calls (×10) one partial-day refetch can cost: the whole sweep window back. */
+export function maxPartialRefetchWeight(): number {
+  return archiveWeight(repairSpanDays(0, (GAP_SWEEP_DAYS - 1) * DAY_MS));
+}
+
+/** The gap repair's counts a tier's end line reads, carried as the branch's totals so far. */
+const GAP_TOTALS = [
+  'cellsChecked',
+  'holes',
+  'filled',
+  'borrowed',
+  'stillMissing',
+  'partialDays',
+  'partialFilled',
+  'partialStill',
+  'partialDeferred',
+  'partialLeft',
+] as const;
+
+/**
+ * A gap-repair step's end, for its run (as {@link endAppendStep}): the totals so far, one line per
+ * cause, the tier's end line on its last step, then the step.
+ */
+async function endGapStep(
+  ctx: ActionCtx,
+  run: CronRunArg,
+  tier: WeatherTier,
+  tally: StepTally,
+  next: boolean,
+): Promise<Record<string, number>> {
+  const step: Record<string, number> = {};
+  for (const k of GAP_TOTALS) step[k] = tally.counts[k] ?? 0;
+  const so = addCounts(run.so, step);
+  tally.causeLines('cell');
+  if (!next) {
+    const n = (k: (typeof GAP_TOTALS)[number]) => fmt(so[k] ?? 0);
+    tally.line(
+      'stage',
+      `${tier === 'filter' ? 'Filter' : 'Browse'}: ${n('cellsChecked')} cells checked · ${n('holes')} days not recorded, ${n('filled')} fetched, ${n('borrowed')} borrowed, ${n('stillMissing')} still not recorded · ${n('partialDays')} partial days, ${n('partialFilled')} completed, ${n('partialStill')} still partial, ${n('partialDeferred')} left for the next run, ${n('partialLeft')} left as they are`,
+    );
+  }
+  await endBatch(ctx, run, tally, next ? 1 : 0);
+  return so;
+}
+
+/**
+ * Find and repair holes in what we hold (D161's ladder) — and, since B01-8c (fork 2 (b)), the
+ * **partial past days**: a day the archive holds fewer than 23 hours of, which a reader treats as
+ * unknown and which nothing else would ever complete.
  *
  * Runs over one tier's cells in batches, looking only inside `GAP_SWEEP_DAYS` so step 1 — refetch
  * from the forecast endpoint — can always serve. **A cell with no rows at all is skipped, not
  * backfilled**: an untouched cell has no gap, it has never been asked about, and treating absence as
  * a hole would turn the sweep into a corpus-wide backfill nobody requested.
+ *
+ * **The partial days, bounded** (`PARTIAL_REPAIR_BUDGET`): still **one request per cell per run**.
+ * A cell with holes makes the request it always made, from its oldest hole, which completes every
+ * partial day on or after that hole for nothing; it reaches back for an older partial day only while
+ * the tier's budget pays the difference (else that day waits for the next run). A cell with partial
+ * days and no holes is queued, and once the walk has seen every cell the queue is refetched oldest
+ * partial day first while the budget lasts (`refetchPartialDays`), the rest deferred to the next run.
+ * A partial day is **never written `missing`** and **never borrowed** (its hours are data, and the
+ * parent's day may be partial too); one a refetch of the finished day still leaves short is left as
+ * it is (`listCellDayKeys.partialLeft`), so no day is refetched for ever.
  */
 export const sweepWeatherDayGaps = internalAction({
-  args: { tier: literals(WEATHER_TIERS), afterKey: v.optional(v.string()) },
-  handler: async (ctx, { tier, afterKey }): Promise<{ done: boolean; repaired: number }> => {
+  args: {
+    tier: literals(WEATHER_TIERS),
+    afterKey: v.optional(v.string()),
+    /** The run this batch reports to (D349, B01-8c); absent for an operator's unrecorded call. */
+    cronRun: v.optional(cronRunArg),
+    /** The partial-day repair's budget and queue, carried by the walk (absent: the first batch). */
+    partial: v.optional(partialRepairArg),
+  },
+  handler: async (
+    ctx,
+    { tier, afterKey, cronRun, partial },
+  ): Promise<{ done: boolean; repaired: number }> => {
     const now = Date.now();
     const today = todayKey(now);
     // Yesterday is the newest day worth judging: today's row is legitimately partial until tomorrow.
     const toMs = today - DAY_MS;
     const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
+    const tally = new StepTally();
+    // The budget is set as the walk starts, and only ever shrinks: each later batch re-reads the
+    // day's meter (`recheckPartialBudget`), so the hole repairs and everything else spending today
+    // narrow it. A walk from before B01-8c carries none and spends nothing on partial days.
+    const state: PartialRepair = partial
+      ? {
+          budget: await recheckPartialBudget(ctx, tier, partial.budget, now),
+          queue: [...partial.queue],
+        }
+      : {
+          budget:
+            afterKey === undefined
+              ? partialBudgetFor(
+                  tier,
+                  await ctx.runQuery(internal.weatherArchive.openMeteoWeightedToday, {
+                    nowMs: now,
+                  }),
+                )
+              : 0,
+          queue: [],
+        };
 
     const { cells, isDone: tierDone } = await ctx.runQuery(internal.weatherArchive.pageTierCells, {
       tier,
       ...(afterKey === undefined ? {} : { afterKey }),
       limit: CELL_BATCH_SIZE,
     });
-    if (cells.length === 0) return { done: true, repaired: 0 };
 
     let repaired = 0;
     let lastKey = afterKey;
-    const { keys: failingKeys }: { keys: string[] } = await ctx.runQuery(
-      internal.recurringJobs.failingKeys,
-      { job: 'weatherGaps' },
-    );
-    const wasFailing = new Set(failingKeys);
-    const failed: { key: string; errorClass: string }[] = [];
-    const recovered: string[] = [];
-    for (const cell of cells) {
-      lastKey = cell.cellKey;
-      const key = `${tier}:${cell.cellKey}`;
-      // **One cell that throws no longer ends the walk** (D258): it used to stop the batch, and
-      // the next day's sweep started over and died at the same cell. Now it is recorded and the walk
-      // goes on; the next daily run is its retry. A gap left unrepaired is a day the record says
-      // nothing about, never a day it calls clear.
-      try {
-        repaired += await asItem(key, () => repairCellGaps(ctx, tier, cell, fromMs, toMs, now));
-        if (wasFailing.has(key)) recovered.push(key);
-      } catch (err) {
-        // `asItem` has logged it; only its class is kept here.
-        failed.push({ key, errorClass: errorClassOf(err) });
+    if (cells.length > 0) {
+      const { keys: failingKeys }: { keys: string[] } = await ctx.runQuery(
+        internal.recurringJobs.failingKeys,
+        { job: 'weatherGaps' },
+      );
+      const wasFailing = new Set(failingKeys);
+      const failed: { key: string; errorClass: string }[] = [];
+      const recovered: string[] = [];
+      for (const cell of cells) {
+        lastKey = cell.cellKey;
+        const key = `${tier}:${cell.cellKey}`;
+        // **One cell that throws no longer ends the walk** (D258): it used to stop the batch, and
+        // the next day's sweep started over and died at the same cell. Now it is recorded and the
+        // walk goes on; the next daily run is its retry. A gap left unrepaired is a day the record
+        // says nothing about, never a day it calls clear.
+        try {
+          const res = await asItem(key, () =>
+            repairCellGaps(ctx, tier, cell, fromMs, toMs, now, state, tally),
+          );
+          repaired += res.repaired;
+          if (res.candidate) state.queue.push(res.candidate);
+          if (wasFailing.has(key)) recovered.push(key);
+        } catch (err) {
+          // `asItem` has logged it; only its class is kept here.
+          const errorClass = errorClassOf(err);
+          failed.push({ key, errorClass });
+          tally.fail(causedFetchFailure({ error: err }, errorClass), key);
+        }
       }
-    }
-    if (failed.length > 0 || recovered.length > 0) {
-      await ctx.runMutation(internal.recurringJobs.settle, {
-        job: 'weatherGaps',
-        failed,
-        succeeded: recovered,
-      });
+      tally.add('cellsChecked', cells.length);
+      if (failed.length > 0 || recovered.length > 0) {
+        await ctx.runMutation(internal.recurringJobs.settle, {
+          job: 'weatherGaps',
+          failed,
+          succeeded: recovered,
+        });
+      }
+      trimQueue(state, tally, toMs);
     }
 
-    if (!tierDone && lastKey !== undefined) {
+    if (!tierDone && lastKey !== undefined && cells.length > 0) {
+      const so = cronRun ? await endGapStep(ctx, cronRun, tier, tally, true) : undefined;
       await ctx.scheduler.runAfter(0, internal.weatherArchive.sweepWeatherDayGaps, {
         tier,
         afterKey: lastKey,
+        partial: state,
+        ...(cronRun && so ? { cronRun: nextCronRun(cronRun, so) } : {}),
       });
       return { done: false, repaired };
+    }
+
+    // The walk is done: the queued partial days, oldest first, while the budget lasts.
+    const { admitted, deferred } = admitQueue(state.queue, state.budget, toMs);
+    for (const d of deferred) tally.add('partialDeferred', d.days.length);
+    const next = admitted.length > 0;
+    const so = cronRun ? await endGapStep(ctx, cronRun, tier, tally, next) : undefined;
+    if (next) {
+      await ctx.scheduler.runAfter(0, internal.weatherArchive.refetchPartialDays, {
+        tier,
+        cells: admitted,
+        ...(cronRun && so ? { cronRun: nextCronRun(cronRun, so) } : {}),
+      });
     }
     return { done: true, repaired };
   },
 });
 
-/** One cell's gap repair (D161's ladder): refetch, borrow, record what stays missing. */
+/**
+ * **The partial-day refetches a gap-repair walk queued** (B01-8c, fork 2 (b)), a batch at a time:
+ * one request per cell, reaching back to its oldest partial day, then a re-read to count which days
+ * it completed. Nothing here writes `missing` or borrows: a day still short keeps its hours.
+ */
+export const refetchPartialDays = internalAction({
+  args: {
+    tier: literals(WEATHER_TIERS),
+    cells: v.array(partialCandidate),
+    cronRun: v.optional(cronRunArg),
+  },
+  handler: async (ctx, { tier, cells, cronRun }): Promise<{ done: boolean; refetched: number }> => {
+    const now = Date.now();
+    const toMs = todayKey(now) - DAY_MS;
+    const fromMs = toMs - (GAP_SWEEP_DAYS - 1) * DAY_MS;
+    const tally = new StepTally();
+    // The queue was admitted against the budget as the walk ended; each batch re-claims its headroom
+    // against the meter now, so a day that spent past the ceiling meanwhile (holes, the appends, the
+    // app's reads) refetches no more of it. What the headroom no longer buys waits for the next run.
+    const headroom = partialBudgetFor(
+      tier,
+      await ctx.runQuery(internal.weatherArchive.openMeteoWeightedToday, { nowMs: now }),
+    );
+    const { admitted, deferred } = admitQueue(cells, headroom, toMs);
+    for (const d of deferred) tally.add('partialDeferred', d.days.length);
+    const batch = admitted.slice(0, CELL_BATCH_SIZE);
+    const rest = admitted.slice(CELL_BATCH_SIZE);
+    const failed: { key: string; errorClass: string }[] = [];
+    for (const cell of batch) {
+      const key = `${tier}:${cell.cellKey}`;
+      try {
+        await asItem(key, () => refetchPartialCell(ctx, tier, cell, fromMs, toMs, now, tally));
+      } catch (err) {
+        const errorClass = errorClassOf(err);
+        failed.push({ key, errorClass });
+        tally.fail(causedFetchFailure({ error: err }, errorClass), key);
+        tally.add('partialStill', cell.days.length);
+      }
+    }
+    if (failed.length > 0) {
+      await ctx.runMutation(internal.recurringJobs.settle, {
+        job: 'weatherGaps',
+        failed,
+        succeeded: [],
+      });
+    }
+    const next = rest.length > 0;
+    const so = cronRun ? await endGapStep(ctx, cronRun, tier, tally, next) : undefined;
+    if (next) {
+      await ctx.scheduler.runAfter(
+        PARTIAL_REFETCH_PAUSE_MS,
+        internal.weatherArchive.refetchPartialDays,
+        {
+          tier,
+          cells: rest,
+          ...(cronRun && so ? { cronRun: nextCronRun(cronRun, so) } : {}),
+        },
+      );
+    }
+    return { done: !next, refetched: batch.length };
+  },
+});
+
+/** One queued cell's refetch: the request, then which of its partial days it completed. */
+async function refetchPartialCell(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  cell: PartialCandidate,
+  fromMs: number,
+  toMs: number,
+  now: number,
+  tally: StepTally,
+): Promise<void> {
+  const spanDays = repairSpanDays(cell.days[0] ?? toMs, toMs);
+  const fetched = await refetchTallied(ctx, tier, cell, spanDays, tally);
+  if (!fetched) {
+    tally.add('partialStill', cell.days.length);
+  } else {
+    countPartials(
+      tally,
+      cell.days,
+      await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
+        cellKey: cell.cellKey,
+        fromMs,
+        toMs,
+        nowMs: now,
+        lng: cell.lng,
+      }),
+    );
+  }
+  if (tier === 'filter' && !(await rebuildDigestFor(ctx, cell))) tally.add('digestFailed');
+}
+
+/**
+ * The ladder's step-1 request, tallied: `true` when it came back with hours to store. A fetch that
+ * failed, or a write that threw, is counted under its cause and logged, never thrown — as the ladder
+ * always treated a refetch that threw.
+ */
+async function refetchTallied(
+  ctx: ActionCtx,
+  tier: WeatherTier,
+  cell: { cellKey: string; lat: number; lng: number; elevationM?: number },
+  spanDays: number,
+  tally: StepTally,
+): Promise<boolean> {
+  try {
+    const res = await ingestCellDaysReported(ctx, tier, { key: cell.cellKey, ...cell }, spanDays);
+    tally.add('calls');
+    tally.add('weighted', res.weighted);
+    tally.add('fetchMs', res.fetchMs);
+    tally.max('fetchMsMax', res.fetchMs);
+    if (res.days === null) {
+      tally.fail(
+        res.failure
+          ? causedFetchFailure(res.failure.failure, res.failure.text)
+          : { cause: 'other', text: 'no answer' },
+        cell.cellKey,
+      );
+      return false;
+    }
+    return true;
+  } catch (err) {
+    console.warn(`weatherArchive: gap refetch for ${cell.cellKey} threw`, err);
+    tally.add('calls');
+    tally.add('weighted', archiveWeight(spanDays));
+    tally.fail(causedThrow(err), cell.cellKey);
+    return false;
+  }
+}
+
+/** Which of `days` a refetch completed (`partialFilled`) and which are still short (`partialStill`). */
+function countPartials(
+  tally: StepTally,
+  days: readonly number[],
+  after: { partial: number[]; partialLeft: number[] },
+): void {
+  const short = new Set([...after.partial, ...after.partialLeft]);
+  for (const d of days) tally.add(short.has(d) ? 'partialStill' : 'partialFilled');
+}
+
+/**
+ * One cell's gap repair (D161's ladder): refetch, borrow, record what stays missing — and its partial
+ * past days (B01-8c): those the hole request covers are completed by it, an older one only while the
+ * budget pays to reach back; a cell with partial days and no holes comes back as a `candidate` for
+ * the walk's queue, with no request now.
+ */
 async function repairCellGaps(
   ctx: ActionCtx,
   tier: WeatherTier,
@@ -1652,14 +2402,25 @@ async function repairCellGaps(
   fromMs: number,
   toMs: number,
   now: number,
-): Promise<number> {
+  partial: PartialRepair,
+  tally: StepTally,
+): Promise<{ repaired: number; candidate?: PartialCandidate }> {
   let repaired = 0;
   const held = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
     cellKey: cell.cellKey,
     fromMs,
     toMs,
+    nowMs: now,
+    lng: cell.lng,
   });
-  if (held.present.length === 0 && held.missing.length === 0) return 0; // never touched
+  if (held.present.length === 0 && held.missing.length === 0) {
+    tally.add('cellsUntouched');
+    return { repaired: 0 }; // never touched
+  }
+  tally.add('partialDays', held.partial.length + held.partialLeft.length);
+  tally.add('partialLeft', held.partialLeft.length);
+  for (const d of [...held.partial, ...held.partialLeft]) tally.min('oldestPartialDay', d);
+  const partialDays = [...held.partial].sort((a, b) => a - b);
 
   const have = new Set(held.present);
   const holes: number[] = [];
@@ -1669,26 +2430,55 @@ async function repairCellGaps(
   for (let d = Math.max(fromMs, earliest); d <= toMs; d += DAY_MS) {
     if (!have.has(d)) holes.push(d);
   }
-  if (holes.length === 0) return 0;
+  if (holes.length === 0) {
+    if (partialDays.length === 0) return { repaired: 0 };
+    return {
+      repaired: 0,
+      candidate: {
+        cellKey: cell.cellKey,
+        lat: cell.lat,
+        lng: cell.lng,
+        ...(cell.elevationM !== undefined ? { elevationM: cell.elevationM } : {}),
+        days: partialDays,
+      },
+    };
+  }
+  tally.add('holes', holes.length);
 
   // Step 1: refetch. One request covers every hole in the window, so ask once and widely rather
-  // than per hole.
-  const spanDays = Math.ceil((toMs - Math.min(...holes)) / DAY_MS) + 2;
-  try {
-    await ingestCellDays(ctx, tier, { key: cell.cellKey, ...cell }, spanDays);
-  } catch (err) {
-    console.warn(`weatherArchive: gap refetch for ${cell.cellKey} threw`, err);
+  // than per hole. It completes every partial day on or after the oldest hole for nothing; reaching
+  // back for an older one costs the difference, paid from the run's budget or left for the next run.
+  const oldestHole = Math.min(...holes);
+  let spanDays = repairSpanDays(oldestHole, toMs);
+  let refetched = partialDays.filter((d) => d >= oldestHole);
+  const older = partialDays.filter((d) => d < oldestHole);
+  if (older.length > 0) {
+    const wider = repairSpanDays(older[0] ?? oldestHole, toMs);
+    const extra = archiveWeight(wider) - archiveWeight(spanDays);
+    if (extra <= partial.budget) {
+      partial.budget -= extra;
+      spanDays = wider;
+      refetched = partialDays;
+    } else {
+      tally.add('partialDeferred', older.length);
+    }
   }
+  const fetched = await refetchTallied(ctx, tier, cell, spanDays, tally);
 
   const after = await ctx.runQuery(internal.weatherArchive.listCellDayKeys, {
     cellKey: cell.cellKey,
     fromMs,
     toMs,
+    nowMs: now,
+    lng: cell.lng,
   });
+  if (fetched) countPartials(tally, refetched, after);
+  else tally.add('partialStill', refetched.length);
   // Built once, not once per hole — the Set was being reconstructed inside the predicate.
   const recovered = new Set(after.present);
   const stillMissing = holes.filter((d) => !recovered.has(d));
   repaired += holes.length - stillMissing.length;
+  tally.add('filled', holes.length - stillMissing.length);
 
   if (stillMissing.length > 0) {
     // Step 2 (borrow the coarser tier) applies only to `browse`; `filter` has no parent, and step
@@ -1699,6 +2489,8 @@ async function repairCellGaps(
     // arbitrary subset of the holes, so subtracting a count off the front of `stillMissing`
     // would mark the wrong days: a parent that covered only the newest hole would leave the
     // oldest one silently unrecorded — the precise failure step 4 exists to prevent.
+    //
+    // Only true holes reach here: a partial day is never borrowed over, nor written `missing`.
     const borrowed = tier === 'browse' ? await borrowFromFilter(ctx, cell, stillMissing) : [];
     const borrowedDays = new Set(borrowed);
     const unrecovered = stillMissing.filter((d) => !borrowedDays.has(d));
@@ -1711,10 +2503,13 @@ async function repairCellGaps(
       });
     }
     repaired += borrowed.length;
+    tally.add('borrowed', borrowed.length);
+    tally.add('stillMissing', unrecovered.length);
+    for (const d of unrecovered) tally.min('oldestOpenDay', d);
   }
   // A repaired or newly-recorded gap changes what the chain can honestly say.
-  if (tier === 'filter') await rebuildDigestFor(ctx, cell);
-  return repaired;
+  if (tier === 'filter' && !(await rebuildDigestFor(ctx, cell))) tally.add('digestFailed');
+  return { repaired };
 }
 
 /**
@@ -1896,7 +2691,9 @@ const maybeRefreshFilterTierArgs = {};
  */
 export async function maybeRefreshFilterTierHandler(
   ctx: ActionCtx,
-): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> {
+  _args: Record<string, never> = {},
+  tick?: CronTickContext,
+): Promise<AppendTickResult> {
   const now = Date.now();
   const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
   if (!gate.open) {
@@ -1904,6 +2701,7 @@ export async function maybeRefreshFilterTierHandler(
       started: false,
       season: gate.season,
       reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
+      cronReport: { worked: false },
     };
   }
 
@@ -1922,7 +2720,13 @@ export async function maybeRefreshFilterTierHandler(
       // A corpus with no listed bodies is the only honest way to reach here, and it is worth
       // saying out loud rather than sweeping zero cells in silence every day for ever.
       console.error('[weatherArchive] registry still empty after backfill — corpus has no cells');
-      return { started: false, season: gate.season, reason: 'cell registry empty' };
+      return {
+        started: false,
+        season: gate.season,
+        reason: 'cell registry empty',
+        // Worth a run row: the season is open and nothing can be appended.
+        cronReport: { worked: true, season: gate.season, detail: 'No cells registered' },
+      };
     }
   }
 
@@ -1940,8 +2744,41 @@ export async function maybeRefreshFilterTierHandler(
   // remaining batches either way, so this costs exactly one batch of the same work the scheduled
   // version would have done — and in exchange the tick reports what actually happened instead of
   // only that it asked for something to happen.
-  await ctx.runAction(internal.weatherArchive.refreshTierDays, { tier: 'filter', pastDays });
-  return { started: true, season: gate.season, pastDays };
+  const registry = await tierCellCount(ctx, 'filter');
+  return await runAppendHead(ctx, tick, {
+    job: 'append daily weather archive',
+    season: gate.season,
+    pastDays,
+    registry,
+    noun: 'cell',
+    first: (cronRun) =>
+      ctx.runAction(internal.weatherArchive.refreshTierDays, {
+        tier: 'filter',
+        pastDays,
+        ...(cronRun ? { cronRun } : {}),
+      }),
+  });
+}
+
+/**
+ * The tiers' sync states, read only for a run's report (its start counts and lines). Reporting is an
+ * observation, never part of the job (`lib/weatherReport.ts`), so a read that throws is logged and
+ * reads as unknown (`[]`): it never stops an append or a repair that would have run without it, nor
+ * throws between a head's `openChainRun` and the `try` that closes its branches.
+ */
+async function syncStatesForReport(ctx: ActionCtx): Promise<CellSyncState[]> {
+  try {
+    return await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
+  } catch (err) {
+    console.warn('weatherArchive: the registry size for the run report could not be read', err);
+    return [];
+  }
+}
+
+/** A tier's registry size from its last complete walk (`weatherCellSyncs.cellCount`), if known. */
+async function tierCellCount(ctx: ActionCtx, tier: WeatherTier): Promise<number | null> {
+  const states = await syncStatesForReport(ctx);
+  return states.find((s) => s.tier === tier)?.cellCount ?? null;
 }
 
 export const maybeRefreshFilterTier = internalAction({
@@ -1988,17 +2825,69 @@ const maybeSweepGapsArgs = {};
  */
 export async function maybeSweepGapsHandler(
   ctx: ActionCtx,
-): Promise<{ started: boolean; season: string; repaired?: Record<string, number> }> {
+  _args: Record<string, never> = {},
+  tick?: CronTickContext,
+): Promise<{
+  started: boolean;
+  season: string;
+  repaired?: Record<string, number>;
+  reason?: string;
+  cronReport: CronReport;
+}> {
   const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, {
     nowMs: Date.now(),
   });
-  if (!gate.open) return { started: false, season: gate.season };
-  const repaired: Record<string, number> = {};
-  for (const tier of WEATHER_TIERS) {
-    const res = await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, { tier });
-    repaired[tier] = res.repaired;
+  if (!gate.open) return { started: false, season: gate.season, cronReport: { worked: false } };
+  // The repair's run (D349): one run over both tiers' branches, each tier's walk and then its
+  // queued partial-day refetches.
+  const detail = 'Gap repair';
+  const runId = runOf(
+    await openChainRun(ctx, tick, {
+      job: 'repair weather archive gaps',
+      season: gate.season,
+      detail,
+    }),
+    tick,
+  );
+  if (runId === 'skip') {
+    return {
+      started: false,
+      season: gate.season,
+      reason: 'a run is still going',
+      cronReport: BUSY_REPORT,
+    };
   }
-  return { started: true, season: gate.season, repaired };
+  const states: CellSyncState[] = runId === null ? [] : await syncStatesForReport(ctx);
+  const repaired: Record<string, number> = {};
+  try {
+    for (const tier of WEATHER_TIERS) {
+      const size = states.find((s) => s.tier === tier)?.cellCount ?? null;
+      const word = tier === 'filter' ? 'Filter' : 'Browse';
+      await openChainBranch(ctx, runId, 1, [
+        stageLine(
+          size === null
+            ? `${word}: checking the registered cells`
+            : `${word}: checking ${fmt(size)} registered cells`,
+        ),
+      ]);
+      const res = await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, {
+        tier,
+        ...(runId !== null ? { cronRun: { runId, step: 1 } } : {}),
+      });
+      repaired[tier] = res.repaired;
+    }
+  } catch (err) {
+    if (runId === null) throw err;
+    throw await failHead(ctx, tick, runId, err, { season: gate.season });
+  }
+  const base = { started: true, season: gate.season, repaired };
+  if (runId === null) {
+    return { ...base, cronReport: { worked: true, season: gate.season, detail } };
+  }
+  return {
+    ...base,
+    cronReport: await closeHead(ctx, tick, runId, { season: gate.season, detail }),
+  };
 }
 
 export const maybeSweepGaps = internalAction({
@@ -2023,11 +2912,15 @@ function chainDayOf(row: {
   };
 }
 
-/** Rebuild one filter cell's digest from its rows. The action-side wrapper; see the mutation. */
+/**
+ * Rebuild one filter cell's digest from its rows. The action-side wrapper; see the mutation. A
+ * rebuild that throws is logged and swallowed, so it never ends a batch; the answer (`false`) is
+ * only for the run's `digestFailed` count (B01-8c).
+ */
 async function rebuildDigestFor(
   ctx: ActionCtx,
   cell: { cellKey: string; lat: number; lng: number },
-): Promise<void> {
+): Promise<boolean> {
   try {
     await ctx.runMutation(internal.weatherArchive.rebuildCellDigest, {
       cellKey: cell.cellKey,
@@ -2035,8 +2928,10 @@ async function rebuildDigestFor(
       lng: cell.lng,
       nowMs: Date.now(),
     });
+    return true;
   } catch (err) {
     console.warn(`weatherArchive: digest rebuild for ${cell.cellKey} failed`, err);
+    return false;
   }
 }
 
@@ -2711,10 +3606,12 @@ export const refreshBayDays = internalAction({
     pastDays: v.optional(v.number()),
     /** The cells earlier batches already fetched — carried so a shared cell is fetched once. */
     seenKeys: v.optional(v.array(v.string())),
+    /** The run this batch reports to (D349, B01-8c); absent for an operator's unrecorded call. */
+    cronRun: v.optional(cronRunArg),
   },
   handler: async (
     ctx,
-    { cursor, pastDays, seenKeys },
+    { cursor, pastDays, seenKeys, cronRun },
   ): Promise<{ done: boolean; cells: number }> => {
     const seen = seenKeys ?? [];
     const page = await ctx.runQuery(internal.weatherArchive.pageBayBrowseCells, {
@@ -2723,21 +3620,31 @@ export const refreshBayDays = internalAction({
       seenKeys: seen,
     });
     const days = pastDays ?? APPEND_PAST_DAYS;
+    const tally = new StepTally();
     for (const cell of page.cells) {
       // Per-cell isolation, as in `refreshTierDays`: one transport failure must not abandon the
       // batch, and the gap sweep comes back for whatever this missed.
       try {
-        await ingestCellDays(ctx, 'browse', cell, days, { hourlyDays: days });
+        tallyIngest(
+          tally,
+          cell.key,
+          await ingestCellDaysReported(ctx, 'browse', cell, days, { hourlyDays: days }),
+        );
       } catch (err) {
         console.warn(`weatherArchive: bay cell ${cell.key} failed`, err);
+        tallyIngestThrow(tally, cell.key, days, err);
       }
     }
-    if (!page.isDone) {
+    tally.add('cells', page.cells.length);
+    const next = !page.isDone;
+    const so = cronRun ? await endAppendStep(ctx, cronRun, tally, 'bay', next) : undefined;
+    if (next) {
       await ctx.scheduler.runAfter(0, internal.weatherArchive.refreshBayDays, {
         cursor: page.continueCursor,
         ...(pastDays === undefined ? {} : { pastDays }),
         // A failed cell counts as seen: the gap sweep is its retry, not the next page.
         seenKeys: [...seen, ...page.cells.map((cell) => cell.key)],
+        ...(cronRun && so ? { cronRun: nextCronRun(cronRun, so) } : {}),
       });
       return { done: false, cells: page.cells.length };
     }
@@ -2757,7 +3664,9 @@ const maybeRefreshBayTierArgs = {};
  */
 export async function maybeRefreshBayTierHandler(
   ctx: ActionCtx,
-): Promise<{ started: boolean; season: string; pastDays?: number; reason?: string }> {
+  _args: Record<string, never> = {},
+  tick?: CronTickContext,
+): Promise<AppendTickResult> {
   const now = Date.now();
   const gate = await ctx.runQuery(internal.weatherArchive.isSweepSeasonOpen, { nowMs: now });
   if (!gate.open) {
@@ -2765,6 +3674,7 @@ export async function maybeRefreshBayTierHandler(
       started: false,
       season: gate.season,
       reason: gate.closesOn === null ? 'season not open' : `season closed ${gate.closesOn}`,
+      cronReport: { worked: false },
     };
   }
   const cold = !(await ctx.runQuery(internal.weatherArchive.tierHasDay, {
@@ -2772,8 +3682,84 @@ export async function maybeRefreshBayTierHandler(
     dayMs: todayKey(now) - DAY_MS,
   }));
   const pastDays = cold ? SEASON_OPEN_PAST_DAYS : APPEND_PAST_DAYS;
-  await ctx.runAction(internal.weatherArchive.refreshBayDays, { pastDays });
-  return { started: true, season: gate.season, pastDays };
+  return await runAppendHead(ctx, tick, {
+    job: 'append daily bay weather archive',
+    season: gate.season,
+    pastDays,
+    registry: null,
+    noun: 'bay',
+    first: (cronRun) =>
+      ctx.runAction(internal.weatherArchive.refreshBayDays, {
+        pastDays,
+        ...(cronRun ? { cronRun } : {}),
+      }),
+  });
+}
+
+/** What an append's tick returns: the old fields, and its run's report (B01-8c). */
+type AppendTickResult = {
+  started: boolean;
+  season: string;
+  pastDays?: number;
+  reason?: string;
+  cronReport: CronReport;
+};
+
+/**
+ * **An append's head** (D349): opens the run, runs the first batch inline as before — carrying the
+ * run, so it and every batch it schedules add to it — and ends its own branch (the dispatcher's merge
+ * of the returned report, or its own last step when there is no tick). A run already going (`busy`)
+ * skips a manual press (a second chain would ask Open-Meteo for the same cells twice) and leaves a
+ * cron tick to do its work unrecorded (`runOf`); a run that couldn't be opened runs the batch
+ * unreported, exactly as before runs were recorded.
+ */
+async function runAppendHead(
+  ctx: ActionCtx,
+  tick: CronTickContext | undefined,
+  head: {
+    job: string;
+    season: string;
+    pastDays: number;
+    registry: number | null;
+    noun: 'cell' | 'bay';
+    first: (cronRun: CronRunArg | undefined) => Promise<unknown>;
+  },
+): Promise<AppendTickResult> {
+  const base = { started: true, season: head.season, pastDays: head.pastDays };
+  const detail = `${head.pastDays}-day append`;
+  // What is known at the start rides the open itself, once (never a batch's step too).
+  const counts: Record<string, number> = { pastDays: head.pastDays };
+  if (head.registry !== null) counts.registry = head.registry;
+  const runId = runOf(
+    await openChainRun(ctx, tick, { job: head.job, season: head.season, detail, counts }),
+    tick,
+  );
+  if (runId === 'skip') {
+    return {
+      started: false,
+      season: head.season,
+      reason: 'a run is still going',
+      cronReport: BUSY_REPORT,
+    };
+  }
+  if (runId === null) {
+    await head.first(undefined);
+    return { ...base, cronReport: { worked: true, season: head.season, detail } };
+  }
+  const startLine =
+    head.registry === null
+      ? `${detail} · ${head.noun === 'bay' ? 'every live bay' : 'every registered cell'}`
+      : `${detail} · ${fmt(head.registry)} ${head.noun}s registered`;
+  try {
+    await openChainBranch(ctx, runId, 1, [stageLine(startLine)]);
+    await head.first({ runId, step: 1 });
+  } catch (err) {
+    throw await failHead(ctx, tick, runId, err, { season: head.season });
+  }
+  return {
+    ...base,
+    cronReport: await closeHead(ctx, tick, runId, { season: head.season, detail }),
+  };
 }
 
 export const maybeRefreshBayTier = internalAction({

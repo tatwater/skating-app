@@ -16,6 +16,7 @@ import {
   ACCESS_REASONS as CORE_ACCESS_REASONS,
   APPROACH_KINDS as CORE_APPROACH_KINDS,
   BODY_FEATURE_TYPES as CORE_BODY_FEATURE_TYPES,
+  CRON_FAILURE_CAUSES as CORE_CRON_FAILURE_CAUSES,
   DORMANCY_REASONS as CORE_DORMANCY_REASONS,
   NOTIFICATION_PREF_DEFAULTS as CORE_NOTIFICATION_PREF_DEFAULTS,
   NOTIFICATION_PREF_KEYS as CORE_NOTIFICATION_PREF_KEYS,
@@ -827,6 +828,14 @@ export const CRON_RUN_OUTCOMES = ['ok', 'capped', 'refused', 'failed', 'killed']
 
 /** What started a cron run: its schedule, or a person's press (`cronRuns.byUserId`). */
 export const CRON_TRIGGERS = ['cron', 'manual'] as const;
+
+/**
+ * **Why a cron's piece of work failed** (`cronRuns.causes`, D345, D349, B01-8c): `timeout`,
+ * `rateLimit`, `serverError`, `refused`, `unreachable`, `badAnswer`, `emptyAnswer`, `writeFailed`,
+ * `other`. Single-sourced in core (`fetchFailure.ts`, with each cause's meaning and the one rule
+ * that sorts a failure into one).
+ */
+export const CRON_FAILURE_CAUSES = CORE_CRON_FAILURE_CAUSES;
 
 /**
  * **How one cut attempt ended** (`imageryAttempts.verdict`, D344, D348, B01-8b). `cutting`: its

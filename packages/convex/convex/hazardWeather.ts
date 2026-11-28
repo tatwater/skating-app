@@ -21,6 +21,7 @@
  */
 
 import {
+  type CronReport,
   decayMultiplier,
   HAZARD_WEATHER_LOOKBACK_DAYS,
   isSnowHidden,
@@ -40,7 +41,8 @@ import { errorClassOf } from './lib/readBudget';
 import { asItem } from './lib/recurringWork';
 import { bodyWeatherCell, hazardCenter } from './lib/sampling';
 import { takeCapped } from './lib/scan';
-import { resolveWeatherSince } from './weather';
+import { causedFetchFailure, StepTally } from './lib/weatherReport';
+import { type OpenMeteoFetchReport, resolveWeatherSince } from './weather';
 
 /** Active hazards the decay sweep considers per tick. Hundreds at peak by design (the cron scopes
  *  to hazard-carrying bodies, not the 116k-lake corpus), so this is a backstop, not a bound (A01).
@@ -208,7 +210,7 @@ const refreshHazardWeatherArgs = {};
  */
 export async function refreshHazardWeatherHandler(
   ctx: ActionCtx,
-): Promise<{ refreshed: number; failed: number }> {
+): Promise<{ refreshed: number; failed: number; cronReport: CronReport }> {
   const now = Date.now();
   const minIntervalMs = WEATHER_REFRESH_MIN_INTERVAL_HOURS * HOUR_MS;
   const lookbackMs = HAZARD_WEATHER_LOOKBACK_DAYS * DAY_MS;
@@ -232,8 +234,14 @@ export async function refreshHazardWeatherHandler(
   const failed: { key: string; errorClass: string }[] = [];
   const recovered: string[] = [];
   let refreshed = 0;
+  // The run's report (B01-8c): what was refreshed, skipped and failed, by cause, and what the fetches
+  // cost. Observation only — nothing below reads it.
+  const tally = new StepTally();
+  const fetches: OpenMeteoFetchReport = { calls: 0, weighted: 0, fetchMs: 0 };
+  let skipped = 0;
   for (const job of jobs) {
     if (job.weatherAdjustedAt !== undefined && now - job.weatherAdjustedAt < minIntervalMs) {
+      skipped++;
       continue; // refreshed recently enough — the effective cadence gate
     }
     // Isolate each hazard: an unexpected throw from the resolver/mutation (e.g. a transient OCC or cache
@@ -241,15 +249,26 @@ export async function refreshHazardWeatherHandler(
     // network/HTTP errors into `null`; this catches everything else so one bad job can't starve the rest.
     // Fail-open: a skipped hazard keeps its last-good multiplier (or none ⇒ 1); an empty fetch retries
     // next tick, a throw after the cadence gate (below).
+    const fetch: OpenMeteoFetchReport = { calls: 0, weighted: 0, fetchMs: 0 };
     try {
-      const stored = await asItem(job.hazardId, () => refreshOneHazard(ctx, job, now, lookbackMs));
+      const stored = await asItem(job.hazardId, () =>
+        refreshOneHazard(ctx, job, now, lookbackMs, fetch),
+      );
       if (stored) refreshed++;
       // A fetch that came back empty is a blip, not progress: a count stands until a refresh lands.
       if (stored && wasFailing.has(job.hazardId)) recovered.push(job.hazardId);
+      if (!stored && fetch.failure) {
+        tally.fail(causedFetchFailure(fetch.failure.failure, fetch.failure.text), job.hazardId);
+      }
     } catch (err) {
       // `asItem` has logged it; only its class is kept here.
-      failed.push({ key: job.hazardId, errorClass: errorClassOf(err) });
+      const errorClass = errorClassOf(err);
+      failed.push({ key: job.hazardId, errorClass });
+      tally.fail(causedFetchFailure({ error: err }, errorClass), job.hazardId);
     }
+    fetches.calls += fetch.calls;
+    fetches.weighted += fetch.weighted;
+    fetches.fetchMs += fetch.fetchMs;
   }
   // **A hazard whose refresh throws goes to the back** (D258). It used to stay at the front of the
   // stalest-first read, un-stamped, so enough of them would fill every tick's page. Now it is
@@ -272,7 +291,43 @@ export async function refreshHazardWeatherHandler(
   }
   // Hazards whose multiplier was stored this tick — not the ones the gate passed over, came back
   // empty or threw.
-  return { refreshed, failed: failed.length };
+  return {
+    refreshed,
+    failed: failed.length,
+    cronReport: hazardReport(tally, refreshed, skipped, fetches),
+  };
+}
+
+/**
+ * The tick's report (B01-8c): a run row when a hazard was refreshed or failed, else a quiet tick.
+ * `failed` counts every hazard not refreshed for a failure — a fetch that failed or came back empty,
+ * and a throw — each under its cause; `weighted` is ×10.
+ */
+function hazardReport(
+  tally: StepTally,
+  refreshed: number,
+  skipped: number,
+  fetches: OpenMeteoFetchReport,
+): CronReport {
+  const failedN = tally.failures();
+  tally.add('refreshed', refreshed);
+  tally.add('skipped', skipped);
+  tally.add('failed', failedN);
+  tally.add('calls', fetches.calls);
+  tally.add('weighted', fetches.weighted);
+  tally.add('fetchMs', fetches.fetchMs);
+  tally.causeLines('hazard');
+  const causes = tally.causes();
+  return {
+    worked: refreshed > 0 || failedN > 0,
+    detail:
+      failedN > 0
+        ? `${refreshed} hazards refreshed, ${failedN} failed`
+        : `${refreshed} hazards refreshed`,
+    counts: tally.counts,
+    ...(causes.length > 0 ? { causes } : {}),
+    ...(tally.lines.length > 0 ? { lines: tally.lines } : {}),
+  };
 }
 
 export const refreshHazardWeather = internalAction({
@@ -289,10 +344,11 @@ async function refreshOneHazard(
   job: HazardWeatherJob,
   now: number,
   lookbackMs: number,
+  report?: OpenMeteoFetchReport,
 ): Promise<boolean> {
   const windowStart = Math.max(job.lastConfirmedAt, now - lookbackMs);
 
-  const summary = await resolveWeatherSince(ctx, job.cell, windowStart, now);
+  const summary = await resolveWeatherSince(ctx, job.cell, windowStart, now, report);
   // A failed fetch (`null`) is NOT an empty summary: keep the last good multiplier and DON'T stamp
   // `weatherAdjustedAt`, so a transient Open-Meteo blip can't erase a real signal or block retry for
   // the cadence window — the next tick tries again (fail-open, matches the cache layer's no-cache-on-

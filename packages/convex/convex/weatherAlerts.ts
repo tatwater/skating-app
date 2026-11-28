@@ -14,6 +14,7 @@
 
 import {
   alertsForBody,
+  type CronReport,
   isSkatingRelevantAlert,
   KNOWN_STATE_CODES,
   type NwsAlert,
@@ -31,6 +32,15 @@ import {
 import { resolveSurvivor } from './lib/bodies';
 import { errorClassOf } from './lib/readBudget';
 import { asItem } from './lib/recurringWork';
+import {
+  CAUSE_WORDS,
+  type CausedFailure,
+  causedFetchFailure,
+  StepTally,
+  statusText,
+  thrownText,
+} from './lib/weatherReport';
+import { standInBaseUrl } from './weather';
 
 const NWS_ALERTS_URL = 'https://api.weather.gov/alerts/active';
 
@@ -111,9 +121,25 @@ export function alertFromFeature(feature: NwsFeature, state: string): NwsAlert |
   return alert;
 }
 
-/** Fetch and parse one state's active alerts. Returns `null` on failure so the state is skipped. */
-async function fetchStateAlerts(state: string): Promise<NwsAlert[] | null> {
-  const url = `${NWS_ALERTS_URL}?area=${encodeURIComponent(state)}`;
+/**
+ * The alerts endpoint the poll asks: NWS's, unless `NWS_BASE_URL` names a local stand-in for a proof
+ * on a throwaway backend (`weather.standInBaseUrl`: honored only on a local backend; the stand-in
+ * serves `/alerts/active` under its base).
+ */
+export function nwsAlertsUrl(env: Record<string, string | undefined> = process.env): string {
+  const base = standInBaseUrl('NWS_BASE_URL', env);
+  return base === null ? NWS_ALERTS_URL : `${base}/alerts/active`;
+}
+
+/** One state's poll: its alerts, or why it got none (B01-8c: the cause the run reports). */
+type StateAnswer = { alerts: NwsAlert[] } | { failed: CausedFailure };
+
+/**
+ * Fetch and parse one state's active alerts. A failure is the state skipped — it keeps the rows it
+ * had — and comes back with its cause, so the run can say why.
+ */
+async function fetchStateAlerts(state: string): Promise<StateAnswer> {
+  const url = `${nwsAlertsUrl()}?area=${encodeURIComponent(state)}`;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const res = await fetch(url, {
@@ -126,7 +152,9 @@ async function fetchStateAlerts(state: string): Promise<NwsAlert[] | null> {
       }
       if (!res.ok) {
         console.warn(`NWS alerts for ${state} failed: ${res.status}`);
-        return null;
+        return {
+          failed: causedFetchFailure({ status: res.status }, statusText('NWS', res.status)),
+        };
       }
       const json = (await res.json()) as { features?: NwsFeature[] };
       const out: NwsAlert[] = [];
@@ -135,13 +163,14 @@ async function fetchStateAlerts(state: string): Promise<NwsAlert[] | null> {
         // Filtered here rather than at render so the table stays small and the drawer stays dumb.
         if (alert && isSkatingRelevantAlert(alert)) out.push(alert);
       }
-      return out;
+      return { alerts: out };
     } catch (err) {
       console.warn(`NWS alerts for ${state} threw`, err);
-      return null;
+      return { failed: causedFetchFailure({ error: err }, thrownText(err)) };
     }
   }
-  return null;
+  // Both attempts were turned away.
+  return { failed: causedFetchFailure({ status: 429 }, statusText('NWS', 429)) };
 }
 
 /**
@@ -171,11 +200,19 @@ export const replaceStateAlerts = internalMutation({
     ),
     fetchedAt: v.number(),
   },
-  handler: async (ctx, { state, alerts, fetchedAt }) => {
+  handler: async (
+    ctx,
+    { state, alerts, fetchedAt },
+  ): Promise<{ written: number; started: string[]; ended: string[] }> => {
     const existing = await ctx.db
       .query('weatherAlerts')
       .withIndex('by_state', (q) => q.eq('state', state))
       .collect();
+    // What changed in this state (B01-8c), from the rows it already reads: the poll's report.
+    const had = new Set(existing.map((row) => row.alertId));
+    const now = new Set(alerts.map((alert) => alert.id));
+    const started = [...now].filter((id) => !had.has(id));
+    const ended = [...had].filter((id) => !now.has(id));
     for (const row of existing) await ctx.db.delete(row._id);
     for (const alert of alerts) {
       // **Field by field, not a spread.** `NwsAlert.id` is NWS's id and the column is `alertId`, so
@@ -197,7 +234,7 @@ export const replaceStateAlerts = internalMutation({
         fetchedAt,
       });
     }
-    return alerts.length;
+    return { written: alerts.length, started, ended };
   },
 });
 
@@ -225,13 +262,26 @@ const refreshAlertsArgs = {};
  */
 export async function refreshAlertsHandler(
   ctx: ActionCtx,
-): Promise<{ statesRefreshed: number; statesFailed: number }> {
+): Promise<{ statesRefreshed: number; statesFailed: number; cronReport: CronReport }> {
   let refreshed = 0;
   const failed: { key: string; errorClass: string }[] = [];
   const written: string[] = [];
+  // The run's report (B01-8c): observation only — nothing below reads it.
+  const tally = new StepTally();
+  const active = new Set<string>();
+  const started = new Set<string>();
+  const ended = new Set<string>();
   for (const state of KNOWN_STATE_CODES) {
-    const alerts = await fetchStateAlerts(state);
-    if (alerts === null) continue; // see `replaceStateAlerts` — a blip must not clear a state
+    const answer = await fetchStateAlerts(state);
+    if ('failed' in answer) {
+      tally.fail(answer.failed, state);
+      tally.line(
+        'warn',
+        `${state} wasn't refreshed (${CAUSE_WORDS[answer.failed.cause]}): its alerts are kept`,
+      );
+      continue; // see `replaceStateAlerts` — a blip must not clear a state
+    }
+    const { alerts } = answer;
     // **One state whose write throws no longer skips the states after it** (D258): it keeps the
     // alerts it had, exactly as a state that did not answer does, and the rest are written. Each
     // failure is counted (never parked: a state is polled every tick).
@@ -241,21 +291,32 @@ export async function refreshAlertsHandler(
       // NWS to re-issue an alert in between. One shared timestamp would mark two genuinely
       // different versions as equally fresh, and the dedupe would then pick between them by
       // insertion order.
-      await asItem(state, () =>
-        ctx.runMutation(internal.weatherAlerts.replaceStateAlerts, {
-          state,
-          alerts,
-          fetchedAt: Date.now(),
-        }),
+      const change: { written: number; started: string[]; ended: string[] } = await asItem(
+        state,
+        () =>
+          ctx.runMutation(internal.weatherAlerts.replaceStateAlerts, {
+            state,
+            alerts,
+            fetchedAt: Date.now(),
+          }),
       );
       written.push(state);
       refreshed++;
+      for (const alert of alerts) active.add(alert.id);
+      for (const id of change.started) started.add(id);
+      for (const id of change.ended) ended.add(id);
     } catch (err) {
       // `asItem` has logged it; only its class is kept here.
-      failed.push({ key: state, errorClass: errorClassOf(err) });
+      const errorClass = errorClassOf(err);
+      failed.push({ key: state, errorClass });
+      tally.fail({ cause: 'writeFailed', text: errorClass }, state);
+      tally.line(
+        'warn',
+        `${state}'s alerts couldn't be written (${errorClass}): its alerts are kept`,
+      );
     }
   }
-  await ctx.runMutation(internal.weatherAlerts.sweepStaleAlerts, {});
+  const swept: number = await ctx.runMutation(internal.weatherAlerts.sweepStaleAlerts, {});
   const { keys }: { keys: string[] } = await ctx.runQuery(internal.recurringJobs.failingKeys, {
     job: 'nwsAlerts',
   });
@@ -268,7 +329,28 @@ export async function refreshAlertsHandler(
       park: false,
     });
   }
-  return { statesRefreshed: refreshed, statesFailed: failed.length };
+  // `statesFailed` keeps its meaning (a write that threw); the report counts every state that
+  // wasn't refreshed, whatever stopped it.
+  const statesFailed = tally.failures();
+  tally.add('states', refreshed);
+  tally.add('statesFailed', statesFailed);
+  tally.add('active', active.size);
+  tally.add('started', started.size);
+  tally.add('ended', ended.size);
+  tally.add('swept', swept);
+  const causes = tally.causes();
+  const cronReport: CronReport = {
+    // A run row only on a change or a failure: 96 ticks a day stay ticks.
+    worked: statesFailed > 0 || started.size > 0 || ended.size > 0 || swept > 0,
+    detail:
+      statesFailed > 0
+        ? `${refreshed} of ${KNOWN_STATE_CODES.length} states refreshed`
+        : `${KNOWN_STATE_CODES.length} states refreshed`,
+    counts: tally.counts,
+    ...(causes.length > 0 ? { causes } : {}),
+    ...(tally.lines.length > 0 ? { lines: tally.lines } : {}),
+  };
+  return { statesRefreshed: refreshed, statesFailed: failed.length, cronReport };
 }
 
 export const refreshAlerts = internalAction({

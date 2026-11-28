@@ -179,7 +179,7 @@ describe('hazardWeather.refreshHazardWeather', () => {
     });
     try {
       // Only the good one is stored; the one that threw is counted as failed, not refreshed.
-      expect(await t.action(internal.hazardWeather.refreshHazardWeather, {})).toEqual({
+      expect(await t.action(internal.hazardWeather.refreshHazardWeather, {})).toMatchObject({
         refreshed: 1,
         failed: 1,
       });
@@ -200,6 +200,96 @@ describe('hazardWeather.refreshHazardWeather', () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+
+  test("the tick's report (B01-8c): refreshed, skipped, failed by cause, and what the fetches cost", async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    await seedHazard(t, waterBodyId, authorId, { weatherAdjustedAt: Date.now() - HOUR_MS });
+    const failing = await seedHazard(t, waterBodyId, authorId);
+    await seedHazard(t, waterBodyId, authorId);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('down', { status: 503 })),
+    );
+    const down = await t.action(internal.hazardWeather.refreshHazardWeather, {});
+    // Neither due hazard could be refreshed: each fetched (a failure caches nothing) and failed.
+    expect(down.cronReport).toMatchObject({
+      worked: true,
+      detail: '0 hazards refreshed, 2 failed',
+      counts: { refreshed: 0, skipped: 1, failed: 2, calls: 2, weighted: 24 },
+    });
+    expect(down.cronReport.causes).toEqual([
+      expect.objectContaining({
+        count: 2,
+        sampleKey: failing,
+        sampleText: 'Open-Meteo answered HTTP 503',
+      }),
+    ]);
+    // The job's own `failed` keeps its meaning: hazards whose refresh threw.
+    expect(down.failed).toBe(0);
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        async () => new Response(JSON.stringify(coldSnowyResponse(Date.now())), { status: 200 }),
+      ),
+    );
+    const up = await t.action(internal.hazardWeather.refreshHazardWeather, {});
+    // One fetch serves both (the shared cache), and nothing failed.
+    expect(up.cronReport).toMatchObject({
+      worked: true,
+      detail: '2 hazards refreshed',
+      counts: { refreshed: 2, failed: 0, calls: 1, weighted: 12 },
+    });
+    expect(up.cronReport.causes).toBeUndefined();
+  });
+
+  test('a fetch that throws, or answers with no hour, is a failure with its cause (B01-8c)', async () => {
+    const t = convexTestWithGeo();
+    const waterBodyId = await seedBody(t);
+    const authorId = await seedProfile(t);
+    await seedHazard(t, waterBodyId, authorId);
+    vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const answers = [
+      () => {
+        throw new TypeError('fetch failed');
+      },
+      () => new Response(JSON.stringify({ hourly: {} }), { status: 200 }),
+      () =>
+        new Response(
+          JSON.stringify({
+            hourly: { time: [Math.floor(Date.now() / 1000) - 3600], temperature_2m: [null] },
+          }),
+          { status: 200 },
+        ),
+      // Only forward hours: nothing past to summarize.
+      () =>
+        new Response(
+          JSON.stringify({
+            hourly: { time: [Math.floor(Date.now() / 1000) + 7200], temperature_2m: [-3] },
+          }),
+          { status: 200 },
+        ),
+    ];
+    const texts: string[] = [];
+    for (const answer of answers) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => answer()),
+      );
+      const res = await t.action(internal.hazardWeather.refreshHazardWeather, {});
+      expect(res.cronReport.counts).toMatchObject({ refreshed: 0, failed: 1, calls: 1 });
+      texts.push(res.cronReport.causes?.[0]?.sampleText ?? '');
+    }
+    expect(texts).toEqual([
+      'fetch failed',
+      'Open-Meteo answered with no hours',
+      'Open-Meteo answered with no usable hour',
+      'Open-Meteo answered with no past hour',
+    ]);
   });
 
   test('stores a weather multiplier + snow-hidden flag for an active hazard', async () => {
