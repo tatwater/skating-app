@@ -92,7 +92,9 @@ minutes inside a zoom, stops itself after twenty minutes without progress (its e
 so), and the laptop calls one stuck only after thirty minutes of reading an unmoving progress object
 while Fly lists its Machine. A re-run of `assemble` takes a finished assembly from its record — when
 the record's inputs are the build manifest's — and attaches to a running one — never a second
-assembler.
+assembler. While the campaign's assembler is up, `spawn.sh tiles` re-cuts nothing (a re-cut would
+overwrite the shards it is reading); and a select whose thumbnail reads failed refuses rather than
+decide on them, so running the same command again decides the same build.
 
 **A campaign is published once.** Once its manifest is published, what its archive was built from is
 fixed (core's `naipBuildInputsHash`): re-running a stage with the same inputs finds it done (tiles has

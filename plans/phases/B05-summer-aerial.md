@@ -240,7 +240,12 @@ season step**, so a struck frame falls back to the next leaf-on one:
 
 - **Scoring.** The select stage scores each pick and each fallback that would show (§2.2) from its
   200-px catalog thumbnail (neutral-white pixels as a share of valid ones), as the scouts did: of the
-  9,168 picks, 9,070 score under 2%, 44 between 2% and 3%, 54 over 3%.
+  9,168 picks, 9,070 score under 2%, 44 between 2% and 3%, 54 over 3%. A pick with no score is cut
+  as partial (its fallbacks warped too, §2.2), so the score decides pixels: **a thumbnail whose read
+  failed this time** (a network error, a 5xx, a 429, a 403 — never cached, so a re-run reads it
+  again) refuses anything but a dry run, which reports it and goes on (*added at the independent
+  review of the PR's last rounds, 2026-11-27*). No thumbnail listed, a blob that is gone (404, 410)
+  and an image GDAL can't decode stay unscored for good. The region's dry run had none unscored.
 - **Review, not a threshold** (the founder's ruling, F-8 a). Anything over ~3% is a **candidate**,
   written to a contact sheet. **The builder pre-screens**: most are false positives (cities, dunes,
   beaches), set aside and listed. **The founder confirms only the frames that would change a pick** —
@@ -2392,3 +2397,89 @@ Open, for the founder:
   not built (two tiny uploads a second apart).
 - **Two pilots on one day share Machine names** (`spawn.sh`'s stamp drops the pilot's name), so a
   re-run could attach to, or wait for, the other pilot's Machines. Pilots are run one at a time.
+
+**The independent review of the last two rounds (2026-11-27)**, `b4dbfa253..053f9eea9`, read code
+first and tried against the real tools where they are installed. Two defects, each fixed with a test
+that failed first; nothing drawn changed, tiling stays 2.
+
+- **The select stage decided a build on a thumbnail read that failed this time.** A failed read (a
+  network error, a 5xx, a 429, an expired token's 403) was an unscored frame, never cached, and an
+  unscored pick is cut as partial — so `partial`, its work tiles' input hashes and the build's
+  identity all hung on that one read, and the next run, reading it again, could decide another
+  build. Running the same command again is the README's resume, so: a resume during the assembly
+  re-cut those work tiles (the tiles stage saw "outstanding" against the new hashes) and overwrote
+  the packs the assembler was range-reading, into keys never overwritten; a resume after
+  publication was refused as "other inputs" and sent the operator to a needless new campaign. (A
+  laptop asleep during scoring makes it likely, not rare.) Reproduced in `selectStage.test.ts`: a
+  pick unread, then read — before the fix the published campaign's re-run was refused, `cells: 1
+  changed; work tiles: 2 changed`. Now `scoreFrames` names the reads a re-run may answer
+  (`unreadable`), and anything but a dry run refuses while a **pick** is among them (its re-run reads
+  only those, the rest cached); a fallback's failed read only thins the cloud sheet and is logged.
+  No thumbnail, a 404 or 410, and a kept image GDAL can't decode stay unscored for good. The region's
+  dry run (`naip-20261127`) had no unscored pick, so this refuses nothing on today's catalog.
+- **The tiles stage re-cut work tiles under a live assembler.** Nothing stopped `spawn.sh tiles`
+  while the campaign's assembler streamed (a resume like the one above, or a pick changed by hand
+  before publication, the sixth review's case): a re-cut drops the done record and overwrites the
+  pack and index at the keys the assembler reads, so it would stream the new pack's bytes at the old
+  offsets into the archive — at best a short read that fails it, at worst wrong bytes published.
+  `spawn.sh tiles` now spawns nothing while `aerial-asm-<stamp>` is up and something is left to cut,
+  from the same one listing (`tilesScripts.test.ts`; another campaign's assembler doesn't count).
+
+Checked and sound, each against the code (and the real tool where named):
+
+- **The happy path from nothing, and every resume.** Real R2 (read-only, the pilot's prefix):
+  `rclone cat` of a missing key exits **0 with nothing**, not 3 or 4, and `readObject` reads that as
+  absent; a missing config exits 1 (`didn't find section`) and network or credential failures exit
+  1, read as "can't tell"; `rclone copy` of a prefix that doesn't exist yet exits 0, so a first
+  reconcile reads nothing landed; `rclone deletefile` of a missing done record exits 4, as the worker
+  expects; `fly machine list --json` of an empty app prints `[]`, as the stand-in does. Select,
+  tiles, assemble, verify and cleanup were traced from nothing and resumed at each boundary; the
+  strike change before any build (same campaign, changed work tiles re-cut) and after one
+  (`--from-current`, a new id) do what §2.4 says. **Verify against the real pilot** (`--dry-run`, its
+  report put back after): one problem, "the assembly record names no inputs", every other check
+  passed — the version-1 record and manifest are refused loudly, never misread. `--from-current` on
+  the pilot's manifest is refused by format and kind; cleanup reads no record or manifest.
+- **The identity.** Canonical JSON in fixed sections, keyed tables sorted, `perState` sorted, numbers
+  as ECMAScript prints them (the same on any Node), `undefined` and missing alike; the assembler's
+  additions are outside it and a JSON round trip changes nothing. Pixel-relevant inputs are in it or
+  fingerprinted (rule, tiling, zooms, tile size, picks, stacks, `partial`, frames cut, the strike and
+  exclusion hashes, the catalog read; GDAL lines, `TILE_SETTINGS`, the unit's geometry); the overview
+  zooms are rebuilt by every assembly. Volatile: only the thumbnail scores, fixed above. Not in it,
+  by design: the image digest (a rebuilt image under the same tiling version mixes encoders — the
+  base and GDAL are pinned).
+- **Timers.** The beat (5 min) < the Machine's stall (20 min) < the laptop's quiet (30 min); the quiet
+  clock pauses only while reads fail or the laptop slept, and is bounded then by `spawn.sh`'s 12-h
+  wait (exit 3, handled by its one caller) and, once the Machine has gone, ten late reads. GNU
+  `timeout` is in the Ubuntu base (coreutils is essential there) and the deadline test runs the real
+  one; a killed worker leaves no done record (it is dropped first, uploaded last, one PUT), and a
+  killed work tile is re-cut at most three rounds.
+- **Retries and best-effort writes.** Only reads are retried, a stream only before its first byte;
+  404 and other 4xx fail at once. An abandoned progress write can land late and move the row's
+  counts back — cosmetic: the follower acts only on the record and on Fly's list. Every abandoned
+  promise is handled (`withDeadline`, `rcatSink`'s `exited`/`died`).
+- **Shell.** `spawn.sh` refuses bash 3; `cut-aerial.sh` needs 5 and runs only in the image;
+  `run-aerial.sh` runs on macOS's 3.2 (checked by hand: its argument and empty-array forms pass under
+  `set -u`), except that 3.2 can't `wait` for the logger, so the log's last lines land a moment after
+  the exit — cosmetic. `proofs/warp-proof.sh` uses `mapfile` (bash 4), a proof, not the pipeline.
+  No `local x=$(…)`, `((x++))`, `sed -i`, `stat`, `date -d` or `sort -V` in a shipped script.
+  `shellcheck` is still not installed.
+- **The real-tool tests**, run here: `cutAerialServed` (3) and `aerialCounts` (4) pass on GDAL 3.13.2
+  and Homebrew's Python 3.14; P's stream proof re-run through the changed assembler: 1.78 GB in 15
+  parts, 121,122 tiles, byte-equal, `pmtiles verify` clean, 96 MB/s.
+
+Open, for the founder (the three left at the sixth review, read again):
+
+- **A campaign id reused after cleanup** can't happen in the planned sequence (each build is dated
+  the day it runs), and would mix bytes only for a client that cached the old archive at that URL.
+  The guard needs no marker: cleanup never deletes the newest archive, so the select stage could
+  refuse a production campaign dated no later than the newest archive under `dev/naip/` unless it is
+  that campaign. Not built.
+- **An assembly dying between its manifest and its record** is a second's window; every re-run then
+  spawns a Machine that refuses "already assembled from these inputs" (misleading: there is no
+  record). Recovery as for an orphaned archive: delete the three published keys by hand (nothing has
+  served them — but run verify first and it fetches the manifest through the public URL) and assemble
+  again. Smallest guard: the laptop, finding no record but a published manifest, refuses before it
+  spawns and says exactly that. Not built.
+- **Two pilots on one day** share Machine names; with the guard above, a pilot's assembler now also
+  stops the other pilot's tiles stage from spawning (conservative). Pilots are run one at a time;
+  not in the plan. Not built.
