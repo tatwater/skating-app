@@ -7,7 +7,8 @@
 #   spawn.sh tiles <campaign> <units dir> <work tiles file|-> [--drain]
 #       one Machine per listed work tile (`11/<x>/<y>` a line), its unit (`11_<x>_<y>.json`) handed
 #       in as a file — except a work tile whose Machine is still running (an earlier round's, or an
-#       earlier run's that the laptop lost), which is waited for, never doubled; at most
+#       earlier run's that the laptop lost), which is waited for, never doubled — and nothing at all
+#       while the campaign's assembler is up (it is reading the shards a re-cut replaces); at most
 #       MAX_PARALLEL Machines alive on the app; each worker killed past AERIAL_TILE_DEADLINE;
 #       `--drain` returns only once every aerial Machine has gone
 #   spawn.sh assemble <campaign> [--pilot <name>]
@@ -235,13 +236,17 @@ done
 # a later round re-cuts it). That is a round after a drain that gave up, a re-run after the laptop
 # lost a round (asleep, offline, a failed reconcile), or a spawn whose `fly machine run` timed out
 # after creating its Machine — two Machines on one work tile would race on its keys.
-if ! running="$(live_names "aerial-${STAMP}-")"; then
+if ! running="$(live_names "aerial-")"; then
   echo "[spawn] can't list the app's Machines, so which work tiles are still running can't be told — spawning none" >&2
   exit 1
 fi
 declare -A RUNNING=()
+ASSEMBLING=false
 # An `if`, not `[[ … ]] && …`: an empty last line would make the loop's status 1, and `set -e` exit.
-while IFS= read -r n; do if [[ -n "$n" ]]; then RUNNING["$n"]=1; fi; done <<<"$running"
+while IFS= read -r n; do
+  if [[ "$n" == "aerial-${STAMP}-"* ]]; then RUNNING["$n"]=1
+  elif [[ "$n" == "aerial-asm-${STAMP}" ]]; then ASSEMBLING=true; fi
+done <<<"$running"
 TODO=()
 for tile in "${TILES[@]}"; do
   IFS=/ read -r _ x y <<<"$tile"
@@ -251,6 +256,16 @@ for tile in "${TILES[@]}"; do
     TODO+=("$tile")
   fi
 done
+
+# **Never re-cut under a live assembler.** It range-reads each landed work tile's pack zoom by zoom
+# for an hour and more, and a re-cut drops the done record and overwrites the pack and index at the
+# same keys: the assembler would stream the new pack's bytes at the old offsets into an archive whose
+# keys are never overwritten. A re-run of the stage while the campaign assembles (a changed pick, a
+# resume from a laptop that lost the stage) waits for the assembly instead.
+if [[ "$ASSEMBLING" == true ]] && (( ${#TODO[@]} > 0 )); then
+  echo "[spawn] aerial-asm-${STAMP} is assembling $CAMPAIGN from these work tiles' shards: re-cutting ${#TODO[@]} now would change what it reads — spawning none; let the assembly finish (or stop it) first" >&2
+  exit 1
+fi
 
 echo "[spawn] ${#TODO[@]} of ${#TILES[@]} work tiles -> app=$APP region=$REGION vm=$VM_SIZE/${VM_MEMORY}MB, at most $MAX_PARALLEL alive"
 BATCH=$(( MAX_PARALLEL / 4 ))

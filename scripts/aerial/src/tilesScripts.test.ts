@@ -704,6 +704,43 @@ describe('spawn.sh tiles', () => {
     expect(run.runs[0]).toContain('--name aerial-20261212-607-736');
   });
 
+  test('never re-cuts while the campaign’s assembler is up: it is reading those shards', () => {
+    // A re-run of the tiles stage during the assembly (a changed pick, a resume): a re-cut drops the
+    // done record and overwrites the pack the assembler range-reads at the same keys.
+    const live = (name: string) =>
+      JSON.stringify([
+        { name, state: 'started' },
+        { name: 'aerial-20261212-606-736', state: 'started' },
+      ]);
+    const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      lists: [live('aerial-asm-20261212')],
+    });
+    expect(run.status).toBe(1);
+    expect(run.stderr).toMatch(/aerial-asm-20261212 is assembling naip-20261212 .* spawning none/);
+    expect(run.runs).toEqual([]);
+    // Another campaign's assembler (or a pilot's of the same day) is not this one's.
+    for (const other of ['aerial-asm-20261213', 'aerial-asm-p20261212']) {
+      const ok = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+        lists: [live(other)],
+      });
+      expect(ok.status).toBe(0);
+      expect(ok.runs).toHaveLength(1);
+      expect(ok.runs[0]).toContain('--name aerial-20261212-607-736');
+    }
+    // Nothing left to spawn (every listed work tile still running) changes no shard: no refusal.
+    const waiting = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
+      lists: [
+        JSON.stringify([
+          { name: 'aerial-asm-20261212', state: 'started' },
+          { name: 'aerial-20261212-606-736', state: 'started' },
+          { name: 'aerial-20261212-607-736', state: 'started' },
+        ]),
+      ],
+    });
+    expect(waiting.status).toBe(0);
+    expect(waiting.runs).toEqual([]);
+  });
+
   test('can’t tell is never none: a listing that keeps failing spawns nothing', () => {
     const run = spawnSh(['tiles', 'naip-20261212', '$DIR/units', '$DIR/tiles.txt'], {
       env: { FLY_LIST_FAIL: '1', LIST_TRIES: '3' },
