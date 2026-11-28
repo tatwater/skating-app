@@ -9,7 +9,8 @@
  *    (`selectUploads`) — the assembler and verify read them from the bucket;
  * 4. opens the `aerial_tiles` row (scope per §2.6) and runs the rounds (`runTileRounds`): what has
  *    landed is read from the done records in the bucket, the rest spawned by `spawn.sh tiles …
- *    --drain`, three rounds; a heartbeat every 25 work tiles landed;
+ *    --drain`, three rounds; a heartbeat every 25 work tiles landed, read from the done records
+ *    every ten minutes while a round's Machines run (`ROUND_BEAT_MS`), not only once it drains;
  * 5. closes the row: succeeded only when every work tile landed; otherwise failed, naming them.
  *
  * Reads the bucket through the laptop's rclone remote (`R2_REMOTE`, default `r2`; `R2_BUCKET`), and
@@ -17,7 +18,7 @@
  * here prints a value.
  */
 
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import process from 'node:process';
@@ -135,10 +136,24 @@ async function main(): Promise<void> {
         const list = join(paths.dir, `round-${round}.txt`);
         writeFileSync(list, `${workTiles.join('\n')}\n`);
         process.stdout.write(`round ${round}: spawning ${workTiles.length} work tiles\n`);
-        const res = spawnSync('bash', [SPAWN, 'tiles', args.campaign, unitsDir, list, '--drain'], {
-          stdio: 'inherit',
+        // Not `spawnSync`: the round's beats (`onProgress`) run on this process's timers meanwhile.
+        const status = await new Promise<number | null>((done, fail) => {
+          const child = spawn('bash', [SPAWN, 'tiles', args.campaign, unitsDir, list, '--drain'], {
+            stdio: 'inherit',
+          });
+          child.on('error', fail);
+          child.on('close', done);
         });
-        if (res.status !== 0) throw new Error(`spawn.sh exited ${res.status}`);
+        if (status !== 0) throw new Error(`spawn.sh exited ${status}`);
+      },
+      onProgress(round, landed, outstanding) {
+        process.stdout.write(
+          `during round ${round}: ${landed} landed, ${outstanding} outstanding\n`,
+        );
+        logger.count('landed', landed);
+        logger.count('outstanding', outstanding);
+        if (heartbeatDue(landedBefore, landed, HEARTBEAT_EVERY)) logger.flush();
+        landedBefore = landed;
       },
       onReconcile(round, landed, outstanding) {
         process.stdout.write(

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import type { NaipManifest, NaipManifestCell } from '@skating/core';
 import * as core from '@skating/core';
 import fc from 'fast-check';
-import { describe, expect, test } from 'vitest';
+import { describe, expect, test, vi } from 'vitest';
 import type { ShardDone } from './shard';
 import {
   type AerialWorkUnit,
@@ -16,6 +16,7 @@ import {
   MERCATOR_ORIGIN,
   type MercatorBounds,
   pixelExtent,
+  ROUND_BEAT_MS,
   reconcileShards,
   runTileRounds,
   selectUploads,
@@ -506,6 +507,62 @@ describe('runTileRounds', () => {
       },
     });
     expect(again).toEqual({ landed: units.map((u) => u.workTile), failed: [], rounds: 0 });
+  });
+
+  test('a long round beats with what has landed so far, and a failed read skips a beat, never the round', async () => {
+    vi.useFakeTimers();
+    try {
+      const dones = new Map<string, ShardDone>();
+      const land = (t: string) =>
+        dones.set(t, done(t, units.find((u) => u.workTile === t)?.inputHash as string));
+      let reads = 0;
+      const beats: [number, number, number][] = [];
+      const run = runTileRounds(CAMPAIGN, units, {
+        readDone: async (keys) => {
+          reads++;
+          // The second mid-round read is a network blip.
+          if (reads === 3) throw new Error('rclone copy exited 1');
+          return new Map(keys.map((k) => [k, dones.get(k) ?? null] as const));
+        },
+        // A round of 35 minutes: one work tile lands at 5, one at 25, the last at 35.
+        spawn: () =>
+          new Promise<void>((resolve) => {
+            setTimeout(() => land('11/1/1'), 5 * 60_000);
+            setTimeout(() => land('11/2/2'), 25 * 60_000);
+            setTimeout(() => {
+              land('11/3/3');
+              resolve();
+            }, 35 * 60_000);
+          }),
+        onProgress: (round, landed, outstanding) => beats.push([round, landed, outstanding]),
+      });
+      await vi.advanceTimersByTimeAsync(40 * 60_000);
+      const out = await run;
+      expect(out).toEqual({ landed: units.map((u) => u.workTile), failed: [], rounds: 1 });
+      // At 10 and 30 minutes (20's read failed); none once the round has drained.
+      expect(beats).toEqual([
+        [1, 1, 2],
+        [1, 2, 1],
+      ]);
+      expect(ROUND_BEAT_MS).toBe(10 * 60_000);
+      // No timer is left behind to hold the process open.
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test('a round that fails still fails, beats or no beats', async () => {
+    await expect(
+      runTileRounds(CAMPAIGN, units, {
+        readDone: async (keys) => new Map(keys.map((k) => [k, null] as const)),
+        spawn: async () => {
+          throw new Error('spawn.sh exited 1');
+        },
+        onProgress: () => {},
+        beatMs: 1,
+      }),
+    ).rejects.toThrow('spawn.sh exited 1');
   });
 });
 

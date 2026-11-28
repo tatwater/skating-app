@@ -505,7 +505,18 @@ export interface RoundsIo {
   spawn: (workTiles: readonly string[], round: number) => Promise<void>;
   /** After each reconcile: what has landed and what is still out. */
   onReconcile?: (round: number, landed: number, outstanding: number) => void;
+  /**
+   * While a round's Machines run, every {@link ROUND_BEAT_MS}: what has landed so far — the row's
+   * heartbeat (§2.6). Without it a round is silent until it drains: nine minutes in the pilot, about
+   * five hours for the region's 1,764 work tiles. A failed read here skips that beat, never the round.
+   */
+  onProgress?: (round: number, landed: number, outstanding: number) => void;
+  /** How often `onProgress` is asked for (default {@link ROUND_BEAT_MS}). */
+  beatMs?: number;
 }
+
+/** A mid-round reconcile's interval: ten minutes, against a round of ~5 h (and a work tile of ~4 min). */
+export const ROUND_BEAT_MS = 10 * 60_000;
 
 export interface RoundsResult {
   landed: string[];
@@ -528,9 +539,9 @@ export async function runTileRounds(
 ): Promise<RoundsResult> {
   const hashes = new Map(units.map((u) => [u.workTile, u.inputHash]));
   const keys = [...hashes.keys()];
-  const reconcile = async (round: number) => {
+  const status = async () => {
     const dones = await io.readDone(keys);
-    const result = reconcileShards(
+    return reconcileShards(
       campaign,
       keys.map((workTile) => ({
         workTile,
@@ -538,14 +549,47 @@ export async function runTileRounds(
         done: dones.get(workTile) ?? null,
       })),
     );
+  };
+  const reconcile = async (round: number) => {
+    const result = await status();
     io.onReconcile?.(round, result.landed.length, result.outstanding.length);
     return result;
+  };
+  // The round's work, with a reconcile every `beatMs` until it settles (and its rejection kept).
+  const beating = async (round: number, work: Promise<void>): Promise<void> => {
+    const onProgress = io.onProgress;
+    if (onProgress === undefined) return work;
+    let settled = false;
+    const ended = work.then(
+      () => {
+        settled = true;
+      },
+      () => {
+        settled = true;
+      },
+    );
+    while (!settled) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const tick = new Promise<void>((r) => {
+        timer = setTimeout(r, io.beatMs ?? ROUND_BEAT_MS);
+      });
+      await Promise.race([ended, tick]);
+      clearTimeout(timer);
+      if (settled) break;
+      try {
+        const now = await status();
+        onProgress(round, now.landed.length, now.outstanding.length);
+      } catch {
+        // Bookkeeping: the round's own reconcile, after it drains, is the one that decides.
+      }
+    }
+    return work;
   };
   let state = await reconcile(0);
   let rounds = 0;
   while (state.outstanding.length > 0 && rounds < maxRounds) {
     rounds++;
-    await io.spawn(state.outstanding, rounds);
+    await beating(rounds, io.spawn(state.outstanding, rounds));
     state = await reconcile(rounds);
   }
   return { landed: state.landed, failed: state.outstanding, rounds };
