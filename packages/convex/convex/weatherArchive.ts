@@ -100,18 +100,20 @@ import { bodyWeatherCell, subAreaWeatherCell } from './lib/sampling';
 import { literals } from './lib/validators';
 import {
   addCounts,
+  BUSY_REPORT,
   type CausedFailure,
   type CronRunArg,
   causedFetchFailure,
   closeHead,
   cronRunArg,
+  endBatch,
   failHead,
   fmt,
   nextCronRun,
-  openArgsOf,
+  openChainBranch,
   openChainRun,
-  reportStep,
-  StepTally,
+  runOf,
+  type StepTally,
   sampleTextOf,
   statusText,
   stepTallyFor,
@@ -675,11 +677,7 @@ export const backfillWeatherCells = internalAction({
       tally.add('scanned', scannedHere);
       const so = addCounts(cronRun?.so, { scanned: scannedHere });
       if (cronRun) {
-        await reportStep(ctx, cronRun.runId, {
-          ...(next ? { opened: 1 } : {}),
-          ...(cronRun.head ? {} : { closed: 1 }),
-          tally,
-        });
+        await endBatch(ctx, cronRun, tally, next ? 1 : 0);
       }
       return so;
     };
@@ -1128,29 +1126,23 @@ export async function maybeSyncWeatherCellsHandler(
       : tick.trigger === 'cron'
         ? 'Weekly walk'
         : 'Walk started by hand';
-  const opened = await openChainRun(
-    ctx,
-    openArgsOf('reconcile weather cell registry', tick, { detail }),
+  const run = runOf(
+    await openChainRun(ctx, tick, { job: 'reconcile weather cell registry', detail }),
+    tick,
   );
-  if (opened !== null && 'busy' in opened) {
-    return {
-      skipped: 'a run is still going',
-      tiers: [],
-      cronReport: { worked: false, detail: 'A run of this job is still going' },
-    };
-  }
-  const runId = opened?.runId;
+  if (run === 'skip')
+    return { skipped: 'a run is still going', tiers: [], cronReport: BUSY_REPORT };
   const tiers: { tier: string; pruned: number }[] = [];
   try {
     for (const tier of WEATHER_TIERS) {
+      await openChainBranch(ctx, run);
       const res = await ctx.runAction(internal.weatherArchive.backfillWeatherCells, {
         tier,
-        ...(runId !== undefined
+        ...(run !== null
           ? {
               cronRun: {
-                runId,
+                runId: run,
                 step: 1,
-                head: true,
                 startLine: `${tier === 'filter' ? 'Filter' : 'Browse'}: walking the corpus`,
               },
             }
@@ -1159,11 +1151,11 @@ export async function maybeSyncWeatherCellsHandler(
       tiers.push({ tier, pruned: res.pruned });
     }
   } catch (err) {
-    if (runId === undefined) throw err;
-    throw await failHead(ctx, tick, runId, err);
+    if (run === null) throw err;
+    throw await failHead(ctx, tick, run, err);
   }
-  if (runId === undefined) return { tiers, cronReport: { worked: true, detail } };
-  return { tiers, cronReport: await closeHead(ctx, tick, runId, new StepTally(), { detail }) };
+  if (run === null) return { tiers, cronReport: { worked: true, detail } };
+  return { tiers, cronReport: await closeHead(ctx, tick, run, { detail }) };
 }
 
 export const maybeSyncWeatherCells = internalAction({
@@ -1861,6 +1853,7 @@ function tallyIngest(
   tally.add('calls');
   tally.add('weighted', res.weighted);
   tally.add('fetchMs', res.fetchMs);
+  tally.max('fetchMsMax', res.fetchMs);
   if (res.days === null) {
     tally.add('cellsFailed');
     tally.fail(
@@ -1920,11 +1913,7 @@ async function endAppendStep(
       `Done in ${run.step} ${run.step === 1 ? 'step' : 'steps'} · ${fmt(so.stored ?? 0)} of ${fmt(so.cells ?? 0)} ${plural} stored, ${fmt(so.failed ?? 0)} failed`,
     );
   }
-  await reportStep(ctx, run.runId, {
-    ...(next ? { opened: 1 } : {}),
-    ...(run.head ? {} : { closed: 1 }),
-    tally,
-  });
+  await endBatch(ctx, run, tally, next ? 1 : 0);
   return so;
 }
 
@@ -2059,11 +2048,7 @@ async function endGapStep(
       `${tier === 'filter' ? 'Filter' : 'Browse'}: ${n('cellsChecked')} cells checked · ${n('holes')} days not recorded, ${n('filled')} fetched, ${n('borrowed')} borrowed, ${n('stillMissing')} still not recorded · ${n('partialDays')} partial days, ${n('partialFilled')} completed, ${n('partialStill')} still partial, ${n('partialDeferred')} left for the next run, ${n('partialLeft')} left as they are`,
     );
   }
-  await reportStep(ctx, run.runId, {
-    ...(next ? { opened: 1 } : {}),
-    ...(run.head ? {} : { closed: 1 }),
-    tally,
-  });
+  await endBatch(ctx, run, tally, next ? 1 : 0);
   return so;
 }
 
@@ -2305,6 +2290,7 @@ async function refetchTallied(
     tally.add('calls');
     tally.add('weighted', res.weighted);
     tally.add('fetchMs', res.fetchMs);
+    tally.max('fetchMsMax', res.fetchMs);
     if (res.days === null) {
       tally.fail(
         res.failure
@@ -2364,6 +2350,7 @@ async function repairCellGaps(
   }
   tally.add('partialDays', held.partial.length + held.partialLeft.length);
   tally.add('partialLeft', held.partialLeft.length);
+  for (const d of [...held.partial, ...held.partialLeft]) tally.min('oldestPartialDay', d);
   const partialDays = [...held.partial].sort((a, b) => a - b);
 
   const have = new Set(held.present);
@@ -2449,6 +2436,7 @@ async function repairCellGaps(
     repaired += borrowed.length;
     tally.add('borrowed', borrowed.length);
     tally.add('stillMissing', unrecovered.length);
+    for (const d of unrecovered) tally.min('oldestOpenDay', d);
   }
   // A repaired or newly-recorded gap changes what the chain can honestly say.
   if (tier === 'filter' && !(await rebuildDigestFor(ctx, cell))) tally.add('digestFailed');
@@ -2769,34 +2757,37 @@ export async function maybeSweepGapsHandler(
   // The repair's run (D349): one run over both tiers' branches, each tier's walk and then its
   // queued partial-day refetches.
   const detail = 'Gap repair';
-  const opened = await openChainRun(
-    ctx,
-    openArgsOf('repair weather archive gaps', tick, { season: gate.season, detail }),
+  const runId = runOf(
+    await openChainRun(ctx, tick, {
+      job: 'repair weather archive gaps',
+      season: gate.season,
+      detail,
+    }),
+    tick,
   );
-  if (opened !== null && 'busy' in opened) {
+  if (runId === 'skip') {
     return {
       started: false,
       season: gate.season,
       reason: 'a run is still going',
-      cronReport: { worked: false, detail: 'A run of this job is still going' },
+      cronReport: BUSY_REPORT,
     };
   }
-  const runId = opened?.runId;
   const states: CellSyncState[] =
-    runId === undefined ? [] : await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
+    runId === null ? [] : await ctx.runQuery(internal.weatherArchive.cellSyncStates, {});
   const repaired: Record<string, number> = {};
   try {
     for (const tier of WEATHER_TIERS) {
       const size = states.find((s) => s.tier === tier)?.cellCount ?? null;
       const word = tier === 'filter' ? 'Filter' : 'Browse';
+      await openChainBranch(ctx, runId);
       const res = await ctx.runAction(internal.weatherArchive.sweepWeatherDayGaps, {
         tier,
-        ...(runId !== undefined
+        ...(runId !== null
           ? {
               cronRun: {
                 runId,
                 step: 1,
-                head: true,
                 startLine:
                   size === null
                     ? `${word}: checking the registered cells`
@@ -2808,19 +2799,16 @@ export async function maybeSweepGapsHandler(
       repaired[tier] = res.repaired;
     }
   } catch (err) {
-    if (runId === undefined) throw err;
+    if (runId === null) throw err;
     throw await failHead(ctx, tick, runId, err, { season: gate.season });
   }
   const base = { started: true, season: gate.season, repaired };
-  if (runId === undefined) {
+  if (runId === null) {
     return { ...base, cronReport: { worked: true, season: gate.season, detail } };
   }
   return {
     ...base,
-    cronReport: await closeHead(ctx, tick, runId, new StepTally(), {
-      season: gate.season,
-      detail,
-    }),
+    cronReport: await closeHead(ctx, tick, runId, { season: gate.season, detail }),
   };
 }
 
@@ -3643,8 +3631,9 @@ type AppendTickResult = {
  * **An append's head** (D349): opens the run, runs the first batch inline as before — carrying the
  * run, so it and every batch it schedules add to it — and ends its own branch (the dispatcher's merge
  * of the returned report, or its own last step when there is no tick). A run already going (`busy`)
- * starts nothing: a second chain would ask Open-Meteo for the same cells twice. A run that couldn't be
- * opened runs the batch unreported, exactly as before runs were recorded.
+ * skips a manual press (a second chain would ask Open-Meteo for the same cells twice) and leaves a
+ * cron tick to do its work unrecorded (`runOf`); a run that couldn't be opened runs the batch
+ * unreported, exactly as before runs were recorded.
  */
 async function runAppendHead(
   ctx: ActionCtx,
@@ -3660,23 +3649,22 @@ async function runAppendHead(
 ): Promise<AppendTickResult> {
   const base = { started: true, season: head.season, pastDays: head.pastDays };
   const detail = `${head.pastDays}-day append`;
-  const opened = await openChainRun(
-    ctx,
-    openArgsOf(head.job, tick, { season: head.season, detail }),
+  const runId = runOf(
+    await openChainRun(ctx, tick, { job: head.job, season: head.season, detail }),
+    tick,
   );
-  if (opened === null) {
-    await head.first(undefined);
-    return { ...base, cronReport: { worked: true, season: head.season, detail } };
-  }
-  if ('busy' in opened) {
+  if (runId === 'skip') {
     return {
       started: false,
       season: head.season,
       reason: 'a run is still going',
-      cronReport: { worked: false, detail: 'A run of this job is still going' },
+      cronReport: BUSY_REPORT,
     };
   }
-  const { runId } = opened;
+  if (runId === null) {
+    await head.first(undefined);
+    return { ...base, cronReport: { worked: true, season: head.season, detail } };
+  }
   const startCounts: Record<string, number> = { pastDays: head.pastDays };
   if (head.registry !== null) startCounts.registry = head.registry;
   const startLine =
@@ -3684,16 +3672,14 @@ async function runAppendHead(
       ? `${detail} · ${head.noun === 'bay' ? 'every live bay' : 'every registered cell'}`
       : `${detail} · ${fmt(head.registry)} ${head.noun}s registered`;
   try {
-    await head.first({ runId, step: 1, head: true, startLine, startCounts });
+    await openChainBranch(ctx, runId);
+    await head.first({ runId, step: 1, startLine, startCounts });
   } catch (err) {
     throw await failHead(ctx, tick, runId, err, { season: head.season });
   }
   return {
     ...base,
-    cronReport: await closeHead(ctx, tick, runId, new StepTally(), {
-      season: head.season,
-      detail,
-    }),
+    cronReport: await closeHead(ctx, tick, runId, { season: head.season, detail }),
   };
 }
 

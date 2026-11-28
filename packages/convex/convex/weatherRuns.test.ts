@@ -21,6 +21,7 @@ import { CAUSE_WORDS, StepTally, sampleTextOf, thrownText } from './lib/weatherR
 import schema from './schema';
 import { standInBaseUrl } from './weather';
 import {
+  maybeRefreshBayTierHandler,
   maybeRefreshFilterTierHandler,
   maybeSweepGapsHandler,
   maybeSyncWeatherCellsHandler,
@@ -76,6 +77,7 @@ vi.mock('./cronRuns', async (importOriginal) => {
         byUserId: v.optional(v.id('profiles')),
         detail: v.optional(v.string()),
         season: v.optional(v.string()),
+        counts: v.optional(v.record(v.string(), v.number())),
       },
       returns: v.union(v.object({ runId: v.id('cronRuns') }), v.object({ busy: v.id('cronRuns') })),
       handler: async (ctx, args) => {
@@ -99,6 +101,7 @@ vi.mock('./cronRuns', async (importOriginal) => {
         runId: v.id('cronRuns'),
         opened: v.optional(v.number()),
         closed: v.optional(v.number()),
+        head: v.optional(v.boolean()),
         counts: v.optional(v.record(v.string(), v.number())),
         causes: v.optional(v.array(cronCauseTally)),
         lines: v.optional(v.array(cronReportLine)),
@@ -478,15 +481,16 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     ]);
     // Three batches and the head's own close.
     const s = steps();
-    expect(s).toHaveLength(4);
-    // In arrival order: the head's batch (opens the next, closes nothing), the head's own close
-    // (it returns before the scheduled batches run), the middle batch, the last.
-    expect(s[0]).toMatchObject({ opened: 1 });
-    expect(s[0]?.closed).toBeUndefined();
-    expect(s[1]).toEqual({ runId: s[0]?.runId, closed: 1 });
-    expect(s[2]).toMatchObject({ opened: 1, closed: 1 });
-    expect(s[3]?.opened).toBeUndefined();
-    expect(s[3]).toMatchObject({ closed: 1 });
+    expect(s).toHaveLength(5);
+    // In arrival order: the head opens a branch for its inline batch; that batch closes it and
+    // opens the next; the head closes its own (no tick: `closeChainHead`, before the scheduled
+    // batches run); the middle batch; the last.
+    expect(s[0]).toEqual({ runId: s[0]?.runId, opened: 1 });
+    expect(s[1]).toMatchObject({ opened: 1, closed: 1 });
+    expect(s[2]).toEqual({ runId: s[0]?.runId, closed: 1, head: true });
+    expect(s[3]).toMatchObject({ opened: 1, closed: 1 });
+    expect(s[4]?.opened).toBeUndefined();
+    expect(s[4]).toMatchObject({ closed: 1 });
     expect(openAfter()).toBe(0);
     expect(new Set(s.map((x) => x.runId)).size).toBe(1);
 
@@ -504,6 +508,8 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     });
     expect(urls).toHaveLength(100);
     expect(c.digestFailed).toBeUndefined();
+    // Every step names its slowest request under a `Max` key (the run keeps the largest).
+    expect(steps().filter((x) => x.counts?.fetchMsMax !== undefined)).toHaveLength(3);
 
     // The causes: grouped, counted, one sample each, keyed by cell, no query string.
     const causes = mergedCauses();
@@ -559,8 +565,8 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     standIn();
     await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
     await drain(t);
-    expect(steps()[0]?.lines?.[0]?.text).toBe('14-day append · 3,043 cells registered');
-    expect(steps()[0]?.counts).toMatchObject({ registry: 3043, pastDays: 14 });
+    expect(steps()[1]?.lines?.[0]?.text).toBe('14-day append · 3,043 cells registered');
+    expect(steps()[1]?.counts).toMatchObject({ registry: 3043, pastDays: 14 });
   });
 
   test('under the dispatcher (a tick) the head returns its run for the merge and closes nothing itself', async () => {
@@ -580,9 +586,11 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     ]);
     const runId = steps()[0]?.runId;
     expect(res.cronReport).toMatchObject({ worked: true, runId, season: expect.any(String) });
-    // One batch, the head's: it neither opened nor closed a branch; the merge closes the head's.
-    expect(steps()).toHaveLength(1);
-    expect(openAfter() - 1).toBe(0);
+    // The head opened its batch's branch, the batch closed it; the head's own is left for the
+    // dispatcher's merge of the returned report.
+    expect(steps()).toEqual([{ runId, opened: 1 }, expect.objectContaining({ runId, closed: 1 })]);
+    expect(steps()[1]?.opened).toBeUndefined();
+    expect(openAfter()).toBe(1);
   });
 
   test('a manual press carries its presser', async () => {
@@ -625,25 +633,45 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     expect(opens()[0]).toMatchObject({ trigger: 'manual', byUserId });
   });
 
-  test('a run still going starts nothing: no request, a quiet tick', async () => {
+  test('busy: a manual press is skipped with a quiet report; a cron tick does its work unrecorded', async () => {
     const t = convexTest(schema, modules);
     await openSeason(t);
     await seedCells(t, 3);
     const urls = standIn();
-    rec.busy = await t.run((ctx) =>
-      ctx.db.insert('cronRuns', {
+    rec.busy = await anyRun(t);
+    const press = await maybeRefreshFilterTierHandler(
+      actionCtx(t),
+      {},
+      {
         job: 'append daily weather archive',
-        startedAt: T0 - 60_000,
-        finishedAt: T0 - 60_000,
-        outcome: 'ok',
-        trigger: 'cron',
-        keepUntil: T0 + DAY_MS,
-      }),
+        startedAt: T0,
+        trigger: 'manual',
+      },
     );
-    const res = await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
     await drain(t);
-    expect(res).toMatchObject({ started: false, cronReport: { worked: false } });
+    expect(press).toMatchObject({
+      started: false,
+      cronReport: { worked: false, detail: 'A run of this job is already going' },
+    });
     expect(urls).toHaveLength(0);
+    // The schedule's tick: every cell asked for, nothing stepped into the busy run.
+    const tick = await maybeRefreshFilterTierHandler(
+      actionCtx(t),
+      {},
+      {
+        job: 'append daily weather archive',
+        startedAt: T0,
+        trigger: 'cron',
+      },
+    );
+    await drain(t);
+    expect(tick).toMatchObject({ started: true, cronReport: { worked: true } });
+    expect(tick.cronReport).not.toHaveProperty('runId');
+    expect(urls).toHaveLength(3);
+    // And a head with no tick (an operator's call) does the same.
+    await t.action(internal.weatherArchive.maybeRefreshFilterTier, {});
+    await drain(t);
+    expect(urls).toHaveLength(6);
     expect(steps()).toHaveLength(0);
   });
 
@@ -657,7 +685,8 @@ describe('the filter append records one run of its whole chain (D349)', () => {
     };
     await expect(maybeRefreshFilterTierHandler(ctx, {})).rejects.toThrow('batch died');
     expect(steps()).toEqual([
-      { runId: expect.any(String), closed: 1, error: 'batch died: https://x/' },
+      { runId: expect.any(String), opened: 1 },
+      { runId: expect.any(String), closed: 1, head: true, error: 'batch died: https://x/' },
     ]);
   });
 
@@ -682,7 +711,8 @@ describe('the filter append records one run of its whole chain (D349)', () => {
       worked: true,
       runId: expect.any(String),
     });
-    expect(steps()).toHaveLength(0);
+    // Only the branch it opened for the batch that never reported: the recorder closes the run.
+    expect(steps()).toEqual([{ runId: expect.any(String), opened: 1 }]);
   });
 
   test('out of season: a quiet tick, no run opened', async () => {
@@ -717,10 +747,12 @@ describe('the bay append reports the same, over bays', () => {
     await t.action(internal.weatherArchive.maybeRefreshBayTier, {});
     await drain(t);
     expect(opens()[0]).toMatchObject({ job: 'append daily bay weather archive' });
-    expect(steps()).toHaveLength(2);
-    expect(steps()[0]?.opened).toBeUndefined();
-    expect(steps()[0]?.closed).toBeUndefined();
-    expect(steps()[0]?.lines?.map((l) => l.text)).toEqual([
+    expect(steps()).toHaveLength(3);
+    expect(steps()[0]).toMatchObject({ opened: 1 });
+    expect(steps()[1]?.opened).toBeUndefined();
+    expect(steps()[1]).toMatchObject({ closed: 1 });
+    expect(steps()[2]).toMatchObject({ closed: 1, head: true });
+    expect(steps()[1]?.lines?.map((l) => l.text)).toEqual([
       '14-day append · every live bay',
       'Done in 1 step · 0 of 0 bays stored, 0 failed',
     ]);
@@ -1096,6 +1128,8 @@ describe('the gap repair completes partial past days (fork 2 (b))', () => {
       partialFilled: 2,
       calls: 1,
       weighted: 24,
+      // Named for the run's fold: the smallest kept.
+      oldestPartialDay: ago(15),
     });
   });
 
@@ -1262,7 +1296,7 @@ describe('the gap repair completes partial past days (fork 2 (b))', () => {
     expect(partial).toMatchObject({ hours: 9, source: 'forecast' });
     expect(partial?.missing).toBeUndefined();
     expect((await dayRow(t, 0, ago(3)))?.missing).toBe(true);
-    expect(summed()).toMatchObject({ partialStill: 1, stillMissing: 1 });
+    expect(summed()).toMatchObject({ partialStill: 1, stillMissing: 1, oldestOpenDay: ago(3) });
     expect(mergedCauses().get('serverError')?.count).toBe(1);
   });
 
@@ -1415,27 +1449,40 @@ describe('the edges of a run', () => {
     expect(urls).toHaveLength(45);
   });
 
-  test('a repair or a walk still going starts nothing', async () => {
+  test('busy: a repair, a bay append or a walk pressed by hand is skipped; with no tick it does its work', async () => {
     const t = harness();
     await openSeason(t);
     await seedCells(t, 1);
     await seedDays(t, 0, 6, 1, [hole(ago(3))]);
     const urls = standIn();
     rec.busy = await anyRun(t);
-    expect(await t.action(internal.weatherArchive.maybeSweepGaps, {})).toMatchObject({
+    const press = (job: string): CronTickContext => ({ job, startedAt: T0, trigger: 'manual' });
+    const ctx = actionCtx(t);
+    expect(
+      await maybeSweepGapsHandler(ctx, {}, press('repair weather archive gaps')),
+    ).toMatchObject({
       started: false,
       reason: 'a run is still going',
-      cronReport: { worked: false },
+      cronReport: { worked: false, detail: 'A run of this job is already going' },
     });
-    expect(await t.action(internal.weatherArchive.maybeRefreshBayTier, {})).toMatchObject({
-      started: false,
-    });
-    expect(await t.action(internal.weatherArchive.maybeSyncWeatherCells, {})).toMatchObject({
-      skipped: 'a run is still going',
-      tiers: [],
-    });
+    expect(
+      await maybeRefreshBayTierHandler(ctx, {}, press('append daily bay weather archive')),
+    ).toMatchObject({ started: false });
+    expect(
+      await maybeSyncWeatherCellsHandler(ctx, {}, press('reconcile weather cell registry')),
+    ).toMatchObject({ skipped: 'a run is still going', tiers: [] });
     expect(urls).toHaveLength(0);
-    expect(await t.run((ctx) => ctx.db.query('weatherCellSyncs').collect())).toEqual([]);
+    expect(await t.run((c) => c.db.query('weatherCellSyncs').collect())).toEqual([]);
+    // No tick (an import's walk, an operator's call): the work, unrecorded as a chain.
+    expect(await t.action(internal.weatherArchive.maybeSweepGaps, {})).toMatchObject({
+      started: true,
+      cronReport: { worked: true },
+    });
+    await drain(t);
+    expect(urls).toHaveLength(1);
+    await maybeSyncWeatherCellsHandler(ctx, { requestedAt: T0 - 1 });
+    expect(await t.run((c) => c.db.query('weatherCellSyncs').collect())).toHaveLength(2);
+    expect(steps()).toEqual([]);
   });
 
   test('the repair out of season is a quiet tick; a repair or walk head that throws closes its run', async () => {
@@ -1451,10 +1498,16 @@ describe('the edges of a run', () => {
       throw new Error('tier died');
     };
     await expect(maybeSweepGapsHandler(ctx, {})).rejects.toThrow('tier died');
-    expect(steps()).toEqual([{ runId: expect.any(String), closed: 1, error: 'tier died' }]);
+    expect(steps()).toEqual([
+      { runId: expect.any(String), opened: 1 },
+      { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
+    ]);
     rec.steps.length = 0;
     await expect(maybeSyncWeatherCellsHandler(ctx, {})).rejects.toThrow('tier died');
-    expect(steps()).toEqual([{ runId: expect.any(String), closed: 1, error: 'tier died' }]);
+    expect(steps()).toEqual([
+      { runId: expect.any(String), opened: 1 },
+      { runId: expect.any(String), closed: 1, head: true, error: 'tier died' },
+    ]);
     // With the open failing too, the throw is the job's own.
     rec.openThrows = true;
     vi.spyOn(console, 'warn').mockImplementation(() => {});

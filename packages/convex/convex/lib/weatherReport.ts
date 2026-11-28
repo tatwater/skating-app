@@ -80,6 +80,21 @@ export class StepTally {
     this.counts[key] = (this.counts[key] ?? 0) + Math.round(n);
   }
 
+  /**
+   * Keep the largest `n` under `key` — a key ending in `Max`, which the run folds by largest. Set
+   * only when there is a value, so an empty step never reads as 0.
+   */
+  max(key: `${string}Max`, n: number): void {
+    const had = this.counts[key];
+    this.counts[key] = had === undefined ? Math.round(n) : Math.max(had, Math.round(n));
+  }
+
+  /** Keep the smallest `n` under `key` — a key starting `oldest`, which the run folds by smallest. */
+  min(key: `oldest${string}`, n: number): void {
+    const had = this.counts[key];
+    this.counts[key] = had === undefined ? Math.round(n) : Math.min(had, Math.round(n));
+  }
+
   /** One failed item: `key` names it (a cell key, a state code, a hazard id — never content). */
   fail(failure: CausedFailure, key: string, at: number = Date.now()): void {
     const had = this.byCause.get(failure.cause);
@@ -141,22 +156,20 @@ export function fmt(n: number): string {
 }
 
 /**
- * **A chained run, as each batch carries it** (D349): the run's id, the batch's place in the chain,
- * whether it is the head's own batch (the head closes its own branch: through the dispatcher's merge
- * of its report, or its own last step), and the run's totals so far — what the progress and end
- * lines read, carried because no batch can read the run row.
+ * **A chained run, as each batch carries it** (D349): the run's id, the batch's place in its branch,
+ * and the branch's totals so far — what the progress and end lines read, carried because no batch
+ * can read the run row. The head opens a branch for every batch it runs inline
+ * (`openChainBranch`); every batch closes its own and opens one for each batch it schedules.
  */
 export const cronRunArg = v.object({
   runId: v.id('cronRuns'),
   /** This batch's number in its branch, from 1. */
   step: v.number(),
-  /** The head's own batch: it opens the next branch but never closes its own. */
-  head: v.optional(v.boolean()),
   /** The branch's running totals before this batch (`cells`, `stored`, `failed`, …). */
   so: v.optional(v.record(v.string(), v.number())),
   /**
-   * The head's own first line and counts, carried into its first batch so they reach the run with
-   * that batch's step — ahead of every later line (the head's own report merges only at its end).
+   * The head's first line and counts, carried into its first batch so they reach the run with that
+   * batch's step — ahead of every later line (the head's own report merges only at its end).
    */
   startLine: v.optional(v.string()),
   startCounts: v.optional(v.record(v.string(), v.number())),
@@ -165,13 +178,12 @@ export const cronRunArg = v.object({
 export interface CronRunArg {
   runId: Id<'cronRuns'>;
   step: number;
-  head?: boolean;
   so?: Record<string, number>;
   startLine?: string;
   startCounts?: Record<string, number>;
 }
 
-/** The next batch's `cronRun`: one step on, the totals so far, never the head. */
+/** The next batch's `cronRun`: one step on, the totals so far. */
 export function nextCronRun(run: CronRunArg, so: Record<string, number>): CronRunArg {
   return { runId: run.runId, step: run.step + 1, so };
 }
@@ -184,7 +196,7 @@ export function stepTallyFor(run: CronRunArg | undefined): StepTally {
   return tally;
 }
 
-/** `a` and `b` added key by key. */
+/** `a` and `b` added key by key (the branch's own running totals; never `Max`/`Min`/`oldest` keys). */
 export function addCounts(
   a: Record<string, number> | undefined,
   b: Record<string, number>,
@@ -194,96 +206,41 @@ export function addCounts(
   return out;
 }
 
-/** What a batch hands its run at its end (`cronRuns.chainStep`'s arguments, less the id). */
-export interface StepReport {
-  /** Branches this step starts: 1 when it schedules the next batch. */
-  opened?: number;
-  /** Branches this step ends: 1 for a batch that isn't the head's own. */
-  closed?: number;
-  tally?: StepTally;
-  error?: string;
-}
-
-/**
- * Hand one batch's tallies to its run (`cronRuns.chainStep`) — **before** the batch schedules its
- * next, so the run counts the branch the next batch is. A failure here is logged and swallowed: a
- * report must never take the job down with it (the run then reads quiet, and the next run's
- * `openRun` closes it).
- */
-export async function reportStep(
-  ctx: ActionCtx,
-  runId: Id<'cronRuns'>,
-  step: StepReport,
+/** A batch's end, for its run: its branch closed, `next` branches opened, its tallies. */
+export async function endBatch(
+  ctx: Pick<ActionCtx, 'runMutation'>,
+  run: CronRunArg,
+  tally: StepTally,
+  next: number,
 ): Promise<void> {
-  const t = step.tally;
-  const causes = t?.causes() ?? [];
-  try {
-    await ctx.runMutation(internal.cronRuns.chainStep, {
-      runId,
-      ...(step.opened ? { opened: step.opened } : {}),
-      ...(step.closed ? { closed: step.closed } : {}),
-      ...(t && Object.keys(t.counts).length > 0 ? { counts: t.counts } : {}),
-      ...(causes.length > 0 ? { causes } : {}),
-      ...(t && t.lines.length > 0 ? { lines: t.lines } : {}),
-      ...(step.error !== undefined ? { error: sampleTextOf(step.error) } : {}),
-    });
-  } catch (err) {
-    console.warn(`weather report: a step of run ${runId} wasn't recorded`, err);
-  }
-}
-
-/** What a chained head passes `cronRuns.openRun`, from its tick (or none: a run another job chained). */
-export interface OpenRunArgs {
-  job: string;
-  startedAt: number;
-  trigger: 'cron' | 'manual';
-  byUserId?: Id<'profiles'>;
-  detail?: string;
-  season?: string;
+  const causes = tally.causes();
+  await chainStepSafely(ctx, run.runId, {
+    closed: 1,
+    ...(next > 0 ? { opened: next } : {}),
+    ...(Object.keys(tally.counts).length > 0 ? { counts: tally.counts } : {}),
+    ...(causes.length > 0 ? { causes } : {}),
+    ...(tally.lines.length > 0 ? { lines: tally.lines } : {}),
+  });
 }
 
 /**
- * A chained head's `openRun` arguments from its tick. With no tick (a run another job chained — the
- * registry walk an import scheduled — or an operator's direct call) the run is `manual` with no
- * presser, 8b-2's convention for a run another job started, and moves no heartbeat.
- */
-export function openArgsOf(
-  job: string,
-  tick: CronTickContext | undefined,
-  extra: { detail?: string; season?: string } = {},
-): OpenRunArgs {
-  return {
-    job: tick?.job ?? job,
-    startedAt: tick?.startedAt ?? Date.now(),
-    trigger: tick?.trigger ?? 'manual',
-    ...(tick?.byUserId !== undefined ? { byUserId: tick.byUserId as Id<'profiles'> } : {}),
-    ...extra,
-  };
-}
-
-/**
- * **A chained head's end.** Under the dispatcher (a tick), the head's own branch is closed by the
+ * **A chained head's end.** Under the dispatcher (a tick) the head's own branch is closed by the
  * recorder merging this report into the run (`runId`), so the head returns it and writes nothing;
- * with no tick nothing would merge it, so the head closes its own branch with one last step.
+ * with no tick nothing would merge it, so the head closes its own branch (`closeChainHead`).
  */
 export async function closeHead(
-  ctx: ActionCtx,
+  ctx: Pick<ActionCtx, 'runMutation'>,
   tick: CronTickContext | undefined,
   runId: Id<'cronRuns'>,
-  tally: StepTally,
   extra: { season?: string; detail?: string } = {},
 ): Promise<CronReport> {
-  const causes = tally.causes();
   const report: CronReport = {
     worked: true,
     ...(extra.detail !== undefined ? { detail: extra.detail } : {}),
     ...(extra.season !== undefined ? { season: extra.season } : {}),
-    ...(Object.keys(tally.counts).length > 0 ? { counts: tally.counts } : {}),
-    ...(causes.length > 0 ? { causes } : {}),
-    ...(tally.lines.length > 0 ? { lines: tally.lines } : {}),
   };
   if (tick !== undefined) return { ...report, runId };
-  await reportStep(ctx, runId, { closed: 1, tally });
+  await closeChainHead(ctx, runId);
   return report;
 }
 
@@ -293,7 +250,7 @@ export async function closeHead(
  * its own branch with the error. Returns the error to rethrow.
  */
 export async function failHead(
-  ctx: ActionCtx,
+  ctx: Pick<ActionCtx, 'runMutation'>,
   tick: CronTickContext | undefined,
   runId: Id<'cronRuns'>,
   err: unknown,
@@ -306,30 +263,103 @@ export async function failHead(
       ...(extra.season !== undefined ? { season: extra.season } : {}),
     });
   }
-  await reportStep(ctx, runId, { closed: 1, error: thrownText(err) });
+  await closeChainHead(ctx, runId, { error: sampleTextOf(thrownText(err)) });
   return err instanceof Error ? err : new Error(String(err));
 }
 
 /**
- * Open a chained job's run (`cronRuns.openRun`) — `{ runId }`, `{ busy }` while the job's last run is
- * still going, or `null` when the open itself failed (logged: the job then runs unreported, exactly
- * as it did before runs were recorded).
+ * **What a recorder's `busy` means to a weather job** (the governor's ruling, 2026-11-28): a recorder
+ * answer never stops a scheduled job from doing its work. A **manual** press while a run is going is
+ * skipped (a quiet report saying so; 8c-2 turns it into a toast); a cron tick, or a head with no tick,
+ * does its work exactly as before, unrecorded as a chain (`runId: null`). Returns the run to report
+ * to, or `'skip'`.
  */
+export function runOf(
+  opened: OpenedChain,
+  tick: CronTickContext | undefined,
+): Id<'cronRuns'> | null | 'skip' {
+  if ('busy' in opened) return tick?.trigger === 'manual' ? 'skip' : null;
+  return opened.runId;
+}
+
+/** The quiet report a skipped manual press returns. */
+export const BUSY_REPORT: CronReport = {
+  worked: false,
+  detail: 'A run of this job is already going',
+};
+
+// ─── The chain's calls (S4's `lib/chainRun.ts`, B01-8c-1) ────────────────────────────────────────
+//
+// INTEGRATION: these four mirror `lib/chainRun.ts` on the chain builder's branch — the same names,
+// arguments and answers — so the merge deletes this section and imports them from './chainRun'.
+// They call this branch's stub mutations; the real ones add a write-conflict retry to the step and
+// accept `counts` at open (not sent here: the stub's validator would refuse it — the start counts
+// ride the first batch's step instead, which folds the same).
+
+/** What `openChainRun` answers: the run, a live run of the job (`busy`), or no run (it failed). */
+export type OpenedChain = { runId: Id<'cronRuns'> } | { busy: Id<'cronRuns'> } | { runId: null };
+
+/** One step's tallies (`cronRuns.chainStep`'s arguments, less the run). */
+export interface ChainStepTallies {
+  opened?: number;
+  closed?: number;
+  counts?: Record<string, number>;
+  causes?: CronCauseTally[];
+  lines?: CronReportLine[];
+  error?: string;
+}
+
+/** Open the run before the first batch, from the tick (or as a chained `manual` run with none). */
 export async function openChainRun(
-  ctx: ActionCtx,
-  args: OpenRunArgs,
-): Promise<{ runId: Id<'cronRuns'> } | { busy: Id<'cronRuns'> } | null> {
+  ctx: Pick<ActionCtx, 'runMutation'>,
+  tick: CronTickContext | undefined,
+  run: { job: string; detail?: string; season?: string },
+): Promise<OpenedChain> {
   try {
     return await ctx.runMutation(internal.cronRuns.openRun, {
-      job: args.job,
-      startedAt: args.startedAt,
-      trigger: args.trigger,
-      ...(args.byUserId !== undefined ? { byUserId: args.byUserId } : {}),
-      ...(args.detail !== undefined ? { detail: args.detail } : {}),
-      ...(args.season !== undefined ? { season: args.season } : {}),
+      job: tick?.job ?? run.job,
+      startedAt: tick?.startedAt ?? Date.now(),
+      trigger: tick?.trigger ?? 'manual',
+      ...(tick?.byUserId !== undefined ? { byUserId: tick.byUserId as Id<'profiles'> } : {}),
+      ...(run.detail !== undefined ? { detail: run.detail } : {}),
+      ...(run.season !== undefined ? { season: run.season } : {}),
     });
   } catch (err) {
-    console.warn(`weather report: the run of "${args.job}" couldn't be opened`, err);
-    return null;
+    console.error(`cron "${run.job}": openRun failed, running unrecorded: ${thrownText(err)}`);
+    return { runId: null };
   }
+}
+
+/** One step into the run; nothing without a run; a recorder that throws is logged, never rethrown. */
+export async function chainStepSafely(
+  ctx: Pick<ActionCtx, 'runMutation'>,
+  runId: Id<'cronRuns'> | null | undefined,
+  step: ChainStepTallies & { head?: boolean },
+): Promise<void> {
+  if (runId === null || runId === undefined) return;
+  try {
+    await ctx.runMutation(internal.cronRuns.chainStep, { runId, ...step } as never);
+  } catch (err) {
+    console.error(
+      `cronRuns.chainStep failed on run ${runId}, the work goes on: ${thrownText(err)}`,
+    );
+  }
+}
+
+/** A branch opened for a batch the head is about to run inline or schedule (no batch counted). */
+export function openChainBranch(
+  ctx: Pick<ActionCtx, 'runMutation'>,
+  runId: Id<'cronRuns'> | null | undefined,
+  branches = 1,
+): Promise<void> {
+  return chainStepSafely(ctx, runId, { opened: branches });
+}
+
+/** A head with no tick closes its own branch at its end, with its own tallies if it has any. */
+export function closeChainHead(
+  ctx: Pick<ActionCtx, 'runMutation'>,
+  runId: Id<'cronRuns'> | null | undefined,
+  step: Omit<ChainStepTallies, 'opened' | 'closed'> = {},
+): Promise<void> {
+  return chainStepSafely(ctx, runId, { ...step, closed: 1, head: true });
 }
