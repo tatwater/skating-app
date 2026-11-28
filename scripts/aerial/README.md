@@ -84,6 +84,16 @@ exception is an assembly that stops after its archive (or index) went up but bef
 the last write: the published keys are never overwritten, so it refuses again, naming what it left —
 nothing names those objects, nothing has served them; `rclone deletefile` them and assemble again.
 
+**A laptop that sleeps or loses its network never fails what runs on Fly.** A work tile's Machine
+lands its own shard; a re-run waits for any work tile whose Machine is still up rather than
+spawning a second (`spawn.sh`), and a listing it can't read starts nothing. The assembly's follower
+counts quiet only while it is awake and can read the bucket; the assembler beats at least every five
+minutes inside a zoom, stops itself after twenty minutes without progress (its error object says
+so), and the laptop calls one stuck only after thirty minutes of reading an unmoving progress object
+while Fly lists its Machine. A re-run of `assemble` takes a finished assembly from its record and
+attaches to a running one — never a second assembler. A work tile's worker is killed past
+`AERIAL_TILE_DEADLINE` (an hour; the pilot's slowest took six minutes) and re-cut by the next round.
+
 ### Before a full build: the foliage review (D319)
 
 ```bash

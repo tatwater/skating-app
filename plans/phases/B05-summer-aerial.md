@@ -447,7 +447,10 @@ that work tile — **never presence alone** (A06e's `--recut` lesson: a reconcil
 **Retries.** `backfill.sh`'s shape: spawn the outstanding work tiles, drain, ask the bucket what
 landed, re-spawn the difference, three rounds; whatever is left is reported as failed by work tile,
 with its Machine's last log lines. A failing work tile never blocks assembly of the rest — but an
-incomplete set is never published (§2.5).
+incomplete set is never published (§2.5). *Added at the PR's review (2026-11-27):* a work tile whose
+Machine is still up is waited for, never spawned a second time (a re-run after the laptop lost a
+round, a drain that gave up), and a worker still running after an hour (`AERIAL_TILE_DEADLINE`) is
+killed and re-cut by the next round, since nothing in GDAL bounds a stalled read.
 
 **The container** is **its own image**, `scripts/aerial/Dockerfile`, built from the same pinned GDAL
 base the winter cutter uses (`ghcr.io/osgeo/gdal:ubuntu-small-3.13.2`, rclone, `pmtiles`) plus Node
@@ -590,8 +593,8 @@ heartbeat as it reports progress, so Machinery can draw a build whole by its cam
 | Kind | Stage | Scope (`pass`, `states`, `complete`) | Progress (the heartbeat) | Lands in |
 | --- | --- | --- | --- | --- |
 | `aerial_select` | §2.1 | `archive`, the seven, `true` (a `--states` run: those, `false`) | per state enumerated | B05-1 |
-| `aerial_tiles` | §2.2 | `archive`, the states its work tiles touch, `true` only for a full build | every 25 work tiles landed | B05-1 |
-| `aerial_assemble` | §2.3–§2.5 (assembly, upload, the index, verify) | `archive`, the seven, `true` | per zoom written, then per verify check | B05-1 |
+| `aerial_tiles` | §2.2 | `archive`, the states its work tiles touch, `true` only for a full build | every 25 work tiles landed (the done records read every ten minutes during a round) | B05-1 |
+| `aerial_assemble` | §2.3–§2.5 (assembly, upload, the index, verify) | `archive`, the seven, `true` | per zoom written and at least every five minutes within one, then per verify check | B05-1 |
 | `aerial_reassess` | §3.3 | `survey` (new), the seven, `true` | at start and finish | B05-2 |
 
 **`survey`** is a ninth scope (widen-only): *reads a third-party catalog to learn what changed and
@@ -1215,6 +1218,37 @@ cloud sheet read, so the build is cut once with the picks he chose rather than r
   names, Co15, Co18 and Co19 closed in B01's register; the July job's dry tick on dev reading
   unchanged; no `nationalmap.gov` request in the web app.
 
+### §7.6 — The full run's first hours: what to watch
+
+*Written at the PR's fifth review (2026-11-27)*: what the code can't settle short of a real region
+run on Fly and R2. Each is read in the first hour of its stage (tiles from the start, the assembly
+when it begins, ~5 h in), with what trips it and what to do.
+
+- **H1 — Planetary Computer under 25 Machines for hours.** The pilot ran 28 work tiles at the same
+  concurrency, so a burst was tested; the region sustains it ~5 h: up to 22,886 STAC lookups (the
+  units' cell frames, ≤ 68 for one work tile) ≈ 76 a minute, and a SAS token or two a work tile.
+  Watch `fly logs --app skating-imagery` for `STAC lookup failed`, `no usable SAS token` and `429`.
+  Trips at any work tile dying of them: lower `MAX_PARALLEL` (15) and re-run the stage — it resumes
+  by done record, and running Machines are waited for, not doubled.
+- **H2 — Fly's API at a five-second poll for hours.** ~3,600 `fly machine list` calls and 1,764
+  `fly machine run` in batches of six. Watch `spawn.sh`'s `FAILED to spawn` lines and its
+  capacity waits. A failed list reads as the cap (it waits) and a failed spawn is re-spawned next
+  round; trips at more than a few percent of spawns failing: raise `POLL_SECONDS` to 15.
+- **H3 — The slowest work tile against the deadline.** Each done record's timings. Trips at any tile
+  over 30 minutes (half of `AERIAL_TILE_DEADLINE`'s hour) or any worker exit 124 in `fly logs`: raise
+  the deadline before the next round, after reading why it was slow.
+- **H4 — The assembler's rate on `shared-cpu-4x`.** The pilot's 97-second assembly ran inside the
+  Machine's CPU burst balance; the region's ~1.5 h runs past it. The row's `bytesWritten` every five
+  minutes gives MB/s (the pilot: 47.5). A slower one is still followed (the beat is per five
+  minutes, never per zoom); trips below ~25 MB/s (~3 h): let it finish, and size the next one on a
+  `performance` Machine (G-10, §8). And `peakRssMb` at the end against the 4 GB.
+- **H5 — Incomplete multipart uploads.** A Machine that dies mid-upload leaves its parts (up to
+  the archive's ~260 GB, ~$0.13 a day) until the bucket aborts them; rclone aborts only the failures
+  it sees, and a re-run starts a fresh upload. Before the run, read the bucket's lifecycle rules in
+  Cloudflare's dashboard (R2's default for a new bucket aborts after seven days — unverified for
+  this one); after any failed assembly, `rclone backend list-multipart-uploads r2:<bucket>`, and
+  abort what it left with `rclone backend cleanup r2:<bucket> -o max-age=1h`.
+
 ---
 
 ## §8 — Forks
@@ -1332,6 +1366,17 @@ at 0.6; the cells with no green frame at 0.6 m or better keep their newest sharp
 six October cells keep 2 October 2023. **Open: his review of the first proposal** (524 entries,
 `scripts/aerial/review/naip-20261127-foliage-proposed.json`, on the sheet by flight day), before the
 full run.
+
+**G-10 — The assembler's Machine size, for a run past its CPU burst** (opened at the PR's fifth
+review, 2026-11-27). The governor kept the assembler on `shared-cpu-4x` from the pilot's 97 seconds,
+which ran inside the burst balance a shared Machine starts with; the region's ~1.5 h assembly runs
+well past it (the work tiles' balance drained in ~3 minutes under load, then ~0.44 of a core). The
+assembler hashes and streams rather than decodes, so how far it slows is unmeasured. (a) Keep
+`shared-cpu-4x`: no failure either way now (it is followed by a five-minute beat, not by zoom), at
+worst a slower assembly, watched by H4 (§7.6). (b) `FLY_ASSEMBLE_VM_SIZE=performance-2x` with its
+4096 MB: never throttled, a few cents more for the run. **Recommended: (b)** for the full run — the
+assembly is the one stage that can't overlap anything, and a throttled one is hours of a 260 GB
+upload. Open.
 
 ---
 
@@ -2120,3 +2165,109 @@ before anything changed; each fix landed with a test (commits on the branch):
   not fatal, by design; `seq 1 0` and an unset `live` bite only at zero tries), `run-aerial.sh` (a
   stage's own status, tested), `assemble-aerial.sh`, `bundle.sh` and the warp proof's driver.
   `shellcheck` is not installed here and wasn't run. Nothing drawn changed; tiling stays 2.
+
+**The PR's fifth review, and the sweep for what a pilot can't show (2026-11-27).** Greptile (4/5):
+a healthy assembly times out. Real. Each fix landed with a test that failed first (commits on the
+branch); nothing drawn changed, tiling stays 2.
+
+- **The laptop called a long zoom dead.** The assembler reported progress once per zoom (when the
+  zoom's first run finished), and the laptop failed the row after 60 minutes without a new event.
+  At the pilot's per-zoom tile sizes (z11 49.7 … z16 36.4, z17 21.0 KB), each level a quarter of
+  the one below, tile zoom 17 is **59%** of the bytes — **~154 GB of a ~260 GB region** (130–178 GB
+  over 220–300), **~54 minutes** at the pilot's 47.5 MB/s (46–62), with z16 another 25.7%, ~23
+  minutes. The quiet window was all of z17 plus the index and manifest: inside the hour by ~10% at
+  the central figure, past it from ~289 GB or below ~43 MB/s (the pilot's whole z17 was ~50 s).
+  Now the assembler beats at least every five minutes within a zoom (`HEARTBEAT_MS`, riding the runs,
+  which are one work tile's zoom each, seconds apiece); the laptop's quiet limit is 30 minutes
+  (`FOLLOW_QUIET_MS`); and the Machine stops itself after 20 minutes with no progress
+  (`MACHINE_STALL_MS`, writing its error object), so a stuck read or upload frees its Machine and
+  the laptop learns why. A test assembles six work tiles whose deepest zoom takes two hours of the
+  Machine's clock and follows it from a simulated laptop with the defaults: it failed with "no
+  progress … for 60 minutes" before the fix.
+- **Losing the event stream never fails a live assembly.** The follower counts quiet only while it
+  is awake and can read the bucket: a read that can't reach R2 (rclone's exit other than 3 or 4,
+  "not found") or a gap between polls past two minutes (the laptop asleep) adds nothing, and
+  whether the Machine is up is `spawn.sh`'s answer from Fly's list, which reads a failed list as "up".
+  Only a Machine Fly lists as up whose readable progress hasn't moved for 30 minutes is called stuck,
+  and the message says to stop it. Once the Machine has gone, the record is read through a blip (ten
+  tries) before anything is called failed. **A re-run attaches**: `spawn.sh assemble` follows an
+  assembler already running rather than start a second (two would stream the same archive past each
+  other's "never overwrite" check), and starts nothing when the list can't be read; the laptop takes
+  a finished assembly from its record (a run that lost its stream at the end is closed by the next
+  as succeeded, never assembled twice); an earlier attempt's error object is never read as this
+  run's. `spawn.sh`'s wait is 12 h and exits 3 when it gives up on a live Machine, which the laptop
+  no longer reads as "stopped without a record". The Machine's progress writes are bookkeeping: a
+  failed one (a transient R2 error on a tiny `rcat`) used to fail the assembly, and the stream waited
+  on each; now neither (~100 writes at region scale, ~16 in the pilot).
+
+**The sweep: every assumption sized by a 65-cell pilot, against the region** (9,168 cells, 1,764 work
+tiles, ~8.7 M tiles, ~260 GB, 7–9 h on 25 Machines from a laptop). Fixed, each with a failing test
+first:
+
+- **A hung worker was never killed.** No deadline on a work tile, and GDAL bounds no stalled read
+  (no `GDAL_HTTP_TIMEOUT` or low-speed limit): a Machine whose worker never exits holds a slot and
+  bills `performance-4x` until someone looks. The pilot's 28 tiles took 178–356 s; the region's
+  1,764 are 63× the chances. Every worker now runs under coreutils' `timeout --kill-after=60 3600`
+  (`AERIAL_TILE_DEADLINE`; ~10× the mean, ~5× a border tile's estimated ~12 minutes), which signals
+  the worker's whole process group — a test holds the real tool to it, children included — and the
+  next round re-cuts it. The drain now waits 90 minutes, past the deadline.
+- **A re-run doubled live work tiles.** A round whose capacity wait failed, a drain that gave up, a
+  `fly machine run` that timed out after creating its Machine, or a laptop that lost the stage, and
+  the next round spawned every outstanding work tile again beside its live Machine. `spawn.sh` now
+  waits for a work tile whose Machine is up, and spawns nothing when the list can't be read ("can't
+  tell" is never "none").
+- **The tiles row was silent for a whole round.** §2.6 promised a beat every 25 work tiles; the
+  reconcile ran only after a round drained — 9 minutes in the pilot, ~5 h for the region. A round
+  now reads the done records every ten minutes (`ROUND_BEAT_MS`; ~1,764 GETs a read, ~$0.02 over the
+  run), a failed read skipping a beat, never the round.
+- **No read was retried.** The assembly's `httpStore` (and verify's) failed on the first network
+  error or 5xx: ~270 requests in the pilot's assembly, ~17,600 in the region's (1,764 done records
+  and indexes, their top tiles, ~12,300 runs). Now three retries at 1, 4 and 16 s for a network
+  error, a 5xx or a 429, never a 404, another 4xx or a short read, and a stream only before its first
+  byte.
+
+Checked and fine, with the numbers:
+
+- **Timeouts and retries.** `SPAWN_TIMEOUT` 120 s per `fly machine run` (per call, scale-free);
+  the capacity wait, 240 polls (20 min) per batch of six against work tiles of 3–6 minutes; the
+  follower's 30-s poll; the worker's SAS margin (180 s) against its longest single run — a z13 chunk,
+  ~13 s in the pilot (213 s of tiling over 16 chunks), ~40 s on a border tile reading 2.5 GB — and the
+  counts helper's 37 s; GDAL's 5 retries, curl's 3 (429 among them) for SAS and STAC, the chunk's one
+  retry with a fresh token, rclone's 3 for uploads: per work tile, and a failed tile is re-cut by the
+  next round. Planetary Computer's and Fly's rates sustained for hours are H1 and H2 (§7.6).
+- **Listings.** The done records are one `rclone copy --include '*.done.json'` a reconcile: rclone
+  pages S3's list at 1,000 and follows the continuation (~5,300 objects under `shards/`, six pages),
+  and a failed list exits non-zero — the stage fails, never reads part of a listing as all of it.
+  Cleanup's `lsjson --recursive` and `delete` of a prefix are rclone's, paged the same way. `fly
+  machine list --json` holds 25 live Machines at most, the winter pump's included.
+- **Arrays and arguments.** The run row forwards at most 200 failures (`MAX_FORWARDED_FAILURES`) and
+  ~35 counts; a tiles failure's message names every failed work tile, ≤ 1,764 × 13 B ≈ 23 KB in the
+  `convex run` argv (macOS's `ARG_MAX` 1 MiB, Linux's 128 KiB an argument). Units go to Machines by
+  file: the largest of the region's 1,764 is 12.7 KB (median 9.5 KB, ≤ 16 cells and 68 cell frames;
+  measured on the kept region manifest `naip-20261127`); work-tile lists by file; jq reads one unit
+  or one machine list.
+- **Memory.** The assembler: the scale proof re-run here under a 2 GB heap cap (V8's limit on a 4 GB
+  VM): 8.41 M tiles, **1,372 MB peak RSS**, layout 2 s, plan 2 s; beside it `rclone rcat`'s two
+  128 MiB parts in flight, `rclone serve http`, the writer's ≤ 128 MiB prefetch, the 5.8 MB manifest
+  parsed and ~600 overview tiles (~30 MB): ~2.1 GB of 4 GB. The date index (26 KB gzipped) is built
+  before the layout; verify's sample is on the laptop. Verify holds every tile's source in a map:
+  ≤ 176 B a tile measured, ~1.5 GB for 8.7 M, under this laptop's 4,192 MB default heap limit (Node sizes it from the machine's memory: on a
+  smaller laptop, run verify with `NODE_OPTIONS=--max-old-space-size=4096`).
+- **Run-row writes.** Every logger call is swallowed (`@skating/run-log`'s rule 1): a refused write
+  never fails a stage. The assembly beats at most once per 30-s poll, ~100–180 flushes over ~1.5 h;
+  the tiles row ~30 over 5 h; the aerial kinds have no `RUN_QUIET_MS` entry, so Machinery never calls
+  one stalled.
+- **The upload.** `--s3-chunk-size 128M`, which rclone's streamed upload uses: 10,000 parts × 128 MiB
+  ≈ 1.22 TiB against ~260 GB (~1,940 parts); a part is never near 5 GiB, the object nowhere near
+  R2's ~5 TiB. An interrupted one is H5 (§7.6).
+- **Disk.** A worker's scratch stayed under 0.5 GB of its 8.35 GB root with shards to 202 MB, and a
+  work tile is at most 5,461 tiles, so the region's land tiles are the pilot's size class; the
+  assembler spools nothing (the overviews are in memory, each parent's GDAL run in a scratch
+  directory it removes).
+- **The laptop asleep.** Select is local; the tiles stage's loops count polls, not time, so a sleep
+  pauses them while the Machines carry on, and a re-run resumes by done record and now waits for
+  live work tiles; verify reads through blips (above) and is read-only, so a re-run is safe; the
+  assembly is above.
+- **Clocks and order.** Landed is a done record's input hash, never a time; the newest archive is
+  the key's date, one campaign a day; cleanup's week counts from `--live-since` (or a pilot's upload
+  time); the follower compares the progress object's `at` for identity, never against its own clock.
